@@ -7,8 +7,9 @@
 目标终态：
 
 1. 本地唯一仓库根在 **内层** `omni-butler/`。
-2. 远程是 **GitHub 私有仓**（新建账号可推送）。
+2. 远程是 **GitHub 私有仓**（`y4483784-png/omni-butler`）。
 3. `backend/.env`、证书、`.venv`、`node_modules` 永不上传。
+4. 分支按华海流程：生产 `master`、日常 `develop`、测试 `release`、现网 `hotfix`。逐步命令见 [`BRANCHING.md`](BRANCHING.md)。
 
 ---
 
@@ -25,7 +26,8 @@
 - 不要把仓库建成 **Public**。本仓是内部办公助手 + 评测数据 + 架构信息。
 - 不要用 GitHub **登录密码** 当 `git push` 密码（已废弃）。必须用 **Personal Access Token** 或 SSH。
 - 不要 `git add -f` 任何 `.env` / `.pem` / `.key`。
-- 不要 `git push --force` 到 `main`。
+- 不要 `git push --force` 到 `master` / `develop` / `release`。
+- 不要在 `master` 上直接开发；日常只在 `develop`（见 [`BRANCHING.md`](BRANCHING.md)）。
 - 不要同时再绑一个 Gitee `origin`（一个仓只保留一个 `origin`）。
 
 ---
@@ -311,18 +313,23 @@ rmdir /s /q d:\Omni-Butler\.git
 
 ## 11. 日常（本地 + GitHub）
 
+日常在 **`develop`** 上操作（完整分支流程见 [`BRANCHING.md`](BRANCHING.md)）：
+
 ```bat
 cd /d d:\Omni-Butler\omni-butler
+git checkout develop
+git pull origin develop
 git status
 git add 具体文件
 git commit -m "说明为什么改"
-git push
+git push origin develop
 ```
 
 - 先 commit 再 push。不要把未扫描的 `git add -A` 直接推。
 - 一次提交一类事。
 - 模型变更同时提交 `alembic/versions/`。
-- 仍不要 force push `main`。
+- 不要 force push `master` / `develop` / `release`。
+- 不要在 `master` 上直接开发。
 
 回退未提交修改：`git restore path\to\file`  
 只看历史：`git log --oneline -20` 然后 `git show <hash>`
