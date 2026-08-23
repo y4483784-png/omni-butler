@@ -1,0 +1,55 @@
+# Core web stack
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# Data
+sqlalchemy==2.0.35
+# Postgres driver (production DB; SQLite remains the zero-dependency dev/test fallback)
+psycopg[binary]>=3.1,<4
+# Schema migrations (baseline in backend/alembic)
+alembic>=1.13,<2
+# Shared exact caches, distributed model concurrency and API rate limits
+redis>=5.0,<6
+# Durable background jobs (document ingestion queue + periodic stale recovery)
+celery[redis]>=5.4,<6
+python-multipart==0.0.12
+bcrypt>=4.0,<5
+itsdangerous>=2.1,<3
+pypdf==5.1.0
+python-docx==1.1.2
+openpyxl==3.1.5
+pymupdf==1.25.3
+
+# LLM (OpenAI-compatible SDK; works with OpenAI, 智谱 GLM, 本地 vLLM 等)
+# Pinned to 2.x on purpose: openai 1.x is incompatible with httpx >= 0.28 — it
+# passes `proxies=` to httpx.AsyncClient (removed in httpx 0.28, raises TypeError),
+# and its AsyncHttpxClientWrapper also hits 'object has no attribute _state' at
+# client teardown. openai 2.x fixes both and keeps the same chat.completions API.
+openai>=2.0,<3
+httpx>=0.27,<1
+
+# Vector store (Phase 2+ hybrid RAG); optional at runtime — keyword fallback if down
+qdrant-client>=1.12,<2
+
+# Object storage (required; MinIO/S3 is the only upload backend).
+# Keep botocore compatible with aiobotocore commonly present in data environments.
+boto3>=1.34.41,<1.35
+
+# Agent orchestration (ADR-002): intent routing StateGraph; tools later
+langgraph>=0.2,<0.4
+
+# RAG evaluation (YZ full-chain + ragas metrics)
+ragas>=0.2.10,<0.3
+datasets>=2.14,<4
+langchain-openai>=0.2,<0.4
+
+# Harness constitution YAML
+PyYAML>=6.0,<7
+
+# aiming-lab AutoHarness (NOT the unrelated PyPI autoharness 1.4.x).
+# Install on the runtime host with:
+#   pip install "git+https://github.com/aiming-lab/AutoHarness.git@v0.1.0"
+# Optional at import time — gateway falls back to local isomorphic rules if missing.
+# autoharness @ git+https://github.com/aiming-lab/AutoHarness.git@v0.1.0

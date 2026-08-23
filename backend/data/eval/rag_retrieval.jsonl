@@ -1,0 +1,500 @@
+{"id": "rag_0001", "query": "差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0002", "query": "一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0003", "query": "出差住酒店每天能报多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0004", "query": "住宿标准一线城市是多少钱", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0005", "query": "外地出差酒店费用上限", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0006", "query": "差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0007", "query": "一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0008", "query": "差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0009", "query": "一线城市住宿限额？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0010", "query": "差旅住宿标准有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0011", "query": "一线城市住宿限额有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0012", "query": "请问差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0013", "query": "请问一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0014", "query": "请问差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0015", "query": "请问一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0016", "query": "请问差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0017", "query": "请问一线城市住宿限额？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0018", "query": "请问差旅住宿标准有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0019", "query": "请问一线城市住宿限额有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0020", "query": "帮我查一下差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0021", "query": "帮我查一下一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0022", "query": "帮我查一下差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0023", "query": "帮我查一下一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0024", "query": "帮我查一下差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0025", "query": "帮我查一下一线城市住宿限额？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0026", "query": "帮我查一下差旅住宿标准有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0027", "query": "帮我查一下一线城市住宿限额有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0028", "query": "我想了解差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0029", "query": "我想了解一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0030", "query": "我想了解差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0031", "query": "我想了解一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0032", "query": "我想了解差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0033", "query": "我想了解一线城市住宿限额？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0034", "query": "我想了解差旅住宿标准有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0035", "query": "我想了解一线城市住宿限额有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0036", "query": "制度里差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0037", "query": "制度里一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0038", "query": "制度里差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0039", "query": "制度里一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0040", "query": "制度里差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0041", "query": "制度里一线城市住宿限额？", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0042", "query": "制度里差旅住宿标准有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0043", "query": "制度里一线城市住宿限额有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0044", "query": "出差餐补怎么报", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0045", "query": "餐补标准每天多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0046", "query": "差旅餐费怎么报", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0047", "query": "出差吃饭补贴规则", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0048", "query": "市内交通能实报实销吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0049", "query": "出差餐补是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0050", "query": "出差餐补标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0051", "query": "请问出差餐补怎么报", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0052", "query": "请问出差餐补是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0053", "query": "请问出差餐补标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0054", "query": "查一下出差餐补怎么报", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0055", "query": "查一下出差餐补是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0056", "query": "查一下出差餐补标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0057", "query": "机票舱位有什么限制", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0058", "query": "国内航班只能订经济舱吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0059", "query": "差旅机票舱位规定", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0060", "query": "国际航班舱位怎么选", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0061", "query": "出差订机票有舱位要求吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0062", "query": "值班补贴怎么算", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0063", "query": "出差周末值班补贴", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0064", "query": "值班补贴按日计算吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0065", "query": "差旅值班补贴标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0066", "query": "高铁二等座可以报销吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0067", "query": "火车卧铺报销要说明理由吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0068", "query": "差旅坐火车什么座位能报", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0069", "query": "出差高铁座位规定", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0070", "query": "差旅报销要在多久内提交", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0071", "query": "归来后多少天提交差旅发票", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0072", "query": "差旅报销截止时间", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0073", "query": "出差回来报销时限", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0074", "query": "因公出差要提前申请吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0075", "query": "差旅总则怎么说的", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0076", "query": "出差审批通过后才能预订吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0077", "query": "差旅申请流程", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "travel"]}
+{"id": "rag_0078", "query": "年假有多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0079", "query": "满一年年假几天", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0080", "query": "年假最多可以到多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0081", "query": "年假逐年递增规则", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0082", "query": "年假有多少天？", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0083", "query": "年假有多少天啊", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0084", "query": "请问年假有多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0085", "query": "请问年假有多少天？", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0086", "query": "请问年假有多少天啊", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0087", "query": "手册里年假有多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0088", "query": "手册里年假有多少天？", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0089", "query": "手册里年假有多少天啊", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0090", "query": "病假需要什么材料", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0091", "query": "请病假要医院证明吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0092", "query": "病假证明材料要求", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0093", "query": "事假怎么申请", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0094", "query": "事假要书面申请吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0095", "query": "远程办公如何申请", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0096", "query": "远程办公要邮件抄送领导吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0097", "query": "远程办公最长多久", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0098", "query": "居家办公申请流程", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0099", "query": "远程办公单次不超过两周吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0100", "query": "试用期考核说明", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0101", "query": "转正前要述职吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0102", "query": "试用期360评估", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0103", "query": "转正考核怎么做", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0104", "query": "加班调休规则", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0105", "query": "加班优先调休还是加班费", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0106", "query": "超时加班费怎么发", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0107", "query": "加班调休怎么算", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0108", "query": "入职要交哪些材料", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0109", "query": "入职材料身份证学历证明", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0110", "query": "入职日提交离职证明吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0111", "query": "新员工入职材料清单", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0112", "query": "离职交接要注意什么", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0113", "query": "离职资产归还和账号注销", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0114", "query": "最后工作日要完成什么交接", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0115", "query": "离职交接流程", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0116", "query": "密码多长时间必须更换", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0117", "query": "密码多久换一次", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0118", "query": "密码至少每90天更换吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0119", "query": "密码长度不少于多少位", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0120", "query": "公司密码策略是什么", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0121", "query": "能否使用私人U盘", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0122", "query": "禁止使用私人U盘吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0123", "query": "外接存储有什么规定", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0124", "query": "私人U盘能不能用", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0125", "query": "公司加密盘可以用吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0126", "query": "文档加密要求", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0127", "query": "机密级文档要加密吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0128", "query": "未脱敏数据能外发吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0129", "query": "文档加密怎么规定的", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0130", "query": "双因素认证要求", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0131", "query": "VPN要开MFA吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0132", "query": "邮箱强制开启双因素吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0133", "query": "MFA强制范围", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0134", "query": "办公电脑锁屏规定", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0135", "query": "离开座位要锁屏吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0136", "query": "空闲超时多久锁屏", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0137", "query": "电脑锁屏超时15分钟吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0138", "query": "钓鱼邮件怎么处理", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0139", "query": "可疑链接要上报安全邮箱吗", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0140", "query": "收到钓鱼邮件怎么办", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0141", "query": "钓鱼邮件上报流程", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0142", "query": "系统总体架构分几层", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0143", "query": "架构有交互层逻辑层数据层吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0144", "query": "系统三层架构是什么", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0145", "query": "总体架构怎么划分", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0146", "query": "知识库检索用什么数据库", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0147", "query": "SQLite和Qdrant怎么混合检索", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0148", "query": "向量库用的是Qdrant吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0149", "query": "关键词检索和向量检索如何结合", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0150", "query": "向量检索集合名称约定", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0151", "query": "集合名称是omni_chunks吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0152", "query": "Qdrant集合叫什么", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0153", "query": "向量集合命名约定", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0154", "query": "对话流式输出协议", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0155", "query": "流式输出用SSE吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0156", "query": "前端按什么事件类型渲染", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0157", "query": "SSE协议怎么用在对话里", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0158", "query": "数据分析沙箱隔离", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0159", "query": "沙箱在Docker里运行吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0160", "query": "沙箱能访问生产库吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0161", "query": "数据分析沙箱隔离怎么做的", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0162", "query": "Agent工作流基于什么编排", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0163", "query": "LangGraph编排工具吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0164", "query": "工具经Gateway治理吗", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0165", "query": "Agent和Gateway的关系", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0166", "query": "销售额最高的区域是哪个", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0167", "query": "哪个区销售额最高", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0168", "query": "华东销售额是多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0169", "query": "销售额最高的区域", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0170", "query": "西部销售额是多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0171", "query": "西部销售额为多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0172", "query": "查一下西部销售", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0173", "query": "西部地区销售数据", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0174", "query": "华北区销售多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0175", "query": "华北区销售数据", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0176", "query": "华北销售是80吗", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0177", "query": "华北区销售额", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0178", "query": "各区销售均值", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0179", "query": "销售均值大约多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0180", "query": "各区销售均值是多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0181", "query": "区域销售平均值", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0182", "query": "华东区KPI完成率", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0183", "query": "华东KPI是多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0184", "query": "华东区KPI完成率95%吗", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0185", "query": "华东KPI完成情况", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0186", "query": "华南区销售多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0187", "query": "华南销售同比去年增长", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0188", "query": "华南区销售数据", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0189", "query": "华南同比增长多少", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0190", "query": "西部渠道客户数", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0191", "query": "西部渠道覆盖要补强吗", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0192", "query": "西部客户数最少吗", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0193", "query": "西部渠道情况", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0194", "query": "会议室预约规则", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0195", "query": "会议室要提前一天预约吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0196", "query": "会议室最长连续占用多久", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0197", "query": "怎么预约会议室", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0198", "query": "会议室预约流程", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0199", "query": "访客登记流程", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0200", "query": "访客要前台登记吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0201", "query": "访客临时卡怎么领", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0202", "query": "访客离开要归还临时卡吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0203", "query": "访客WiFi怎么连", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0204", "query": "访客WiFi的SSID是什么", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0205", "query": "Omni-Guest密码在哪看", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0206", "query": "访客无线网怎么用", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0207", "query": "门禁卡补办", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0208", "query": "门禁卡丢了怎么办", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0209", "query": "门禁卡补办工本费多少", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0210", "query": "行政部补办门禁卡吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0211", "query": "打印机使用规范", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0212", "query": "打印机默认双面打印吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0213", "query": "彩色打印要审批吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0214", "query": "打印规范是什么", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0215", "query": "快递收发怎么弄", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0216", "query": "大件快递放前台货架吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0217", "query": "个人取件要登记吗", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0218", "query": "快递收发规定", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0219", "query": "发票抬头有什么要求", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0220", "query": "发票抬头要和公司全称一致吗", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0221", "query": "税号填报要求", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0222", "query": "报销发票抬头规范", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0223", "query": "日常费用报销超过多少要加签", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0224", "query": "单笔超过2000元要部门负责人加签吗", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0225", "query": "费用报销加签规则", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0226", "query": "大额报销审批", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0227", "query": "预算申请什么时候交", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0228", "query": "季度预算何时提交财务BP", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0229", "query": "预算申请流程", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0230", "query": "上季末提交季度预算吗", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0231", "query": "对公付款周期", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0232", "query": "对公付款每月哪几天", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0233", "query": "付款批次是15日和月底吗", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0234", "query": "对公打款时间", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0235", "query": "备用金领用限额", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0236", "query": "备用金最多5000吗", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0237", "query": "备用金多少天内冲账", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0238", "query": "备用金领用规则", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0239", "query": "合同付款要附什么材料", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0240", "query": "合同付款要扫描件和验收单吗", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0241", "query": "合同付款附件要求", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0242", "query": "对公合同付款材料", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0243", "query": "VPN账号怎么申请", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0244", "query": "VPN开通要多久", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0245", "query": "VPN工单提交到IT服务台吗", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0246", "query": "VPN账号申请流程", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0247", "query": "电脑领用流程", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0248", "query": "新员工入职当天发笔记本吗", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0249", "query": "IT发放标准配置笔记本吗", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0250", "query": "电脑领用找谁", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0251", "query": "软件安装有什么限制", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0252", "query": "只能装白名单应用吗", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0253", "query": "公司镜像以外的软件能装吗", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0254", "query": "软件安装规范", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0255", "query": "邮箱容量默认多少", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0256", "query": "邮箱默认50GB吗", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0257", "query": "邮箱超限怎么扩容", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0258", "query": "邮箱容量申请", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0259", "query": "故障报修怎么提", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0260", "query": "IT热线还是门户工单", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0261", "query": "电脑故障报修流程", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0262", "query": "IT故障工单", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0263", "query": "账号注销什么时候做", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0264", "query": "离职当天禁用域账号吗", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0265", "query": "邮箱转发离职怎么处理", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0266", "query": "账号注销流程", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0267", "query": "Omni-Butler支持哪些能力", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0268", "query": "有没有日历助手和数据分析沙箱", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0269", "query": "知识库问答功能有吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0270", "query": "产品主要功能有哪些", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0271", "query": "知识库单文件上限多少", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0272", "query": "知识库支持PDF Word Excel吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0273", "query": "Markdown能上传知识库吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0274", "query": "知识库文件大小限制50MB吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0275", "query": "引用角标是什么意思", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0276", "query": "引用角标能打开原文吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0277", "query": "检索片段和角标的关系", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0278", "query": "引用角标怎么用", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0279", "query": "日历助手能取消会议吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0280", "query": "日历助手要绑定企业邮箱吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0281", "query": "日历助手支持改期吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0282", "query": "日历助手能创建会议吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0283", "query": "沙箱能跑Python和SQL吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0284", "query": "沙箱结果会话外可见吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0285", "query": "数据分析沙箱执行什么", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0286", "query": "沙箱结果可见范围", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0287", "query": "会话记忆保留多少轮", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0288", "query": "会话记忆默认30轮吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0289", "query": "会话记忆能手动清空吗", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0290", "query": "记忆保留轮数", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0291", "query": "对外合同要法务审核吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0292", "query": "合同金额超50万要会签吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0293", "query": "公司法务会签条件", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0294", "query": "对外合同审核流程", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0295", "query": "个人信息处理原则", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0296", "query": "最小必要原则是什么", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0297", "query": "能超范围采集个人信息吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0298", "query": "个人信息采集规范", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0299", "query": "竞业限制多久", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0300", "query": "核心岗位竞业限制12个月吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0301", "query": "离职后竞业限制适用吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0302", "query": "竞业限制规定", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0303", "query": "印章使用规定", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0304", "query": "公章和合同章要分开保管吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0305", "query": "用印要登记吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0306", "query": "印章保管要求", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0307", "query": "供应商尽调要做什么", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0308", "query": "新供应商合规问卷", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0309", "query": "供应商资质核验", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0310", "query": "供应商尽调流程", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0311", "query": "数据出境要评估吗", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0312", "query": "跨境传输安全评估", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0313", "query": "数据出境备案要求", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0314", "query": "跨境数据传输合规", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0315", "query": "一线城市住宿标准每天限额多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0316", "query": "其他城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0317", "query": "餐补每天100元吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0318", "query": "差旅市内交通报销方式", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0319", "query": "国际航班舱位限制", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0320", "query": "差旅报销15个工作日", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0321", "query": "年假满一年5天吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0322", "query": "年假最多15天吗", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0323", "query": "远程办公抄送直属领导", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0324", "query": "试用期述职要求", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0325", "query": "加班费发放条件", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0326", "query": "密码12位要求", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0327", "query": "禁止外接存储规定", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0328", "query": "机密级须加密", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0329", "query": "VPN双因素认证", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0330", "query": "交互层逻辑层数据层", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0331", "query": "混合检索SQLite Qdrant", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0332", "query": "omni_chunks集合", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0333", "query": "Docker沙箱隔离", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0334", "query": "华东销售120", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0335", "query": "华北销售80", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0336", "query": "西部销售60", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0337", "query": "华南销售90", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0338", "query": "会议室连续占用4小时", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0339", "query": "访客临时卡归还", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0340", "query": "SSID Omni-Guest", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0341", "query": "门禁卡工本费50元", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0342", "query": "发票税号填报", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0343", "query": "2000元加签", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0344", "query": "备用金30天冲账", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0345", "query": "付款批次月底", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0346", "query": "VPN开通1个工作日", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0347", "query": "邮箱扩容申请", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0348", "query": "域账号离职禁用", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0349", "query": "白名单应用商店", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0350", "query": "知识库50MB上限", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0351", "query": "引用角标打开原文", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0352", "query": "沙箱会话内可见", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0353", "query": "记忆清空入口", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0354", "query": "法务会签50万", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0355", "query": "竞业限制12个月", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0356", "query": "用印登记", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0357", "query": "数据出境备案", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0358", "query": "我想查差旅住宿标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0359", "query": "帮我看看出差餐补", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0360", "query": "年假天数是怎么规定的", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0361", "query": "病假材料清单", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0362", "query": "私人U盘禁令", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0363", "query": "电脑锁屏超时", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0364", "query": "SSE流式协议", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0365", "query": "Gateway治理工具", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0366", "query": "各区销售平均水平", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0367", "query": "华东KPI完成率", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0368", "query": "会议室预约提前多久", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0369", "query": "打印机彩色审批", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0370", "query": "季度预算提交时间", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0371", "query": "合同付款验收单", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0372", "query": "IT故障报修热线", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0373", "query": "新员工电脑领用", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0374", "query": "日历助手绑定邮箱", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0375", "query": "知识库支持哪些格式", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0376", "query": "个人信息最小必要", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0377", "query": "供应商资质核验要求", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0378", "query": "出差申请要提前吗", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0379", "query": "火车卧铺报销说明", "gold_doc_keys": ["travel_policy"], "tags": ["policy"]}
+{"id": "rag_0380", "query": "离职交接最后工作日", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0381", "query": "入职材料学历证明", "gold_doc_keys": ["hr_handbook"], "tags": ["hr"]}
+{"id": "rag_0382", "query": "钓鱼邮件上报", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0383", "query": "邮箱强制MFA", "gold_doc_keys": ["security_policy"], "tags": ["security"]}
+{"id": "rag_0384", "query": "LangGraph工作流", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0385", "query": "三层架构说明", "gold_doc_keys": ["arch_doc"], "tags": ["tech"]}
+{"id": "rag_0386", "query": "西部渠道补强", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0387", "query": "华南同比增长", "gold_doc_keys": ["sales_table"], "tags": ["tabular"]}
+{"id": "rag_0388", "query": "快递大件前台货架", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0389", "query": "访客登记领临时卡", "gold_doc_keys": ["office_guide"], "tags": ["office"]}
+{"id": "rag_0390", "query": "备用金领用限额5000", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0391", "query": "对公付款两个批次", "gold_doc_keys": ["finance_policy"], "tags": ["finance"]}
+{"id": "rag_0392", "query": "邮箱容量50GB", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0393", "query": "软件白名单限制", "gold_doc_keys": ["it_ops"], "tags": ["it"]}
+{"id": "rag_0394", "query": "会话记忆30轮", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0395", "query": "沙箱跑SQL", "gold_doc_keys": ["product_faq"], "tags": ["product"]}
+{"id": "rag_0396", "query": "公章合同章保管", "gold_doc_keys": ["legal_compliance"], "tags": ["legal"]}
+{"id": "rag_0397", "query": "请问差旅住宿标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0398", "query": "请问机票舱位限制", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0399", "query": "请问值班补贴标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0400", "query": "请问年假天数规定", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0401", "query": "请问病假材料要求", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0402", "query": "请问远程办公申请", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0403", "query": "请问加班调休规则", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0404", "query": "请问密码更换周期", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0405", "query": "请问私人U盘禁令", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0406", "query": "请问双因素认证要求", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0407", "query": "请问文档加密要求", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0408", "query": "请问系统总体架构", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0409", "query": "请问向量集合omni_chunks", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0410", "query": "请问SSE流式输出", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0411", "query": "请问沙箱Docker隔离", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0412", "query": "请问华东销售额", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0413", "query": "请问西部销售额", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0414", "query": "请问各区销售均值", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0415", "query": "请问华东区KPI", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0416", "query": "请问会议室预约规则", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0417", "query": "请问访客登记流程", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0418", "query": "请问访客WiFi连接", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0419", "query": "请问门禁卡补办", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0420", "query": "请问发票抬头要求", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0421", "query": "请问备用金领用", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0422", "query": "请问对公付款周期", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0423", "query": "请问预算申请时间", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0424", "query": "请问VPN账号申请", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0425", "query": "请问电脑领用流程", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0426", "query": "请问邮箱容量扩容", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0427", "query": "请问故障报修工单", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0428", "query": "请问知识库文件上限", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0429", "query": "请问引用角标说明", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0430", "query": "请问日历助手能力", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0431", "query": "请问会话记忆轮数", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0432", "query": "请问对外合同审核", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0433", "query": "请问竞业限制期限", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0434", "query": "请问供应商尽调", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0435", "query": "请问数据出境要求", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0436", "query": "帮我查差旅住宿标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0437", "query": "帮我查出差餐补标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0438", "query": "帮我查机票舱位限制", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0439", "query": "帮我查值班补贴标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0440", "query": "帮我查年假天数规定", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0441", "query": "帮我查病假材料要求", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0442", "query": "帮我查远程办公申请", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0443", "query": "帮我查加班调休规则", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0444", "query": "帮我查密码更换周期", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0445", "query": "帮我查私人U盘禁令", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0446", "query": "帮我查双因素认证要求", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0447", "query": "帮我查文档加密要求", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0448", "query": "帮我查系统总体架构", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0449", "query": "帮我查向量集合omni_chunks", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0450", "query": "帮我查SSE流式输出", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0451", "query": "帮我查沙箱Docker隔离", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0452", "query": "帮我查华东销售额", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0453", "query": "帮我查西部销售额", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0454", "query": "帮我查各区销售均值", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0455", "query": "帮我查华东区KPI", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0456", "query": "帮我查会议室预约规则", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0457", "query": "帮我查访客登记流程", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0458", "query": "帮我查访客WiFi连接", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0459", "query": "帮我查门禁卡补办", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0460", "query": "帮我查发票抬头要求", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0461", "query": "帮我查备用金领用", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0462", "query": "帮我查对公付款周期", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0463", "query": "帮我查预算申请时间", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0464", "query": "帮我查VPN账号申请", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0465", "query": "帮我查电脑领用流程", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0466", "query": "帮我查邮箱容量扩容", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0467", "query": "帮我查故障报修工单", "gold_doc_keys": ["it_ops"], "tags": ["it", "paraphrase"]}
+{"id": "rag_0468", "query": "帮我查知识库文件上限", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0469", "query": "帮我查引用角标说明", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0470", "query": "帮我查日历助手能力", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0471", "query": "帮我查会话记忆轮数", "gold_doc_keys": ["product_faq"], "tags": ["product", "paraphrase"]}
+{"id": "rag_0472", "query": "帮我查对外合同审核", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0473", "query": "帮我查竞业限制期限", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0474", "query": "帮我查供应商尽调", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0475", "query": "帮我查数据出境要求", "gold_doc_keys": ["legal_compliance"], "tags": ["legal", "paraphrase"]}
+{"id": "rag_0476", "query": "查一下差旅住宿标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0477", "query": "查一下机票舱位限制", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0478", "query": "查一下值班补贴标准", "gold_doc_keys": ["travel_policy"], "tags": ["policy", "paraphrase"]}
+{"id": "rag_0479", "query": "查一下年假天数规定", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0480", "query": "查一下病假材料要求", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0481", "query": "查一下远程办公申请", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0482", "query": "查一下加班调休规则", "gold_doc_keys": ["hr_handbook"], "tags": ["hr", "paraphrase"]}
+{"id": "rag_0483", "query": "查一下密码更换周期", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0484", "query": "查一下私人U盘禁令", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0485", "query": "查一下双因素认证要求", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0486", "query": "查一下文档加密要求", "gold_doc_keys": ["security_policy"], "tags": ["security", "paraphrase"]}
+{"id": "rag_0487", "query": "查一下系统总体架构", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0488", "query": "查一下向量集合omni_chunks", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0489", "query": "查一下SSE流式输出", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0490", "query": "查一下沙箱Docker隔离", "gold_doc_keys": ["arch_doc"], "tags": ["tech", "paraphrase"]}
+{"id": "rag_0491", "query": "查一下华东销售额", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0492", "query": "查一下西部销售额", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0493", "query": "查一下各区销售均值", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0494", "query": "查一下华东区KPI", "gold_doc_keys": ["sales_table"], "tags": ["tabular", "paraphrase"]}
+{"id": "rag_0495", "query": "查一下会议室预约规则", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0496", "query": "查一下访客登记流程", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0497", "query": "查一下访客WiFi连接", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0498", "query": "查一下门禁卡补办", "gold_doc_keys": ["office_guide"], "tags": ["office", "paraphrase"]}
+{"id": "rag_0499", "query": "查一下发票抬头要求", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}
+{"id": "rag_0500", "query": "查一下备用金领用", "gold_doc_keys": ["finance_policy"], "tags": ["finance", "paraphrase"]}

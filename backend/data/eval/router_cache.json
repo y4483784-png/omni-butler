@@ -1,0 +1,4502 @@
+{
+  "f237303e2667e970a838781b14f6cd025ca26cb2dc01d8ceddf7d93a44c301dd": {
+    "reasoning": "用户请求安排今天的周会，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0577edee6e0a4cb0a867203e23a3cd49fb254072c6044bc4154ae453cc8d7d90": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "eb026832448bdbbfcd5ba6fb9829c561b52f6dfbcfd9462cb7107cdfda828b87": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2406fe07f82561c225256e96eeaf6519cdfe2587dff2e82f2dc6c3faca7705e2": {
+    "reasoning": "用户提出预定会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "dff8da2baa714f1100076ce9409de5f38869837cd2dd991a9f41ccda9c0f2c96": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6ed53ae2453511b321d15b4402c2b03e2131cf626fa586503b86b399340abaec": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a86126b85671f7833cebda6b6a57d2c7889865988cc3ff0b984c2245913b1315": {
+    "reasoning": "需要设置一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "294ab6670268ddaee188335150c1f231a268819a96567606aa6487e99d00b16c": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f214f97dcc8c76777432b345215d2b7660e77f3e4c180b5f0100e9b94e750782": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "09eed0cac432fe1601f36687e40d2f2a1c0442e4d1dd8f90af6df589e59800b7": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "aab7db3b2efaf1a95094feb5afc705464c8c0c14977e144110306d9443ef6046": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "47794ee519d052f80205be6ad7c8b9009f55f8af5a9453fa93ea1b65579d613a": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cd65cef151ae9fbdb5c31541cd1889e433c2ddce84472fada7c7bd0b44cde7e8": {
+    "reasoning": "需要添加会议提醒",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d87b979f6c6c418b322104f68825d7939c4bd3415eb31f2a36232d322eaf7c07": {
+    "reasoning": "用户提出预定会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bb0ffe6a2618e9329aef53e8419c94d75e38c17f35513ee0c310a5fbdcad0141": {
+    "reasoning": "用户需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e55a3e1dd9338a89f3be87ef6b1c5ade7da3ecb3acf74123b152762f5bdbd3db": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "48d47d9d33fa0c6a71929ff7678e1edfac51a5d7feead738022872cb8b17bb42": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "503c56a3e8428b751f99986100457286fe41355a198670e86e1b7d48beeaee05": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0e1d31029dac690511c964e216a65988c9225ef3e145f44223a77fdb699b59d3": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f6a8c4d68362343d3c7081a4c3ac231f8799b1544be9f65d6f1a476117d04e5b": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c38f16c41e763e87bf25c277e3c0065c18b0147e6efe2c7ff9b6cc4869b97d65": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "024c77ae738a543f45c67539fc7115e248bbb3a43fcecc6afd748595b9148afb": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1fd22e852202dbfdf3e6adb7e198ca64e136ae3d822f21ed89574142bbcfbf62": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cb4d5f6d1cb6baa6ea68337512aa5daf77d620e40b0963d9a9bcb947fb474ecb": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ace7f9d205f019f03a6b9ea0d2e6e9a1058edebe7b393a01d179cb1b94168842": {
+    "reasoning": "用户请求安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8d7466d3dfa6e58c186e50d4c660c0980d4542bdcf9b8e7dce529bb584e79be1": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d1bec763b69159d900605465a8c7d72c540765fcd3373193d8c648d920966051": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d39be5e0cde88025f663c846c83ac3816ab18b3a101f958e88737e0364387104": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2d91278024ddfb4741a37496c6dfe1c03907875f123daa6d8b75fde5cd6484e2": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2bdd5f6fe46aca34affb87a503eb51370b87cacfcdf5b223ff91df2abe89b125": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4738501cc4051b0fe5b4ed7d36cbc46fc5015a950b553b8fd3e07954895ad7a5": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2fca93ff256de5c166b52e73d0e8cd1a67f8b21d8a8af66aa499f1c598d8e851": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ab8e615e8c236bcd7ec982141c2a1cbb4a82c923543f95c1697a12edd818d43d": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d0672e908883af624e9e795762dd7c52b6ee7eb9e9c6fb059b74adaa7cd89ed9": {
+    "reasoning": "用户提出安排会议，需要使用日程工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "80167ec23db257b34cc3f6a132576a6a2e84ad4d81c696e6ffc8b85ad6e0de73": {
+    "reasoning": "用户需要安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "fad3aa92a468a7d27c1c1ea4a795a847b8be0a4b57a0c0b82731cecca9aff7b4": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c0da7040031a00af50c9483b0bd06ed87747ae384a1fbe05425a05f05dc85cc7": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "274037b74b539a072807c651e5bb2793fda89128cfab00e03890b5e771b81c43": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9ea1f461105b22e3046eccd19409d803a4ea9e6e924ed650623797d76a84c114": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1707966b41283fb509105e8455db87d0908a114bddbbb0d5595701151c94ffdf": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "800790db81bbe8317b014ee70498476d9ea97056ec4b7ed3806bfaa19f042c65": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "496bcce9e9fda3cd1ac5ba185d8b6251d2e2bf9640611dadfffe2fa673df8005": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4926ea511a157ac1263cee29ab2724ff5006ad924200efcfadd83f2288fbecd3": {
+    "reasoning": "需要添加会议提醒",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "27567a4087e60dbd873d89ed08f0fb5ebb54774eda174f255bea06c13286340f": {
+    "reasoning": "用户提出安排会议的时间，需要使用日程工具来创建会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5a5154d444fcb7543290d7a661b280a446e64249ed9d5af576281a49cb6a6d9d": {
+    "reasoning": "用户请求安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d978047b3934c750aa86fc2b7704c8335d27fa705e07c42d420d465cca66423f": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b65b09219f7f2c0c4ab89a51d20e79c9523f86b64108478adec9eb52ab2d3913": {
+    "reasoning": "需要设置一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "539f78f6e9e82bdc5f8abc6ae1270029686dff2bc22ddb0728bd7bd44576294e": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2ff131fbf9adaff32341bd2c695e2e6d0c859faa8fa20561f3bb5adbad9aa26a": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "55d966083df1db1772aeaa4722ef723a333ace898b5c6fb1ab97c3e9896a1e13": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d2d5ecdfcb49ea7ecaee9a73356128cfb1e3038a7cf06355141052e21c3e90c7": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "89087bc061360e024ac5a31213bd05bda797806ef2ffdb533fb295e39021c3d7": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4dedabb4c1c582898c65e7a3da7f0060eea9370a0c391d3affa272e95b6873da": {
+    "reasoning": "需要添加会议提醒",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7aea6a62f3d2b38496702b47085082eec7b8c512b028f3aa1006f90f80e046dd": {
+    "reasoning": "用户提出预定会议，需要修改日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "904bb1b0fbf40306eeabd94e0fa68df3a4c2e0bf6563b80eeb5f7887c2170204": {
+    "reasoning": "用户需要安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0ffc7a23cb4008c2f243ac92c818fd951eb4e0a9d13c5bb633f992925af00d0a": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1600b7e98f6beed7e889605d9923858ceedb06860f58d1ab7a38ab85e26f95b3": {
+    "reasoning": "需要设置一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3d6dcd7157b89e5fdfee853c9df1c10a6057bf05696298b591f5b052d9215c4a": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c4fc92dd010d9ac7d12ad58d01735197ee13b9fce94bbdf629fee79c5bd4b94d": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "489c673ee2f897baec5fa1aa68ca3285066427a477046a9886af09077d007b69": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b3fe7e5bd9d9521d2660a595a64999fc2b89113d6f3f1d66d8bd3d7ed264d49f": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3db5f626ddd4a26f36ee1a26300ea1387bc1f1d7feae153fef7a6bf8b6924602": {
+    "reasoning": "用户提出安排会议的时间请求。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "dcfc4a84878a1eff7ffe234e95b69d5a4936829e7612b1249a93196a4306c56b": {
+    "reasoning": "需要添加会议提醒",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "71227f4ee08aa0a7076b068e317ccf992b714779adf72bbc64c2fcb0bbf1f779": {
+    "reasoning": "用户提出预定会议，需要修改日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "14f8e64c6c959c7aa551ab00f67f594b9d5e26457606adbc8946488e4afb0ea2": {
+    "reasoning": "用户需要安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "35c8f363f0a45ad123cf19b3b458b59db1619d96b8ab8268a5ddfcaf96aa742f": {
+    "reasoning": "用户请求将评审会排进日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4c4b05d2b671d0d05d3cc7ef0200d8b381755bcbcf818a389b9a3445852c7982": {
+    "reasoning": "需要设置一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "43fa1af0096f1dcbc6a730a439e765cbf9fdcabef3097d54f4a0dce4c7f0a29d": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9930d7694ad1f69cdda7dfe30f212a0e3b6e9e2ffbf2a48caca404f3ec7976c1": {
+    "reasoning": "需要创建会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "346794db870984169487a5e7d9e413970947891171d37f26ad0472e41e9f440e": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c9fad3501b36abf971323ca2e1431fbbe7500c4e71fee859acd2625ee386b3a6": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cbccd494e28bfe63e57b91458ac1144350d3e130909110bb10f989be42a4a7d0": {
+    "reasoning": "用户提出安排会议的时间请求。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7c8fe12862d13e510ffe3c9256510960c1eca7c74179244aeb404066b5972022": {
+    "reasoning": "需要添加会议提醒",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "dfd74025b9ea42bb41dab4b71c0f1110406a28275028dc47d6749065ea40e75e": {
+    "reasoning": "用户提出预定会议，需要修改日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5b4d533e58b596c8e3ce0c38fa688d9af46aef2366a2228b6dc8d1ba18f3d2d5": {
+    "reasoning": "用户需要安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "66d55d39204d03b81b0b0fe82e490a87450309c12a92bb821ae48c4d84f19bcf": {
+    "reasoning": "用户请求将评审会排进日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c7029f71db38a217ce9c5053dae12a9f1ef1622ed9e154b7cc9ba3affd07e9c2": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bc5776539f3f161c6066b8fa7bcde1fada45e3d70027e0e1335f2152ad578d53": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8d9fb64e65d458a864305bdb818fc8e319599a97ec283d2eebfa543efea3c1d6": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "83a4466ec0cc84f35b32d98de960b2db7e1f16f91effdb08a40a2c8f4b69a690": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a00126c2c3e134064a242e9a46961bb45f56c80b58a0fc37ee2549351d924929": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8479abff7b3e52602113e5fecc29ad0403fd6001dd74b0adbd1db60b0044b95f": {
+    "reasoning": "确定性闲聊短句",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cb9bbefc5453854edc55d78847752726569850e8e64c708c943fb7a9a5becb65": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4ed3dbdd3deb82aba0a433303fcb7260d53d6f028de0449cf479c1150ccfbc32": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "03ba165dfa80e1ddc1a5b2a8cf7b999872b744dd5ebe2ebbcb5f433999c39cd6": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b63a007fb8cf5ad028a14485523effe376c595888e6962e265edae8967af912a": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a52a6f7d4f17e0cc64fcfe90547bbbd78a8075648030af52f07b321f77f57cd9": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "897223f46b8bb53d8a03af6a32c7f7d139475cf5068140f4ec19f80f791a9105": {
+    "reasoning": "用户确认理解，无需使用任何工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a68fc21646c0124bbd1a03d901a1bed9d661b55e515d339bef1402aba96b0e74": {
+    "reasoning": "确定性闲聊短句",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a1fbe69477dc56f77517bbbf89e802a29558e8a63a9c1a433dd64c9a1b040b83": {
+    "reasoning": "确定性闲聊短句",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c35c3247dd8e08264150d6a3374c7353a08716adf68604cdf9e3dc6952f3aa1c": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6ff71327289771b62bc7a03ee2e665a73c4250f6d28da19e6a388b4b8738787d": {
+    "reasoning": "纯闲聊，不涉及文档或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b5e0036e491f76672c1150c92edd81858313cd0cbf943834a3dd2edcbceffa01": {
+    "reasoning": "用户请求润色文字，属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "65541e8150583174cc9625f852585b8c735a74f3974d97369ba1a976d00004a0": {
+    "reasoning": "将请求以更正式的语气表达。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f094f5ccf82c95f5e2037c6f3b6a3c55ac5473256bb670d5706b3cbc786d48af": {
+    "reasoning": "用户询问的是通用常识定义，不涉及任何文档内容。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "35d304b651cc13e6231da09db6f9403494f76f18d50c3f261e5d6fc83a664007": {
+    "reasoning": "用户询问一个通用常识定义，不涉及任何文档内容。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8028841737016630ab4aa6c815be640711f70cbd23477c9efe8f63507ccc523c": {
+    "reasoning": "用户提问的是通用常识定义，不涉及任何文档内容或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ed744bf86337a6158cb0299e2ee2daa32b1042dfbea957cc51efc9bc4db2ffc8": {
+    "reasoning": "纯闲聊，不涉及文档事实或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "849182f9482c0d01fa73d66a6349aa4b75be0d75194f8b2d0ad74ebf08425bcd": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ce29b2aaf2db51f98f2190113b0c88e7dc36ae79efb614eb79e23f66f4b03633": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "39716dea0afd75fef325cf9a91c9bbc3656a7a09eb039fbbd182295f16597ce6": {
+    "reasoning": "用户请求帮助构思会议开场白，属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9cea4c8ce1534a28dad0cfc60261055cf1537eb4d283662a17832a0deff414df": {
+    "reasoning": "用户请求创建一个简短的周报提纲，属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bf23a9f0fb7de2d1a81e197b7d0467863645866d1049e8480ef2e8dae9b1937e": {
+    "reasoning": "项目代号通常需要创新和独特性，不涉及具体文档内容或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d360b1d536c0e44a0ece8da6036b1f6a6c4a75dfa3634902e3f4d14193902582": {
+    "reasoning": "此问题涉及通用社交礼仪，不属于特定文档内容或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "51c18f7039a81fd21ccae9c570da6630565b2f26e6eca871f388ff065518f50e": {
+    "reasoning": "纯闲聊，不涉及任何文档或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c23cb9be89d49d4162c6c6e06ff1ce6334c78880647042733626a6b854ef973e": {
+    "reasoning": "用户询问系统能做什么，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "80192a27138329954458637b751987e07b3fa03116e1665036d0b7eb3ea2adb7": {
+    "reasoning": "用户请求换个说法，可能需要写作润色或通用常识定义，不涉及特定文档内容。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "16d2a11c5f119149ade01795f73a92364e523b02ba31234b521cf166cd0f93da": {
+    "reasoning": "用户提问简单，但没有具体上下文，无法确定是否需要使用特定工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "f37c2a146f07ad2e1644241b55c1de0e9c4a5e43fcc111a0567f289b0a7614a8": {
+    "reasoning": "用户请求更详细的信息，但没有提供具体上下文或文档，无法确定需要使用哪种工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "798607d577c5a5522e964a5a93721d6f61ab01250a4dd12d14af1b3a44349915": {
+    "reasoning": "用户请求以表格形式列出信息，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "65188c5b774b229dafaec2751f9acb2bb59a40a0e2248c0d5b1b947686bda006": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "63a4a8cf1b0c6290440751c4692fcc2d5b2c98111f54618f3dacb9869e29b34e": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "745c4088de10f34a5f050b9b658fb97a458172c04e285295cc80fbdac9431099": {
+    "reasoning": "管理类书籍推荐属于通用常识，不需要使用特定工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5313c262b088f44d785ba5d9730d50515dd81870dc1663274e9c357c40e3164d": {
+    "reasoning": "通用常识定义",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "37b6b265262408ce6aab8d4fe7e2d56918b3e01911225f77da03d90c64501dd2": {
+    "reasoning": "用户请求创建一个待办模板，需要使用日程工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "257a36a239ea2bd471c7af6a482664cc86acfb6aad90a0f57318f511ed9be3f8": {
+    "reasoning": "用户请求写一封感谢邮件草稿，属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bb669a08ea8f905f6af479d3e4eeb6f7c6f890fb320c2fb8514a5f90951332dd": {
+    "reasoning": "头脑风暴问题通常用于激发创意和思考，不涉及具体文档内容或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "910e40d37a6f90afa90a765cf33be64a5388c70605b2fa672a2cafa2837246e2": {
+    "reasoning": "翻译请求，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "30e46cf4412a3eddbf7ddb389f3e12342bc80f63533015d6acdaa80e9fd49d3e": {
+    "reasoning": "翻译请求，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "64e0b5a7423bd9fa4ccbd3b8e68814fd2baf95ec9bd0ce9e4d480f1e51debdaf": {
+    "reasoning": "用户请求语法检查，需要使用通用常识。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "43ff0e803409e5b963235f391c38b0cab4539f52b9aaced2d53fa96369f11eca": {
+    "reasoning": "纯闲聊，不涉及文档事实或具体操作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f64ec364020f90bfd6f2aa331a1605cb063c4045008da807a8165d6d1bf2b10c": {
+    "reasoning": "用户询问关于 MVP 的定义，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f58c6d0fe235aecfd5cf634b44b5ab0b0a9c6f7008fc190adcc978d930262054": {
+    "reasoning": "用户请求一个冷知识，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8ee7b7453845b81c59c5accd5b17a20abe2d79a70ab83bedc9337e3f25119f6a": {
+    "reasoning": "纯闲聊，不涉及文档事实或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "fa07d825e2fd6ed36c28fde79fa2efc1079d68bbb03c55ce8ec1b46ebf3d385d": {
+    "reasoning": "用户请求帮助创作朋友圈文案，属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "05dfe24285fbdb23f19973b3637f4e8eb199ce909eb5197a8b520c9eaabffc3b": {
+    "reasoning": "通用常识定义",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f2ced99ddfa5092523037f20d6d59d32404a8360b8f3c55cc6f7c1c1f61b3ab2": {
+    "reasoning": "站会是一种团队沟通的会议形式，属于通用常识问题。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "036a17df8ba69f08d4e025b35e48cc303f2f44beaee09a35afd041bca82215a6": {
+    "reasoning": "处理团队冲突属于通用常识问题，不涉及用户私有文档内容。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b9f5c896b319d0ad35889dd8a4bc10b9c73b95a3f9cb6f449d0272275305f0e6": {
+    "reasoning": "用户请求列出出差行李清单，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "637a0fad64fa2bb580878f60f783035f7a4ea545c9890b139a6af45c222e6a44": {
+    "reasoning": "写诗润色",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c94958e7e26972b8ef4b39c2dbabb2abd084645980967399ba6d7233bf3f7c30": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "079833ba99900f65c2f132cb95005a96f68cc0dfbbd356297067879d29b300c2": {
+    "reasoning": "纯闲聊，不涉及具体事实或任务。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "eae2503a7f7beecda697625ab510738bf7d3728a230f5b63643285f40bbd650c": {
+    "reasoning": "无",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "11f20d4f5fb081b02abc7f83fd3b10dc987fb29083d1f7f305d7bc80128b4b43": {
+    "reasoning": "用户询问是否有其他信息，属于纯闲聊。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4d6e06ae15aa41af61c5e180d75454c7420b0422f19f38bd2b215059d20819d9": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cac66e213a4b70b656f3eb681dcac3b6311ce19b88bc3f0a51e4f5bebd67baee": {
+    "reasoning": "用户表示先到这里，没有具体需求，无需使用任何工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8a61069e1b99c8dee961e46b46e8820c0eb91795d68066eef4f656f7235b1529": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7ae092429a24dc0bfd32a2136b5e6db0dd274cb3a972484fcb31acc8428c8e75": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "278e932a74fc1c6406def0b1298d108160ae824b5007f024946c1f2637f2a4bd": {
+    "reasoning": "无具体问题，无法判断需要哪些工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "8b29944d90745ffc09dc94434770be6e5e2877ecea6526724af43c81cc01fe73": {
+    "reasoning": "用户对方案表示不满，但没有提供更多上下文，无法确定具体需求。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "6e45e7acbe233879b1d1efb32433e5475864f4673dad651c45f9d532d08949b2": {
+    "reasoning": "口号创作属于创意写作范畴，不涉及文档事实或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e6b7737ec03209cbd9bf95abea3670c64227860d92b2c009091493008d760905": {
+    "reasoning": "起活动主题属于创意类问题，通常不需要特定工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c8064a5111110a935a22e6abd3000c4a348e4fe5a7e18fc343535e3b4317fa6e": {
+    "reasoning": "用户请求创建一个免责声明模板，这属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6bcd3326abbf2f82c864c37ee0e3906aaf2d656c7b1db9c01f9dd08b771c1f7e": {
+    "reasoning": "会议纪要结构通常需要根据会议内容进行组织，涉及会议的基本信息、讨论要点、决策结果等。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5210ebaba5ac7ddddee565e2e58b548d11e083c0a4a47a8e1b6fa3193eb928a2": {
+    "reasoning": "用户请求一个优先级矩阵示例，这通常涉及到文档中的内容或在线搜索以获取相关信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "aedc204d5429c815e8ed72820647663b3facee8ceca57bee92d4a8832cc44129": {
+    "reasoning": "用户提问关于帕累托法则，需要解释其含义，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e258e2a96e03ee2870bcb7f1794bad926fc16e47e4a0af292b0bbc6eb1bf968c": {
+    "reasoning": "用户提问的是通用常识定义，不涉及任何文档内容。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "fcec058fb1615f0172d827d5d9d220855a6bd3bba926d82da4520cb52a80b501": {
+    "reasoning": "用户提问关于访谈方法，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5ccead60bb0c2a02cfb2eb790475203ea4470171997fb179aa8a8a8fcab0a70d": {
+    "reasoning": "产品经理的日常工作内容属于通用常识，不涉及用户私有文档或内部制度。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5e71eb1992ff88ae688f6904ab4998469ba4ea6053d43660f89da78849cc9598": {
+    "reasoning": "这是一个关于编程实践的问题，需要提供通用知识。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "de85712068a5069ecb1204a9a58a91add20670718753bc16c9d7fd31e9233f3b": {
+    "reasoning": "用户请求创建一个 README 文档的大纲，属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "111528b4a4ebdcd2dce4225d049c25dcc218b2ce25e25ab651e3d63315a1207f": {
+    "reasoning": "需要用更委婉的语气表达无法满足需求的情况。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6f18a3275ab967d112264aa0d740410cbe4842a1181a824a685dd4e9a217fe2f": {
+    "reasoning": "用户请求列出开放式问题，需要使用通用知识库来生成。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "03f746d2f9905c03dbee21d836577687af3b9b68e13147cefa6ca82f8a8b49b9": {
+    "reasoning": "决策树是一种数据结构，用于分类和回归分析，根据一系列规则对数据进行分类。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9e33009d6b9f754c9efff92b306afe5dd96629d3694f3486a0503c8093f5bd3d": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "97576e22c77a9f7cab8cae48dd90a5eebf5acc39c13a54812015a5f59f473c69": {
+    "reasoning": "纯闲聊，不涉及文档内容或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4757c1c1955b97d6a064336c7b0972fc69cd7b949f8ac6b91c7c30523d558a01": {
+    "reasoning": "安慰加班的人属于纯闲聊，不需要使用任何工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6d4b81a3b6dc2f33c1ac3d5a696b432bb989f667d11af7c54eeee370adb5f56f": {
+    "reasoning": "纯闲聊，不涉及文档或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4252971068fd2439cb2efa04b5d1e4cd4a0ef8e36e8773815ee93c7dac38f5ca": {
+    "reasoning": "写离职告别信开头属于写作润色，不需要使用任何工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c5718d0bf350af37b7c4a30b697f8fa48eff3936fb7a5130753025eb9fae6f02": {
+    "reasoning": "写入职欢迎辞属于写作润色，不涉及文档事实或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "dfc71c2e5ec27f05d8ddbe1d15c0c010d43f6a4221f85d6f0ce62f75be412338": {
+    "reasoning": "礼貌催进度属于通用常识问题，不需要使用特定工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b7765454e34c21ab6c1e48bf494cd2dcb090786ab2c687137909014292a6de81": {
+    "reasoning": "用户询问如何拒绝额外工作，这是一个通用问题，不涉及特定文档或数据。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "e11b13dc1df0a1fa52ba24b884ab0a69e30465c839706f1902d21163b6c4e47f": {
+    "reasoning": "询问如何进行工作安排，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6cb9e20b8167e9c4848d3ebdfe53080a61b417e955890e574de8415e7648677a": {
+    "reasoning": "OKR（目标与关键结果）是通用管理工具，无需特定文档或数据支持。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6be69ea0db6ae22701cbe43ee2cf205ed78434bcf9c9c7d7f6b2dac81e02f899": {
+    "reasoning": "用户提问关于敏捷和瀑布的区别，这是一个通用常识问题。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9bf2d79ed6bbaeddbb2b169f873797945c3f6a2f8f1f30222e620f4866e94293": {
+    "reasoning": "用户询问技术债的定义，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f63e1710525328151cb672317d2cd68c9edf877d812ec2f119ed0cc4abb23547": {
+    "reasoning": "用户询问如何进行代码审查，这是一个通用问题，需要使用外部信息来回答。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ba386ae7db2b194176ea8c6c778843e65363ccbfaa91b306ad61786bb617e3b7": {
+    "reasoning": "用户请求创建一个 standup 模板，这是一个通用请求，不需要特定工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "84ac4840fa10ea1c9f2af745e4bb4973017a019240cccb8c9c2c3dc4f77b685d": {
+    "reasoning": "用户请求创建一个学习计划框架，属于日程安排范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1403f9dfcc84306255ad0e55ceb88298511f23de8dd41c4df960da69b9224f99": {
+    "reasoning": "通用面试问题清单属于通用常识，不需要特定工具支持。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b5eb5f2ba86cf02ed1b1fa32bfb6b16dc8a0274dd9a29fe7ddb9b180d8679edb": {
+    "reasoning": "复盘会是一种工作流程，属于通用常识，不涉及用户私有文档内容。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "446b98a8c5156150915969a7a2f6f8e62ffbce93b1eb48904ad2a24386d6d608": {
+    "reasoning": "用户请求创建一个道歉信模板，这属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4b9a805de5dcd45098a0f42f0c83c565adda953cf9836a7e6f049984f346a6f1": {
+    "reasoning": "润色请求，不涉及文档或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3be77f19965f5173b2938734bbf7d0787706a563a083e23bd05fd33479881f09": {
+    "reasoning": "通用产品介绍通常属于公开信息，不需要访问私有文档或进行数据分析。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d8cb89c6dad28ee2ece552f8f1db40ccd298d119c8eefc042d5503c79c8edfa1": {
+    "reasoning": "生成电梯演讲通常需要根据特定主题和内容进行创作，不涉及查询文档或联网搜索。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "dce65a47d5a4b8a2783d136dbef7465e272a3f77cd51f9bd35c4f7cfc5815e77": {
+    "reasoning": "设定边界通常涉及个人或组织的行为准则和规则，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "564a12826918f080d87cb5e2f7d97ba23272a57f26a3a64d434cb9e4addeb2d6": {
+    "reasoning": "纯闲聊，不涉及文档内容或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6aa250609a49568a612fc026a8a56f391a086bdc43be2bac8d51182dc6816e45": {
+    "reasoning": "团队建设活动需要创意和策划，属于通用常识范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cda93ad407645bb4e837374bb3587b1ed38ebe7e06ec44ee77ae2eddae4fe557": {
+    "reasoning": "写问卷开场白属于写作润色，不涉及文档事实或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2c01d9c742c516c1ec8cf4d78fda639c909d0bcc5393f45eb2e9c0ca5cab278c": {
+    "reasoning": "生成满意度调查题干示例属于通用常识定义，不需要使用任何特定工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f1867a9eff98ca089058f434903ffe13d62093a418e6d9680e39f355cda254c3": {
+    "reasoning": "用户询问如何做时间盒，这是一个通用方法，不需要特定文档或联网搜索，因此不需要使用 kb 或 web 工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6d2767a59db5dbfcbc0ba671387924278b4445b25f39fff3df62074601b6f4ee": {
+    "reasoning": "用户提问关于番茄工作法，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6f97f380a36bb4acddaac5aa1e88d990446b201cd57dea6808ce0c0f71ed1052": {
+    "reasoning": "用户请求列出晨间例行事项，需要创建日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "da6966fe7aabb04431797f7c68481f90de35b5e37a33978c8b1442f71614967c": {
+    "reasoning": "纯闲聊，不涉及文档或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a70a55d8a90959fe9b032ad939298201484276dc48fe30cd91e3bcf2cdd78148": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "37469f444b49f6a23c59d20ab62968a5de678a3e592b538662f14be514ee6612": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d0e2d579a31c5174d1fc236336d9396a0b2e3b8a0492d2e60053efc4232f5f51": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3b0890a754affc303c0d7a3392fbdf5bd80dd8ed186690ff106d2c18d0425ac0": {
+    "reasoning": "用户请求有趣的对话，不涉及任何特定文档或数据，无需使用特定工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3f00de13a4a2a21b87bb8af4a2f5ccce1860e846c35439044e66af16697ae38d": {
+    "reasoning": "用户请求推荐播客主题，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0185f72fea373bde2146ad4fed0ff2d9716ed14f7306130c9fdcc7ce7d37eee5": {
+    "reasoning": "纯闲聊，不涉及文档或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "90880f78860822e3bd1479b35836672b4e11bea5d597bc459059562fbea90c9c": {
+    "reasoning": "笔名起名属于创作类问题，不涉及文档内容或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "74a55052043196690640a566944938683862f4773400ee29a6c887cf039abd56": {
+    "reasoning": "用户请求创作一个短故事的开头，属于写作润色范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "88de4cbba6450048f4e5de8b460bffd8588e1921c215af14a05c4ea7146f4973": {
+    "reasoning": "用户请求用文言文问候，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e3bd28ee187a662cd886ef80a32d1c187a578b20ed40be518a2c81a90cc1ca38": {
+    "reasoning": "用户请求用方言风格写句谢谢，属于写作润色，不需要使用任何工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "35ad345f6306ed62e9c2ef2c6de09924dc2e1c2ec5bb58698de416245f9d7696": {
+    "reasoning": "用户请求一个简单的数数任务，不涉及任何文档或数据分析，也不需要联网搜索或日程安排。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "fdb5d79127f4a93f956bf83342d16090a70e4987c91311e3d6a12f8ab1b4ca74": {
+    "reasoning": "重复用户的话是简单的命令执行，不需要使用任何工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d132e8dbc0c00e8909dc3e89ade696c85c848029d2eaddb3c52dadd25b108a22": {
+    "reasoning": "用户请求一个空列表示例，这通常涉及到表格数据的展示，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ee9b422799525df2ac162e0679b32d12a79fbae6288cb1a5e1e46d97e4d176c2": {
+    "reasoning": "用户请求一个随机励志短句，属于通用常识定义。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "554b48cd08ab9f27ddcd6a4b253402a3adf825146745a7dea6ed8e427b4bb612": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1dbc8e84ddc5a70cc3a68515f0c3839a1c6e3f206f7b73d017dcdb26d5aaad94": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9577566296fed05f99ce3cf57b6f86eee37de38325e1a7f386d2bc4a161acfa3": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b66ecb960a95236da310ce5ee65d451c7586798d49cb4465c765e7e3ffabfc30": {
+    "reasoning": "用户请求创造一个外号，属于闲聊范畴。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "909c47f3023a6bc5734428f0fca33ccc7d6b6735c86a23d2a33d18907a4d4644": {
+    "reasoning": "确定性闲聊短句",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "97c1fb33188a0cab7350de1628920571361346bb3a18e08329d3fc71a9bd1f40": {
+    "reasoning": "确定性闲聊短句",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "775bd7f0922d97e0ddf6e8c8b87e6a9412344ee4b860de71c636984c8589a7b3": {
+    "reasoning": "纯闲聊，不涉及文档事实或数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6d9b87448c0dd5f31eb6503d1fdf21d207548396e8d10a6cd5daa95599338d1d": {
+    "reasoning": "用户提问的是通用常识定义，不涉及任何文档内容。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "257542b4706d198d02b46c7beb70548556b30f379ee378e70db2b0f7e3b37dea": {
+    "reasoning": "润色文字属于写作润色，不适用kb、web、calendar、sandbox工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1e62df954c85e800e00ede61017cc7b6732e37da738ffdb69a210d25e23bb661": {
+    "reasoning": "用户取消了会议安排请求",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3b2f1ab321628fe61d61eafd7b9759e18eb19b81806e890e0bc0eb55581e7565": {
+    "reasoning": "用户提出取消明天下午的周会，需要修改日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "24a3a75d18334a73dc70332a091dd0fd4ba7fabeb70f0b5d9e4530a4255e4efc": {
+    "reasoning": "纯闲聊",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "694c6fe43ae701d96955a055b2e8f79902c3fd7af30add9baa2f5135d8d5ed8d": {
+    "reasoning": "用户询问差旅制度的报销上限，属于公司制度中的事实信息。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "728550413ed696ed6d60f24609d9ce09c8e708041f03d06a15001d6493a1843f": {
+    "reasoning": "用户询问关于加班的规定，属于公司制度中的事实型问题，需要查阅手册。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b4b6ef42070f086f520c6279ddfacc8b996953912bd0f40e8773137f85c79518": {
+    "reasoning": "用户请求根据知识库查报销制度，涉及公司制度，属于事实型提问。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f845bb74c3486e99cacf9c27060e6aa964460931567e58edf07131753f17876f": {
+    "reasoning": "涉及文档中的事实",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "301f36ab94498310d171355a586b2956d6d6eff3a5d03f264c306601418d9199": {
+    "reasoning": "用户请求绘制柱状图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d8de1bb1f633745179775cb44ed1f7f030d864f56568b3a29e58c89f96acc441": {
+    "reasoning": "用户请求进行统计操作，表明需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9c777279b20e111a51563fafd4a517cc355d2f37d090caa0be95debe51d381bc": {
+    "reasoning": "用户提问没有上下文，无法确定具体需求。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "eeab91958985342c423f9f7959255aed89af2ba8580beb95a74e59f3ce61c6da": {
+    "reasoning": "用户请求修改时间，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "24e52704f988abab05c07915969abbbd57acfed57c8fc5934b96f316fb3a5102": {
+    "reasoning": "用户强制知识库或指定了文档",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9d1faaecb94653b4141dc3f558d6358c3a620c961a318bbdeb1266763eb07fcc": {
+    "reasoning": "用户强制知识库或指定了文档",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7a96d0663871472091a7c1e6a9df535270988abdb44b166c5527fa7edde037f9": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a59876492ec75a5c748a7b6d55e8267da3b44e09e34653239b0d78d3a9a7170f": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1ed14fb0c695249432a279361048154dbe071a8a0770b24546b85991fdc00e21": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f7c8e8d8eae38b3a355c976028f2832867b487ef977312d0e27fdead71e5bd44": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "261273b3037b3b498a575fa6e27d2d32bd0175487fd89ac2ea0d9a2f7213ccd1": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "59aeb06dab3b151bdd66bbb387d027c202e7ef2471948bfbd0c467c0b8567a3c": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "32c331aff93be441498f3a2249d6ec55ad3d815aaa5a38b60563cb60ec716d70": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "80c3e20cc318217f6256d04a31d2b2d1eabdf2a7f6127bcc8fe6dc2d95fbe8ae": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d7aa60f57e70bfa65cc823b7a1c78a3b09910845e0aaee546ca118beac2325c7": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "37d7f8ab6f04652a89a265a6a08a5b3e8fe27cc8262389621dc624ee06c6df1c": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "105a225a740706e45afaa5df49d4cb3b0e504cca8d5a2dfb7b7e62fed96dc33b": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b0c8ac0a428355fc4bc3a4ad96698daf8d64e861115bc2433596808143b3e812": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "936bae89b4dde3775014ac45d122db929df74642fc1db8fe862451df2d0381c9": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5b9a44be9d281432fcdfae2b7a6ad900a19e9be29933d0153a005e395c5020b7": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ccef34d97eb63eb767b4d33f6921a99176a0697fbf05a27ae9fd15e8f0d01553": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "86bb0210f676f2a7997dc135e1f40edef4cb82dc96f02cb91f06cd12bb8b7111": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b2b01e8179286ad115e19b1f41aff376db1e14646dec7887fcecdc5a5cb694c0": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7b1e62395b35763b1343cb40dd71aab54182efe5368dd7461f4a92cac779a34d": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "60b9ee093d542cadba863c520ecf508dea297ad86a09e0e6c5fb8f7e3a985e7d": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9f2d22f3d3e5bbd354ec36b9c3a1631d7e8cf680b255f7d410a76e75caddbbda": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "01b8ceaf143c5c9ba1b4259778d46753aad79f2fd02870b346dcb9f296ab489c": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "14afd33fdcc4a59f5d85291a24cc7a7a094ad1d62fe8d5935c7babcb937d2f72": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6c06d05d483e622edadf5d6a38c8d4bb6ec057744e9fda1599b96d034d5f0fb3": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d2792edbf56bb8c9ca1315bbd410dacef6752b777c484ceaae095b94bbe7be66": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "018a7b750e59ef40036b2e606185a7c36900b8e8ef2dc086f3cd0b7e1e57a4b8": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "69d5e891df0a51881b599243c4bfc8b746d37e8ac7f08dbe2ee35bc4714e040c": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d5c6243a06184c571552479a60586174319dfe5eed2a117691cd6e4678940907": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "892f0eda48cff8846c3fa37e10eaf9f46fca940b36f6db33120bf4fc26dc1319": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2ec4f8c685de50a7c9dfba1b83ef33fb65f8bd59339cdcf4dfc5b9f184a139f6": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "dce9a29ef5d616adaef05c97ee0aed547f10fad11c0d1398f75d95b301a84938": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5dcdc75fdd591a3dc96bfe515dd73567cb990037b36f57cc84fd6e322f44e565": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "86e1d395e194cd70379fbfee75c2714a3bd64a36fc27650067e5ad32be12bd47": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6c23a50c41999f6ae5825881aeb4800ea420f9d65543622339175d171a000075": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "62fe3ae17fc7e3add2e7a659a1da731a7fd8bd44e0c64c4f3ea28f25be4096f6": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "44e92ccbcf8af96376c5358fb8df55490475e69570cd6a8b8b09aae6e06d0733": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a0d530b5f11dd06f0463a5fb80e50c67e94e77900a77b837237edc3e546238d6": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4d5b29c06c332ce2416e2818e0bbaacdfc8c0b81cd0694d244cd7e385fb65407": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "237a6780765713f4dbe3a10efcd30aa40691a0fe22d63e0537669d1c9d2f02bc": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6385109fbf6306e59f4a4a87cbb83f270cab517bff097158cb402ad5d04adb05": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e2eb852fc1cab51a8c36487824e0d3813f3d4bda635f23f3260065e13613cc01": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9aa9f8885d5acd53a7a84d8ffb78d3f25289eb8f89241946cc70e6465dc892cd": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6eea6aa2198fb970becedc59103b9b3e8ce961e304a5bd00ffef21611e6cf448": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5468bad113ae9f9c6cb6b0f1f8792692c512966621be2d8f4d63629a52657dec": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "357d691826776606f2972e34084316266ee5ce198ca722f7b5879b78c42d4cd1": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ab5d00dff2969e4ee17ee37c4ccfadfc824990138ae1152af0f562a95f962bdb": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "852f5e434c7320a7fb8ea0d284708c91a4913644bb7777541b12e521a24dea4e": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "33a8f95f32d4cce7d8737e1c4c25f4b83a1b9ca813f61540ecdcb45b309d58e9": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6bb442ba402045e37a42223abedb106df26fb7224fbbb4489f05d410ec32c32c": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5e0f3437b2f41e6ddfdf6761676e4a4558f4cd509f84c1c8fe2414ec7e9fb2a4": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "db214ed49e340caf7e71cc03cdfdb1fcff0d64aeb3940066df6a9eda9f830101": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e2d319263a5b32c1c762b014ee957ad0fa03bdce310e8c6e5501b5d0aa86c87b": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3165dc6c09d70346b004baa9b5b11891f663f69b58aaa34fee405d724ff4e03a": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b2f41d2846658bb524ab1132d94e71be1afaa83cc730aed6bfe7cf3940aa202f": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0d6a268f907698e25200f5019f121aa6a611e9ff3de16240de3e82fcab33b5ad": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "396d01fa2d860618c526a6e0b18b39debf2f7cc6991783cd31c2d8b82c923306": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3820a40c9a3b430088004d4e4e9a049b4568d4cc5cffce8815f3273938c6492e": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "fbe1db2b816ad48ddc90e5a69c9a886e1c76185f7f40b22be3f7cffb8929b3e2": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "24460c951be11be1a10d4b421defe33f077becff616b8f629fada3706cafaf5f": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5824be31a1824c94946e728f87313277fc3baadc6918d8fc60895acf5bbaaea9": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d758ebb57897cbe8063fbf8fe05d5c45863c604d19f806f876576d49fc7d8aec": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1ddaeda1d30eed49dff0dfc415d3d7bcce624147917036ba97b3cdc6075d47a1": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "31017b9294e0f58052ecbc22ffd4e4f611a5e1bbeb2994bc27378687954b7dd7": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cf0f0d088e7730c82f7a593395259782b59c586a591755657380449c18772782": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a045c0fe6fb3b87b937a202fc4566bcf2384a3d26c29c384fe780332e2dfa1ed": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f5835e7369270635d50e260ff4f21b2d7226dc05f99b1a607efab4cbf86bc965": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "61aa354383fd2ca90ba317fbd3cb4b6e81968e772a9ab615b12e7d360ea8d558": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "94e62338b13c9ed58db1a1bbfdc8c5dff4bb017f61e20e3cfd111cbd9a302474": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "82cad5e7a89216e1c275d23987c769bbf14c04073260902b7b5ed25f1131b177": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "52b4b8731e73271a630c65c3959614b45ad97431ef4e8a115350cd30cb129579": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "60d8e85b7b22b35949676d464e386cacd1d8396a37bb6284c0b32695cf2ebbe7": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "84738003862b5f99b502829558c7fee4037d8ac605b31ce6a4668968eb751793": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "aedb0063b73daf044ad1bc14d62b7d2cc026c820d21fca561986499f231a9ebf": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1e3c74bd1fc61da1f1c7c281807b5993f35865c920293208231c90940bdf4749": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "70b9c4441ab9be72eaec93538e9be9efdae0b0418b5ae916832db60e1fe54c57": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "86c413d51c49d6799b842fb4993e395bcc65650757bfc79f369ede8efb2eb31d": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "380017f5b92b5776cb2bd47162cde883c03bf07e5c307334f7e73b75131b664d": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bd7559d72867034507758905bcb530798109146248fe66c92a88103ea405810d": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8505c101871161b37e097287496abbfddb195f52dec18dab162ab3c538b92e10": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "790c8d39fa326deb5b6a6f5db355e5b530645a88ad76c6238eba4c6ef783e32a": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bf60434799d374d2591a7f98f363a91d5c7a4f19020e873024ce6f44c282486c": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cdcbef557ab0425f61b8a8064d20d50ed2162873c709ed12c70ec2316042b01f": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9c87f8914b3a1c1c7c09000b7b637c0658bb75875259aece36d9a7d2df755618": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8f674f94268ede20ab50a6b638283fa302996bbff57c5bfa4eb0d8c0a9c29d93": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "75bf92761ba328435e5ab8e9b8bbfe238dadd8343dd568d261888dbad376df2d": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d377cf2bfc8171c8dc79f4c4c0ab9fb30ea799b7ab87dd9b6cb4e8443803f56b": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "56f55a8437018248de6db95e6ee435534b18214c899f8447791911a697351f51": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5d26f82da2ce4fa2683939e73a19ec8ddb16e4589fc0489e6084589b5b90742e": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6c5ef91d8e33e290417c47c72de0a8bdc9e55824398db94392b4e8db906db400": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "147fc0a3bccd718ef454aa78e4fb2f0758f039edbe714b09e46c9063c6be4c0f": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ca55b08bea5666bce1bc0192ca6ef10dd8a5dc965c59fa510a54f3f91ad28fa8": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4c726efdaad9d0638482977de2c89d104dab71f62413e30d83dc96256cf70515": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a201824746160401a58d3d1eb72ed06c363e175c8b5ecb09bdc1b458e5692f61": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7d56725e7dda692fcc1de4f0799c8d25731fb19578880b7aa4bde8c1fe487b77": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a56c7bc4540e59edc6514c3c14bb79192fe41e47027c3dfb8335ced30b29905b": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a32cdf275fad1e30900f52e1a1776c44440bdbf00b5200b630daac4b4be53aca": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e07c94c57e26dedef71b50f21ba2e5a1e56d634f776d363202b066c1479fd07e": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b534bab95e3a318495d4626b3aa5290a778d290fb7b470d656ec12ff6d37cd8a": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c2dea22991c4efeda75ea566eb800e339c90c5286ac20e5c768c9cf25f519b8c": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3914b69614d0a771853f0abe70a5185022a6b6bac9b0360324b6b67d305aa64a": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "249dcdd992d3071396f21ea001a4416911abc5dd06ef1428d6ca440819bdabe2": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4a48b0f1c17a9430948c5325704802688d678e6dc611ebbddd98751f71008b17": {
+    "reasoning": "根据文档并搜一下最新政策，需要联网搜索最新的公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "bf29d3c95f62bd65516cb42e6d20fbb5fc7730dafd67e32a74adfffb5ebce9ba": {
+    "reasoning": "用户强制知识库或指定了文档",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "76991ab83cc39e4c0fcc65cf7237495da9972204ed4d2071611149d6cec1edf7": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d21908a74b9446dfff6dbfeae2b5a10cdfe8d3a45cdce23e274eaa1d01401ea0": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "02056cc234a5f28ee8c9f88ad169160b2d38c4cfad47c917207864fdac1c549a": {
+    "reasoning": "用户要求对照手册和网上最新发布的信息，需要联网搜索以获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b4b410ca36dbc8c1f25c36187f35882123bb6b8de75119bf8a0c2070ab662c59": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "7cfd2daba4de8af1d8188480175a3ece512f9f066b403f366ca4802aa9955a3c": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "6ac69667115c134dc9552c74ad49e6b8a73a8d2308b9e3ff170a128332b16b49": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "8aaafcc6b8c2dd54e4a1bbfe7c1f6b1ccd9310003b8162e810585a36da92ffed": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "3217527473cb85ba8bcd0dceb77a293cfcb7c19ab17f69c680ca630da8e2a9fe": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "dbec57555c306992e841ec747317e18dc9463c04e3e38b1d8e80ca55087b9e2d": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "27b97a82d7828120f1009a0963b34859ff4b00f8b1236b5f7d1c2a41127321d0": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "8a0531fe707f3299344aa72095e4c65ca1a9e82d6eeceb252f1a8e6e7307917a": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "4749dde0d1443b5721e3ae39c0f55672c323c8df83ee179cc49e858a34a83fa2": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b01a4616fb2ee28f8573fa1f74b8fb29c93808bbde32835b3e2035c8420abbcb": {
+    "reasoning": "根据文档对照网上最新公告，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "ab8de8a6cb2cb6315650e405998d5a28495113f3737bfa27e56f472192c2a7d5": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "7397929ab84ebab91369dbce2719cabc1cdf379a54c5f1a854e0c40742479730": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "936af0938bf3cc7584acf4bd9cf8068482969d928659457f5cc0eb0d4ea5938d": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "45899af1a2d381ec09a7a734d40b2f8d8abde411903995db7efde9d533623e3b": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "c7197b667a55e9224314d16378bf5c5287f07f919ab8cdb7c312117281c339e9": {
+    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "faae4f399f2e7c765e4c74268642e5e07b2419281e5cd403165a4668a0f33a68": {
+    "reasoning": "用户请求对销售表进行数据分析，包括画柱状图和计算均值，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f4b7938913dca59b801ec133e209de36b7832a515c333dffead7321b2999df46": {
+    "reasoning": "用户请求对 csv 文件进行分组统计，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c8412d47314221900d987616e0ee8b9dce55bd5c51610030376980dad4be61fe": {
+    "reasoning": "用户需要将 Excel 中的销售额数据绘制成折线图，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "82f4fa9b89af1bc3fca0957118a35c09a972e72b83dbe6b5c392337eb83a6a01": {
+    "reasoning": "用户请求对表格进行排名操作，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2681b49c147c9a64be5e0480cb9069e41daef58aa15b7eafe9b8d8172215e568": {
+    "reasoning": "用户请求分析上传数据的分布，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ffd637d389b48938ba3849bdbe63480883b9c9efb15a6bcecf5b3cb7b8767bce": {
+    "reasoning": "用户请求对xlsx文件进行透视分析，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0a7d0142ba1636d7f255d3a73b1a8a48f2dbf608ab9920f88ea1966de5678333": {
+    "reasoning": "用户请求对各区域销量进行求和，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b53e70b43742575993a2fd3b427b4ba87e6f64fc20eaa509842688d5bb16087a": {
+    "reasoning": "用户请求绘制饼图以查看占比，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "32876e5fe38805826dc6b8f637f362e4e5d77d212832b65cd0d276fb4c79e8cc": {
+    "reasoning": "用户请求使用 pandas 进行数据分析，需要使用到数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "07c9a9b0d19100bff0da2f32aeff34557674da8f15bcb97202c9289486720788": {
+    "reasoning": "用户需要根据月份对 dataframe 进行汇总，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c355cdfdcf1fada37ac428cac4fa126649933f44c81847f73429816b38b8ebd7": {
+    "reasoning": "用户请求可视化转化漏斗，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "23ce80636016efc56287007837cfdc7dfb4f06f77f19da711a29f6f74bd9fec8": {
+    "reasoning": "用户请求图表展示近 7 天活跃情况，需要使用数据分析工具进行统计和绘图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0201933d94f23c2f8387e8e309cc3a074249b943f75fab6796277f53162877e8": {
+    "reasoning": "需要分析表格数据以进行柱状对比，涉及数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7436cbaec296a815658a8ed224d57de5fea52aa8c40cd93d67e824e4c88be217": {
+    "reasoning": "用户请求查看趋势变化，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "836203f4b9b4215fb2a8bcfac997bd715541aaa176b88b14b12801da3456a420": {
+    "reasoning": "用户请求对总营收进行求和，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "571fc129cca59b9dfd5dbcacfde2c2d29f089c2a53bb559aea64b23ad85b94e3": {
+    "reasoning": "用户请求计算均值和方差，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1b39c5b45c625a2fafb5268e8306490d2ef63ee71471116090d47e6df67b2cc7": {
+    "reasoning": "用户询问排名前五的产品，需要使用数据分析工具进行排名。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7297fd4a1fd1ca035f8c35c0cb4b74cd339f6bc3a6796fedb2f2670475fbd742": {
+    "reasoning": "用户请求绘制分布直方图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "554625e187e09d1f0f120577eea2a5aeb1de6bd6be6ad808e970347da58ea168": {
+    "reasoning": "用户需要统计城市订单数，这需要使用数据分析工具进行分组统计。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a142c16d47986f26d9dc606ea2d2a33305bb7024470ce13148a1db318f9a6681": {
+    "reasoning": "用户询问透视表相关内容，需要使用数据分析工具进行操作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7126acdb3f66015cc0c3832dcdc2952b6c44c4637ab7301cab38ed4de2c661e1": {
+    "reasoning": "用户请求对Excel表格中的毛利进行分析，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "25c83cadbaca1a598c4f47d426293f909574c11f93a0f060663d2efd2da10cd1": {
+    "reasoning": "用户请求对csv文件中的用户数进行计数，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8ef1f00c160faf205020a9e956277db364d182e124804c240c5a9f0ea089efc1": {
+    "reasoning": "用户请求对表格数据进行最大最小值计算，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "29e2261fcd1d5962dbff0df1e301cd4af2fb84b85d2a8d7ba2f8b0fc5c2c0a4f": {
+    "reasoning": "用户需要展示库存周转的图表，需要使用数据分析沙箱工具进行数据分析和图表制作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bd7cf3d987663870aca749e838a7c53e7914c554c540b293916a619a0842afac": {
+    "reasoning": "用户需要统计缺货 SKU 数量，这需要使用数据分析工具对表格进行操作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9597640e65e26f4cfed7b648dbfd64fe22054e528d7eea76aa603cb8a960ecc1": {
+    "reasoning": "需要统计退货率，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ae702281cd5d7cf19f7fd04dde2257db8d4f28f3473828be04d42b56b7f7196c": {
+    "reasoning": "分析复购分布需要使用数据分析工具，因此需要使用sandbox工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5dc10815ea20330f708b34a1fb40761225b3de49a65984f700bdebcb71313d53": {
+    "reasoning": "需要使用数据分析工具来绘制柱状图展示各班组产量。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "db47d1a5f883cbb639a3b3a2b961db0550f3ad79b38a55fa04c376aa7a61dbf9": {
+    "reasoning": "用户需要对比预算与实际，这通常涉及到数据分析，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bf9f51d489ca7fef93ed74b7eee4a89a098458d5269c2fd5a66b0083b7ddce85": {
+    "reasoning": "用户请求查看饼图以了解费用结构，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a9cfb5f765960b67637729514bbca48d7932f51b09662523016dd328d07e5bea": {
+    "reasoning": "需要统计表格中客户贡献的数据，以确定贡献最大的前20位客户。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "94b9dddf2b94d4b9ef9fb452d29674489e57ee9f78d3e539b74b3b125dc81425": {
+    "reasoning": "用户请求使用 pandas 进行描述性统计，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0f66664b1b3df6a9a614c5ee654c01a9d04813cdb21aafe10ba60b1523bb37d9": {
+    "reasoning": "用户需要通过历史数据来预测趋势，需要使用数据分析工具进行绘图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "95ce00f7c3636e1a042f882e8226044e87e602f0fa01581482155fd0238bc052": {
+    "reasoning": "用户询问表格透视 HR 人数，需要使用数据分析工具进行统计。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "28b2c546bc1b0c384476e178ec95d2a2be686b9961453a1d852c41b9844d05a6": {
+    "reasoning": "用户需要统计 xlsx 文件中的加班时长均值，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "db8a999a65327b174e3847a1fcf516f5ca88f05a65e2d845b286d0f747becb39": {
+    "reasoning": "用户需要查看 csv 文件中的转化率分组情况，需要进行数据分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f041f748c9a6500b3130dfc2a0934f0486787ddfb1972fa9b96eee7c75cffb2e": {
+    "reasoning": "用户需要可视化销售额排名，需要使用数据分析工具进行统计和画图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7447f9e205eaf8f2518aa1ac4e96e40f095a48f359eebc6bf0175bbab3d3391c": {
+    "reasoning": "用户请求分析异常值分布，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "161495bd315467e05cee4e222c125618c811d7af2bd0ad59d47c2ab849f0269b": {
+    "reasoning": "用户请求对成本中心进行求和操作，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "93bff72ff12921903d0d4cd37bfcc10d94c7e4331fd145f136b2533cc6dd0ad9": {
+    "reasoning": "用户询问平均响应时长统计，需要使用数据分析工具进行统计汇总。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "21e24306d6784731c1f8510f973d1f4dfa03e2f77e0bc7d45a3f8bef674a1575": {
+    "reasoning": "用户请求绘制柱状图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6359e4b1d43ecac064a9204b9da9cbed8696c9f75885244c64f95a24175590bd": {
+    "reasoning": "用户询问关于Excel透视表中的品类销量，需要使用数据分析工具进行统计。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "316927e2f9c0955f4d37e3787452ba0c3263c1f733fbf955d01f10c90f9d0b8e": {
+    "reasoning": "用户需要根据表格数据进行排名，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "76e7d6dee62cd74b9bf0fb483269dd6f2c58adfa1e468968b3fb3aa03767311f": {
+    "reasoning": "用户请求统计并画图，表明需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "29a859fb8ff215fa1343226e727d207dd0dedc7be2f9d9a3ce860469d3cecc78": {
+    "reasoning": "用户询问关于csv分析漏斗的步骤，需要使用数据分析工具进行分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "db346e18e25c929270291a3688a5bf5f95631e511591c991f4d9908968b21344": {
+    "reasoning": "用户需要根据xlsx文件进行毛利率的汇总，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a9ab5d1ce5998ae5a2d0b75ecdb7eaf379501c76ada311ebae92b9866b5250d8": {
+    "reasoning": "用户询问关于门店客流的数据分析，需要使用数据分析工具进行计算。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "101b3524b982c2c0c96c98e1cf4bfb6abd380d4704976577bbaf836bf178a354": {
+    "reasoning": "用户请求绘制折线图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "307e932d988671dc5d7fccaa6fe70c21c9cdb1725dfe4aa777c1297a1bf94ffa": {
+    "reasoning": "饼图通常用于展示费用占比，需要使用数据分析工具进行统计和绘图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5a08b617292cfef2ed467c54007b8564731a02376cf178827cd7e7c54885e039": {
+    "reasoning": "根据提问内容，需要使用数据分析工具对供应商进行排名。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3d5d0fcec061eb861ecacc9f853b02e068a41bc307c877663a0e18ccdfb72223": {
+    "reasoning": "用户请求查看金额的分布情况，需要使用数据分析工具进行统计和画图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9afe2036229ce81d22b674d5ee371e8b558c72a854292100259d206e93400fcc": {
+    "reasoning": "用户询问关于 pandas 的透视交叉表，需要使用联网搜索获取相关信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d155a7a200c06e7e9f4dac1df178e43b8168ee59c22d2723706244f0dd1d06f9": {
+    "reasoning": "用户请求统计投诉量趋势并画图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ecd41a761a039c133adcbb531fdcc0509c35e9a175d3e40e7d4fd5749d6e364a": {
+    "reasoning": "用户请求对表格进行合计与平均计算，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b0aff4ac9c2b9f7e953017eb4d4cd7abe9302e95877abdba3e3d2828b1c1df30": {
+    "reasoning": "用户请求可视化库存结构，需要使用数据分析工具进行数据可视化。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "eb24dfbca2bbb80ea70fad6c66a3ceb207fa4ae2ad123065f11fb30d397e979e": {
+    "reasoning": "用户需要分析 Excel 里的退货数据，这涉及到对表格数据的统计和分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3728ebf63cff43cc0343fc3d872100829fc5011f85d0d72da118293bc44efaee": {
+    "reasoning": "用户请求对 CSV 文件进行柱状对比图绘制，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "fad763793cc09c7ab1c294ff44a0f88610ac84139b158bf20d97eac6eab6dbbd": {
+    "reasoning": "用户请求查看 xlsx 文件中的折线图以分析增长情况，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0e66da903fbb829d9a3e48889db8017308e9db8f89be2d657414a8768c99caec": {
+    "reasoning": "用户需要汇总并排名 SKU，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "406422523d7208d30ef8c1e6058ff66ab8fc6fb36b41bc2874f7931c6e505fd0": {
+    "reasoning": "用户请求对各部门进行均值统计，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "58dff0c20571868cac0fef70edac9cedbc2fc3617fbb7b1c60edc5c52f539020": {
+    "reasoning": "用户请求绘制转化率分布图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "140dfa767e2641138beb58274921c04ee2da011ed4a99552f4a52905810a1d3b": {
+    "reasoning": "需要分析地区销量数据，这通常涉及到对表格数据的透视操作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1798e74bb0d15365336dcede1f896a46b39bd4ded10e8272d8120242ce27ae0d": {
+    "reasoning": "用户需要分析表格中的环比变化，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f0651409c061cea30e534ffdc8f77d3b0d34de267715c0c569a052f0a6eddc09": {
+    "reasoning": "用户请求进行排名并可视化，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "be5cf818320215dc5bc3e17d2c4f1b565c1e0455c68e98adf1fbd91a26431563": {
+    "reasoning": "用户请求对数据进行分组统计并绘制图形，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "75299fc01bb25fdd78c433f4f9b345c95b38a8fed524fefaa86ccd6f1730e9e6": {
+    "reasoning": "用户询问关于 Excel 柱状图费用的问题，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2335deba830bb3b4e9d8ffa3e9b46be8ac750f8b72002e0f73e7362bef031ea6": {
+    "reasoning": "用户询问关于 csv 饼图结构，需要使用数据分析工具来生成饼图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2325380411252881922d4a2dd9410fd2ce983ecd4ba9a31c851a463ec1580244": {
+    "reasoning": "用户询问 xlsx 文件的趋势折线，需要使用数据分析工具进行绘图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bb222ce09565226918c597fa282eec2fcfaaea3dc387da3c2dc6939ed3971c34": {
+    "reasoning": "用户请求分析数据并出图，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2be3021ed321776b0c8a5c1d1e8165cc4e1737484078b2388e9f4ff01346a2bf": {
+    "reasoning": "用户请求对表格进行简单统计报表，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "50c3d6e34cdc9c67b6574778ee0cf4c9ae1df0431d5caf30cfa29b01cd89b810": {
+    "reasoning": "用户请求搜索最新的行业政策新闻，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "a919fb448deba8a83197fdc6b986c4312bc81d2be2700524965149fd146cac22": {
+    "reasoning": "用户请求查询实时股价，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "c44b3a05449186e70dfb96bb53b1c9d9e705f6c68163f0a65dea535136c20671": {
+    "reasoning": "用户询问网上热点，需要联网搜索获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "2d89d2187a74aaa024f84b3f7290e365308f927e92499285daef837350081d4a": {
+    "reasoning": "用户询问官网最新公告，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "d03e772687e4982a94b338f98131b2b5c20154370935ad764dbb5f12e6c60231": {
+    "reasoning": "用户请求搜索明天天气，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "a51994f44c69a19d234ebdcb75faae5629214cc6774d4404883970e8197177a2": {
+    "reasoning": "用户请求获取行情信息，需要联网搜索公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "95863a24e49889843606b8725520650f5f41b3ddcc12717abbb2b1e99adb7971": {
+    "reasoning": "用户询问热搜排名前几，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "7a9f5c8265187f7984a522c75f4dee1097f8b13dabfdf10ba75ba414cec56808": {
+    "reasoning": "用户请求联网获取最新汇率信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "96005a9e6482350264087669111e2b5586a0d0450156a2e808b0b9c2a3116f1c": {
+    "reasoning": "用户请求搜索最新的监管新规，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "fd0119c940664c10c13147ff7181a34588802835bf261cc6bda238a1d9580fbf": {
+    "reasoning": "用户询问的是公开信息中的油价，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "5d76cc68aafdb834baf00cc3e55ada02f3776128efcf62aa61df827f79a59037": {
+    "reasoning": "用户请求进行联网搜索以获取竞品动态。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1f2b981c315d44ee4aa4cc8975bdd4a6e03c9d0942a2b4a6c5262d9d63593df9": {
+    "reasoning": "用户询问最新政策是否有变化，需要联网获取最新的公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "1a9a1df19791af68ad29a7fc781c46726455a4c7f8a9a8c5004d2f97d478d746": {
+    "reasoning": "用户请求搜索开源许可证对比，这是一个公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "75f4867270abf00c3f16bdc2ad76b47cd9a9d9b8a53b2429bde2b66a0d3efc19": {
+    "reasoning": "用户请求查询实时黄金价格，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "0456ed7d8b3c9c9f4e1d933317d0bac75b4001cbdec9cf51fcaadfe8cdf28284": {
+    "reasoning": "用户询问新闻里提到的更新，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "61662d663d559117fa30f7f13ce3dacfd41f59ce71e6977632bf9317795d955d": {
+    "reasoning": "用户询问官网是否有招聘公告更新，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b116a98eb455b5cc6416eaab70ef57282f8a952d627976105b71ae3c472a7b65": {
+    "reasoning": "用户请求搜索今天的财经头条，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "ac51027d7d2acc6aa71376f40e86a0855a2be13c0712c7a0c9437c9303782890": {
+    "reasoning": "用户请求查找航班准点率的新闻，需要联网搜索公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "8babd6c80c3c65de518fe14a1e1edc3695ff737ac8957dc88bc88456c1ce9b0b": {
+    "reasoning": "用户请求联网查找最新安全漏洞通报，需要使用联网搜索工具。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "e7771dcdf23f2e56dc98db00390023ed7df2d3043e30fa9ac71761588fd68069": {
+    "reasoning": "用户请求搜索本地天气预警，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "9a84af4922cdb5b0dd1bb4711a4632ccbfaad5932826458a140fca846de43717": {
+    "reasoning": "用户询问热点事件的最新进展，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "06c36e4d724024ecb6b49c29d596f77ea10a8c58a74f9f6d312558366cd92934": {
+    "reasoning": "用户请求查询股票开盘情况，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "77d88009c45770ba1cd27274ec1932e2654dd10615fde909cbfd01873585704d": {
+    "reasoning": "用户询问关于裁员的消息，需要联网搜索公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "7808dbd5f11a0b821851e25fd56fc06804f8920f95600eaa881ebf79e78d8dfb": {
+    "reasoning": "用户请求搜索最新的 AI 产品发布信息，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "5da6e699b765b5d334e83795b08b8d6e3cb0c5a1a8fe8de7a26d79f69be159ca": {
+    "reasoning": "用户询问公告原文是否可以联网找到，需要使用联网搜索工具。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b1755dde991238d8f5b372ab9a57e00b403f07c026bf69b600cdca1eb4b1f8c7": {
+    "reasoning": "用户询问实时路况相关新闻，需要联网搜索获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "be874289de2b8ce4985a2c0d9c79f55e4fda03b92b5de9675528da3e0024b3c6": {
+    "reasoning": "用户请求查看热搜榜单，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "7831e4d82ccf2672da2ad98303edb0e7b5db5ad27668a13d0d08415d440ed67e": {
+    "reasoning": "用户请求搜索最新专利纠纷新闻，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "8cc95985b4b35b2970861f7841d2c06abbb9209729aedaff7c2c80ea683cb69e": {
+    "reasoning": "用户请求搜索行情数据，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "f4aec354c14ea0781982052cfddcd75966be415f29ee6abe2c83d4d259726780": {
+    "reasoning": "用户询问官网发布页的新版本信息，需要联网获取最新公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "c3f4fb92cf145fad101737378b01071a5b2e822212fca2837c3877600a446582": {
+    "reasoning": "用户请求联网获取汇率中间价，指向公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "1236caa0380536fd2da9201ee2f86080a42daedd465bce0723d1f87cc6ce4af1": {
+    "reasoning": "用户询问最新行业报告新闻摘要，需要联网获取最新公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "9d33d2f80969d5eb88f925d8e12b89f81863fadef0b1324a2bf1d2a8918b73d2": {
+    "reasoning": "用户请求搜索政策解读文章，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a6f8b4fd11b1bab7406557d9518826795e8998273f717dad975d0fb08153a1a0": {
+    "reasoning": "用户需要查询未来三天的天气信息，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "2b7c9042586cbadcea31c072a7bc5c400c3bd126437f6f072149d5b78fb82bce": {
+    "reasoning": "用户询问网上热点话题，需要联网搜索获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "2fa2b5f659fe1a47efe5fdbccfd9e99ea2379d03035eb83b554205e30ad150a1": {
+    "reasoning": "用户请求搜索公司财报发布消息，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b165bfb1e531f34e7b68cbbabcc56b4ade24cdf6974226c2725255555dffa550": {
+    "reasoning": "用户请求获取科技板块的实时资讯，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b7fbc23e0d6a391df82829a68e9519ed41e6094c18dab0cf5ffe0c38c36fd14c": {
+    "reasoning": "用户询问的是公开信息，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "fffb6275521ed244e1f87e7084dd2d2dac5faa1426a6fbc054f8c86014506c31": {
+    "reasoning": "用户询问官网更新日志的位置，需要联网搜索公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4e17b955fe4fda0e4eb31b8c78d1c66f6fd12e9562c62c5916d23486547d1525": {
+    "reasoning": "用户请求搜索最新国家标准发布信息，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "041ab8ec469c074a2b251848b6ac357b44635775cb09d3f1e3dd296fb5fc2cac": {
+    "reasoning": "用户请求联网查看召回公告，需要获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "9f8fc6a55fad485694a335210cd2abaf2e942c049c016e9b8816b3c42efadaaa": {
+    "reasoning": "用户询问热搜第一，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "f54bd1bb5047cda829d5642c0c7c570cd0f255e8dfd52fc444f4860d5372c310": {
+    "reasoning": "用户询问最新利率调整新闻，需要联网搜索公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "6347965cdda7c4abf77c566a3d818c8fc9c2d32af6e2978f2a18be52acbda7e6": {
+    "reasoning": "用户请求搜索开源项目 star 排行新闻，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "ace746a2c3df77d0f587a271fd45a4f5ccefbdb3c09edbb77f85d237c5f7252b": {
+    "reasoning": "用户请求行情信息，需要联网搜索公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "6c49e3ac9e0f23b0a46d1da5175c04a1a6acc68cbfff9a9fb5bc47522e5d2cbe": {
+    "reasoning": "用户询问最新疫情相关政策，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "2d1a338534fac4503c5f6f31b9f719f3a972cba175c3ce588e802d5cbe1721c5": {
+    "reasoning": "用户询问官网客服公告的更新情况，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b1b0cb89007ec956eeee4a3d84d88b9a1e3ed507a84c7a6e8c000f908e5e7b56": {
+    "reasoning": "用户请求搜索今天的体育新闻头条，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "f862536f822c1a8bd69f483f55eb716bc77596047b26d06a95b2f36d0d4f49e6": {
+    "reasoning": "用户请求查找最新的油价调整消息，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "f472b89975453420695eb88c6941deb443cb970cc4d40cf8e1cdf17f28b36edd": {
+    "reasoning": "用户询问关于网上的娱乐热点，需要联网搜索获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "a17739c42ec6379c2e2c3237fa0aaa6662508f541c52d75933f6702c87dd6a4c": {
+    "reasoning": "用户请求搜索最新芯片报价新闻，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b4eae0dae6e2489cb9148e787a72d4ac2c5939efedde9055e59aaed60946d3e1": {
+    "reasoning": "用户询问实时天气，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "2b56c212e74625a31b70effbd4a582adc3761e8e3242d8ad31bac35d6cefad59": {
+    "reasoning": "用户请求查找发布会直播入口，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "1f4b5e58b3edccd6aeababf3c9377a074da1bf1a5812c314791d644d43cf71c0": {
+    "reasoning": "用户请求联网查找最新的漏洞 CVE，需要使用联网搜索工具。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "3422b1908f6e2c13307e074d76822d4e775e41e414e8f734c62ae61975a7a8e5": {
+    "reasoning": "用户请求搜索公开信息，涉及政策补贴申请公告。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "1d5c01a0b330afbb10cc53e8484e39205f88c5846dd18af3653de8bc9c1f86e6": {
+    "reasoning": "用户询问热搜中是否有科技相关内容，需要联网搜索获取最新的公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "0b0426ca5c51a43d074f3aab5b1a627a8a039954a9e74e1b7467f77ca6bb87d0": {
+    "reasoning": "用户询问官网博客最新一篇，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "785db09e62aa104b07ef5f1ea5960d9c64ce877bfe3b158433a52e060767f322": {
+    "reasoning": "用户请求查找股票涨跌幅相关的新闻，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "a7e0ffa726a93f2af1a6d2b53d8d87961d5692db6164510a95631f05c95530d3": {
+    "reasoning": "用户请求搜索公开信息，涉及汇率走势报道。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "8acc25ca017807d9fc1d820005cd42aa939ea573e700a19701ac086c54aff7c4": {
+    "reasoning": "用户询问最新的监管罚单新闻，需要联网搜索获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "1e05f4213edf6c3a67d28dc3fe2998b30286a2a8bf879393a8497d215d7af877": {
+    "reasoning": "用户请求联网获取天气预警信号，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "c4bdfc8a10eb8994820d52f83cf85966ee1abc4742794e8bac1a899e31ac04bb": {
+    "reasoning": "用户请求搜索行业峰会日程新闻，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "e519ecca452159a5dd23932dcfc832e8d4c031718649b713472e014c04db8d32": {
+    "reasoning": "用户请求查找热点舆情，需要联网搜索获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "0e75cbf68c6bbedfa8f1882f1440f0a4005d336fee27858092fad64029b91534": {
+    "reasoning": "用户请求进行联网搜索以获取新品发布信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "ce61bab12d6c0f57813add081dff5c1c2e6b230e046e216446ea7a3c70e07a46": {
+    "reasoning": "用户请求实时资讯汇总，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "2aec7a91c95ab1293fcfddf3e2db6f392e75dc0c56d230195929f84ba2c834d3": {
+    "reasoning": "用户请求搜索最新招投标公告，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "7755ae7f8547bdb4d119262ca364e7f6324167c95dc424b4d7f88cbdd47d0431": {
+    "reasoning": "用户询问官网通知是否有更新，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "6226d02be57f7c24b195f572ecd6f38af636098ddb110396cbc3f7479849acd0": {
+    "reasoning": "用户请求查找热搜关键词，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "496f18d379be3d633f89b35afca9bb48bfab3d80003d534acbd7420e78669e45": {
+    "reasoning": "用户请求联网查看政策原文链接，指向公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e2638909936eb9eb472df58b728e7372373da2bc383df8ade99550ef0e64bbe5": {
+    "reasoning": "用户请求搜索新闻通稿，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3c9cf6f0e4f8ad165316d49b898b500fd66048d414cd5843cb89c3eb887c091a": {
+    "reasoning": "用户请求行情播报，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "5df8833ed8133eb849bfd84846eea9689f26c8954b511eb898223227231ba150": {
+    "reasoning": "用户询问最新天气灾害新闻，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "49bb7946e8c376f7af2899eb3395eec2fcfc39108e218e2778e494ab1f4cfbfc": {
+    "reasoning": "用户请求搜索股价异动原因的新闻，需要联网搜索公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "f7598d7c24ebbc61d0aaf5c50721ceab6f4f9d7ec737d468d7dcc92633a541b5": {
+    "reasoning": "用户请求查找官网安全公告，属于联网搜索的范畴。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "54788873e61ff4c4e0f3030fe37fdb86a57a6f5088fadb5ceca0c4e2c72fba48": {
+    "reasoning": "用户询问的是公开信息，需要联网搜索。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "3e6d6611d7a2af7afa68e6b05f6146f4021b0b03c43f037ffc41987e590f2a3a": {
+    "reasoning": "用户询问实时热点榜，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b36fe863bd71db9a87a383edb0d7235aa8eab47f4cf9a8239812b9e6b3099754": {
+    "reasoning": "用户请求联网搜索更新说明",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2fde689883a1ea5cebf82abd6bf670b93003d37ed313dff67a3a5496bd419ea4": {
+    "reasoning": "用户请求查看新闻时间线，需要联网搜索获取最新新闻信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "8d776550d0e82d34cfe53d1dbfb7a44f7d10e5f8b052bc950f04f711674600d9": {
+    "reasoning": "用户请求联网查找政策问答，指向公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "b8dc7f1b5437557cb94b44eb043322cd818cb23acc62d4f25d08a2a6a2a365a7": {
+    "reasoning": "用户请求搜索天气雷达相关的新闻，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "5224a595667699038fefd54a720f36201ff5c15e100b2128bfc0820de3f1c436": {
+    "reasoning": "用户询问官网文档更新公告，需要联网获取最新信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "297d6ca680e57fd925efcfe958f71cdc3ff8cfb69d3668ba52861aabd54bfac7": {
+    "reasoning": "用户请求查找行业排名相关的新闻，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "6237d1e388de07a137adcab48f8e42829d5279b5528ab80bef2a7bb30840c780": {
+    "reasoning": "热搜里的争议话题需要联网搜索获取最新的公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "244d91709ada799accc4e8b7b67ef294f5769254596a044f2aa7299ea05d0a5a": {
+    "reasoning": "用户请求搜索最新并购消息，需要联网获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "5d6443ec28574cc88756b29531294cc35697743b171baff57d1087089eafc10f": {
+    "reasoning": "用户询问行情是否有突发新闻，需要联网获取最新的公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "179a0fdc57ce1ed50e800096f64eb12f5ea746b9c7cf91b7893b7108066505ee": {
+    "reasoning": "用户请求联网查找节假日调休公告，需要获取公开信息。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "ed352723bcc82ffe638d07a3ab1a19bca9e641b1244a2e9a9763e8e58e5c8705": {
+    "reasoning": "用户请求搜索天气指数，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "92306fe9c843e0af86471fb7e10b70ce4bf098a92c0e665d9e70d5c512f0c361": {
+    "reasoning": "用户请求查找政策落地时间的新闻，属于公开信息查询。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "01f666ed6b3ed680ec07ae7246b328e355dd4dad243d24cea0a1bb652be95204": {
+    "reasoning": "用户询问的是公开信息，需要联网搜索最新说法。",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "19d890e775be093b15444cbf7ad30fbede78d60630da2a07e51faca2414f0ad7": {
+    "reasoning": "用户请求联网搜索实时资讯快讯",
+    "needs_kb": false,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  }
+}

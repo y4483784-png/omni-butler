@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.db
+.deps/
+.tB/
+.env
+.env.*
+!.env.example
+debug-*.log
+debug-*.lo
+*.log
+
+# Node
+node_modules/
+dist/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# User uploads (must live outside repo; legacy path ignored if present)
+backend/data/uploads/
+**/uploads/
+
+# TLS material (keep the example conf; never commit keys)
+deploy/certs/*.pem
+deploy/certs/*.key
+deploy/nginx-tls.conf
+
+# Test / eval runtime (keep datasets under data/eval/*.jsonl)
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backend/reports/*.json
+backend/data/harness/
+backend/data/eval/fixtures/_plan_join_*.csv
+*_eval_latest.json
+
+# Internal binary docs (keep in parent folder or company doc lib)
+*.docx
+*.doc
+
+# Cursor debug dumps
+.cursor/

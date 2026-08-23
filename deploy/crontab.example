@@ -1,0 +1,9 @@
+# Omni-Butler host cron (Linux VM). Install:
+#   chmod +x /mnt/hgfs/omni-butler/deploy/health-watch.sh /mnt/hgfs/omni-butler/deploy/backup.sh
+#   crontab -e
+# Uncomment the two lines below (adjust COMPOSE_DIR if the project is not on the share).
+#
+# MAILTO=root
+#
+# */5 * * * * COMPOSE_DIR=/mnt/hgfs/omni-butler /mnt/hgfs/omni-butler/deploy/health-watch.sh
+# 15 2 * * * COMPOSE_DIR=/mnt/hgfs/omni-butler BACKUP_DIR=/var/omni-backups /mnt/hgfs/omni-butler/deploy/backup.sh

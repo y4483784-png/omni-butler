@@ -1,0 +1,321 @@
+# 第二 api / worker 在 docker-compose.override.yml（Compose 自动合并）。
+# `docker compose stop` 会停掉全套；只要基础栈：docker compose -f docker-compose.yml ...
+# 固定 container_name（omni-butler-api 等），不要再用 --scale。
+name: omni-butler
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-logging-app: &app-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-backend-environment: &backend-environment
+  # Host-venv .env still uses localhost; Compose must override to service DNS.
+  DATABASE_URL: postgresql+psycopg://omni_app:${POSTGRES_APP_PASSWORD:-omni}@postgres:5432/omni_butler
+  DATABASE_MIGRATE_URL: postgresql+psycopg://omni:${POSTGRES_PASSWORD:-omni}@postgres:5432/omni_butler
+  REDIS_URL: redis://redis:6379/0
+  QDRANT_URL: http://qdrant:6333
+  S3_ENDPOINT: http://minio:9000
+  CELERY_TASK_ALWAYS_EAGER: "false"
+  SANDBOX_TMP_DIR: /var/omni-tmp
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
+
+x-backend-env: &backend-env
+  env_file:
+    - ./backend/.env
+  environment:
+    <<: *backend-environment
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    qdrant:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: omni-butler-postgres
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=200"]
+    environment:
+      POSTGRES_USER: omni
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omni}
+      POSTGRES_DB: omni_butler
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omni -d omni_butler"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    # Debug on the VM only (do not publish to the LAN):
+    # ports: ["127.0.0.1:5432:5432"]
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: omni-butler-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdata:/qdrant/storage
+    healthcheck:
+      # Official image has bash/timeout but no wget/curl.
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    # ports: ["127.0.0.1:6333:6333"]
+
+  redis:
+    image: redis:7
+    container_name: omni-butler-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    # ports: ["127.0.0.1:6379:6379"]
+
+  minio:
+    image: minio/minio:latest
+    container_name: omni-butler-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    # Console/API are internal. Debug:
+    # ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+
+  # Host-daemon image used by sandbox-runner (`docker run omni-sandbox`).
+  # pull_policy:never avoids a Docker Hub lookup for a name that is not public.
+  sandbox:
+    image: omni-sandbox:latest
+    pull_policy: never
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    entrypoint: ["/bin/true"]
+    restart: "no"
+    network_mode: none
+    logging: *default-logging
+
+  sandbox-runner:
+    image: omni-butler-backend:local
+    container_name: omni-butler-sandbox-runner
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      <<: *backend-environment
+      MODE: sandbox
+      SANDBOX_RUNNER_URL: ""
+    expose:
+      - "8002"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /var/omni-tmp:/var/omni-tmp
+    depends_on:
+      sandbox:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health')",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  api:
+    <<: *backend-env
+    image: omni-butler-backend:local
+    container_name: omni-butler-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # worker / beat / sandbox-runner / api2 共用此 image，不要再各写一份 build
+    #（BuildKit=0 时会并行 pip 五次，容易把磁盘打满）。
+    restart: unless-stopped
+    environment:
+      <<: *backend-environment
+      MODE: api
+      SANDBOX_RUNNER_URL: http://sandbox-runner:8002
+    expose:
+      - "8001"
+    volumes:
+      - /var/omni-tmp:/var/omni-tmp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      sandbox-runner:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    logging: *app-logging
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  worker:
+    <<: *backend-env
+    image: omni-butler-backend:local
+    container_name: omni-butler-worker
+    restart: unless-stopped
+    environment:
+      <<: *backend-environment
+      MODE: worker
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A app.tasks.celery_app:celery_app inspect ping --timeout 10",
+        ]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 40s
+    logging: *app-logging
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  beat:
+    <<: *backend-env
+    image: omni-butler-backend:local
+    container_name: omni-butler-beat
+    restart: unless-stopped
+    environment:
+      <<: *backend-environment
+      MODE: beat
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import pathlib,sys; sys.exit(0 if b'beat' in pathlib.Path('/proc/1/cmdline').read_bytes() else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  nginx:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: omni-butler-nginx
+    restart: unless-stopped
+    environment:
+      NGINX_SCALE: ${NGINX_SCALE:-0}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ "$$NGINX_SCALE" = "1" ]; then
+          cp /etc/nginx/nginx-scale.conf /etc/nginx/conf.d/default.conf
+        fi
+        exec nginx -g 'daemon off;'
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      # TLS when 80 is exposed outside a trusted network (see deploy/nginx-tls.conf.example):
+      # - "443:443"
+    # volumes:
+    #   - ./deploy/nginx-tls.conf:/etc/nginx/conf.d/default.conf:ro
+    #   - ./deploy/certs:/etc/nginx/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+volumes:
+  pgdata:
+  qdata:
+  minio_data:
+  redisdata:

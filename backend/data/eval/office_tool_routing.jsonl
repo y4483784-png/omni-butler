@@ -1,0 +1,500 @@
+{"id": "cal_001", "message": "安排一下今天一点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_002", "message": "约个会议，今天一点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_003", "message": "日历里加个提醒，今天一点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_004", "message": "预定今天一点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_005", "message": "帮我约今天一点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_006", "message": "今天一点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_007", "message": "提醒我今天一点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_008", "message": "会议订在今天一点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_009", "message": "跟同事约今天一点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_010", "message": "帮我定今天一点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_011", "message": "安排一下今天两点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_012", "message": "约个会议，今天两点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_013", "message": "日历里加个提醒，今天两点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_014", "message": "预定今天两点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_015", "message": "帮我约今天两点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_016", "message": "今天两点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_017", "message": "提醒我今天两点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_018", "message": "会议订在今天两点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_019", "message": "跟同事约今天两点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_020", "message": "帮我定今天两点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_021", "message": "安排一下今天三点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_022", "message": "约个会议，今天三点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_023", "message": "日历里加个提醒，今天三点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_024", "message": "预定今天三点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_025", "message": "帮我约今天三点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_026", "message": "今天三点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_027", "message": "提醒我今天三点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_028", "message": "会议订在今天三点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_029", "message": "跟同事约今天三点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_030", "message": "帮我定今天三点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_031", "message": "安排一下今天四点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_032", "message": "约个会议，今天四点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_033", "message": "日历里加个提醒，今天四点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_034", "message": "预定今天四点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_035", "message": "帮我约今天四点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_036", "message": "今天四点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_037", "message": "提醒我今天四点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_038", "message": "会议订在今天四点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_039", "message": "跟同事约今天四点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_040", "message": "帮我定今天四点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_041", "message": "安排一下今天五点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_042", "message": "约个会议，今天五点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_043", "message": "日历里加个提醒，今天五点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_044", "message": "预定今天五点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_045", "message": "帮我约今天五点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_046", "message": "今天五点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_047", "message": "提醒我今天五点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_048", "message": "会议订在今天五点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_049", "message": "跟同事约今天五点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_050", "message": "帮我定今天五点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_051", "message": "安排一下今天六点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_052", "message": "约个会议，今天六点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_053", "message": "日历里加个提醒，今天六点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_054", "message": "预定今天六点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_055", "message": "帮我约今天六点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_056", "message": "今天六点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_057", "message": "提醒我今天六点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_058", "message": "会议订在今天六点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_059", "message": "跟同事约今天六点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_060", "message": "帮我定今天六点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_061", "message": "安排一下今天七点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_062", "message": "约个会议，今天七点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_063", "message": "日历里加个提醒，今天七点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_064", "message": "预定今天七点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_065", "message": "帮我约今天七点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_066", "message": "今天七点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_067", "message": "提醒我今天七点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_068", "message": "会议订在今天七点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_069", "message": "跟同事约今天七点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_070", "message": "帮我定今天七点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_071", "message": "安排一下今天八点的周会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_072", "message": "约个会议，今天八点", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_073", "message": "日历里加个提醒，今天八点开会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_074", "message": "预定今天八点的晨会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_075", "message": "帮我约今天八点的例会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_076", "message": "今天八点有个评审会，帮我排进日程", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_077", "message": "提醒我今天八点要开一对一", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_078", "message": "会议订在今天八点，主题同步会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_079", "message": "跟同事约今天八点的启动会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "cal_080", "message": "帮我定今天八点的复盘会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar"]}
+{"id": "chat_001", "message": "你好，今天怎么样？", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_002", "message": "在吗", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_003", "message": "嗨", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_004", "message": "早上好", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_005", "message": "下午好呀", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_006", "message": "晚上好", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_007", "message": "谢谢，辛苦了", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_008", "message": "收到，明白了", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_009", "message": "好的", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_010", "message": "嗯嗯", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_011", "message": "讲个笑话吧", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_012", "message": "帮我写一首关于春天的短诗", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_013", "message": "帮我润色这段话：项目进展顺利", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_014", "message": "用更正式的语气改写：请尽快回复", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_015", "message": "什么是 OKR", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_016", "message": "什么是 SWOT", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_017", "message": "解释一下什么叫复盘", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_018", "message": "你觉得远程办公效率怎么样", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_019", "message": "周末愉快", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_020", "message": "节日快乐", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_021", "message": "帮我想三个会议开场白", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_022", "message": "写个简短的周报提纲", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_023", "message": "帮我起个项目代号", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_024", "message": "中英文怎么礼貌拒绝对方延期", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_025", "message": "你是谁", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_026", "message": "你能做什么", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_027", "message": "换个说法再说一遍", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_028", "message": "再简单一点", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_029", "message": "再详细一点", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_030", "message": "用表格形式列出来", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_031", "message": "今天有点累，聊聊天", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_032", "message": "随便聊聊工作以外的事", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_033", "message": "推荐几本管理类的书", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_034", "message": "如何提高专注力", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_035", "message": "帮我列个待办模板", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_036", "message": "写一封感谢邮件草稿，语气轻松", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_037", "message": "生成三个头脑风暴问题", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_038", "message": "把这段话翻成英文：请确认会议时间", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_039", "message": "把这段话翻成中文：Please confirm", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_040", "message": "帮我检查语法：We has finished the report", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_041", "message": "一句话总结：沟通很重要", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_042", "message": "给新手解释什么是 MVP", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_043", "message": "说个冷知识", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_044", "message": "陪我练练面试自我介绍", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_045", "message": "帮我写个朋友圈文案，庆祝上线", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_046", "message": "有什么好的时间管理方法", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_047", "message": "如何开好站会", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_048", "message": "团队冲突怎么处理比较好", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_049", "message": "帮我列个出差行李清单", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_050", "message": "写个生日祝福，给同事", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_051", "message": "今天心情不错", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_052", "message": "你觉得呢", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_053", "message": "继续", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_054", "message": "还有吗", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_055", "message": "就这样吧", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_056", "message": "先到这里", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_057", "message": "哈哈", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_058", "message": "不错", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_059", "message": "可以", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_060", "message": "不行啊这个方案", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_061", "message": "帮我想个口号", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_062", "message": "起个活动主题", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_063", "message": "写个免责声明模板", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_064", "message": "生成会议纪要结构", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_065", "message": "帮我排个优先级矩阵示例", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_066", "message": "解释一下帕累托法则", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_067", "message": "什么叫沉没成本", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_068", "message": "如何做用户访谈", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_069", "message": "产品经理日常做什么", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_070", "message": "工程师怎么写更好的 commit message", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_071", "message": "帮我写个 README 大纲", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_072", "message": "用更委婉的语气：这个需求做不了", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_073", "message": "帮我列五个开放式问题", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_074", "message": "生成一个决策树的文字版", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_075", "message": "今天适合喝什么咖啡（随便聊聊）", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_076", "message": "讲个职场小故事", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_077", "message": "安慰一下加班的人", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_078", "message": "鼓励一下新人", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_079", "message": "帮我写离职告别信开头", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_080", "message": "写个入职欢迎辞", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_081", "message": "如何礼貌催进度", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_082", "message": "如何拒绝额外工作", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_083", "message": "如何约领导一对一", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_084", "message": "帮我想三个 OKR 例子（通用）", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_085", "message": "解释敏捷和瀑布的区别", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_086", "message": "什么是技术债", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_087", "message": "如何做 code review", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_088", "message": "写个 standup 模板", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_089", "message": "帮我列个学习计划框架", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_090", "message": "生成面试问题清单（通用）", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_091", "message": "如何做复盘会", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_092", "message": "写个道歉信模板", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_093", "message": "帮我润色：不好意思迟到了", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_094", "message": "用一句话介绍我们的产品（通用）", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_095", "message": "生成电梯演讲 30 秒版", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_096", "message": "如何设定边界", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_097", "message": "工作生活怎么平衡", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_098", "message": "帮我想个团队建设活动", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_099", "message": "写个问卷开场白", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_100", "message": "生成满意度调查题干示例", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_101", "message": "如何做时间盒", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_102", "message": "解释番茄工作法", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_103", "message": "帮我列个晨间例行", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_104", "message": "写个晚安祝福给团队", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_105", "message": "今天过得怎么样——我先说我这边还行", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_106", "message": "你忙吗", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_107", "message": "有空聊聊吗", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_108", "message": "帮我清醒一下，说点有趣的", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_109", "message": "随便推荐个播客主题", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_110", "message": "如何开始写日记", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_111", "message": "帮我起个笔名", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_112", "message": "写个短故事开头", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_113", "message": "用文言文说一句问候", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_114", "message": "用方言风格写句谢谢（搞笑版）", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_115", "message": "帮我数到十就行", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_116", "message": "重复我说的话：测试一下", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_117", "message": "输出一个空列表示例", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_118", "message": "给个随机励志短句", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_119", "message": "今天别聊工作了", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_120", "message": "先聊点轻松的", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_121", "message": "你听得懂四川话吗（随便问问）", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_122", "message": "帮我想个外号，别太正经", "history": [], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat"]}
+{"id": "chat_lib_001", "message": "你好", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat", "library_present"]}
+{"id": "chat_lib_002", "message": "在吗", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat", "library_present"]}
+{"id": "chat_lib_003", "message": "写首诗", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat", "library_present"]}
+{"id": "chat_lib_004", "message": "解释一下复利", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat", "library_present"]}
+{"id": "chat_lib_005", "message": "帮我润色这段话", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat", "library_present"]}
+{"id": "edge_cancel_001", "message": "算了不安排了", "history": [{"role": "user", "content": "帮我定明天三点的会"}], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["calendar", "cancel"]}
+{"id": "edge_cancel_002", "message": "取消吧先不安排", "history": [{"role": "user", "content": "约明天下午的周会"}], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["calendar", "cancel"]}
+{"id": "edge_follow_chat_001", "message": "还有别的吗", "history": [{"role": "user", "content": "你好"}, {"role": "assistant", "content": "你好！"}], "context": {}, "gold": {"intent": "chat", "tools": []}, "tags": ["chat", "multi_turn"]}
+{"id": "edge_follow_kb_001", "message": "那报销上限呢", "history": [{"role": "user", "content": "差旅制度住宿标准是多少"}, {"role": "assistant", "content": "..."}], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb", "multi_turn"]}
+{"id": "edge_follow_kb_002", "message": "加班呢怎么规定", "history": [{"role": "user", "content": "手册里请假怎么说"}, {"role": "assistant", "content": "..."}], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb", "multi_turn"]}
+{"id": "edge_neg_kb_001", "message": "根据知识库查报销制度", "history": [], "context": {"has_kb_docs": false}, "gold": {"intent": "chat", "tools": []}, "tags": ["kb", "negative"]}
+{"id": "edge_neg_kb_002", "message": "文档里差旅标准是多少", "history": [], "context": {"has_kb_docs": false}, "gold": {"intent": "chat", "tools": []}, "tags": ["kb", "negative"]}
+{"id": "edge_neg_sandbox_001", "message": "帮我画个柱状图", "history": [], "context": {"has_tabular_docs": false}, "gold": {"intent": "chat", "tools": []}, "tags": ["sandbox", "negative"]}
+{"id": "edge_neg_sandbox_002", "message": "统计一下均值", "history": [], "context": {"has_tabular_docs": false}, "gold": {"intent": "chat", "tools": []}, "tags": ["sandbox", "negative"]}
+{"id": "edge_pending_001", "message": "三点吧", "history": [], "context": {"pending_calendar": {"title": "周会", "missing_fields": ["end_at"]}}, "gold": {"intent": "chat", "tools": []}, "tags": ["calendar", "pending"]}
+{"id": "edge_pending_002", "message": "改成四点", "history": [], "context": {"pending_calendar": {"title": "面试", "missing_fields": ["end_at"]}}, "gold": {"intent": "chat", "tools": []}, "tags": ["calendar", "pending"]}
+{"id": "edge_use_kb_001", "message": "总结一下", "history": [], "context": {"has_kb_docs": true, "use_kb": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb", "forced_ui"]}
+{"id": "edge_use_kb_002", "message": "再讲讲重点", "history": [], "context": {"has_kb_docs": true, "use_kb": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb", "forced_ui"]}
+{"id": "kb_001", "message": "文档里差旅住宿标准是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_002", "message": "知识库里有没有差旅住宿标准", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_003", "message": "文档里报销流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_004", "message": "知识库里有没有报销流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_005", "message": "文档里请假规定是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_006", "message": "知识库里有没有请假规定", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_007", "message": "文档里加班补贴是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_008", "message": "知识库里有没有加班补贴", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_009", "message": "文档里考勤规则是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_010", "message": "知识库里有没有考勤规则", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_011", "message": "文档里安全规范是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_012", "message": "知识库里有没有安全规范", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_013", "message": "文档里信息安全制度是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_014", "message": "知识库里有没有信息安全制度", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_015", "message": "文档里用章流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_016", "message": "知识库里有没有用章流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_017", "message": "文档里合同审批是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_018", "message": "知识库里有没有合同审批", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_019", "message": "文档里采购流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_020", "message": "知识库里有没有采购流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_021", "message": "文档里招待标准是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_022", "message": "知识库里有没有招待标准", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_023", "message": "文档里员工手册里的福利是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_024", "message": "知识库里有没有员工手册里的福利", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_025", "message": "文档里离职交接要求是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_026", "message": "知识库里有没有离职交接要求", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_027", "message": "文档里试用期考核是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_028", "message": "知识库里有没有试用期考核", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_029", "message": "文档里绩效评级说明是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_030", "message": "知识库里有没有绩效评级说明", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_031", "message": "文档里培训学分要求是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_032", "message": "知识库里有没有培训学分要求", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_033", "message": "文档里会议室预约规则是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_034", "message": "知识库里有没有会议室预约规则", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_035", "message": "文档里访客登记流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_036", "message": "知识库里有没有访客登记流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_037", "message": "文档里数据分级规定是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_038", "message": "知识库里有没有数据分级规定", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_039", "message": "文档里外包人员管理是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_040", "message": "知识库里有没有外包人员管理", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_041", "message": "文档里股权激励说明是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_042", "message": "知识库里有没有股权激励说明", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_043", "message": "文档里保密协议要点是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_044", "message": "知识库里有没有保密协议要点", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_045", "message": "文档里知识产权归属是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_046", "message": "知识库里有没有知识产权归属", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_047", "message": "文档里远程办公制度是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_048", "message": "知识库里有没有远程办公制度", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_049", "message": "文档里设备领用流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_050", "message": "知识库里有没有设备领用流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_051", "message": "文档里出差机票舱位是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_052", "message": "知识库里有没有出差机票舱位", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_053", "message": "文档里市内交通报销是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_054", "message": "知识库里有没有市内交通报销", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_055", "message": "文档里餐补标准是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_056", "message": "知识库里有没有餐补标准", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_057", "message": "文档里年假计算方式是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_058", "message": "知识库里有没有年假计算方式", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_059", "message": "文档里病假材料要求是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_060", "message": "知识库里有没有病假材料要求", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_061", "message": "文档里婚假天数是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_062", "message": "知识库里有没有婚假天数", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_063", "message": "文档里陪产假规定是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_064", "message": "知识库里有没有陪产假规定", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_065", "message": "文档里调休规则是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_066", "message": "知识库里有没有调休规则", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_067", "message": "文档里值班补贴是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_068", "message": "知识库里有没有值班补贴", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_069", "message": "文档里项目立项模板是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_070", "message": "知识库里有没有项目立项模板", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_071", "message": "文档里变更管理流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_072", "message": "知识库里有没有变更管理流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_073", "message": "文档里事故上报要求是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_074", "message": "知识库里有没有事故上报要求", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_075", "message": "文档里应急预案要点是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_076", "message": "知识库里有没有应急预案要点", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_077", "message": "文档里质量门禁标准是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_078", "message": "知识库里有没有质量门禁标准", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_079", "message": "文档里上线 checklist是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_080", "message": "知识库里有没有上线 checklist", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_081", "message": "文档里代码规范摘要是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_082", "message": "知识库里有没有代码规范摘要", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_083", "message": "文档里设计规范里的间距是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_084", "message": "知识库里有没有设计规范里的间距", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_085", "message": "文档里品牌色使用规定是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_086", "message": "知识库里有没有品牌色使用规定", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_087", "message": "文档里对外发言口径是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_088", "message": "知识库里有没有对外发言口径", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_089", "message": "文档里媒体采访流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_090", "message": "知识库里有没有媒体采访流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_091", "message": "文档里客户投诉处理是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_092", "message": "知识库里有没有客户投诉处理", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_093", "message": "文档里SLA 响应时限是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_094", "message": "知识库里有没有SLA 响应时限", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_095", "message": "文档里权限申请步骤是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_096", "message": "知识库里有没有权限申请步骤", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_097", "message": "文档里账号开通流程是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_098", "message": "知识库里有没有账号开通流程", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_099", "message": "文档里备份保留周期是怎么说的", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "kb_100", "message": "知识库里有没有备份保留周期", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb"]}, "tags": ["kb"]}
+{"id": "multi_001", "message": "根据文档并搜一下最新政策", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_002", "message": "网上最新说法和文档规定对一下", "history": [], "context": {"has_kb_docs": true, "forced_kb": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi", "forced_kb"]}
+{"id": "multi_003", "message": "按知识库制度，再联网查最新公告", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_004", "message": "文档里写的标准，网上有没有更新", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_005", "message": "手册里规定对照一下网上最新发布", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_006", "message": "根据文档对照网上最新公告（样例6）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_007", "message": "根据文档对照网上最新公告（样例7）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_008", "message": "根据文档对照网上最新公告（样例8）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_009", "message": "根据文档对照网上最新公告（样例9）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_010", "message": "根据文档对照网上最新公告（样例10）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_011", "message": "根据文档对照网上最新公告（样例11）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_012", "message": "根据文档对照网上最新公告（样例12）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_013", "message": "根据文档对照网上最新公告（样例13）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_014", "message": "根据文档对照网上最新公告（样例14）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_015", "message": "根据文档对照网上最新公告（样例15）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_016", "message": "根据文档对照网上最新公告（样例16）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_017", "message": "根据文档对照网上最新公告（样例17）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_018", "message": "根据文档对照网上最新公告（样例18）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_019", "message": "根据文档对照网上最新公告（样例19）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "multi_020", "message": "根据文档对照网上最新公告（样例20）", "history": [], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "web"]}, "tags": ["multi"]}
+{"id": "sandbox_001", "message": "销售表帮我画个柱状图，顺便汇总一下均值", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_002", "message": "对这个 csv 做分组统计", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_003", "message": "excel 里销售额趋势画折线图", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_004", "message": "表格 top10 排名", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_005", "message": "分析一下上传的数据分布", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_006", "message": "xlsx 透视一下各部门人数", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_007", "message": "统计一下各区域销量求和", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_008", "message": "画个饼图看占比", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_009", "message": "用 pandas 算一下平均客单价", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_010", "message": "dataframe 里按月份汇总", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_011", "message": "可视化一下转化漏斗", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_012", "message": "图表展示近 7 天活跃", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_013", "message": "柱状对比各部门 KPI", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_014", "message": "折线看看趋势变化", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_015", "message": "求和一下总营收", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_016", "message": "均值方差都算一下", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_017", "message": "排名前五的产品", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_018", "message": "分布直方图画一下", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_019", "message": "分组统计城市订单数", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_020", "message": "透视表：渠道×金额", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_021", "message": "excel 分析一下毛利", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_022", "message": "csv 里 count 一下用户数", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_023", "message": "表格里求最大最小值", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_024", "message": "画图展示库存周转", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_025", "message": "统计缺货 SKU 数量", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_026", "message": "汇总本月退货率", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_027", "message": "分析复购分布", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_028", "message": "柱状图画各班组产量", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_029", "message": "折线对比预算与实际", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_030", "message": "饼图看费用结构", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_031", "message": "top20 客户贡献", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_032", "message": "pandas 做个 describe", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_033", "message": "趋势预测前先画图看历史", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_034", "message": "表格透视 HR 人数", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_035", "message": "xlsx 统计加班时长均值", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_036", "message": "csv 分组看转化率", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_037", "message": "可视化销售额排名", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_038", "message": "分析异常值分布", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_039", "message": "求和各成本中心", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_040", "message": "平均响应时长统计", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_041", "message": "画个柱状图：区域销售额", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_042", "message": "excel 透视品类销量", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_043", "message": "表格里做个排名榜", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_044", "message": "统计并画图：日活", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_045", "message": "csv 分析漏斗各步", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_046", "message": "xlsx 汇总毛利率", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_047", "message": "分组均值：门店客流", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_048", "message": "画折线：周环比", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_049", "message": "饼图费用占比", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_050", "message": "top 排名供应商", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_051", "message": "分布看一下金额区间", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_052", "message": "pandas 透视交叉表", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_053", "message": "统计投诉量趋势并画图", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_054", "message": "表格求合计与平均", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_055", "message": "可视化库存结构", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_056", "message": "分析 excel 里的退货", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_057", "message": "csv 画柱状对比", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_058", "message": "xlsx 折线看增长", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_059", "message": "汇总并排名 SKU", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_060", "message": "统计各部门均值", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_061", "message": "画图：转化率分布", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_062", "message": "透视一下地区销量", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_063", "message": "表格分析环比变化", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_064", "message": "求 top 并可视化", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_065", "message": "分组统计后再画图", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_066", "message": "excel 柱状图费用", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_067", "message": "csv 饼图结构", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_068", "message": "xlsx 趋势折线", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_069", "message": "分析数据并出图", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "sandbox_070", "message": "表格做个简单统计报表", "history": [], "context": {"has_tabular_docs": true}, "gold": {"intent": "data_analysis", "tools": ["sandbox"]}, "tags": ["sandbox"]}
+{"id": "web_001", "message": "帮我搜一下今天最新的行业政策新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_002", "message": "查一下实时股价", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_003", "message": "网上有什么热点", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_004", "message": "官网最新公告是什么", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_005", "message": "搜索一下明天天气", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_006", "message": "行情怎么样，帮我查一下", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_007", "message": "热搜排名前几是什么", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_008", "message": "联网查一下最新汇率", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_009", "message": "搜一下最近发布的监管新规", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_010", "message": "查一下今日油价", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_011", "message": "网上搜搜竞品动态", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_012", "message": "最新政策有没有变化", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_013", "message": "帮我搜索一下开源许可证对比", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_014", "message": "查一下实时黄金价格", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_015", "message": "新闻里说的那次更新是什么", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_016", "message": "官网有没有招聘公告更新", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_017", "message": "搜一下今天的财经头条", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_018", "message": "查一下航班准点率新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_019", "message": "联网找一下最新安全漏洞通报", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_020", "message": "搜索一下本地天气预警", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_021", "message": "热点事件目前进展如何", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_022", "message": "查一下股票开盘情况", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_023", "message": "网上有没有关于裁员的消息", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_024", "message": "搜一下最新 AI 产品发布", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_025", "message": "公告原文能联网找到吗", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_026", "message": "实时路况相关新闻有吗", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_027", "message": "查一下热搜榜单", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_028", "message": "搜索一下最新专利纠纷新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_029", "message": "行情数据哪里看，帮我搜一下", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_030", "message": "官网发布页有新版本吗", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_031", "message": "联网查一下汇率中间价", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_032", "message": "最新行业报告新闻摘要", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_033", "message": "搜一下政策解读文章", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_034", "message": "查一下天气未来三天", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_035", "message": "网上热点话题有哪些", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_036", "message": "搜索一下公司财报发布消息", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_037", "message": "实时资讯：科技板块", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_038", "message": "查一下新闻发布会时间", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_039", "message": "官网更新日志在哪", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_040", "message": "搜一下最新国家标准发布", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_041", "message": "联网看看有没有召回公告", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_042", "message": "热搜第一是什么", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_043", "message": "查一下最新利率调整新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_044", "message": "搜索一下开源项目 star 排行新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_045", "message": "行情怎么样啊搜一下", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_046", "message": "最新疫情相关政策有没有（联网）", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_047", "message": "官网客服公告更新了吗", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_048", "message": "搜一下今天体育新闻头条", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_049", "message": "查一下油价调整消息", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_050", "message": "网上有什么娱乐热点", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_051", "message": "搜索一下最新芯片报价新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_052", "message": "实时天气北京", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_053", "message": "查一下发布会直播入口新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_054", "message": "联网找最新漏洞 CVE", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_055", "message": "搜一下政策补贴申请公告", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_056", "message": "热搜里有没有科技相关", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_057", "message": "官网博客最新一篇", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_058", "message": "查一下股票涨跌幅新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_059", "message": "搜索一下汇率走势报道", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_060", "message": "最新监管罚单新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_061", "message": "联网查天气预警信号", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_062", "message": "搜一下行业峰会日程新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_063", "message": "查一下热点舆情", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_064", "message": "网上搜搜新品发布", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_065", "message": "实时资讯汇总一下", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_066", "message": "搜索一下最新招投标公告", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_067", "message": "官网通知有更新吗", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_068", "message": "查一下热搜关键词", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_069", "message": "联网看看政策原文链接", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_070", "message": "搜一下新闻通稿", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_071", "message": "行情播报帮我查", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_072", "message": "最新天气灾害新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_073", "message": "搜索一下股价异动原因新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_074", "message": "查一下官网安全公告", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_075", "message": "网上有没有融资新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_076", "message": "实时热点榜", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_077", "message": "搜一下发布更新说明", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_078", "message": "查一下新闻时间线", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_079", "message": "联网找政策问答", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_080", "message": "搜索一下天气雷达相关新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_081", "message": "官网文档更新公告", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_082", "message": "查一下行业排名新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_083", "message": "热搜里的争议话题", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_084", "message": "搜一下最新并购消息", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_085", "message": "行情是否有突发新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_086", "message": "联网查一下节假日调休公告", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_087", "message": "搜索一下天气指数", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_088", "message": "查一下政策落地时间新闻", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_089", "message": "网上最新说法是什么", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}
+{"id": "web_090", "message": "搜一下实时资讯快讯", "history": [], "context": {}, "gold": {"intent": "web_search", "tools": ["web"]}, "tags": ["web"]}

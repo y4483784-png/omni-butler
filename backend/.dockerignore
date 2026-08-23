@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+.pytest_cache/
+.mypy_cache/
+# Exclude tests except YZ fixtures needed by grounding / yz_fullchain eval seed.
+tests/**
+!tests/YZ测试文档/
+!tests/YZ测试文档/**
+# Keep scripts/ and data/eval in the image so compose exec can run offline evals.
+# Runtime audit noise stays out:
+data/harness/
+*.egg-info/
+.env
+debug-*.log
+debug-*.lo
+*.log

@@ -1,0 +1,119 @@
+# Omni-Butler AutoHarness constitution (aiming-lab schema, mode=standard).
+# Custom Omni fields under `omni:` are ignored by AutoHarness (extra=ignore)
+# but read by our gateway for evidence length limits / sandbox arg guards.
+
+version: "1.0"
+mode: standard
+
+identity:
+  name: omni-butler
+  description: Office assistant tool governance (kb / web / calendar / sandbox)
+  boundaries:
+    - Prefer governed tools over ad-hoc shell
+    - Sandbox must stay network-isolated
+
+rules:
+  - id: no-secret-exposure
+    description: Never log or transmit secrets, API keys, or credentials
+    severity: error
+    enforcement: both
+  - id: confirm-destructive-ops
+    description: Block destructive sandbox or host escapes
+    severity: error
+    enforcement: hook
+  - id: sandbox-no-open-network
+    description: Sandbox tool must not enable host/bridge networking
+    severity: error
+    enforcement: hook
+
+permissions:
+  defaults:
+    unknown_tool: deny
+    unknown_path: deny
+    on_error: deny
+  tools:
+    kb:
+      policy: allow
+    web:
+      policy: allow
+    calendar:
+      policy: allow
+    sandbox:
+      policy: restricted
+      deny_patterns:
+        - "(?i)network[\"'\\s:=]+(?!none\\b)\\w+"
+        - "(?i)host_network"
+        - "(?i)privileged"
+        - "rm\\s+-rf"
+        - "docker\\.sock"
+        - "/etc/passwd"
+
+risk:
+  classifier: rules
+  thresholds:
+    # Non-interactive office agent: medium must not block on "ask"
+    low: allow
+    medium: allow
+    high: deny
+    critical: deny
+  custom_rules:
+    - id: sandbox-network-escape
+      description: Deny sandbox args that open network
+      pattern: "(?i)(host_network|privileged|network[\"'\\s:=]+bridge)"
+      level: high
+
+hooks:
+  profile: standard
+  pre: []
+  post: []
+
+audit:
+  enabled: true
+  format: jsonl
+  output: ./data/harness/autoharness-audit.jsonl
+  retention_days: 90
+  include:
+    - tool_call
+    - tool_blocked
+    - tool_error
+    - hook_fired
+    - permission_check
+
+# Omni-Butler local extensions (not part of AutoHarness schema)
+omni:
+  allowed_tools:
+    - kb
+    - web
+    - calendar
+    - sandbox
+  tool_risk:
+    kb: low
+    web: medium
+    calendar: medium
+    sandbox: high
+  limits:
+    web_snippet_max_chars: 400
+    web_content_max_chars: 2000
+    kb_content_max_chars: 4000
+    sandbox_snippet_max_chars: 400
+    evidence_content_max_chars: 8000
+  sandbox:
+    require_network_none: true
+    deny_arg_keys:
+      - network
+      - host_network
+      - privileged
+    deny_arg_substrings:
+      - "rm -rf"
+      - "/etc/passwd"
+      - "docker.sock"
+  risk_patterns:
+    - id: path_traversal
+      pattern: "(?:\\.\\./|\\.\\.\\\\)"
+      action: deny
+    - id: secret_leak_hint
+      pattern: "(?i)(api[_-]?key|secret|password|token)\\s*[:=]\\s*\\S+"
+      action: sanitize
+  audit:
+    enabled: true
+    filename: harness-audit.jsonl

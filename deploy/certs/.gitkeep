@@ -1,0 +1,2 @@
+# Place fullchain.pem and privkey.pem here only when enabling TLS.
+# Do not commit real certificates.

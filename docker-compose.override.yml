@@ -1,0 +1,33 @@
+# 自动加载：`docker compose up` / `stop` / `ps` 不需要再写 -f。
+# 只要基础 9 服务：docker compose -f docker-compose.yml up -d
+#
+# 第二 api + 第二入库 worker + nginx least_conn（与主服务共用 omni-butler-backend:local）。
+# 虚拟机内存不够就不要用本文件（改名或删掉后再 up）。
+#
+# 改后端：只 `docker compose build api`，再 `docker compose up -d --no-build`。
+# 沙箱镜像：`docker compose build sandbox`（独立小镜像，不要和五个后端服务一起 --build）。
+# 全栈 `up --build` 在 BuildKit=0 时会给每个带 build 的服务再 pip 一次，容易把盘打满。
+
+name: omni-butler
+
+services:
+  api2:
+    extends:
+      file: docker-compose.yml
+      service: api
+    container_name: omni-butler-api2
+
+  worker2:
+    extends:
+      file: docker-compose.yml
+      service: worker
+    container_name: omni-butler-worker2
+
+  nginx:
+    environment:
+      NGINX_SCALE: "1"
+    depends_on:
+      api:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
