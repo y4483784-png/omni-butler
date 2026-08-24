@@ -130,7 +130,7 @@ RUN_ROUTER_EVAL=1 pytest tests/test_harness_office_eval.py::test_routing_eval_me
 
 **工作纪律：评测阶段只出报告，不边测边改产品。** Runner 将失败样例写入 `failures` 清单；统一修复另开一轮后再复跑同一套题库。
 
-语料：`backend/tests/YZ测试文档/` 三份文件（产品指南 md、制度 txt、考勤 csv）。金标准：`backend/data/eval/yz_fullchain.jsonl`（**≥380** 条；重建：`python scripts/gen_yz_eval_400.py`）。
+语料：`backend/tests/YZ测试文档/`。**GitHub 只跟踪** `测试用例.md`、`测试用例.txt`。考勤 `测试用例.csv` 只放本机（已 gitignore），克隆公开仓后没有该文件，YZ 全链路评测需自行准备。金标准：`backend/data/eval/yz_fullchain.jsonl`（**≥380** 条；重建：`python scripts/gen_yz_eval_400.py`）。
 
 ### 依赖
 

@@ -10,6 +10,7 @@
 2. 远程是 **GitHub 私有仓**（`y4483784-png/omni-butler`）。
 3. `backend/.env`、证书、`.venv`、`node_modules` 永不上传。
 4. 分支按华海流程：生产 `master`、日常 `develop`、测试 `release`、现网 `hotfix`。逐步命令见 [`BRANCHING.md`](BRANCHING.md)。
+5. YZ 测试夹具对外只保留 md/txt；误传 pdf/csv/xlsx 的清理步骤见 [`YZ_GITHUB.md`](YZ_GITHUB.md)。
 
 ---
 

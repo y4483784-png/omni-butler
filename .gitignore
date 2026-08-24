@@ -45,5 +45,13 @@ backend/data/eval/fixtures/_plan_join_*.csv
 *.docx
 *.doc
 
+# YZ eval fixtures: GitHub 只保留 md/txt（虚构指南与制度样例）。
+# csv / xlsx / pdf 含考勤明细或第三方报告，本机可留着跑评测，禁止入库。
+backend/tests/YZ测试文档/*.csv
+backend/tests/YZ测试文档/*.xlsx
+backend/tests/YZ测试文档/*.pdf
+backend/tests/YZ测试文档/*.docx
+backend/tests/YZ测试文档/~$*
+
 # Cursor debug dumps
 .cursor/
