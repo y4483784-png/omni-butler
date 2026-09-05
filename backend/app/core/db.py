@@ -203,6 +203,9 @@ def init_db():
         ensure_app_role()
     # Lightweight migrate for existing SQLite skeleton DBs
     _sqlite_add_column_if_missing("sessions", "pending_calendar", "TEXT DEFAULT ''")
+    _sqlite_add_column_if_missing("sessions", "context_summary", "TEXT DEFAULT ''")
+    _sqlite_add_column_if_missing("sessions", "context_summary_upto_message_id", "INTEGER DEFAULT 0")
+    _sqlite_add_column_if_missing("sessions", "working_state", "TEXT DEFAULT ''")
     _sqlite_add_column_if_missing("messages", "citations", "TEXT DEFAULT ''")
     _sqlite_add_column_if_missing("messages", "schedule_card", "TEXT DEFAULT ''")
     _sqlite_add_column_if_missing("messages", "artifact", "TEXT DEFAULT ''")
@@ -223,3 +226,7 @@ def init_db():
     _postgres_add_column_if_missing("users", "password_hash", "VARCHAR")
     _postgres_add_column_if_missing("users", "is_active", "INTEGER")
     _postgres_add_column_if_missing("users", "is_admin", "INTEGER")
+    # ContextManager columns (belt if alembic 0006 not applied)
+    _postgres_add_column_if_missing("sessions", "context_summary", "TEXT")
+    _postgres_add_column_if_missing("sessions", "context_summary_upto_message_id", "INTEGER")
+    _postgres_add_column_if_missing("sessions", "working_state", "TEXT")

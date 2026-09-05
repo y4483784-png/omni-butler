@@ -16,7 +16,7 @@ from app.core.prompts import plan_user, router_system, today_str
 from app.core.redis import json_get, json_set, stable_key
 
 logger = logging.getLogger(__name__)
-_ROUTER_CACHE_VERSION = 1
+_ROUTER_CACHE_VERSION = 2
 
 Intent = Literal["chat", "rag", "web_search", "calendar", "data_analysis"]
 
@@ -153,9 +153,16 @@ def _llm_decide(
     *,
     has_kb_docs: bool,
     has_tabular_docs: bool,
+    context_line: str = "",
 ) -> RouterDecision:
     system = router_system(has_kb_docs=has_kb_docs, has_tabular_docs=has_tabular_docs)
-    user = plan_user(message, history)
+    user = plan_user(
+        message,
+        history,
+        turns=int(settings.context_router_turns),
+        max_chars=int(settings.context_router_chars),
+        context_line=context_line,
+    )
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -211,6 +218,7 @@ def route(
     forced_kb: bool = False,
     has_tabular_docs: bool = False,
     document_ids: list[int] | None = None,
+    context_line: str = "",
 ) -> RouterDecision:
     """Single decision entry. Raises RouterError when LLM path fails."""
     hist = list(history or [])
@@ -230,21 +238,19 @@ def route(
             certain, has_kb_docs=has_kb_docs, has_tabular_docs=has_tabular_docs
         )
 
+    plan_text = plan_user(
+        message,
+        hist,
+        turns=int(settings.context_router_turns),
+        max_chars=int(settings.context_router_chars),
+        context_line=context_line,
+    )
     cache_key = stable_key(
         "route",
         {
             "v": _ROUTER_CACHE_VERSION,
             "date": today_str(),
-            "message": " ".join((message or "").split()),
-            # Match plan_user(turns=2): only these messages can affect the LLM.
-            "history": [
-                {
-                    "role": item.get("role"),
-                    "content": str(item.get("content") or "")[:120],
-                }
-                for item in hist
-                if item.get("role") in ("user", "assistant")
-            ][-4:],
+            "plan_user": plan_text,
             "has_kb_docs": has_kb_docs,
             "has_tabular_docs": has_tabular_docs,
             "model": resolved_router_model(),
@@ -263,6 +269,7 @@ def route(
             hist,
             has_kb_docs=has_kb_docs,
             has_tabular_docs=has_tabular_docs,
+            context_line=context_line,
         )
         json_set(cache_key, decided.model_dump(), ttl=settings.router_cache_ttl)
     return _apply_availability(
@@ -278,6 +285,7 @@ def plan_tools(
     forced_kb: bool,
     has_tabular_docs: bool = False,
     document_ids: list[int] | None = None,
+    context_line: str = "",
 ) -> dict[str, Any]:
     """Ordered tool queue from a single ``route()`` call."""
     decision = route(
@@ -287,6 +295,7 @@ def plan_tools(
         forced_kb=forced_kb,
         has_tabular_docs=has_tabular_docs,
         document_ids=document_ids,
+        context_line=context_line,
     )
     plan = _decision_to_plan(decision)
     logger.debug(
@@ -306,6 +315,7 @@ def plan_needs(
     forced_kb: bool,
     has_tabular_docs: bool = False,
     document_ids: list[int] | None = None,
+    context_line: str = "",
 ) -> dict[str, bool]:
     p = plan_tools(
         message,
@@ -314,6 +324,7 @@ def plan_needs(
         forced_kb=forced_kb,
         has_tabular_docs=has_tabular_docs,
         document_ids=document_ids,
+        context_line=context_line,
     )
     return {
         "needs_kb": bool(p["needs_kb"]),
@@ -354,6 +365,7 @@ def classify_intent(
     has_tabular_docs: bool = False,
     forced_kb: bool = False,
     document_ids: list[int] | None = None,
+    context_line: str = "",
 ) -> Intent:
     decision = route(
         message,
@@ -362,6 +374,7 @@ def classify_intent(
         forced_kb=forced_kb,
         has_tabular_docs=has_tabular_docs,
         document_ids=document_ids,
+        context_line=context_line,
     )
     return intent_from_decision(decision)
 

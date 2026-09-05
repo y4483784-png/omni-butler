@@ -659,7 +659,16 @@ python scripts/migrate_uploads_out.py --delete-old
 - Phase 2 RAG（解析增强 + OCR + 结构分块；**关键词 + Qdrant embedding 混合检索**；**retrieval-resume：邻接块扩展 + 智谱 Rerank**；入库阶段进度条）
 - Phase 3 Agentic 工具（**LangGraph Scheme B** `plan → retrieve → reflect → answer` + **AutoHarness Standard 同构 gateway**：Tool Registry / constitution / verify / audit；kb / web / calendar / sandbox 均经唯一出口；数据分析为 Docker 沙箱 MVP）
 - Phase 4 长期记忆（**MVP 已落地**：`MemoryItem` + extract→upsert→system 注入；配置 `MEMORY_ENABLED` / `MEMORY_USE_LLM` / `MEMORY_MAX_CHARS`；对标 LangGraph Store 的 user 命名空间 + key）
+- Phase 4b 上下文管理（**H5 已落地**：`agents/context/` 预算水位 + 逻辑轮次窗口 + 增量会话摘要 + 工作状态指针；UI 仍展示全量 `messages`；配置见 `CONTEXT_*`；`CONTEXT_MANAGER_ENABLED=false` 可退回纯滑动窗口）
 - Phase 5 生产化（**多用户登录与数据隔离已落地**；成本归因细化等仍待办）
+
+### 上下文管理（ContextManager）
+
+- **存档 vs 作业纸**：Postgres/SQLite 的 `messages` 始终全量保存（界面历史不变）；送入 LLM 的物理上下文由 ContextManager 组装。
+- **近期原文**：默认最近 `MAX_CONTEXT_TURNS`（10）逻辑轮次；被挤出的轮次进入 `sessions.context_summary`（异步增量摘要）。
+- **工作状态**：`sessions.working_state` 存证据指针 / 最近文档 / 沙箱摘要元数据；`pending_calendar` 仍独立列。
+- **预算**：`CONTEXT_MAX_TOKENS` 是软预算上限（不是模型 128K 物理窗口），预留 `CONTEXT_RESERVE_RATIO` 给输出与 grounding；水位触发证据池收缩 → 整轮丢弃 → 紧急截断。
+- **回滚**：`CONTEXT_MANAGER_ENABLED=false` 时行为接近旧版「只切最近 N 轮」。
 
 **多用户隔离（Phase 5）**
 

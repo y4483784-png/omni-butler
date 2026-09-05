@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.llm import complete_json
+from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 
 # Accept Arabic and Chinese numerals ("3点" / "三点" / "三点半") — real users rarely type digits only.
@@ -122,7 +123,7 @@ def extract_event(message: str, history: list[dict] | None = None) -> EventDraft
             {
                 "role": "user",
                 "content": (
-                    f"最近对话：{json.dumps(history or [], ensure_ascii=False)}\n"
+                    f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
                     f"当前消息：{message}"
                 ),
             },
@@ -189,7 +190,7 @@ def fill_pending_calendar(pending: EventDraft, message: str, history: list[dict]
                 "role": "user",
                 "content": (
                     f"已有草稿：{json.dumps(pending.to_dict(), ensure_ascii=False)}\n"
-                    f"最近对话：{json.dumps(history or [], ensure_ascii=False)}\n"
+                    f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
                     f"当前补充：{message}"
                 ),
             },

@@ -79,8 +79,26 @@ class Settings(BaseSettings):
     celery_stale_after_seconds: int = 3600
     celery_stale_check_seconds: int = 300
 
-    # Chat behaviour (PRD: last 10 turns sliding window)
+    # Chat behaviour (PRD: last 10 turns sliding window of verbatim turns)
     max_context_turns: int = 10
+    # ContextManager (H5): budget + summary + working state; false → legacy window only
+    context_manager_enabled: bool = True
+    context_max_tokens: int = 32000  # soft budget, not model physical window
+    context_reserve_ratio: float = 0.25  # headroom for output / grounding / tools
+    context_warn_ratio: float = 0.70
+    context_compact_ratio: float = 0.85
+    context_emergency_ratio: float = 0.95
+    context_cjk_chars_per_token: float = 1.6  # Zhipu GLM ~1:1.6
+    context_latin_chars_per_token: float = 4.0
+    context_summary_enabled: bool = True
+    context_summary_max_chars: int = 1200
+    context_summary_min_overflow_turns: int = 2
+    context_router_turns: int = 3
+    context_router_chars: int = 300
+    context_tool_turns: int = 4
+    context_working_state_max_chars: int = 600
+    context_pool_chars_warn: int = 8000
+    context_pool_chars_emergency: int = 4000
     # Post-draft grounding critique (JSON call before SSE emit)
     grounding_enabled: bool = True
     # Fail → one Reflexion-style rewrite with critique feedback; then stop

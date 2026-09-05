@@ -22,6 +22,7 @@ from app.agents.harness.critique import (
 from app.agents.harness import gateway
 from app.agents.harness.types import ToolContext
 from app.agents.harness.verify import verify_state
+from app.agents.context import ContextBundle, compose_answer_messages
 from app.agents.router import (
     Intent,
     classify_intent,
@@ -34,7 +35,7 @@ from app.core.prompts import (
     no_evidence_block,
 )
 from app.core.llm import complete_text
-from app.services.memory import inject_system_memory, load_memory_prompt
+from app.services.memory import load_memory_prompt
 
 ToolName = Literal["kb", "web", "calendar", "sandbox"]
 
@@ -49,6 +50,7 @@ class WorkflowState(TypedDict, total=False):
     has_tabular_docs: bool
     document_ids: list[int] | None
     user_id: int
+    context: dict
     intent: Intent
     forced: bool
     citations: list[dict]
@@ -89,6 +91,7 @@ class WorkflowResult(TypedDict):
     direct_answer: str | None
     pending_calendar: dict | None
     artifact: dict | None
+    analysis_summary: dict | None
 
 
 def _sse_intent(
@@ -125,14 +128,18 @@ def _sse_intent(
     return "chat"
 
 
-def build_pool_prompt(evidence: list[dict]) -> tuple[str, list[dict]]:
+def build_pool_prompt(
+    evidence: list[dict],
+    *,
+    max_chars: int | None = None,
+) -> tuple[str, list[dict]]:
     lines = [answer_rules(), "", "【证据池】"]
     if not evidence:
         lines.append(no_evidence_block())
         return "\n".join(lines).strip(), []
 
     used = 0
-    budget = max_pool_chars()
+    budget = int(max_chars) if max_chars is not None else max_pool_chars()
     omitted = 0
     included: list[dict] = []
     display_idx = 0
@@ -217,7 +224,12 @@ def run_agent_workflow(
     document_ids: list[int] | None = None,
     user_id: int = 1,
     pending_calendar: dict | None = None,
+    context: dict | None = None,
 ) -> WorkflowResult:
+    ctx_state = (
+        context if isinstance(context, dict) else ContextBundle.from_history(history).to_state()
+    )
+
     def plan_node(state: WorkflowState) -> dict[str, Any]:
         if state.get("pending_calendar"):
             return {
@@ -242,13 +254,16 @@ def run_agent_workflow(
                 "artifact": None,
                 "intent": "calendar",
             }
+        ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
+        router_hist = list(ctx.get("router_history") or state.get("history") or [])
         planned = plan_tools(
             state.get("message") or "",
-            state.get("history") or [],
+            router_hist,
             has_kb_docs=bool(state.get("has_kb_docs")),
             forced_kb=bool(state.get("use_kb")),
             has_tabular_docs=bool(state.get("has_tabular_docs")),
             document_ids=state.get("document_ids") or None,
+            context_line=str(ctx.get("context_line") or ""),
         )
         queue = list(planned["pending_tools"])
         next_tool = queue[0] if queue else None
@@ -285,7 +300,8 @@ def run_agent_workflow(
 
     def retrieve_node(state: WorkflowState) -> dict[str, Any]:
         tool = state.get("next_tool")
-        hist = list(state.get("history") or [])
+        ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
+        hist = list(ctx.get("tool_history") or state.get("history") or [])
         msg = state.get("message") or ""
         steps = list(state.get("thinking_steps") or [])
         it = int(state.get("iteration") or 1)
@@ -295,7 +311,7 @@ def run_agent_workflow(
             steps.append(f"第 {it} 轮：无可用工具，跳过")
             return {"thinking_steps": steps, "evidence": _reindex(evidence)}
 
-        ctx = ToolContext(
+        tool_ctx = ToolContext(
             db=db,
             message=msg,
             history=hist,
@@ -309,6 +325,8 @@ def run_agent_workflow(
             needs_web=bool(state.get("needs_web")),
             needs_calendar=bool(state.get("needs_calendar")),
             needs_sandbox=bool(state.get("needs_sandbox")),
+            summary=str(ctx.get("summary_block") or ""),
+            working_state=None,
         )
         # Extra args reserved for governance checks (e.g. deny sandbox network escapes).
         tool_args: dict[str, Any] = {}
@@ -319,7 +337,7 @@ def run_agent_workflow(
             if state.get("analysis_ir"):
                 tool_args["prior_ir"] = state.get("analysis_ir")
 
-        result = gateway.invoke(tool, ctx, tool_args)
+        result = gateway.invoke(tool, tool_ctx, tool_args)
         prior_steps = list(steps)
         update = result.as_state_update(base_evidence=evidence)
         update["thinking_steps"] = prior_steps + list(update.get("thinking_steps") or [])
@@ -390,22 +408,10 @@ def run_agent_workflow(
         }
 
     def answer_node(state: WorkflowState) -> dict[str, Any]:
-        hist = list(state.get("history") or [])
+        ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
+        hist = list(state.get("history") or ctx.get("answer_history") or [])
         msg = state.get("message") or ""
         evidence = list(state.get("evidence") or [])
-        pool_text, included = build_pool_prompt(evidence)
-        citations = [
-            {
-                "index": e["index"],
-                "filename": e.get("filename"),
-                "title": e.get("title"),
-                "snippet": e.get("snippet"),
-                "url": (e.get("url") or "").strip() or None,
-                "source_type": e.get("source_type"),
-            }
-            for e in included
-            if e.get("source_type") not in ("calendar", "sandbox")
-        ]
         asked_kb = bool(
             state.get("forced") or state.get("use_kb") or state.get("needs_kb")
         )
@@ -431,6 +437,8 @@ def run_agent_workflow(
             pending_had_calendar=bool(state.get("needs_calendar")),
             pending_had_sandbox=bool(state.get("needs_sandbox")),
         )
+        included: list[dict] = []
+        llm_messages: list[dict] = []
         if direct:
             llm_messages = []
         elif evidence or intent != "chat":
@@ -444,12 +452,11 @@ def run_agent_workflow(
                         missing.append(str(item.get("reason") or item.get("asked") or "未提及"))
                 reason = "；".join(missing[:3]) if missing else "证据中未计算该指标"
                 direct = f"证据中未提及或无法计算：{reason}。请确认表格是否包含所需列，或换一种问法。"
-                llm_messages = []
                 thinking = list(state.get("thinking_steps") or [])
                 thinking.append("沙箱标明指标不可算，直接拒答")
                 return {
                     "intent": intent,
-                    "citations": citations,
+                    "citations": [],
                     "llm_messages": [],
                     "thinking_steps": thinking,
                     "schedule_card": state.get("schedule_card"),
@@ -457,11 +464,8 @@ def run_agent_workflow(
                     "pending_calendar": state.get("pending_calendar"),
                     "artifact": state.get("artifact"),
                 }
-            llm_messages = [
-                {"role": "system", "content": pool_text},
-                *hist,
-                {"role": "user", "content": msg},
-            ]
+            pool_text, included = build_pool_prompt(evidence)
+            sandbox_note = ""
             if any(e.get("source_type") == "sandbox" for e in evidence):
                 sandbox_note = (
                     "【数据分析说明】沙箱已在隔离环境中对上传表格**全量**计算。"
@@ -470,15 +474,66 @@ def run_agent_workflow(
                     "只回答用户所问的指标；若 missing 非空则说明未提及，不要用相邻汇总顶替。"
                     "比率可用小数或百分数等价表述。图表见 Artifact 面板。"
                 )
-                llm_messages[0] = {
-                    "role": "system",
-                    "content": sandbox_note + "\n\n" + pool_text,
-                }
+            memory_block = str(ctx.get("memory_block") or "") or load_memory_prompt(
+                db, state.get("user_id") or 1
+            )
+            bundle = ContextBundle(
+                answer_history=hist,
+                summary_block=str(ctx.get("summary_block") or ""),
+                working_block=str(ctx.get("working_block") or ""),
+                memory_block=memory_block,
+                stats=dict(ctx.get("stats") or {}),
+            )
+
+            def _rebuild(n: int) -> tuple[str, list[dict]]:
+                return build_pool_prompt(evidence, max_chars=n)
+
+            llm_messages, pool_text, rebuilt = compose_answer_messages(
+                bundle=bundle,
+                hist=hist,
+                message=msg,
+                pool_text=pool_text,
+                memory_block=memory_block,
+                rebuild_pool=_rebuild,
+                sandbox_note=sandbox_note,
+                has_evidence_system=True,
+            )
+            if rebuilt:
+                included = rebuilt
         else:
-            llm_messages = [*hist, {"role": "user", "content": msg}]
-        memory_block = load_memory_prompt(db, state.get("user_id") or 1)
-        if llm_messages and memory_block:
-            llm_messages = inject_system_memory(llm_messages, memory_block)
+            memory_block = str(ctx.get("memory_block") or "") or load_memory_prompt(
+                db, state.get("user_id") or 1
+            )
+            bundle = ContextBundle(
+                answer_history=hist,
+                summary_block=str(ctx.get("summary_block") or ""),
+                working_block=str(ctx.get("working_block") or ""),
+                memory_block=memory_block,
+                stats=dict(ctx.get("stats") or {}),
+            )
+            llm_messages, _, _ = compose_answer_messages(
+                bundle=bundle,
+                hist=hist,
+                message=msg,
+                pool_text="",
+                memory_block=memory_block,
+                rebuild_pool=None,
+                sandbox_note="",
+                has_evidence_system=False,
+            )
+
+        citations = [
+            {
+                "index": e["index"],
+                "filename": e.get("filename"),
+                "title": e.get("title"),
+                "snippet": e.get("snippet"),
+                "url": (e.get("url") or "").strip() or None,
+                "source_type": e.get("source_type"),
+            }
+            for e in included
+            if e.get("source_type") not in ("calendar", "sandbox")
+        ]
 
         thinking = list(state.get("thinking_steps") or [])
         if (
@@ -550,6 +605,7 @@ def run_agent_workflow(
             "document_ids": document_ids,
             "user_id": user_id,
             "pending_calendar": pending_calendar,
+            "context": ctx_state,
         }
     )
     return {
@@ -562,6 +618,7 @@ def run_agent_workflow(
         "direct_answer": out.get("direct_answer"),
         "pending_calendar": out.get("pending_calendar"),
         "artifact": out.get("artifact"),
+        "analysis_summary": out.get("analysis_summary"),
     }
 
 

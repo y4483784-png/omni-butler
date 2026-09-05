@@ -396,8 +396,9 @@ parse → AutoHarness.evaluate（可选）→ 本地 risk/permission → execute
 | H2 Verify + Audit | 已完成 | 本文主体 |
 | H3 Memory | 已完成 | `services/memory.py`：extract → upsert → system 注入；fast/answer 接线 |
 | H4 Eval + Docs | 已完成 | `test_harness_office_eval.py` + README 路线图 |
+| H5 Context | 已完成 | `agents/context/`：budget → window → summary → compose；会话摘要 + 工作状态 + 三视图 |
 | RAG retrieval-resume | 已完成（检索模块） | 邻接扩展 + 智谱 Rerank；见 `rag/expand.py` / `rerank.py` |
 
 ---
 
-*文档对应代码版本：Harness H0–H4 + RAG retrieval-resume + aiming-lab AutoHarness `evaluate` 对接（2026-08）。*
+*文档对应代码版本：Harness H0–H5 + RAG retrieval-resume + aiming-lab AutoHarness `evaluate` 对接（2026-09）。*

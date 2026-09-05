@@ -233,6 +233,78 @@ def test_first_turn_replaces_title_after_reply(auth_client: TestClient):
         db.close()
 
 
+def test_context_summary_injected_and_ui_keeps_full_history(auth_client: TestClient):
+    """ContextManager: answer path sees summary + recent turns; UI still has all messages."""
+    from app.models.models import Message
+
+    db = SessionLocal()
+    try:
+        sess = ChatSession(
+            user_id=1,
+            title="长会话",
+            context_summary="曾约定与王总明天下午开会",
+            context_summary_upto_message_id=4,
+        )
+        db.add(sess)
+        db.flush()
+        for i in range(12):
+            db.add(Message(session_id=sess.id, role="user", content=f"用户第{i}轮"))
+            db.add(Message(session_id=sess.id, role="assistant", content=f"助手第{i}轮"))
+        db.commit()
+        db.refresh(sess)
+        sid = sess.id
+    finally:
+        db.close()
+
+    captured: dict = {}
+
+    def _capture_workflow(**kwargs):
+        captured["history"] = list(kwargs.get("history") or [])
+        captured["context"] = dict(kwargs.get("context") or {})
+        return {
+            "intent": "chat",
+            "forced": False,
+            "citations": [],
+            "thinking_steps": [],
+            "llm_messages": [
+                {
+                    "role": "system",
+                    "content": (kwargs.get("context") or {}).get("summary_block") or "",
+                },
+                *list(kwargs.get("history") or []),
+                {"role": "user", "content": kwargs.get("message") or ""},
+            ],
+            "schedule_card": None,
+            "artifact": None,
+            "direct_answer": "",
+            "pending_calendar": None,
+            "analysis_summary": None,
+        }
+
+    with (
+        patch("app.api.chat._run_workflow_sync", side_effect=_capture_workflow),
+        patch("app.api.chat.stream_chat", side_effect=_fake_stream),
+        patch("app.api.chat._refresh_context_isolated"),
+        patch("app.api.chat._remember_turn_isolated"),
+    ):
+        r = auth_client.post(
+            "/api/chat",
+            json={"session_id": sid, "message": "一开始那个会主题是什么"},
+        )
+
+    assert r.status_code == 200
+    assert "【会话摘要】" in (captured.get("context") or {}).get("summary_block", "")
+    hist = captured.get("history") or []
+    assert hist
+    assert hist[0]["role"] == "user"
+    assert len(hist) <= 20
+    assert len(hist) >= 2
+
+    ui = auth_client.get(f"/api/sessions/{sid}/messages")
+    assert ui.status_code == 200
+    assert len(ui.json()) >= 24
+
+
 if __name__ == "__main__":
     test_agent_path_yields_early_progress()
     test_plain_chat_still_goes_through_agent_path()
