@@ -325,3 +325,53 @@ docker compose exec -w /app api python scripts/run_office_tabular_eval.py --dry-
 - 拒答题必须带 `missing` 原因词（如「年终奖」「join」）；沙箱崩溃、metrics 为空不算通过
 - 本集**不用** ragas faithfulness 做主分
 
+## 10. 上下文管理评测（ContextManager）
+
+对标 LongMemEval / NIAH / AgentMemBench：固定脚本化历史（教师强制），只变上下文策略；CI 用确定性指标，夜间可跑真实 LLM。
+
+### 分层
+
+| 层 | 内容 | 命令 |
+|----|------|------|
+| L0 | 不变式（system+当前 user、无半轮、角标⊆included、legacy 等价、token MAPE） | `pytest tests/test_context_invariants.py -q` |
+| L1 | 回放 + extractive 摘要；needle_presence / pending_retention | `python scripts/run_context_eval.py --summarizer extractive --split smoke --gate` |
+| 故障 | 摘要失败、估算漂移、异步追赶、regenerate、600 字裁剪 xfail | `pytest tests/test_context_faults.py -q` |
+| L2 | 真实摘要 + 作答 + 裁判（需 API） | `RUN_CTX_EVAL=1 python scripts/run_context_eval.py --live --split full --json --gate` |
+| L3 | 日志聚合 + 线上会话导出回流 | `python scripts/ctx_log_report.py --log ...` / `python scripts/export_context_case.py --session-id N --question ... --gold-keys ...` |
+
+### 数据集
+
+- 生成：`python scripts/gen_context_eval.py`
+- 路径：`data/eval/context_recall.jsonl`（192 条；smoke 24）
+- 字段：`history`（脚本回复）/ `pending_calendar` / `evidence_pool` / `probe{question,gold_keys,judge_mode}`
+- 校准：`data/eval/token_calibration.jsonl`
+
+### 五臂对照
+
+| arm | 含义 |
+|-----|------|
+| `legacy` | `CONTEXT_MANAGER_ENABLED=false` |
+| `window` | 仅窗口 |
+| `window_summary` | 窗口+摘要 |
+| `full` | 完整 ContextManager |
+| `oracle` | 近乎不压缩（est>128k 标 skipped） |
+
+### 门禁
+
+- 硬：`invariant_violations==0`；每个桶 `full.needle_presence >= legacy`；`pending_retention==1.0`
+- 相对基线：`data/eval/context_eval_baseline.json`（进 git；`--update-baseline` 更新）
+- 跌幅：needle>0.03 / fact_recall>0.05 / abstention>0.05；token 涨>10%；summary_fail_rate>5% → exit 1
+- 报告：`reports/context_eval_latest.json`（gitignore）
+
+### 提交前建议
+
+```bash
+cd backend
+pytest tests/test_context_manager.py tests/test_context_invariants.py tests/test_context_faults.py tests/test_context_eval_gen.py -q
+python scripts/run_context_eval.py --summarizer extractive --split smoke --arms legacy,full --gate
+```
+
+### 回流
+
+线上失忆 → `export_context_case.py` 写出 `data/eval/context_replays/*.json` → 同一 `run_context_eval.py --dataset` 回归。
+

@@ -166,6 +166,28 @@ def _clip_memory(block: str, max_chars: int) -> str:
     return text[: max(0, max_chars)]
 
 
+def _record_compose_stats(
+    bundle: ContextBundle | None,
+    *,
+    messages: list[dict],
+    level: str,
+    history_before: list[dict],
+    history_after: list[dict],
+) -> None:
+    """Write compose-stage watermark stats onto bundle.stats (side channel)."""
+    if bundle is None:
+        return
+    before_turns = len(to_logical_turns(history_before))
+    after_turns = len(to_logical_turns(history_after))
+    dropped = max(0, before_turns - after_turns)
+    used = estimate_messages_tokens(messages)
+    stats = dict(bundle.stats or {})
+    stats["compose_level"] = level
+    stats["compose_dropped_turns"] = dropped
+    stats["compose_tokens"] = used
+    bundle.stats = stats
+
+
 def compose_answer_messages(
     *,
     bundle: ContextBundle | None = None,
@@ -181,9 +203,12 @@ def compose_answer_messages(
 
     Returns (messages, pool_text_used, included_evidence_rows).
     included_evidence_rows is empty when rebuild_pool is None.
+    Also writes compose_level / compose_dropped_turns / compose_tokens onto
+    ``bundle.stats`` when a bundle is provided.
     """
     b = bundle or ContextBundle(answer_history=list(hist or []))
     history = list(hist if hist is not None else b.answer_history)
+    hist_before = list(history)
     mem = (memory_block or b.memory_block or "").strip()
     working = (b.working_block or "").strip()
     summary = (b.summary_block or "").strip()
@@ -208,6 +233,15 @@ def compose_answer_messages(
             keep_n = 1 if level == "emergency" else max(1, len(turns) // 2)
             history = flatten_turns(turns[-keep_n:])
             messages = [*history, {"role": "user", "content": message}]
+            used = estimate_messages_tokens(messages)
+            level = budget.level(used)
+        _record_compose_stats(
+            b if bundle is not None else None,
+            messages=messages,
+            level=level,
+            history_before=hist_before,
+            history_after=history,
+        )
         return messages, pool, included
 
     def build(pool_body: str, hist_msgs: list[dict], mem_block: str) -> list[dict]:
@@ -235,6 +269,13 @@ def compose_answer_messages(
     level = budget.level(used)
 
     if level == "safe":
+        _record_compose_stats(
+            b if bundle is not None else None,
+            messages=messages,
+            level=level,
+            history_before=hist_before,
+            history_after=history,
+        )
         return messages, pool, included
 
     # warn: shrink evidence pool + memory
@@ -248,6 +289,13 @@ def compose_answer_messages(
         if level == "safe" or level == "warn":
             # warn is acceptable after pool shrink
             if level == "warn" and budget.level(used) != "compact":
+                _record_compose_stats(
+                    b if bundle is not None else None,
+                    messages=messages,
+                    level=level,
+                    history_before=hist_before,
+                    history_after=history,
+                )
                 return messages, pool, included
 
     used = estimate_messages_tokens(messages)
@@ -273,5 +321,14 @@ def compose_answer_messages(
         history = flatten_turns(turns[-1:]) if turns else []
         mem = _clip_memory(mem, 200)
         messages = build(pool, history, mem)
+        used = estimate_messages_tokens(messages)
+        level = budget.level(used)
 
+    _record_compose_stats(
+        b if bundle is not None else None,
+        messages=messages,
+        level=level,
+        history_before=hist_before,
+        history_after=history,
+    )
     return messages, pool, included

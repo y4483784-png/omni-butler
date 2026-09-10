@@ -444,6 +444,7 @@ async def chat(
         wf_task: asyncio.Task | None = None
         extra_artifact: dict | None = None
         artifact_stored: dict | None = None
+        stream_usage: dict = {}
         try:
             yield _sse({"type": "ack", "path": "agent"})
             if new_title:
@@ -476,6 +477,11 @@ async def chat(
                     yield ": ping\n\n"
             wf = await wf_task
 
+            if isinstance(wf.get("context_stats"), dict):
+                for k in ("compose_level", "compose_dropped_turns", "compose_tokens"):
+                    if k in wf["context_stats"]:
+                        ctx_stats[k] = wf["context_stats"][k]
+
             intent = wf["intent"]
             forced = wf["forced"]
             citations_payload = wf["citations"]
@@ -505,12 +511,15 @@ async def chat(
                     ttft_ms = int((time.perf_counter() - t0) * 1000)
                     logger.info(
                         "chat_ttft path=agent_direct ttft_ms=%d intent=%s "
-                        "ctx_tokens=%d ctx_level=%s ctx_dropped=%d regenerate=%s",
+                        "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
+                        "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
                         ttft_ms,
                         intent,
                         int(ctx_stats.get("tokens") or 0),
                         ctx_stats.get("level") or "safe",
                         int(ctx_stats.get("dropped_turns") or 0),
+                        ctx_stats.get("compose_level") or "-",
+                        int(ctx_stats.get("compose_dropped_turns") or 0),
                         is_regenerate,
                     )
                     yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
@@ -518,18 +527,23 @@ async def chat(
                 acc.append(direct_answer)
                 yield _sse({"type": "token", "content": direct_answer})
             else:
-                async for delta in redact_token_stream(stream_chat(llm_messages)):
+                async for delta in redact_token_stream(
+                    stream_chat(llm_messages, usage_out=stream_usage)
+                ):
                     if not ttft_logged:
                         ttft_ms = int((time.perf_counter() - t0) * 1000)
                         logger.info(
                             "chat_ttft path=agent_stream ttft_ms=%d intent=%s history_len=%d "
-                            "ctx_tokens=%d ctx_level=%s ctx_dropped=%d regenerate=%s",
+                            "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
+                            "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
                             ttft_ms,
                             intent,
                             len(workflow_history),
                             int(ctx_stats.get("tokens") or 0),
                             ctx_stats.get("level") or "safe",
                             int(ctx_stats.get("dropped_turns") or 0),
+                            ctx_stats.get("compose_level") or "-",
+                            int(ctx_stats.get("compose_dropped_turns") or 0),
                             is_regenerate,
                         )
                         yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
@@ -615,6 +629,26 @@ async def chat(
                     )
                 except Exception:
                     logger.exception("context refresh thread failed")
+                try:
+                    est = int(ctx_stats.get("tokens") or 0)
+                    actual = stream_usage.get("prompt_tokens")
+                    err_pct = None
+                    if actual is not None and int(actual) > 0:
+                        err_pct = round(abs(est - int(actual)) / float(actual) * 100.0, 2)
+                    logger.info(
+                        "chat_ctx session_id=%s ctx_est_tokens=%d ctx_actual_tokens=%s "
+                        "ctx_err_pct=%s ctx_level=%s ctx_compose_level=%s "
+                        "summary_status=%s",
+                        session.id,
+                        est,
+                        actual if actual is not None else "-",
+                        err_pct if err_pct is not None else "-",
+                        ctx_stats.get("level") or "safe",
+                        ctx_stats.get("compose_level") or "-",
+                        "deferred",
+                    )
+                except Exception:
+                    logger.exception("chat_ctx log failed")
                 if new_title and not is_regenerate:
                     try:
                         llm_title = await asyncio.to_thread(

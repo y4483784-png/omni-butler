@@ -60,20 +60,24 @@ def summarize_incremental(
         content = str(m.get("content") or "")[:600]
         lines.append(f"{role}：{content}")
     transcript = "\n".join(lines)
-    parsed = complete_json(
-        [
-            {"role": "system", "content": SUMMARY_SYSTEM},
-            {
-                "role": "user",
-                "content": (
-                    f"摘要上限约 {budget} 字。\n"
-                    f"已有摘要：\n{(prev_summary or '').strip() or '（无）'}\n\n"
-                    f"新溢出对话：\n{transcript}"
-                ),
-            },
-        ],
-        model=resolved_planner_model(),
-    )
+    try:
+        parsed = complete_json(
+            [
+                {"role": "system", "content": SUMMARY_SYSTEM},
+                {
+                    "role": "user",
+                    "content": (
+                        f"摘要上限约 {budget} 字。\n"
+                        f"已有摘要：\n{(prev_summary or '').strip() or '（无）'}\n\n"
+                        f"新溢出对话：\n{transcript}"
+                    ),
+                },
+            ],
+            model=resolved_planner_model(),
+        )
+    except Exception:
+        logger.exception("summarize_incremental LLM failed")
+        return None
     if not isinstance(parsed, dict):
         return None
     summary = str(parsed.get("summary") or "").strip()

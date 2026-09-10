@@ -88,8 +88,33 @@ def _get_sync_client():
     return _sync_client
 
 
-async def stream_chat(messages: list[dict], model: str | None = None):
-    """Yield text deltas for an assistant reply."""
+def _usage_prompt_tokens(usage: Any) -> int | None:
+    if usage is None:
+        return None
+    for key in ("prompt_tokens", "input_tokens"):
+        val = getattr(usage, key, None)
+        if val is None and isinstance(usage, dict):
+            val = usage.get(key)
+        if val is not None:
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+async def stream_chat(
+    messages: list[dict],
+    model: str | None = None,
+    *,
+    usage_out: dict[str, Any] | None = None,
+):
+    """Yield text deltas for an assistant reply.
+
+    When ``usage_out`` is provided, best-effort fill ``prompt_tokens`` /
+    ``completion_tokens`` from stream usage (``stream_options.include_usage``).
+    Providers that ignore the option leave ``usage_out`` unchanged.
+    """
     if not settings.llm_api_key:
         async for ch in _mock_stream(messages):
             yield ch
@@ -98,13 +123,43 @@ async def stream_chat(messages: list[dict], model: str | None = None):
     client = _get_async_client()
     model_name = model or resolved_chat_model()
     async with async_model_slot(model_name):
-        resp = await client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            stream=True,
-        )
+        create_kwargs: dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+            "stream": True,
+        }
+        if usage_out is not None:
+            create_kwargs["stream_options"] = {"include_usage": True}
+        try:
+            resp = await client.chat.completions.create(**create_kwargs)
+        except Exception:
+            # Some gateways reject stream_options; retry without it.
+            if usage_out is not None and "stream_options" in create_kwargs:
+                logger.debug("stream_chat retry without stream_options")
+                create_kwargs.pop("stream_options", None)
+                resp = await client.chat.completions.create(**create_kwargs)
+            else:
+                raise
         async for chunk in resp:
-            delta = chunk.choices[0].delta.content or ""
+            if usage_out is not None:
+                usage = getattr(chunk, "usage", None)
+                pt = _usage_prompt_tokens(usage)
+                if pt is not None:
+                    usage_out["prompt_tokens"] = pt
+                ct = None
+                if usage is not None:
+                    ct = getattr(usage, "completion_tokens", None)
+                    if ct is None and isinstance(usage, dict):
+                        ct = usage.get("completion_tokens")
+                if ct is not None:
+                    try:
+                        usage_out["completion_tokens"] = int(ct)
+                    except (TypeError, ValueError):
+                        pass
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = (choices[0].delta.content or "") if choices[0].delta else ""
             if delta:
                 yield delta
 
@@ -120,6 +175,30 @@ def complete_text(
 
     Uses ``settings.llm_timeout`` (default 120s) rather than the short sync
     client timeout used by ``complete_json`` classifiers.
+    Default model remains ``settings.llm_model`` for backward compatibility;
+    production chat alignment should call ``complete_text_with_usage`` with
+    ``resolved_chat_model()`` or omit model there.
+    """
+    text, _usage = complete_text_with_usage(
+        messages,
+        model=model or settings.llm_model,
+        temperature=temperature,
+        timeout=timeout,
+    )
+    return text
+
+
+def complete_text_with_usage(
+    messages: list[dict],
+    model: str | None = None,
+    *,
+    temperature: float = 0.2,
+    timeout: float | None = None,
+) -> tuple[str, int | None]:
+    """Like ``complete_text``, also returning ``prompt_tokens`` when the API provides usage.
+
+    Default model follows ``resolved_chat_model()`` when ``model`` is omitted so
+    context eval aligns with production ``stream_chat``.
     """
     if not settings.llm_api_key:
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
@@ -128,16 +207,16 @@ def complete_text(
             return (
                 f"（演示模式）根据证据，关于「{last_user}」的简要说明如下：[1]\n"
                 "配置 LLM_API_KEY 后将由大模型基于证据生成完整回答。"
-            )
+            ), None
         if system and ("未取得任何可用证据" in system or "未检索到" in system):
-            return "当前未检索到与问题匹配的相关内容。"
-        return f"（演示模式）已收到：{last_user}"
+            return "当前未检索到与问题匹配的相关内容。", None
+        return f"（演示模式）已收到：{last_user}", None
 
     # 智谱要求 temperature 最多 2 位小数
     temp = round(float(temperature), 2)
     req_timeout = float(timeout if timeout is not None else settings.llm_timeout)
     client = _get_sync_client()
-    model_name = model or settings.llm_model
+    model_name = model or resolved_chat_model()
     try:
         with model_slot(model_name):
             resp = client.chat.completions.create(
@@ -147,7 +226,8 @@ def complete_text(
                 temperature=temp,
                 timeout=req_timeout,
             )
-        return (resp.choices[0].message.content or "").strip()
+        text = (resp.choices[0].message.content or "").strip()
+        return text, _usage_prompt_tokens(getattr(resp, "usage", None))
     except Exception as exc:
         # Timeout / rate-limit are expected under batch eval; keep logs short
         name = type(exc).__name__
@@ -155,7 +235,7 @@ def complete_text(
             logger.warning("complete_text %s: %s", name, exc)
         else:
             logger.exception("complete_text failed")
-        return ""
+        return "", None
 
 
 def complete_json(messages: list[dict], model: str | None = None) -> dict | None:

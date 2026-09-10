@@ -1,0 +1,216 @@
+{
+  "n": 24,
+  "split": "smoke",
+  "mode": "extractive",
+  "arms": {
+    "legacy": {
+      "overall": {
+        "needle_presence": 0.2847,
+        "pending_retention": 0.0,
+        "entity_retention": null,
+        "fact_recall": null,
+        "token_f1": null,
+        "est_tokens_mean": 1156.79,
+        "compose_ms_p50": 0.322,
+        "compaction_rate": 0.0,
+        "n": 24,
+        "skipped": 0
+      },
+      "by_bucket": {
+        "30": {
+          "needle_presence": 0.2847,
+          "fact_recall": null,
+          "n": 24
+        }
+      },
+      "by_type": {
+        "user_fact": {
+          "needle_presence": 0.3333,
+          "fact_recall": null,
+          "n": 3
+        },
+        "assistant_fact": {
+          "needle_presence": 0.3333,
+          "fact_recall": null,
+          "n": 3
+        },
+        "knowledge_update": {
+          "needle_presence": 0.3333,
+          "fact_recall": null,
+          "n": 3
+        },
+        "multi_hop": {
+          "needle_presence": 0.1667,
+          "fact_recall": null,
+          "n": 3
+        },
+        "temporal": {
+          "needle_presence": 0.2222,
+          "fact_recall": null,
+          "n": 3
+        },
+        "pending_task": {
+          "needle_presence": 0.4444,
+          "fact_recall": null,
+          "n": 3
+        },
+        "preference": {
+          "needle_presence": 0.3333,
+          "fact_recall": null,
+          "n": 3
+        },
+        "abstention": {
+          "needle_presence": 0.1111,
+          "fact_recall": null,
+          "n": 3
+        }
+      },
+      "by_depth": {
+        "0": {
+          "needle_presence": 0.0417,
+          "fact_recall": null,
+          "n": 8
+        },
+        "50": {
+          "needle_presence": 0.0,
+          "fact_recall": null,
+          "n": 8
+        },
+        "75": {
+          "needle_presence": 0.8125,
+          "fact_recall": null,
+          "n": 8
+        }
+      }
+    },
+    "full": {
+      "overall": {
+        "needle_presence": 0.7431,
+        "pending_retention": 1.0,
+        "entity_retention": 0.4722,
+        "fact_recall": null,
+        "token_f1": null,
+        "est_tokens_mean": 1583.04,
+        "compose_ms_p50": 0.591,
+        "compaction_rate": 0.0,
+        "n": 24,
+        "skipped": 0
+      },
+      "by_bucket": {
+        "30": {
+          "needle_presence": 0.7431,
+          "fact_recall": null,
+          "n": 24
+        }
+      },
+      "by_type": {
+        "user_fact": {
+          "needle_presence": 1.0,
+          "fact_recall": null,
+          "n": 3
+        },
+        "assistant_fact": {
+          "needle_presence": 1.0,
+          "fact_recall": null,
+          "n": 3
+        },
+        "knowledge_update": {
+          "needle_presence": 0.5556,
+          "fact_recall": null,
+          "n": 3
+        },
+        "multi_hop": {
+          "needle_presence": 0.5,
+          "fact_recall": null,
+          "n": 3
+        },
+        "temporal": {
+          "needle_presence": 0.6667,
+          "fact_recall": null,
+          "n": 3
+        },
+        "pending_task": {
+          "needle_presence": 1.0,
+          "fact_recall": null,
+          "n": 3
+        },
+        "preference": {
+          "needle_presence": 1.0,
+          "fact_recall": null,
+          "n": 3
+        },
+        "abstention": {
+          "needle_presence": 0.2222,
+          "fact_recall": null,
+          "n": 3
+        }
+      },
+      "by_depth": {
+        "0": {
+          "needle_presence": 0.7292,
+          "fact_recall": null,
+          "n": 8
+        },
+        "50": {
+          "needle_presence": 0.6875,
+          "fact_recall": null,
+          "n": 8
+        },
+        "75": {
+          "needle_presence": 0.8125,
+          "fact_recall": null,
+          "n": 8
+        }
+      }
+    }
+  },
+  "invariants": {
+    "violations": 0,
+    "cases": []
+  },
+  "efficiency": {
+    "est_tokens_mean": 1369.92,
+    "actual_tokens_mean": null,
+    "est_error_pct": null,
+    "compose_ms_p50": 0.435,
+    "summary_calls": 456,
+    "summary_fail_rate": 0.0
+  },
+  "failures": [
+    {
+      "id": "ctx_pending_task_b30_d0_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d50_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d75_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    }
+  ],
+  "cache_hits": 0,
+  "cache_misses": 0
+}
