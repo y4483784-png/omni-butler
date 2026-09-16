@@ -12,11 +12,22 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
 from app.eval.metrics import retrieval_report
+from app.eval.tenant import activate_eval_tenant
 from app.models.models import Chunk, Document
 from app.rag.retrieval import retrieve
 
 DEFAULT_DATASET = Path(__file__).resolve().parents[2] / "data" / "eval" / "rag_retrieval.jsonl"
 EVAL_USER_ID = 92001
+EVAL_EXTERNAL_ID = "rag_eval_92001"
+
+
+def _activate(db: Session) -> None:
+    activate_eval_tenant(
+        db,
+        EVAL_USER_ID,
+        external_id=EVAL_EXTERNAL_ID,
+        name="RAG Eval Fixture",
+    )
 
 _CORPUS: dict[str, dict[str, Any]] = {
     "travel_policy": {
@@ -163,6 +174,7 @@ def load_cases(path: str | Path | None = None) -> list[RagEvalCase]:
 
 
 def clear_eval_corpus(db: Session) -> None:
+    _activate(db)
     docs = db.query(Document).filter(Document.user_id == EVAL_USER_ID).all()
     for d in docs:
         db.query(Chunk).filter(Chunk.document_id == d.id).delete()
@@ -172,6 +184,7 @@ def clear_eval_corpus(db: Session) -> None:
 
 def seed_eval_corpus(db: Session) -> dict[str, int]:
     """Insert mini corpus; return map doc_key -> document_id."""
+    _activate(db)
     clear_eval_corpus(db)
     key_to_id: dict[str, int] = {}
     for key, spec in _CORPUS.items():
@@ -246,6 +259,7 @@ def run_rag_retrieval_eval(
     init_db()
     db = SessionLocal()
     try:
+        _activate(db)
         key_to_id = seed_eval_corpus(db)
         gold_sets: list[set[str]] = []
         pred_ranked: list[list[str]] = []
@@ -275,8 +289,14 @@ def run_rag_retrieval_eval(
 
         metrics = retrieval_report(gold_sets, pred_ranked, k=top_k)
         return RagEvalReport(n=len(items), metrics=metrics, failures=failures)
+    except Exception:
+        db.rollback()
+        raise
     finally:
-        clear_eval_corpus(db)
+        try:
+            clear_eval_corpus(db)
+        except Exception:
+            db.rollback()
         db.close()
         settings.rag_hybrid_enabled = prev_hybrid
         settings.rag_rerank_provider = prev_provider

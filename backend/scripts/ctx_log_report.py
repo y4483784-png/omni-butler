@@ -13,7 +13,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-DEFAULT_REPORT = Path(__file__).resolve().parents[1] / "reports" / "context_online_latest.json"
+DEFAULT_REPORT = (
+    Path(__file__).resolve().parents[1] / "reports" / "context_online" / "latest.json"
+)
 
 _TTFT_RE = re.compile(
     r"chat_ttft\s+.*?\bttft_ms=(?P<ttft>\d+).*?\bctx_tokens=(?P<tokens>\d+)"

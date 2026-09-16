@@ -18,11 +18,12 @@ from sqlalchemy.orm import Session
 from app.agents.workflow import build_pool_prompt
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
+from app.eval.tenant import ensure_eval_user
 from app.core.llm import complete_text
 from app.eval.metrics import multilabel_report, retrieval_report
 from app.eval.ragas_judge import run_ragas_metrics
 from app.eval.tool_routing import EvalCase as RoutingEvalCase, predict_case
-from app.models.models import Chunk, Document, User
+from app.models.models import Chunk, Document
 from app.rag import vector_store
 from app.rag.ingestion import ingest_document
 from app.rag.retrieval import retrieve
@@ -186,32 +187,8 @@ def load_cases(path: str | Path | None = None) -> list[YZEvalCase]:
 
 
 def ensure_yz_eval_user(db: Session) -> None:
-    """Create fixed-id eval user so documents.user_id FK / RLS can succeed.
-
-    Do not bump users_id_seq: runtime role omni_app has USAGE/SELECT only
-    (setval needs UPDATE), and MAX(id)=92002 would skip ordinary user ids.
-    Explicit PK insert does not consume the serial.
-    """
-    existing = db.query(User).filter(User.id == YZ_EVAL_USER_ID).first()
-    if existing is not None:
-        return
-    taken = db.query(User).filter(User.external_id == YZ_EVAL_EXTERNAL_ID).first()
-    if taken is not None:
-        raise RuntimeError(
-            f"external_id {YZ_EVAL_EXTERNAL_ID!r} exists as users.id={taken.id}, "
-            f"expected id={YZ_EVAL_USER_ID}"
-        )
-    db.add(
-        User(
-            id=YZ_EVAL_USER_ID,
-            external_id=YZ_EVAL_EXTERNAL_ID,
-            name="YZ Eval Fixture",
-            password_hash="",
-            is_active=1,
-            is_admin=0,
-        )
-    )
-    db.flush()
+    """Create fixed-id eval user so documents.user_id FK / RLS can succeed."""
+    ensure_eval_user(db, YZ_EVAL_USER_ID, YZ_EVAL_EXTERNAL_ID, "YZ Eval Fixture")
 
 
 def clear_yz_corpus(db: Session) -> None:

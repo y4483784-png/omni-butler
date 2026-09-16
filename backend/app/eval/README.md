@@ -2,6 +2,56 @@
 
 对标业界 Agent 评测分层（LangSmith / ToolLLM / τ-bench 等），本仓库 **离线** 可跑的指标如下。
 
+## 0. 统一入口（必读）
+
+所有套件经 `backend/scripts/eval.py` 调度。目标优先级：`--target` > 环境变量 `EVAL_TARGET` > 套件默认。venv 目标强制 SQLite + 关 Redis；Compose `eval` 服务会注入 `EVAL_TARGET=services`（日常 `up/start/ps` 不会拉起该服务）。`rag` / `routing` / `context` / `tabular` 即使 target=services 也把应用库指到 scratch SQLite，避免往线上 Postgres 灌评测行、踩 FORCE RLS。`yz` / `grounding` 仍用真实库并 `set_rls_context`。`tabular` full 在 services 下探 `sandbox-runner /health`，不在 eval 容器里查 `omni-sandbox` 镜像。
+
+目标优先级：`--target` > 环境变量 `EVAL_TARGET` > 套件默认。Compose `eval` 服务已设 `EVAL_TARGET=services`，**不要**在 eval 容器里查本机 `omni-sandbox` 镜像——live 表格走 `sandbox-runner:8002`。`omni-butler-sandbox-1 Exited` 是镜像占位容器正常退出，不是故障。
+
+| 套件 | smoke | full | 默认 target |
+|------|-------|------|-------------|
+| `pytest` | health/router/gateway/metrics | `tests/` 全量 | venv |
+| `routing` | 缓存命中即可 | `--refresh-cache` + 门槛 | venv |
+| `rag` | 启发式 rerank | `--zhipu-rerank` | venv |
+| `yz` | `--limit 10 --skip-ragas` | 全量 + zhipu rerank | **services** |
+| `grounding` | `--skip-ragas --limit 8` | `--score-drafts` | **services** |
+| `tabular` | `--dry-compile --split smoke` | live `--split full` | venv |
+| `context` | extractive smoke + gate | 五臂 full + gate | venv |
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+
+python scripts/eval.py list
+python scripts/eval.py run pytest --profile smoke
+python scripts/eval.py run rag --profile smoke
+python scripts/eval.py last rag
+
+# Compose 栈已在跑时：
+docker compose --profile eval run --rm eval python scripts/eval.py run yz --profile smoke
+```
+
+### 报告在哪
+
+```
+backend/reports/
+  index.jsonl
+  <suite>/latest.json
+  <suite>/latest.md
+  <suite>/runs/<YYYYMMDD-HHMMSS>_<profile>/
+      report.json
+      samples.jsonl
+      summary.md
+      stdout.log
+      junit.xml          # 仅 pytest
+```
+
+`report.json` 含 `meta`（suite/profile/target/argv/duration/git/dataset sha）与 `metrics` / `failures`。旧路径 `*_eval_latest.json` 已废弃。
+
+路由缓存 / Context 基线仍在 `data/eval/`（不是报告）：`router_cache.json`、`context_eval_baseline.json`。
+
+---
+
 ## 1. 评测对象
 
 | 层级 | 测什么 | 输入 | 金标准 |
@@ -27,9 +77,9 @@ RAG 检索层（可选）：`precision@k` / `recall@k` / `MRR` — 见 `metrics.
 评测数据集：`backend/data/eval/rag_retrieval.jsonl`（**500** 条口语化问法；seed 语料 10 篇文档）。可用 `python scripts/gen_rag_eval_500.py` 重建。
 
 ```bash
-python scripts/run_rag_eval.py
-python scripts/run_rag_eval.py --zhipu-rerank   # 需 LLM_API_KEY
-pytest tests/test_rag_expand_rerank.py tests/test_rag_retrieval_eval.py -q
+python scripts/eval.py run rag --profile smoke
+python scripts/eval.py run rag --profile full          # --zhipu-rerank
+# 兼容旧入口：python scripts/run_rag_eval.py
 ```
 
 指标：
@@ -89,24 +139,13 @@ pytest tests/test_rag_expand_rerank.py tests/test_rag_retrieval_eval.py -q
 ```bash
 cd backend
 
-# 人类可读报告
-python scripts/run_office_eval.py
-
-# JSON（CI / 看板）
-python scripts/run_office_eval.py --json
-
-# 门槛（CI gate）
-python scripts/run_office_eval.py --min-intent-acc 0.82 --min-tool-exact 0.78
-
-# pytest（默认离线：mock 路由测管线 + gateway 契约；不打真实 API）
-pytest tests/test_harness_office_eval.py tests/test_eval_metrics.py -q
-
-# 真实 LLM 路由打分（500 条真实调用，显式开关才跑）
-RUN_ROUTER_EVAL=1 pytest tests/test_harness_office_eval.py::test_routing_eval_meets_thresholds -q
+python scripts/eval.py run routing --profile smoke
+python scripts/eval.py run routing --profile full
+# 兼容：python scripts/run_office_eval.py --json
 ```
 
 路由评测走 `app.agents.router.route`（严格 LLM 判定），结果缓存在
-`backend/data/eval/router_cache.json`；`run_office_eval.py --refresh-cache` 可强制重打。
+`backend/data/eval/router_cache.json`；`--refresh-cache` 可强制重打。
 
 ## 5. 扩展数据集
 
@@ -158,23 +197,12 @@ Judge LLM / Embeddings 走现有智谱 OpenAI 兼容端点（`LLM_BASE_URL` + `L
 ```bash
 cd backend
 
-# 默认：真实 MinIO 入库 + ragas（需 MinIO、Qdrant、LLM key）
-python scripts/run_yz_eval.py
-
-# 仅检索 + 规则指标（省 API 费用）
-python scripts/run_yz_eval.py --skip-ragas
-
-# 小子集调试
-python scripts/run_yz_eval.py --limit 10 --skip-ragas
-
-# JSON 报告 + 门槛告警（仍只告警，不改代码）
-python scripts/run_yz_eval.py --json --min-recall 0.5
-
-# 烟测（mock 入库，不断言高分）
-pytest tests/test_yz_fullchain_eval.py -q
+python scripts/eval.py run yz --profile smoke    # 需 Compose eval 服务
+python scripts/eval.py run yz --profile full
+# 兼容旧入口仍可用；报告写入 reports/yz/...
 ```
 
-报告输出：`backend/reports/yz_eval_latest.json` + 终端摘要 + failures Top-N。
+报告输出：`backend/reports/yz/latest.json` + `runs/<ts>/` + 终端摘要。
 
 ## 8. 依据核验忠实度评测（grounding + ragas）
 
@@ -200,52 +228,18 @@ pytest tests/test_yz_fullchain_eval.py -q
 ```bash
 cd backend
 
-# 成稿 + 核验重写 + ragas（需 LLM_API_KEY；kb 题需可入库）
-python scripts/run_grounding_eval.py
-
-# 对照：关闭重写（失败只贴免责）
-python scripts/run_grounding_eval.py --no-repair
-
-# 省费用：只看 repair / disclaimer / sandbox 规则
-python scripts/run_grounding_eval.py --skip-ragas --limit 8
-
-# 门槛告警（非 CI 默认）
-python scripts/run_grounding_eval.py --min-faithfulness 0.75
-
-# 量化「重写是否提高忠实度」（额外 judge 费用）
-python scripts/run_grounding_eval.py --score-drafts
-
-# 烟测（mock，不打真实 API）
-pytest tests/test_grounding_eval.py -q
+python scripts/eval.py run grounding --profile smoke
+python scripts/eval.py run grounding --profile full
 ```
 
-**在 Compose 虚拟机上跑**：api 镜像不挂源码，需重建后 `exec`。`backend/.dockerignore` 已放行 `scripts/` 与 `data/eval/`。
+**在 Compose 虚拟机上跑**：
 
 ```bash
 cd /mnt/hgfs/omni-butler
-export DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0
-docker compose build api
-docker compose up -d --force-recreate api api2
-docker compose exec -w /app api ls scripts/run_grounding_eval.py
-docker compose exec -w /app api ls "tests/YZ测试文档/测试用例.md"
-docker compose exec -w /app api python scripts/run_grounding_eval.py --skip-ragas --limit 8
+docker compose --profile eval run --rm eval python scripts/eval.py run grounding --profile smoke
 ```
 
-kb seed / 检索走 Postgres RLS：runner 会确保 `users.id=92002`（`yz_eval_92002`）存在，再 `set_rls_context`。不调整 `users_id_seq`（`omni_app` 无 UPDATE）。若仍报 RLS / FK，确认已重建包含该改动的 api 镜像。
-
-若暂时不想重建，可一次性挂载宿主机目录（仍需镜像里已有 `app/eval/grounding.py`）：
-
-```bash
-docker compose run --rm \
-  -v /mnt/hgfs/omni-butler/backend/scripts:/app/scripts:ro \
-  -v /mnt/hgfs/omni-butler/backend/data:/app/data:ro \
-  -v "/mnt/hgfs/omni-butler/backend/tests/YZ测试文档:/app/tests/YZ测试文档:ro" \
-  api python scripts/run_grounding_eval.py --skip-ragas --limit 8
-```
-
-报告：`backend/reports/grounding_eval_latest.json`。含按 `source` 分组的 mean faithfulness、repair_rate、disclaimer_rate、sandbox_rule_hit_rate；`failures` 为 faithfulness &lt; 0.5 或规则命中等样例。
-
-Judge 实现：`app/eval/ragas_judge.py`（YZ 与本评测共用）。
+报告：`backend/reports/grounding/latest.json`。含按 `source` 分组的 mean faithfulness、repair_rate、disclaimer_rate、sandbox_rule_hit_rate。
 
 ## 9. 办公表格客观短答案评测（office_tabular）
 
@@ -260,32 +254,17 @@ Judge 实现：`app/eval/ragas_judge.py`（YZ 与本评测共用）。
 ### 运行
 
 ```bash
-# 默认：live 沙箱，仅 smoke（20 题，避免满量 Docker）
-python scripts/run_office_tabular_eval.py
-
-# 计划准确率（无 Docker，可跑 full 88 题）
-python scripts/run_office_tabular_eval.py --dry-compile --split full
-
-# live 全量（可选，耗时长）
-python scripts/run_office_tabular_eval.py --split full
+python scripts/eval.py run tabular --profile smoke   # dry-compile
+python scripts/eval.py run tabular --profile full    # live sandbox
 ```
 
-Compose 虚拟机（需已重建 api 镜像）：
+Compose 虚拟机（live full）：
 
 ```bash
-docker compose exec -w /app api python scripts/gen_office_tabular_eval.py
-docker compose exec -w /app api python scripts/run_office_tabular_eval.py
-docker compose exec -w /app api python scripts/run_office_tabular_eval.py --dry-compile --split full
+docker compose --profile eval run --rm eval python scripts/eval.py run tabular --profile full
 ```
 
-### 两级评测（Plan vs Exec）
-
-| 阶段 | 命令 | 含义 |
-|------|------|------|
-| **Plan** | `--dry-compile` | IR（operation / filters / join_key / uncomputable）与 `gold_plan` 一致 |
-| **Exec** | 默认 live | 沙箱 `SUMMARY_JSON.metrics` 对 `gold.value`；拒答题必须带 `missing` 指定 token |
-
-报告：`backend/reports/office_tabular_eval_latest.json`
+报告：`backend/reports/tabular/latest.json`
 
 ### 主指标与切片
 
@@ -333,10 +312,10 @@ docker compose exec -w /app api python scripts/run_office_tabular_eval.py --dry-
 
 | 层 | 内容 | 命令 |
 |----|------|------|
-| L0 | 不变式（system+当前 user、无半轮、角标⊆included、legacy 等价、token MAPE） | `pytest tests/test_context_invariants.py -q` |
-| L1 | 回放 + extractive 摘要；needle_presence / pending_retention | `python scripts/run_context_eval.py --summarizer extractive --split smoke --gate` |
-| 故障 | 摘要失败、估算漂移、异步追赶、regenerate、600 字裁剪 xfail | `pytest tests/test_context_faults.py -q` |
-| L2 | 真实摘要 + 作答 + 裁判（需 API） | `RUN_CTX_EVAL=1 python scripts/run_context_eval.py --live --split full --json --gate` |
+| L0 | 不变式（system+当前 user、无半轮、角标⊆included、legacy 等价、token MAPE） | `python -m pytest tests/test_context_invariants.py -q` |
+| L1 | 回放 + extractive 摘要；needle_presence / pending_retention | `python scripts/eval.py run context --profile smoke` |
+| 故障 | 摘要失败、估算漂移、异步追赶、regenerate、600 字裁剪 xfail | `python -m pytest tests/test_context_faults.py -q` |
+| L2 | 真实摘要 + 作答 + 裁判（需 API） | `RUN_CTX_EVAL=1 python scripts/run_context_eval.py --live --split full --gate` |
 | L3 | 日志聚合 + 线上会话导出回流 | `python scripts/ctx_log_report.py --log ...` / `python scripts/export_context_case.py --session-id N --question ... --gold-keys ...` |
 
 ### 数据集
@@ -361,14 +340,14 @@ docker compose exec -w /app api python scripts/run_office_tabular_eval.py --dry-
 - 硬：`invariant_violations==0`；每个桶 `full.needle_presence >= legacy`；`pending_retention==1.0`
 - 相对基线：`data/eval/context_eval_baseline.json`（进 git；`--update-baseline` 更新）
 - 跌幅：needle>0.03 / fact_recall>0.05 / abstention>0.05；token 涨>10%；summary_fail_rate>5% → exit 1
-- 报告：`reports/context_eval_latest.json`（gitignore）
+- 报告：`reports/context/latest.json`（gitignore 整个 `reports/`）
 
 ### 提交前建议
 
 ```bash
 cd backend
-pytest tests/test_context_manager.py tests/test_context_invariants.py tests/test_context_faults.py tests/test_context_eval_gen.py -q
-python scripts/run_context_eval.py --summarizer extractive --split smoke --arms legacy,full --gate
+python scripts/eval.py run context --profile smoke
+python -m pytest tests/test_context_manager.py tests/test_context_invariants.py tests/test_context_faults.py tests/test_context_eval_gen.py -q
 ```
 
 ### 回流

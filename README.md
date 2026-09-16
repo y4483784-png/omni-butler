@@ -679,52 +679,30 @@ python scripts/migrate_uploads_out.py --delete-old
 
 **仍待办 / 延后**：日程独立面板；LDAP/OIDC；部门共享知识库；不整仓换 OpenHands / deepagents / LightRAG 图谱。
 
-### 办公路由评测（标准指标）
+### 评测统一入口
 
-指标与跑法见 [`backend/app/eval/README.md`](backend/app/eval/README.md)。金标准数据集：`backend/data/eval/office_tool_routing.jsonl`（**500** 条口语化用例；可用 `python scripts/gen_office_eval_500.py` 重建）。
-
-```bash
-cd backend
-python scripts/run_office_eval.py            # 真实 LLM 路由（结果缓存 router_cache.json；--refresh-cache 重打）
-# Intent Accuracy / Macro-F1 · Tool Exact-Match · Micro/Macro P/R/F1 · Hamming · Recall@k
-pytest tests/test_harness_office_eval.py tests/test_eval_metrics.py -q   # 离线（mock 路由）
-# RUN_ROUTER_EVAL=1 时上述 pytest 额外跑 500 条真实 LLM 打分门槛
-```
-
-### RAG 检索评测
-
-金标准：`backend/data/eval/rag_retrieval.jsonl`（**500** 条；可用 `python scripts/gen_rag_eval_500.py` 重建）。指标：Precision@k / Recall@k / MRR，见 [`backend/app/eval/README.md`](backend/app/eval/README.md) §1b。
+所有离线 / 评测套件走 [`backend/scripts/eval.py`](backend/scripts/eval.py)。详情与指标见 [`backend/app/eval/README.md`](backend/app/eval/README.md)。
 
 ```bash
 cd backend
-python scripts/run_rag_eval.py
-# 可选：--zhipu-rerank（需 API Key）
-pytest tests/test_rag_expand_rerank.py tests/test_rag_retrieval_eval.py -q
+pip install -r requirements-dev.txt   # pytest 等，仅开发机 / venv
+
+# 列表
+python scripts/eval.py list
+
+# 冒烟（venv：自动 SQLite + 关 Redis，不连 Compose 中间件）
+python scripts/eval.py run pytest --profile smoke
+python scripts/eval.py run rag --profile smoke
+python scripts/eval.py run tabular --profile smoke
+python scripts/eval.py run context --profile smoke
+
+# 需要 MinIO / Qdrant / Postgres 的套件：用 Compose eval 服务（日常 up 不会拉起）
+docker compose --profile eval run --rm eval python scripts/eval.py run yz --profile smoke
+docker compose --profile eval run --rm eval python scripts/eval.py run grounding --profile full
+
+# 最近一次报告
+python scripts/eval.py last rag
+# 文件：backend/reports/<suite>/latest.json 与 reports/index.jsonl
 ```
 
-配置见 `.env.example`：`RAG_CANDIDATE_K` / `RAG_EXPAND_WINDOW` / `RAG_RERANK_PROVIDER=zhipu` / `RERANK_MODEL=rerank`。
-
-### YZ 全链路评测（真实入库 + ragas）
-
-基于 `backend/tests/YZ测试文档/` 三份样例文档，跑通 upload → MinIO → ingest → retrieve → answer。金标准：`backend/data/eval/yz_fullchain.jsonl`（`python scripts/gen_yz_eval_400.py` 重建）。**先出报告、后统一修产品** — 详见 [`backend/app/eval/README.md`](backend/app/eval/README.md) §7。
-
-```bash
-cd backend
-pip install -r requirements.txt   # 含 ragas
-python scripts/run_yz_eval.py              # 默认含 ragas（需 MinIO + LLM key）
-python scripts/run_yz_eval.py --skip-ragas  # 仅检索 + Fact Containment 等规则指标
-pytest tests/test_yz_fullchain_eval.py -q
-```
-
-### 依据核验忠实度评测（grounding + ragas）
-
-固定题集测生产路径「成稿 → 核验 → 至多一次重写」。金标准：`backend/data/eval/grounding_faithfulness.jsonl`（`python scripts/gen_grounding_eval.py` 重建，kb/web/sandbox 各 16 条）。详见 [`backend/app/eval/README.md`](backend/app/eval/README.md) §8。
-
-```bash
-cd backend
-python scripts/run_grounding_eval.py
-python scripts/run_grounding_eval.py --no-repair --skip-ragas --limit 8
-pytest tests/test_grounding_eval.py -q
-```
-
-办公回归（契约）：`test_harness_office_eval.py`（gateway / verify）+ `test_memory.py` + `test_harness_gateway.py`。
+办公回归（契约）仍可由 `pytest` 套件覆盖；单独文件也可用 `python -m pytest tests/test_harness_gateway.py -q`。

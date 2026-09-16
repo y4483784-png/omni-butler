@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+
+from app.eval.env import bootstrap, resolve_target
+
+bootstrap(resolve_target())
 
 from app.eval.office_tabular import (  # noqa: E402
     aggregate_report,
@@ -27,6 +29,7 @@ from app.eval.office_tabular import (  # noqa: E402
     plan_matches,
     soft_exec_matches,
 )
+from app.eval.report import RunContext, SuiteResult, make_run_dir, write_run  # noqa: E402
 from app.services.data_analysis import (  # noqa: E402
     AnalysisSpec,
     _heuristic_spec,
@@ -36,7 +39,7 @@ from app.services.tabular_inspect import infer_tabular_schema  # noqa: E402
 
 DATASET = ROOT / "data" / "eval" / "office_tabular.jsonl"
 FIXTURES = ROOT / "data" / "eval" / "fixtures"
-REPORT = ROOT / "reports" / "office_tabular_eval_latest.json"
+DEFAULT_DATASET = DATASET
 
 
 def _load_cases(*, split: str) -> list[dict]:
@@ -240,7 +243,7 @@ def eval_exec(cases: list[dict]) -> list[dict]:
     return rows
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-compile", action="store_true", help="Plan accuracy only (no Docker exec)")
     ap.add_argument(
@@ -249,13 +252,15 @@ def main() -> int:
         default=None,
         help="smoke=20 cases; full=all cases; default smoke for live, full for dry-compile",
     )
-    args = ap.parse_args()
+    return ap
 
+
+def run(args: argparse.Namespace) -> SuiteResult:
     split = args.split or ("full" if args.dry_compile else "smoke")
     cases = _load_cases(split=split)
     if not cases:
         print(json.dumps({"error": "no cases", "split": split}), file=sys.stderr)
-        return 2
+        return SuiteResult(report={"error": "no cases", "split": split}, exit_code=2)
 
     mode = "dry_compile" if args.dry_compile else "live"
     results = eval_plan(cases) if args.dry_compile else eval_exec(cases)
@@ -263,9 +268,6 @@ def main() -> int:
     report["split"] = split
     report["passed"] = sum(1 for r in results if r.get("exec_ok"))
     report["total"] = len(results)
-
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     summary = {
         "mode": mode,
@@ -276,7 +278,37 @@ def main() -> int:
         "passed": report["passed"],
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0 if report["passed"] == report["total"] else 1
+    exit_code = 0 if report["passed"] == report["total"] else 1
+    samples = [r for r in results if not r.get("exec_ok")]
+    result = SuiteResult(
+        report=report,
+        samples=samples,
+        exit_code=exit_code,
+        dataset_path=DATASET,
+    )
+    return result
+
+
+def main() -> int:
+    from datetime import datetime, timezone
+
+    args = build_parser().parse_args()
+    run_dir = make_run_dir("tabular", "adhoc")
+    result = run(args)
+    write_run(
+        RunContext(
+            suite="tabular",
+            profile="adhoc",
+            target="venv",
+            argv=sys.argv,
+            started_at=datetime.now(timezone.utc),
+            run_dir=run_dir,
+            dataset_path=DATASET,
+            key_metrics=["raw.accuracy", "raw.plan_accuracy", "raw.smoke_accuracy"],
+        ),
+        result,
+    )
+    return int(result.exit_code)
 
 
 if __name__ == "__main__":

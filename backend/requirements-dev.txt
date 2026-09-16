@@ -1,0 +1,3 @@
+# Dev / eval only — do not bake into the production api image.
+pytest>=8.0,<9
+pytest-json-report>=1.5,<2

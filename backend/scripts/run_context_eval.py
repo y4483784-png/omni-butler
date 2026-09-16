@@ -7,55 +7,53 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-# Allow `python scripts/run_context_eval.py` from backend/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Prefer in-memory sqlite for CLI isolation (same pattern as office_tabular).
-os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+from app.eval.env import bootstrap, resolve_target
+
+bootstrap(resolve_target())
 
 from app.eval.context_replay import (  # noqa: E402
     ARMS,
     DEFAULT_BASELINE,
     DEFAULT_DATASET,
-    DEFAULT_REPORT,
     gate_report,
     load_cases,
     run_context_eval,
 )
+from app.eval.report import RunContext, SuiteResult, make_run_dir, write_run  # noqa: E402
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Omni-Butler ContextManager evaluation")
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--split", choices=("smoke", "full", "all"), default="smoke")
-    parser.add_argument(
-        "--arms",
-        default="legacy,full",
-        help="Comma-separated arms: " + ",".join(ARMS),
-    )
+    parser.add_argument("--arms", default="legacy,full", help="Comma-separated arms: " + ",".join(ARMS))
     parser.add_argument("--summarizer", choices=("extractive", "live"), default="extractive")
-    parser.add_argument("--live", action="store_true", help="Call real LLM for answer+judge")
+    parser.add_argument("--live", action="store_true")
     parser.add_argument("--refresh-every", type=int, default=1)
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
     parser.add_argument("--gate", action="store_true")
     parser.add_argument("--update-baseline", action="store_true")
     parser.add_argument("--refresh-cache", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
-    args = parser.parse_args()
+    return parser
 
+
+def run(args: argparse.Namespace) -> SuiteResult:
     if args.live and os.environ.get("RUN_CTX_EVAL") != "1":
         print("Refusing --live without RUN_CTX_EVAL=1", file=sys.stderr)
-        return 2
+        return SuiteResult(report={"error": "RUN_CTX_EVAL required"}, exit_code=2)
 
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     for a in arms:
         if a not in ARMS:
             print(f"unknown arm: {a}", file=sys.stderr)
-            return 2
+            return SuiteResult(report={"error": f"unknown arm {a}"}, exit_code=2)
 
     cases = load_cases(args.dataset, split=args.split)
     if args.limit is not None:
@@ -70,10 +68,7 @@ def main() -> int:
         split=args.split,
         refresh_cache=bool(args.refresh_cache),
     )
-
-    args.report.parent.mkdir(parents=True, exist_ok=True)
     payload = report.to_dict()
-    args.report.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if args.update_baseline:
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
@@ -84,20 +79,49 @@ def main() -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(report.format_text())
-        print(f"\nreport -> {args.report}")
 
+    exit_code = 0
+    gate_fails: list[str] = []
     if args.gate:
         baseline = None
         if args.baseline.exists():
             baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
-        fails = gate_report(report, baseline)
-        if fails:
+        gate_fails = gate_report(report, baseline)
+        if gate_fails:
             print("\nGATE FAIL:", file=sys.stderr)
-            for f in fails:
+            for f in gate_fails:
                 print(f"  - {f}", file=sys.stderr)
-            return 1
-        print("\nGATE PASS")
-    return 0
+            exit_code = 1
+        else:
+            print("\nGATE PASS")
+
+    payload["gate"] = {"failed": gate_fails, "ok": not gate_fails} if args.gate else None
+    return SuiteResult(
+        report=payload,
+        samples=list(payload.get("failures") or []),
+        exit_code=exit_code,
+        dataset_path=Path(args.dataset),
+    )
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    run_dir = make_run_dir("context", "adhoc")
+    result = run(args)
+    write_run(
+        RunContext(
+            suite="context",
+            profile="adhoc",
+            target="venv",
+            argv=sys.argv,
+            started_at=datetime.now(timezone.utc),
+            run_dir=run_dir,
+            dataset_path=Path(args.dataset),
+            key_metrics=["raw.n", "raw.invariants.violations"],
+        ),
+        result,
+    )
+    return int(result.exit_code)
 
 
 if __name__ == "__main__":

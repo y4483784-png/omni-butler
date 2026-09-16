@@ -19,6 +19,7 @@ from app.agents.context.summary import refresh_session_context
 from app.agents.context.window import to_logical_turns
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
+from app.eval.tenant import activate_eval_tenant
 from app.models.models import Message
 from app.models.models import Session as ChatSession
 
@@ -28,6 +29,8 @@ DEFAULT_BASELINE = Path(__file__).resolve().parents[2] / "data" / "eval" / "cont
 DEFAULT_REPORT = Path(__file__).resolve().parents[2] / "reports" / "context_eval_latest.json"
 
 ARMS = ("legacy", "window", "window_summary", "full", "oracle")
+CTX_EVAL_USER_ID = 92003
+CTX_EVAL_EXTERNAL_ID = "ctx_eval_92003"
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 _NUM_RE = re.compile(r"[-+]?\d+(?:\.\d+)?%?")
 
@@ -441,7 +444,13 @@ def replay_case(
     with arm_settings(arm):
         db = SessionLocal()
         try:
-            session = ChatSession(user_id=1, title=f"eval-{case.get('id')}-{arm}")
+            activate_eval_tenant(
+                db,
+                CTX_EVAL_USER_ID,
+                external_id=CTX_EVAL_EXTERNAL_ID,
+                name="Context Eval Fixture",
+            )
+            session = ChatSession(user_id=CTX_EVAL_USER_ID, title=f"eval-{case.get('id')}-{arm}")
             db.add(session)
             db.commit()
             db.refresh(session)
@@ -489,13 +498,13 @@ def replay_case(
                         old = sm.summarize_incremental
                         sm.summarize_incremental = _wrap  # type: ignore[assignment]
                         try:
-                            refresh_session_context(db, session_id=session.id, user_id=1)
+                            refresh_session_context(db, session_id=session.id, user_id=CTX_EVAL_USER_ID)
                         finally:
                             sm.summarize_incremental = old  # type: ignore[assignment]
                     else:
                         before = session.context_summary or ""
                         upto_before = int(session.context_summary_upto_message_id or 0)
-                        refresh_session_context(db, session_id=session.id, user_id=1)
+                        refresh_session_context(db, session_id=session.id, user_id=CTX_EVAL_USER_ID)
                         db.refresh(session)
                         summary_calls += 1
                         if overflow_needed_but_failed(session, before, upto_before):

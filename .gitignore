@@ -36,10 +36,12 @@ deploy/nginx-tls.conf
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-backend/reports/*.json
+backend/reports/**
+!backend/reports/.gitkeep
+*_eval_latest.json
 backend/data/harness/
 backend/data/eval/fixtures/_plan_join_*.csv
-*_eval_latest.json
+backend/data/eval/fixtures/_omni_join_*.csv
 
 # Internal binary docs (keep in parent folder or company doc lib)
 *.docx
