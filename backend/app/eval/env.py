@@ -58,6 +58,9 @@ def bootstrap(
         Postgres. Leaves SANDBOX_RUNNER_URL / MinIO / Redis as injected.
     """
     os.environ["EVAL_TARGET"] = target
+    os.environ["EVAL_BOOTSTRAPPED"] = "1"
+    # Frozen "today": answer/router prompts embed the date; keep web-staleness cases stable.
+    os.environ.setdefault("EVAL_TODAY", "2026-09-19")
 
     def _set(key: str, value: str, *, overwrite: bool = False) -> None:
         if force or overwrite or key not in os.environ:
@@ -82,6 +85,13 @@ def bootstrap(
         _set("SANDBOX_TMP_DIR", "", overwrite=True)
         _set("ENFORCE_SECURE_SECRETS", "false", overwrite=True)
     return target
+
+
+def ensure_bootstrap(*, isolate_app_db: bool = False) -> EvalTarget:
+    """Bootstrap once for standalone script runs; no-op when ``eval.py`` already did."""
+    if os.environ.get("EVAL_BOOTSTRAPPED") == "1":
+        return resolve_target()
+    return bootstrap(resolve_target(), isolate_app_db=isolate_app_db)
 
 
 def stub_blob_store_if_needed() -> None:

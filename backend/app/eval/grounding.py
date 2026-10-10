@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,8 +22,9 @@ from app.agents.harness.critique import (
 from app.agents.workflow import build_pool_prompt
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
-from app.core.llm import complete_text
-from app.eval.ragas_judge import run_ragas_metrics
+from app.core.llm import LLMInfraError, complete_text, resolved_chat_model
+from app.eval.judges import is_refusal
+from app.eval.ragas_judge import run_ragas_rows
 from app.eval.yz_fullchain import (
     YZ_EVAL_USER_ID,
     _hits_to_evidence,
@@ -84,9 +86,14 @@ class CaseResult:
     faithfulness: float | None = None
     answer_relevancy: float | None = None
     draft_faithfulness: float | None = None
+    expect_unanswerable: bool = False
+    refused: bool = False
+    infra_error: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "expect_unanswerable": self.expect_unanswerable,
+            "refused": self.refused,
             "id": self.case_id,
             "source": self.source,
             "query": self.query,
@@ -101,6 +108,7 @@ class CaseResult:
             "faithfulness": self.faithfulness,
             "answer_relevancy": self.answer_relevancy,
             "draft_faithfulness": self.draft_faithfulness,
+            "infra_error": self.infra_error,
         }
 
 
@@ -118,10 +126,22 @@ class GroundingEvalReport:
     repair_enabled: bool = True
     failures: list[dict[str, Any]] = field(default_factory=list)
     cases: list[dict[str, Any]] = field(default_factory=list)
+    refusal_accuracy: float | None = None  # unanswerable cases correctly declined
+    false_refusal_rate: float | None = None  # answerable cases wrongly declined
+    repair_delta: float | None = None  # mean(final - draft) faithfulness on repaired cases
+    n_answerable: int = 0
+    n_unanswerable: int = 0
+    n_infra_error: int = 0
+    faithfulness_ci95: dict[str, float] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "n": self.n,
+            "n_answerable": self.n_answerable,
+            "n_unanswerable": self.n_unanswerable,
+            "refusal_accuracy": self.refusal_accuracy,
+            "false_refusal_rate": self.false_refusal_rate,
+            "repair_delta": self.repair_delta,
             "by_source": self.by_source,
             "faithfulness_mean": self.faithfulness_mean,
             "answer_relevancy_mean": self.answer_relevancy_mean,
@@ -131,6 +151,8 @@ class GroundingEvalReport:
             "addresses_fail_rate": round(self.addresses_fail_rate, 4),
             "skipped_ragas": self.skipped_ragas,
             "repair_enabled": self.repair_enabled,
+            "n_infra_error": self.n_infra_error,
+            "faithfulness_ci95": self.faithfulness_ci95,
             "failures": self.failures,
             "cases": self.cases,
         }
@@ -140,8 +162,11 @@ class GroundingEvalReport:
             f"=== Grounding Faithfulness Eval (n={self.n}) ===",
             f"repair_enabled={self.repair_enabled}  skipped_ragas={self.skipped_ragas}",
             "",
-            f"faithfulness_mean       {self.faithfulness_mean if self.faithfulness_mean is not None else 'n/a'}",
-            f"answer_relevancy_mean   {self.answer_relevancy_mean if self.answer_relevancy_mean is not None else 'n/a'}",
+            f"faithfulness_mean       {self.faithfulness_mean if self.faithfulness_mean is not None else 'n/a'}  (answerable only, n={self.n_answerable})",
+            f"refusal_accuracy        {self.refusal_accuracy if self.refusal_accuracy is not None else 'n/a'}  (unanswerable n={self.n_unanswerable})",
+            f"false_refusal_rate      {self.false_refusal_rate if self.false_refusal_rate is not None else 'n/a'}",
+            f"repair_delta            {self.repair_delta if self.repair_delta is not None else 'n/a'}  (final-draft faithfulness; <0 means repair hurts)",
+            f"answer_relevancy_mean   {self.answer_relevancy_mean if self.answer_relevancy_mean is not None else 'n/a'}  (reference only, not gated)",
             f"repair_rate             {self.repair_rate:.2%}",
             f"disclaimer_rate         {self.disclaimer_rate:.2%}",
             f"sandbox_rule_hit_rate   {self.sandbox_rule_hit_rate:.2%}",
@@ -192,8 +217,10 @@ def _frozen_evidence(source: str, contexts: list[str], *, title: str) -> list[di
     evidence: list[dict[str, Any]] = []
     for i, text in enumerate(contexts, start=1):
         body = str(text or "").strip()
+        m_date = re.search(r"发布日期[：:]\s*(\d{4}-\d{2}-\d{2})", body)
         evidence.append(
             {
+                "publish_date": m_date.group(1) if m_date else "",
                 "index": i,
                 "source_type": source,
                 "tool": source,
@@ -246,7 +273,12 @@ def generate_grounded_answer(
             "role": "system",
             "content": sandbox_note + "\n\n" + pool_text,
         }
-    draft = complete_text(messages)
+    draft = complete_text(
+        messages,
+        model=resolved_chat_model(),
+        retries=4,
+        raise_on_error=True,
+    )
     sandbox_gate = should_apply_sandbox_number_gate(
         evidence=included or evidence,
         needs_sandbox=needs_sandbox,
@@ -326,12 +358,34 @@ def run_grounding_eval(
         for i, case in enumerate(items, start=1):
             print(f"[{i}/{len(items)}] {case.id}: {case.query[:40]}", flush=True)
             evidence = build_evidence_for_case(case, db=db, top_k=top_k)
-            final, draft, included, critique, repaired, sandbox_gate = generate_grounded_answer(
-                case.query,
-                evidence,
-                needs_sandbox=case.needs_sandbox,
-                repair_enabled=repair_enabled,
-            )
+            try:
+                final, draft, included, critique, repaired, sandbox_gate = generate_grounded_answer(
+                    case.query,
+                    evidence,
+                    needs_sandbox=case.needs_sandbox,
+                    repair_enabled=repair_enabled,
+                )
+            except LLMInfraError as exc:
+                case_results.append(
+                    CaseResult(
+                        case_id=case.id,
+                        source=case.source,
+                        query=case.query,
+                        answer="",
+                        draft="",
+                        contexts=list(case.contexts),
+                        repaired=False,
+                        critique_passed=False,
+                        addresses_question=False,
+                        has_disclaimer=False,
+                        sandbox_gate=False,
+                        sandbox_rule_hits=0,
+                        expect_unanswerable=case.expect_unanswerable,
+                        refused=False,
+                        infra_error=True,
+                    )
+                )
+                continue
             contexts = [str(e.get("content") or e.get("snippet") or "") for e in included]
             if not contexts and case.contexts:
                 contexts = list(case.contexts)
@@ -354,80 +408,111 @@ def run_grounding_eval(
                     has_disclaimer=_DISCLAIMER_MARK in (final or ""),
                     sandbox_gate=sandbox_gate,
                     sandbox_rule_hits=len(rule_hits),
+                    expect_unanswerable=case.expect_unanswerable,
+                    refused=is_refusal(final),
                 )
             )
     finally:
         db.close()
 
     skipped_ragas = skip_ragas
+    answerable_idx = [
+        i
+        for i, cr in enumerate(case_results)
+        if not cr.expect_unanswerable and not cr.infra_error
+    ]
     if not skip_ragas:
         metric_names = ["faithfulness"]
         if include_relevancy:
             metric_names.append("answer_relevancy")
+        # Unanswerable cases are judged by refusal, not faithfulness (a correct
+        # "evidence does not say" answer has no supported claims to score).
         ragas_rows = [
             {
-                "question": cr.query,
-                "answer": cr.answer,
-                "contexts": cr.contexts or [""],
+                "question": case_results[i].query,
+                "answer": case_results[i].answer,
+                "contexts": case_results[i].contexts or [""],
             }
-            for cr in case_results
+            for i in answerable_idx
         ]
-        scores = run_ragas_metrics(ragas_rows, metrics=metric_names)
-        # Per-case scores: re-run is expensive; approximate by attaching means only
-        # when batch evaluate returns aggregate. Prefer per-row if available via
-        # a second path — for now assign mean to all and refine if pandas has rows.
-        # Better: call evaluate ourselves for per-row. Keep aggregate + best-effort.
-        per_row = _per_row_ragas(ragas_rows, metrics=metric_names)
-        for idx, cr in enumerate(case_results):
-            if idx < len(per_row):
-                cr.faithfulness = per_row[idx].get("faithfulness")
-                cr.answer_relevancy = per_row[idx].get("answer_relevancy")
-            else:
-                cr.faithfulness = scores.get("faithfulness")
-                cr.answer_relevancy = scores.get("answer_relevancy")
+        _, per_row = run_ragas_rows(ragas_rows, metrics=metric_names)
+        for j, i in enumerate(answerable_idx):
+            if j < len(per_row):
+                case_results[i].faithfulness = per_row[j].get("faithfulness")
+                case_results[i].answer_relevancy = per_row[j].get("answer_relevancy")
 
         if score_drafts:
+            repaired_idxs = [i for i in answerable_idx if case_results[i].repaired]
             draft_rows = [
                 {
-                    "question": cr.query,
-                    "answer": cr.draft,
-                    "contexts": cr.contexts or [""],
+                    "question": case_results[i].query,
+                    "answer": case_results[i].draft,
+                    "contexts": case_results[i].contexts or [""],
                 }
-                for cr in case_results
-                if cr.repaired
+                for i in repaired_idxs
             ]
             if draft_rows:
-                draft_per = _per_row_ragas(draft_rows, metrics=["faithfulness"])
-                repaired_idxs = [i for i, cr in enumerate(case_results) if cr.repaired]
+                _, draft_per = run_ragas_rows(draft_rows, metrics=["faithfulness"])
                 for j, i in enumerate(repaired_idxs):
                     if j < len(draft_per):
                         case_results[i].draft_faithfulness = draft_per[j].get("faithfulness")
-    else:
-        scores = {}
 
-    n = len(case_results)
-    repair_rate = sum(1 for r in case_results if r.repaired) / max(n, 1)
-    disclaimer_rate = sum(1 for r in case_results if r.has_disclaimer) / max(n, 1)
-    sandbox_rule_hit_rate = sum(1 for r in case_results if r.sandbox_rule_hits > 0) / max(n, 1)
-    addresses_fail_rate = sum(1 for r in case_results if not r.addresses_question) / max(n, 1)
+    infra_n = sum(1 for r in case_results if r.infra_error)
+    scored_results = [r for r in case_results if not r.infra_error]
+    n = len(scored_results)
+    repair_rate = sum(1 for r in scored_results if r.repaired) / max(n, 1)
+    disclaimer_rate = sum(1 for r in scored_results if r.has_disclaimer) / max(n, 1)
+    sandbox_rule_hit_rate = sum(1 for r in scored_results if r.sandbox_rule_hits > 0) / max(n, 1)
+    addresses_fail_rate = sum(1 for r in scored_results if not r.addresses_question) / max(n, 1)
+
+    unans = [r for r in scored_results if r.expect_unanswerable]
+    ans = [r for r in scored_results if not r.expect_unanswerable]
+    refusal_accuracy = (sum(1 for r in unans if r.refused) / len(unans)) if unans else None
+    false_refusal_rate = (sum(1 for r in ans if r.refused) / len(ans)) if ans else None
+    deltas = [
+        r.faithfulness - r.draft_faithfulness
+        for r in ans
+        if r.repaired and r.faithfulness is not None and r.draft_faithfulness is not None
+    ]
+    repair_delta = (sum(deltas) / len(deltas)) if deltas else None
+    from app.eval.stats import bootstrap_ci
+
+    faith_vals = [float(r.faithfulness) for r in ans if r.faithfulness is not None]
+    faith_ci = bootstrap_ci(faith_vals) if faith_vals else None
 
     failures: list[dict[str, Any]] = []
-    for cr in case_results:
-        low_f = cr.faithfulness is not None and cr.faithfulness < 0.5
-        if low_f or cr.sandbox_rule_hits > 0 or (not cr.critique_passed and not cr.repaired):
+    for cr in scored_results:
+        if cr.expect_unanswerable:
+            bad = not cr.refused  # fabricated an answer
+        else:
+            low_f = cr.faithfulness is not None and cr.faithfulness < 0.5
+            bad = (
+                low_f
+                or cr.sandbox_rule_hits > 0
+                or (not cr.critique_passed and not cr.repaired)
+                or cr.refused  # false refusal
+            )
+        if bad:
             failures.append(cr.to_dict())
 
     return GroundingEvalReport(
         n=n,
-        by_source=_source_stats(case_results),
-        faithfulness_mean=_mean([r.faithfulness for r in case_results]),
-        answer_relevancy_mean=_mean([r.answer_relevancy for r in case_results]),
+        n_answerable=len(ans),
+        n_unanswerable=len(unans),
+        refusal_accuracy=None if refusal_accuracy is None else round(refusal_accuracy, 4),
+        false_refusal_rate=None if false_refusal_rate is None else round(false_refusal_rate, 4),
+        repair_delta=None if repair_delta is None else round(repair_delta, 4),
+        by_source=_source_stats(scored_results),
+        faithfulness_mean=_mean([r.faithfulness for r in scored_results]),
+        answer_relevancy_mean=_mean([r.answer_relevancy for r in scored_results]),
         repair_rate=repair_rate,
         disclaimer_rate=disclaimer_rate,
         sandbox_rule_hit_rate=sandbox_rule_hit_rate,
         addresses_fail_rate=addresses_fail_rate,
         skipped_ragas=skipped_ragas,
         repair_enabled=repair_enabled,
+        n_infra_error=infra_n,
+        faithfulness_ci95=faith_ci,
         failures=failures,
         cases=[c.to_dict() for c in case_results],
     )

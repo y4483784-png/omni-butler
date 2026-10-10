@@ -1,165 +1,205 @@
 {
-  "n": 24,
-  "split": "smoke",
+  "n": 384,
+  "split": "full",
   "mode": "extractive",
   "arms": {
     "legacy": {
       "overall": {
-        "needle_presence": 0.2847,
+        "needle_presence": 0.2582,
         "pending_retention": 0.0,
         "entity_retention": null,
         "fact_recall": null,
         "token_f1": null,
-        "est_tokens_mean": 1156.79,
-        "compose_ms_p50": 0.322,
+        "est_tokens_mean": 1090.61,
+        "compose_ms_p50": 0.527,
         "compaction_rate": 0.0,
-        "n": 24,
+        "n": 384,
         "skipped": 0
       },
       "by_bucket": {
-        "30": {
-          "needle_presence": 0.2847,
+        "12": {
+          "needle_presence": 0.5564,
           "fact_recall": null,
-          "n": 24
+          "n": 96
+        },
+        "30": {
+          "needle_presence": 0.2682,
+          "fact_recall": null,
+          "n": 96
+        },
+        "60": {
+          "needle_presence": 0.1215,
+          "fact_recall": null,
+          "n": 96
+        },
+        "120": {
+          "needle_presence": 0.0868,
+          "fact_recall": null,
+          "n": 96
         }
       },
       "by_type": {
         "user_fact": {
-          "needle_presence": 0.3333,
+          "needle_presence": 0.25,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "assistant_fact": {
-          "needle_presence": 0.3333,
+          "needle_presence": 0.2188,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "knowledge_update": {
-          "needle_presence": 0.3333,
+          "needle_presence": 0.1215,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "multi_hop": {
-          "needle_presence": 0.1667,
+          "needle_presence": 0.4062,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "temporal": {
-          "needle_presence": 0.2222,
+          "needle_presence": 0.4375,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "pending_task": {
-          "needle_presence": 0.4444,
+          "needle_presence": 0.25,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "preference": {
-          "needle_presence": 0.3333,
+          "needle_presence": 0.25,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "abstention": {
-          "needle_presence": 0.1111,
+          "needle_presence": 0.1319,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         }
       },
       "by_depth": {
         "0": {
-          "needle_presence": 0.0417,
+          "needle_presence": 0.0885,
           "fact_recall": null,
-          "n": 8
+          "n": 96
+        },
+        "25": {
+          "needle_presence": 0.2726,
+          "fact_recall": null,
+          "n": 96
         },
         "50": {
-          "needle_presence": 0.0,
+          "needle_presence": 0.2595,
           "fact_recall": null,
-          "n": 8
+          "n": 96
         },
         "75": {
-          "needle_presence": 0.8125,
+          "needle_presence": 0.4123,
           "fact_recall": null,
-          "n": 8
+          "n": 96
         }
       }
     },
     "full": {
       "overall": {
-        "needle_presence": 0.7431,
+        "needle_presence": 0.648,
         "pending_retention": 1.0,
-        "entity_retention": 0.4722,
+        "entity_retention": 0.4119,
         "fact_recall": null,
         "token_f1": null,
-        "est_tokens_mean": 1583.04,
-        "compose_ms_p50": 0.591,
+        "est_tokens_mean": 1610.1,
+        "compose_ms_p50": 0.986,
         "compaction_rate": 0.0,
-        "n": 24,
+        "n": 384,
         "skipped": 0
       },
       "by_bucket": {
-        "30": {
-          "needle_presence": 0.7431,
+        "12": {
+          "needle_presence": 0.7361,
           "fact_recall": null,
-          "n": 24
+          "n": 96
+        },
+        "30": {
+          "needle_presence": 0.7786,
+          "fact_recall": null,
+          "n": 96
+        },
+        "60": {
+          "needle_presence": 0.6389,
+          "fact_recall": null,
+          "n": 96
+        },
+        "120": {
+          "needle_presence": 0.4384,
+          "fact_recall": null,
+          "n": 96
         }
       },
       "by_type": {
         "user_fact": {
-          "needle_presence": 1.0,
+          "needle_presence": 0.8125,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "assistant_fact": {
-          "needle_presence": 1.0,
+          "needle_presence": 0.5521,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "knowledge_update": {
-          "needle_presence": 0.5556,
+          "needle_presence": 0.5069,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "multi_hop": {
-          "needle_presence": 0.5,
+          "needle_presence": 0.6875,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "temporal": {
-          "needle_presence": 0.6667,
+          "needle_presence": 0.7361,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "pending_task": {
-          "needle_presence": 1.0,
+          "needle_presence": 0.9444,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "preference": {
-          "needle_presence": 1.0,
+          "needle_presence": 0.8125,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         },
         "abstention": {
-          "needle_presence": 0.2222,
+          "needle_presence": 0.1319,
           "fact_recall": null,
-          "n": 3
+          "n": 48
         }
       },
       "by_depth": {
         "0": {
-          "needle_presence": 0.7292,
+          "needle_presence": 0.7786,
           "fact_recall": null,
-          "n": 8
+          "n": 96
+        },
+        "25": {
+          "needle_presence": 0.7535,
+          "fact_recall": null,
+          "n": 96
         },
         "50": {
-          "needle_presence": 0.6875,
+          "needle_presence": 0.599,
           "fact_recall": null,
-          "n": 8
+          "n": 96
         },
         "75": {
-          "needle_presence": 0.8125,
+          "needle_presence": 0.4609,
           "fact_recall": null,
-          "n": 8
+          "n": 96
         }
       }
     }
@@ -169,16 +209,71 @@
     "cases": []
   },
   "efficiency": {
-    "est_tokens_mean": 1369.92,
+    "est_tokens_mean": 1350.36,
     "actual_tokens_mean": null,
     "est_error_pct": null,
-    "compose_ms_p50": 0.435,
-    "summary_calls": 456,
+    "compose_ms_p50": 0.722,
+    "summary_calls": 17088,
     "summary_fail_rate": 0.0
   },
   "failures": [
     {
+      "id": "ctx_pending_task_b12_d0_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d25_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d50_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d75_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
       "id": "ctx_pending_task_b30_d0_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d25_s7",
       "arm": "legacy",
       "type": "pending_task",
       "bucket": 30,
@@ -204,6 +299,446 @@
       "arm": "legacy",
       "type": "pending_task",
       "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d0_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d25_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d50_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d75_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d0_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d25_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d50_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d75_s7",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d0_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d25_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d50_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d75_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d0_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d25_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d50_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d75_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d0_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d25_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d50_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d75_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d0_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d25_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d50_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d75_s21",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d0_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d25_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d50_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b12_d75_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 12,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d0_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d25_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d50_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b30_d75_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 30,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d0_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d25_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d50_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b60_d75_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 60,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d0_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d25_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d50_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
+      "metric": "pending_retention",
+      "expected": 1.0,
+      "got": 0.0,
+      "probe": null,
+      "answer": null
+    },
+    {
+      "id": "ctx_pending_task_b120_d75_s43",
+      "arm": "legacy",
+      "type": "pending_task",
+      "bucket": 120,
       "metric": "pending_retention",
       "expected": 1.0,
       "got": 0.0,

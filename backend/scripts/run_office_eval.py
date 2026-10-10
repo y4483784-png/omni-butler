@@ -11,12 +11,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.eval.env import bootstrap, resolve_target
+from app.eval.env import ensure_bootstrap
 
-bootstrap(resolve_target())
+ensure_bootstrap(isolate_app_db=True)
 
 from app.eval.report import RunContext, SuiteResult, make_run_dir, write_run  # noqa: E402
-from app.eval.tool_routing import DEFAULT_DATASET, load_cases, run_tool_routing_eval  # noqa: E402
+from app.eval.tool_routing import (  # noqa: E402
+    DEFAULT_DATASET,
+    CacheMissError,
+    load_cases,
+    run_tool_routing_eval,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,12 +31,48 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-intent-acc", type=float, default=None)
     parser.add_argument("--min-tool-exact", type=float, default=None)
     parser.add_argument("--refresh-cache", action="store_true")
+    parser.add_argument(
+        "--require-cache",
+        action="store_true",
+        help="Smoke replay: fail if the cache lacks an entry for the current model/prompt",
+    )
     return parser
 
 
 def run(args: argparse.Namespace) -> SuiteResult:
     cases = load_cases(args.dataset)
-    report = run_tool_routing_eval(cases, refresh_cache=args.refresh_cache)
+    try:
+        report = run_tool_routing_eval(
+            cases,
+            refresh_cache=args.refresh_cache,
+            require_cache=getattr(args, "require_cache", False),
+        )
+    except CacheMissError as exc:
+        # Smoke replays a frozen cache; a stale fingerprint is a setup problem, not
+        # a model failure. Report it readably instead of crashing without a report.
+        print(
+            f"\nBLOCKED: {exc}\n"
+            "提示：请先运行完整档刷新缓存："
+            "python scripts/eval.py run routing --profile full",
+            file=sys.stderr,
+        )
+        return SuiteResult(
+            report={
+                "error": str(exc),
+                "blocked": "router_cache_miss",
+                "n": len(cases),
+                "failures": [
+                    {
+                        "id": "router_cache",
+                        "status": "blocked",
+                        "message": "router cache missing/stale; run --profile full to refresh",
+                    }
+                ],
+            },
+            samples=[{"id": "router_cache", "status": "blocked", "message": str(exc)}],
+            exit_code=2,
+            dataset_path=Path(args.dataset),
+        )
     payload = report.to_dict()
 
     if args.json:

@@ -1,8 +1,8 @@
 """
 Tool routing / intent evaluation for Omni-Butler (strict LLM router).
 
-Uses ``app.agents.router.route`` (schema-constrained LLM). Optional disk cache
-avoids re-hitting the API on every eval run.
+Uses production ``plan_tools`` (same entry as ``workflow.plan_node``). Optional
+disk cache avoids re-hitting the API on every eval run.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from app.agents.router import RouterError, intent_from_decision, route
+from app.agents.router import RouterError, intent_from_decision, plan_tools
 from app.eval.metrics import (
     confusion_matrix,
     multilabel_report,
@@ -21,10 +21,15 @@ from app.eval.metrics import (
 )
 
 TOOL_LABELS = ("kb", "web", "calendar", "sandbox")
-INTENT_LABELS = ("chat", "rag", "web_search", "calendar", "data_analysis")
+# Gold labels plus the sentinel ``error`` class so router crashes cannot hide in macro-F1.
+INTENT_LABELS = ("chat", "rag", "web_search", "calendar", "data_analysis", "error")
 
 DEFAULT_DATASET = Path(__file__).resolve().parents[2] / "data" / "eval" / "office_tool_routing.jsonl"
 DEFAULT_CACHE = Path(__file__).resolve().parents[2] / "data" / "eval" / "router_cache.json"
+
+
+class CacheMissError(RuntimeError):
+    """Smoke replay requested but the cache has no entry for the current router fingerprint."""
 
 
 @dataclass
@@ -89,11 +94,15 @@ class EvalReport:
     failures: list[CaseResult] = field(default_factory=list)
     cache_hits: int = 0
     cache_misses: int = 0
+    intent_derived_accuracy: float = 0.0
+    n_error: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "n": self.n,
+            "n_error": self.n_error,
             "intent": {
+                "derived_accuracy": round(self.intent_derived_accuracy, 4),
                 "accuracy": round(self.intent_accuracy, 4),
                 "macro_f1": round(self.intent_macro_f1, 4),
                 "confusion_matrix": self.intent_confusion,
@@ -161,9 +170,23 @@ def _ctx(case: EvalCase) -> dict[str, Any]:
     }
 
 
+def router_fingerprint() -> dict[str, Any]:
+    """Model + prompt identity: a changed router must never hit a stale cache entry."""
+    from app.agents import router as router_mod
+    from app.core.llm import resolved_router_model
+    from app.core.prompts import ROUTER_SYSTEM
+
+    return {
+        "model": resolved_router_model(),
+        "prompt_sha": hashlib.sha256(ROUTER_SYSTEM.encode("utf-8")).hexdigest()[:12],
+        "cache_version": getattr(router_mod, "_ROUTER_CACHE_VERSION", 0),
+    }
+
+
 def _cache_key(case: EvalCase) -> str:
     ctx = _ctx(case)
     payload = {
+        "fp": router_fingerprint(),
         "message": case.message,
         "history": case.history,
         "has_kb_docs": ctx["has_kb_docs"] or ctx["forced_kb"] or ctx["use_kb"],
@@ -194,8 +217,9 @@ def predict_case(
     *,
     cache: dict[str, Any] | None = None,
     refresh_cache: bool = False,
+    require_cache: bool = False,
 ) -> CaseResult:
-    """Single ``route()`` call produces both intent and tools."""
+    """Single ``plan_tools()`` call produces both intent and tools (production path)."""
     ctx = _ctx(case)
     forced = ctx["forced_kb"] or ctx["use_kb"]
     has_kb = ctx["has_kb_docs"] or forced
@@ -207,21 +231,49 @@ def predict_case(
 
     error: str | None = None
     confidence: str | None = None
+    # Mirror workflow.plan_node: an open calendar slot-fill short-circuits the LLM router.
+    pending_cal = ctx.get("pending_calendar")
     try:
-        if isinstance(cached, dict) and "needs_kb" in cached:
+        if pending_cal:
+            decision_dict = {
+                "needs_kb": False,
+                "needs_web": False,
+                "needs_calendar": True,
+                "needs_sandbox": False,
+                "confidence": "high",
+            }
+            # Short circuit, not a cache lookup: counting it as a hit inflated the
+            # replay diagnostics by 24 rows.
+            cache_used = False
+        elif isinstance(cached, dict) and "needs_kb" in cached:
             decision_dict = cached
             cache_used = True
         else:
+            if require_cache:
+                raise CacheMissError(
+                    f"{case.id}: router cache miss/stale (model or prompt changed); "
+                    "run `routing --profile full` to refresh"
+                )
             cache_used = False
-            decision = route(
+            from app.agents.context.assembler import build_context
+
+            bundle = build_context(history=case.history, pending_calendar=pending_cal)
+            planned = plan_tools(
                 case.message,
-                case.history,
+                bundle.router_history,
                 has_kb_docs=has_kb,
                 forced_kb=forced,
                 has_tabular_docs=ctx["has_tabular_docs"],
                 document_ids=ctx.get("document_ids"),
+                context_line=bundle.context_line,
             )
-            decision_dict = decision.model_dump()
+            decision_dict = {
+                "needs_kb": bool(planned.get("needs_kb")),
+                "needs_web": bool(planned.get("needs_web")),
+                "needs_calendar": bool(planned.get("needs_calendar")),
+                "needs_sandbox": bool(planned.get("needs_sandbox")),
+                "confidence": planned.get("confidence") or "",
+            }
             if cache is not None:
                 cache[key] = decision_dict
 
@@ -265,8 +317,9 @@ def _intent_macro_f1_from_confusion(mat: dict[str, dict[str, int]], labels: Sequ
     f1s: list[float] = []
     for lab in labels:
         tp = mat.get(lab, {}).get(lab, 0)
-        fp = sum(mat.get(r, {}).get(lab, 0) for r in labels if r != lab)
-        fn = sum(mat.get(lab, {}).get(c, 0) for c in labels if c != lab)
+        fp = sum(mat.get(r, {}).get(lab, 0) for r in mat if r != lab)
+        # every non-diagonal prediction counts, including the sentinel "error" class
+        fn = sum(v for c, v in mat.get(lab, {}).items() if c != lab)
         from app.eval.metrics import f1_score, precision_score, recall_score
 
         p = precision_score(tp, fp)
@@ -282,8 +335,9 @@ def run_tool_routing_eval(
     predictor: Callable[[EvalCase], CaseResult] | None = None,
     cache_path: str | Path | None = None,
     refresh_cache: bool = False,
+    require_cache: bool = False,
 ) -> EvalReport:
-    """Evaluate routing via LLM router (+ optional disk cache)."""
+    """Evaluate routing via production ``plan_tools`` (+ optional disk cache)."""
     items = cases if cases is not None else load_cases(dataset_path)
     cpath = Path(cache_path) if cache_path else DEFAULT_CACHE
     cache = {} if refresh_cache else _load_cache(cpath)
@@ -291,7 +345,7 @@ def run_tool_routing_eval(
 
     def _predict(c: EvalCase) -> CaseResult:
         nonlocal hits, misses
-        r = predict_case(c, cache=cache, refresh_cache=refresh_cache)
+        r = predict_case(c, cache=cache, refresh_cache=refresh_cache, require_cache=require_cache)
         if getattr(c, "_cache_hit", False):
             hits += 1
         else:
@@ -313,13 +367,25 @@ def run_tool_routing_eval(
     pred_sets = [set(r.pred_tools) for r in results]
     tools_rep = multilabel_report(gold_sets, pred_sets, labels=TOOL_LABELS)
 
+    # Diagnostic only: queue order is fixed by code and empty-gold rows would score 1.0.
     traj = {}
+    scored = [r for r in results if r.gold_tools]
     for k in (1, 2, 3, 4):
         traj[f"k={k}"] = (
-            sum(recall_at_k(r.gold_tools, r.pred_tools, k) for r in results) / len(results)
-            if results
+            sum(recall_at_k(r.gold_tools, r.pred_tools, k) for r in scored) / len(scored)
+            if scored
             else 1.0
         )
+    # Intent is a lossy projection of the tool set (sandbox > kb > calendar > web > chat);
+    # report accuracy against the *derived* gold so labelling quirks cannot hide or fake errors.
+    derived_ok = sum(
+        1
+        for r in results
+        if r.pred_intent == intent_from_decision(
+            {f"needs_{t}": True for t in r.gold_tools}
+        )
+    )
+    intent_derived_acc = derived_ok / len(results) if results else 1.0
 
     failures = [r for r in results if not r.intent_ok or not r.tools_exact_ok or r.error]
 
@@ -333,4 +399,6 @@ def run_tool_routing_eval(
         failures=failures,
         cache_hits=hits,
         cache_misses=misses,
+        intent_derived_accuracy=intent_derived_acc,
+        n_error=sum(1 for r in results if r.error),
     )

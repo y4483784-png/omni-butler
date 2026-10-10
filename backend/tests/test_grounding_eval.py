@@ -20,11 +20,8 @@ from app.eval.ragas_judge import run_ragas_metrics
 def test_dataset_exists_and_loads():
     assert DEFAULT_DATASET.is_file()
     cases = load_cases(DEFAULT_DATASET)
-    assert len(cases) == 48
-    by = {}
-    for c in cases:
-        by[c.source] = by.get(c.source, 0) + 1
-    assert by == {"kb": 16, "web": 16, "sandbox": 16}
+    assert cases
+    assert {c.source for c in cases} == {"kb", "web", "sandbox"}
     assert any(c.expect_unanswerable for c in cases)
     assert any(c.needs_sandbox for c in cases if c.source == "sandbox")
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -11,7 +12,7 @@ from typing import Any
 
 OUT = Path(__file__).resolve().parents[1] / "data" / "eval" / "context_recall.jsonl"
 
-BUCKETS = (12, 30, 60)
+BUCKETS = (12, 30, 60, 120)
 DEPTHS = (0, 25, 50, 75)
 TYPES = (
     "user_fact",
@@ -26,10 +27,10 @@ TYPES = (
 
 # Filler pairs: no digits / dates that collide with needles.
 FILLERS: list[tuple[str, str]] = [
-    ("帮我整理一下本周待办清单的写法", "可以用「事项 / 负责人 / 截止」三列表格。"),
-    ("周报段落之间怎么衔接更顺", "先结论后细节，每段用一个过渡句即可。"),
-    ("会议室预约流程提醒一下", "先查空闲再提交申请，通过后同步参会人。"),
-    ("邮件标题怎么写更清晰", "用「对象 + 事项 + 时间」三段式。"),
+    ("帮我整理一下本周待办清单的写法", "可以用「事项 / 负责人 / 截止」多列清单。"),
+    ("周报段落之间怎么衔接更顺", "先摘要后细节，每段用一个过渡句即可。"),
+    ("会议室预约流程提醒一下", "先查空闲再提交申请，通过后同步参与者。"),
+    ("邮件标题怎么写更清晰", "用「对象 + 事项 + 时间」分段表达。"),
     ("如何减少无效会议", "会前发议程，会后发纪要与行动项。"),
     ("文档命名有什么建议", "项目名-主题-版本号，避免空格。"),
     ("跨部门协作容易卡在哪", "职责边界不清；建议先对齐接口人。"),
@@ -41,7 +42,7 @@ FILLERS: list[tuple[str, str]] = [
     ("新同事入职第一周做什么", "熟悉规范、对接导师、完成环境与权限。"),
     ("代码评审意见怎么写", "指出影响与建议改法，避免纯否定。"),
     ("产品需求变更怎么同步", "更新文档并通知相关研发与测试。"),
-    ("客户问题升级标准是什么", "影响面大或超时未解再升级。"),
+    ("客户问题升级标准是什么", "影响面大或超时待解再升级。"),
     ("知识库文章如何保持新鲜", "设定期回顾人与失效标记。"),
     ("远程协作时区怎么处理", "用对方工作时段约会议，异步写纪要。"),
     ("看板卡片拆太碎怎么办", "合并为可交付的用户故事粒度。"),
@@ -51,14 +52,14 @@ FILLERS: list[tuple[str, str]] = [
     ("接口文档缺字段怎么办", "先补示例再改契约，避免口头约定。"),
     ("需求评审准备什么材料", "背景、目标用户、验收标准与风险。"),
     ("项目延期如何沟通", "先给影响面与可选方案，再给新时间。"),
-    ("周会纪要发给谁", "参会人与相关干系人，抄送决策人。"),
+    ("周会纪要发给谁", "参与者与相关干系人，抄送决策人。"),
     ("如何避免重复造轮子", "先搜内部组件库与已有方案。"),
     ("性能问题先查哪里", "先看瓶颈指标，再定位热点路径。"),
     ("安全扫描误报怎么处理", "复核证据，确认后加白并留记录。"),
     ("文档翻译口径怎么统一", "维护术语表，专名不随意改译。"),
-    ("培训材料如何分层", "入门、进阶、排障三套，避免一次讲完。"),
+    ("培训材料如何分层", "按入门、进阶、排障分层，避免一次讲完。"),
     ("跨团队依赖怎么跟踪", "建立依赖表，定期同步阻塞项。"),
-    ("用户反馈怎么归类", "按功能、体验、缺陷分桶统计。"),
+    ("用户意见怎么归类", "按功能、体验、缺陷分桶统计。"),
     ("设计稿标注不清怎么办", "会前澄清关键交互，会后补注释。"),
     ("灰度发布观察什么", "错误率、延迟与核心转化是否漂移。"),
     ("值班交接要写哪些", "在办告警、变更窗口与联系人。"),
@@ -86,6 +87,66 @@ FILLERS: list[tuple[str, str]] = [
     ("共享网盘容量满了", "清理过期包，或申请扩容。"),
     ("VPN连不上先做什么", "检查账号有效期与本地时间。"),
     ("显示器闪烁怎么办", "换线材与刷新率，再报IT。"),
+    ("报销单被退回怎么查", "先看退回理由，再按缺失材料逐项补齐。"),
+    ("会议纪要谁来确认", "由主持人确认决定，行动项由负责人认领。"),
+    ("客户需求口径变了怎么办", "记录变更来源，并重新确认验收范围。"),
+    ("代码合并前要看什么", "确认评审通过、检查通过且不存在待解冲突。"),
+    ("测试环境数据乱了怎么办", "清理临时数据，再从固定夹具恢复。"),
+    ("内部公告怎么写更清楚", "先写影响范围，再列生效时间与联系人。"),
+    ("工单一直没响应怎么办", "补充影响等级并联系对应值班人。"),
+    ("文件误删后如何处理", "先查回收站和版本历史，再联系管理员恢复。"),
+    ("电子表公式被覆盖怎么办", "从历史版本恢复公式并锁定关键单元格。"),
+    ("权限申请被拒绝怎么办", "核对用途与审批人，补充最小权限说明。"),
+    ("需求验收有争议怎么办", "回到已确认的验收标准，逐条核对证据。"),
+    ("项目风险如何登记", "写清概率、影响、责任人和缓解动作。"),
+    ("临时会议如何减少打扰", "先异步说明背景，只邀请必要决策人。"),
+    ("邮件附件太大怎么发", "上传受控网盘并发送有期限的访问链接。"),
+    ("新人权限漏开怎么办", "按岗位模板补申请，并核对最小权限。"),
+    ("报表数字突然变化怎么办", "先核对数据时间窗，再检查源表与清洗规则。"),
+    ("接口字段准备废弃怎么做", "先标记弃用并提供迁移期，最后再移除。"),
+    ("数据库变更如何评审", "说明兼容性、回滚方式和数据修复方案。"),
+    ("线上问题怎么留证据", "保存时间、请求标识、运行记录片段和复现步骤。"),
+    ("客户演示前准备什么", "锁定演示数据，预跑流程并准备降级方案。"),
+    ("采购需求怎么提交", "列明规格、数量、预算归属和期望时间。"),
+    ("合同审批卡住怎么办", "确认当前节点与缺件，联系对应审批人。"),
+    ("发票信息填错怎么办", "作废错误记录，按财务要求重新开具。"),
+    ("知识库答案过期怎么办", "标记失效内容，更新来源并重新审核。"),
+    ("共享账号安全吗", "尽量使用个人账号，公共能力改用受控服务账号。"),
+    ("敏感文件如何传输", "使用批准的加密通道，并限制接收人范围。"),
+    ("离职交接容易漏什么", "核对资产、权限、文档和在办事项。"),
+    ("服务降级怎么通知用户", "说明受影响功能、临时方案和恢复进展。"),
+    ("搜索结果太多怎么筛", "增加业务范围、时间和文档类型条件。"),
+    ("指标口径变更怎么留痕", "记录旧新定义、切换时点和影响报表。"),
+    ("数据导出要审批吗", "按数据等级和用途走对应审批流程。"),
+    ("供应商延期如何跟进", "确认原因、补救计划和新的验收节点。"),
+    ("培训签到漏记怎么办", "由组织人核实后补录并保留说明。"),
+    ("会议决策反复怎么办", "固化决策记录，后续变更必须说明新证据。"),
+    ("产品缺陷优先级谁定", "按用户影响和发生频率由产品与研发共同确认。"),
+    ("运行记录中有敏感信息怎么办", "先停止扩散，脱敏后再用于排障。"),
+    ("自动化任务失败怎么重跑", "先确认幂等性与失败位置，再从安全节点恢复。"),
+    ("发布窗口冲突怎么办", "按业务优先级协调，避免共享依赖同时变更。"),
+    ("容量快满了怎么处理", "先清理可回收数据，再评估扩容和限流。"),
+    ("缓存数据不一致怎么办", "确认数据源后失效相关键，避免全量清空。"),
+    ("文档负责人离职怎么办", "移交所有权并重新指定复核周期。"),
+    ("需求缺少验收标准怎么办", "暂停开发，先补充可观察且可判定的结果。"),
+    ("告警恢复后还要处理吗", "要复盘根因，并确认监控能覆盖再次发生。"),
+    ("客户名单怎么共享", "使用受控目录并按最小范围授权。"),
+    ("表单字段太难填怎么办", "提供示例和默认值，移除非必要字段。"),
+    ("消息通知太频繁怎么办", "合并同类事件并允许用户配置优先级。"),
+    ("跨系统数据对不上怎么办", "对齐主键、时区和同步完成时间。"),
+    ("任务缺少负责人怎么办", "在排期前明确唯一责任人和协作人。"),
+    ("代码注释写到什么程度", "解释原因和约束，不重复描述显而易见的语句。"),
+    ("评审会议缺少结果怎么办", "明确待决项、补充材料和再次决策条件。"),
+    ("生产数据能拿来测试吗", "优先用脱敏样本或合成数据，避免直接复制。"),
+    ("用户权限异常怎么排查", "核对身份、角色、资源范围和缓存状态。"),
+    ("批处理卡住怎么办", "查看最后进度点，判断能否安全续跑。"),
+    ("搜索索引延迟怎么办", "确认写入队列和刷新状态，并提示数据时效。"),
+    ("证书快过期怎么处理", "提前续签、验证部署并保留回滚证书。"),
+    ("接口返回空数据怎么办", "区分真实为空与查询失败，给出明确状态。"),
+    ("文档引用失效怎么办", "更新稳定链接，并补充来源标题和版本。"),
+    ("审批人休假怎么办", "按代理规则转交，避免绕过必要审批。"),
+    ("临时账号怎么回收", "设置到期时间并由申请人确认使用结束。"),
+    ("图表颜色看不清怎么办", "提高对比度，并用标签辅助区分类别。"),
 ]
 
 
@@ -281,10 +342,6 @@ NEEDLE_BANK: dict[str, list[dict[str, Any]]] = {
 }
 
 
-def _fill_pair(rng: random.Random) -> tuple[str, str]:
-    return FILLERS[rng.randrange(len(FILLERS))]
-
-
 def _insert_depth(total_turns: int, depth_pct: int) -> int:
     """Return needle start turn index in [0, total_turns-3]."""
     span = max(0, total_turns - 3)
@@ -344,17 +401,28 @@ def _build_history(
 
     needle_turn_count = len(needle_turns)
     filler_needed = bucket - needle_turn_count
+    filler_pool = list(FILLERS)
+    rng.shuffle(filler_pool)
+    if filler_needed > len(filler_pool):
+        raise ValueError(
+            f"bucket={bucket} needs {filler_needed} unique filler turns, "
+            f"only {len(filler_pool)} configured"
+        )
+
+    def next_filler() -> tuple[str, str]:
+        return filler_pool.pop()
+
     start = _insert_depth(bucket, depth_pct)
     # Ensure needle fits
     start = min(start, max(0, filler_needed))
 
     for _ in range(start):
-        u, a = _fill_pair(rng)
+        u, a = next_filler()
         add_turn(u, a, is_needle=False)
     for block in needle_turns:
         history.extend(block)
     while (len(history) // 2) < bucket:
-        u, a = _fill_pair(rng)
+        u, a = next_filler()
         add_turn(u, a, is_needle=False)
     # trim to exact bucket turns
     history = history[: bucket * 2]
@@ -378,14 +446,17 @@ def _evidence_pool(rng: random.Random, *, force: bool = False) -> list[dict[str,
     return rows
 
 
-def build_cases(*, seeds: tuple[int, ...] = (7, 21)) -> list[dict[str, Any]]:
+def build_cases(*, seeds: tuple[int, ...] = (7, 21, 43)) -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
     for seed in seeds:
-        rng = random.Random(seed)
         for ntype in TYPES:
             variants = NEEDLE_BANK[ntype]
             for bucket in BUCKETS:
                 for depth in DEPTHS:
+                    digest = hashlib.sha256(
+                        f"{seed}|{ntype}|{bucket}|{depth}".encode("utf-8")
+                    ).digest()
+                    rng = random.Random(int.from_bytes(digest[:8], "big"))
                     variant = variants[rng.randrange(len(variants))]
                     history, pending = _build_history(
                         rng, bucket=bucket, depth_pct=depth, ntype=ntype, variant=variant
@@ -414,16 +485,22 @@ def build_cases(*, seeds: tuple[int, ...] = (7, 21)) -> list[dict[str, Any]]:
                         }
                     )
 
-    # Mark smoke: 3 per type (prefer mid depth / mid bucket diversity)
+    # Mark smoke: four per type over the cheap 12/30-turn buckets only.
     by_type: dict[str, list[dict[str, Any]]] = {t: [] for t in TYPES}
     for c in cases:
         by_type[c["type"]].append(c)
     smoke_ids: set[str] = set()
     for t, rows in by_type.items():
-        pick = [r for r in rows if r["bucket_turns"] == 30 and r["depth_pct"] in (0, 50, 75)]
-        if len(pick) < 3:
-            pick = rows
-        for r in pick[:3]:
+        pick = [
+            r
+            for r in rows
+            if r["bucket_turns"] in (12, 30)
+            and r["depth_pct"] in (0, 50)
+            and r["seed"] == 7
+        ]
+        if len(pick) != 4:
+            raise ValueError(f"unexpected context smoke candidates for {t}: {len(pick)}")
+        for r in pick:
             r["split"] = "smoke"
             smoke_ids.add(r["id"])
     # ensure exactly smoke or full
@@ -438,7 +515,7 @@ def write_dataset(path: Path | None = None) -> Path:
     cases = build_cases()
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
-        "\n".join(json.dumps(c, ensure_ascii=False) for c in cases) + "\n",
+        "\n".join(json.dumps(c, ensure_ascii=False, allow_nan=False) for c in cases) + "\n",
         encoding="utf-8",
     )
     return out

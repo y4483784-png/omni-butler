@@ -253,25 +253,51 @@ def retrieval_report(
     pred_ranked: Sequence[Sequence[str]],
     *,
     k: int = 3,
-) -> dict[str, float]:
-    """RAG layer: precision@k, recall@k, MRR (when gold doc ids are labeled)."""
+) -> dict[str, float | int]:
+    """RAG layer metrics over rows that have retrieval gold.
+
+    Chat and deliberately unanswerable rows carry an empty gold set.  They are
+    answer-generation cases, not retrieval judgments, so including them as
+    zero-recall rows would bias every retrieval metric downward.
+    """
     if not gold_doc_ids:
-        return {"precision_at_k": 0.0, "recall_at_k": 0.0, "mrr": 0.0}
-    p_sum = r_sum = mrr_sum = 0.0
-    for gold, ranked in zip(gold_doc_ids, pred_ranked):
+        return {
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0,
+            "hit_at_k": 0.0,
+            "mrr": 0.0,
+            "n_scored": 0,
+        }
+    p_sum = r_sum = hit_sum = mrr_sum = 0.0
+    n = 0
+    for index, gold in enumerate(gold_doc_ids):
+        if not gold:
+            continue
+        ranked = pred_ranked[index] if index < len(pred_ranked) else ()
+        n += 1
         top = ranked[:k]
         hits_in_top = len(set(top) & gold)
         p_sum += _safe_div(hits_in_top, k)
         r_sum += _safe_div(hits_in_top, len(gold))
+        hit_sum += 1.0 if hits_in_top else 0.0
         rr = 0.0
         for i, doc in enumerate(ranked, start=1):
             if doc in gold:
                 rr = 1.0 / i
                 break
         mrr_sum += rr
-    n = len(gold_doc_ids)
+    if not n:
+        return {
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0,
+            "hit_at_k": 0.0,
+            "mrr": 0.0,
+            "n_scored": 0,
+        }
     return {
         "precision_at_k": p_sum / n,
         "recall_at_k": r_sum / n,
+        "hit_at_k": hit_sum / n,
         "mrr": mrr_sum / n,
+        "n_scored": n,
     }

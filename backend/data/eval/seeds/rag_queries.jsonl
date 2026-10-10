@@ -1,0 +1,400 @@
+{"query": "系统总体架构分几层", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "架构有交互层逻辑层数据层吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "系统三层架构是什么", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "总体架构怎么划分", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "知识库检索用什么数据库", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "SQLite和Qdrant怎么混合检索", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "向量库用的是Qdrant吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "关键词检索和向量检索如何结合", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "向量检索集合名称约定", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "集合名称是omni_chunks吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "Qdrant集合叫什么", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "向量集合命名约定", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "对话流式输出协议", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "流式输出用SSE吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "前端按什么事件类型渲染", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "SSE协议怎么用在对话里", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "数据分析沙箱隔离", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "沙箱在Docker里运行吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "沙箱能访问生产库吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "easy"}
+{"query": "数据分析沙箱隔离怎么做的", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "Agent工作流基于什么编排", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "LangGraph编排工具吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "工具经Gateway治理吗", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "Agent和Gateway的关系", "gold_doc_keys": ["arch_doc"], "tags": ["single_doc", "tech"], "difficulty": "medium"}
+{"query": "发票抬头有什么要求", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "发票抬头要和公司全称一致吗", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "medium"}
+{"query": "税号填报要求", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "报销发票抬头规范", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "日常费用报销超过多少要加签", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "medium"}
+{"query": "单笔超过2000元要部门负责人加签吗", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "medium"}
+{"query": "费用报销加签规则", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "大额报销审批", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "预算申请什么时候交", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "季度预算何时提交财务BP", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "medium"}
+{"query": "预算申请流程", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "上季末提交季度预算吗", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "对公付款周期", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "对公付款每月哪几天", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "付款批次是15日和月底吗", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "medium"}
+{"query": "对公打款时间", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "备用金领用限额", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "备用金最多5000吗", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "备用金多少天内冲账", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "备用金领用规则", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "合同付款要附什么材料", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "合同付款要扫描件和验收单吗", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "medium"}
+{"query": "合同付款附件要求", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "对公合同付款材料", "gold_doc_keys": ["finance_policy"], "tags": ["single_doc", "finance"], "difficulty": "easy"}
+{"query": "年假有多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "满一年年假几天", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "年假最多可以到多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "年假逐年递增规则", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "年假有多少天啊", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "请问年假有多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "请问年假有多少天啊", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "手册里年假有多少天", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "手册里年假有多少天啊", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "病假需要什么材料", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "请病假要医院证明吗", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "病假证明材料要求", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "事假怎么申请", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "事假要书面申请吗", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "远程办公如何申请", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "远程办公要邮件抄送领导吗", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "medium"}
+{"query": "远程办公最长多久", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "居家办公申请流程", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "远程办公单次不超过两周吗", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "medium"}
+{"query": "试用期考核说明", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "转正前要述职吗", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "试用期360评估", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "转正考核怎么做", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "加班调休规则", "gold_doc_keys": ["hr_handbook"], "tags": ["single_doc", "hr"], "difficulty": "easy"}
+{"query": "VPN账号怎么申请", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "VPN开通要多久", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "VPN工单提交到IT服务台吗", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "medium"}
+{"query": "VPN账号申请流程", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "电脑领用流程", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "新员工入职当天发笔记本吗", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "medium"}
+{"query": "IT发放标准配置笔记本吗", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "medium"}
+{"query": "电脑领用找谁", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "软件安装有什么限制", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "只能装白名单应用吗", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "公司镜像以外的软件能装吗", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "medium"}
+{"query": "软件安装规范", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "邮箱容量默认多少", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "邮箱默认50GB吗", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "邮箱超限怎么扩容", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "邮箱容量申请", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "故障报修怎么提", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "IT热线还是门户工单", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "电脑故障报修流程", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "IT故障工单", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "账号注销什么时候做", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "离职当天禁用域账号吗", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "邮箱转发离职怎么处理", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "账号注销流程", "gold_doc_keys": ["it_ops"], "tags": ["single_doc", "it"], "difficulty": "easy"}
+{"query": "对外合同要法务审核吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "合同金额超50万要会签吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "medium"}
+{"query": "公司法务会签条件", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "对外合同审核流程", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "个人信息处理原则", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "最小必要原则是什么", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "能超范围采集个人信息吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "个人信息采集规范", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "竞业限制多久", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "核心岗位竞业限制12个月吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "medium"}
+{"query": "离职后竞业限制适用吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "竞业限制规定", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "印章使用规定", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "公章和合同章要分开保管吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "medium"}
+{"query": "用印要登记吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "印章保管要求", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "供应商尽调要做什么", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "新供应商合规问卷", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "供应商资质核验", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "供应商尽调流程", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "数据出境要评估吗", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "跨境传输安全评估", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "数据出境备案要求", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "跨境数据传输合规", "gold_doc_keys": ["legal_compliance"], "tags": ["single_doc", "legal"], "difficulty": "easy"}
+{"query": "会议室预约规则", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "会议室要提前一天预约吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "会议室最长连续占用多久", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "怎么预约会议室", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "会议室预约流程", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "访客登记流程", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "访客要前台登记吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "访客临时卡怎么领", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "访客离开要归还临时卡吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "访客WiFi怎么连", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "访客WiFi的SSID是什么", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "medium"}
+{"query": "Omni-Guest密码在哪看", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "medium"}
+{"query": "访客无线网怎么用", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "门禁卡补办", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "门禁卡丢了怎么办", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "门禁卡补办工本费多少", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "行政部补办门禁卡吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "打印机使用规范", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "打印机默认双面打印吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "彩色打印要审批吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "打印规范是什么", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "快递收发怎么弄", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "大件快递放前台货架吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "个人取件要登记吗", "gold_doc_keys": ["office_guide"], "tags": ["single_doc", "office"], "difficulty": "easy"}
+{"query": "Omni-Butler支持哪些能力", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "medium"}
+{"query": "有没有日历助手和数据分析沙箱", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "medium"}
+{"query": "知识库问答功能有吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "产品主要功能有哪些", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "知识库单文件上限多少", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "知识库支持PDF Word Excel吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "medium"}
+{"query": "Markdown能上传知识库吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "medium"}
+{"query": "知识库文件大小限制50MB吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "medium"}
+{"query": "引用角标是什么意思", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "引用角标能打开原文吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "检索片段和角标的关系", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "引用角标怎么用", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "日历助手能取消会议吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "日历助手要绑定企业邮箱吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "medium"}
+{"query": "日历助手支持改期吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "日历助手能创建会议吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "沙箱能跑Python和SQL吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "medium"}
+{"query": "沙箱结果会话外可见吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "数据分析沙箱执行什么", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "沙箱结果可见范围", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "会话记忆保留多少轮", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "会话记忆默认30轮吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "会话记忆能手动清空吗", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "记忆保留轮数", "gold_doc_keys": ["product_faq"], "tags": ["single_doc", "product"], "difficulty": "easy"}
+{"query": "销售额最高的区域是哪个", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "哪个区销售额最高", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华东销售额是多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "销售额最高的区域", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "西部销售额是多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "西部销售额为多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "查一下西部销售", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "西部地区销售数据", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华北区销售多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华北区销售数据", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华北销售是80吗", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华北区销售额", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "各区销售均值", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "销售均值大约多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "各区销售均值是多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "区域销售平均值", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华东区KPI完成率", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华东KPI是多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华东区KPI完成率95%吗", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "medium"}
+{"query": "华东KPI完成情况", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华南区销售多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华南销售同比去年增长", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华南区销售数据", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "华南同比增长多少", "gold_doc_keys": ["sales_table"], "tags": ["single_doc", "tabular"], "difficulty": "easy"}
+{"query": "密码多长时间必须更换", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "密码多久换一次", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "密码至少每90天更换吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "密码长度不少于多少位", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "公司密码策略是什么", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "能否使用私人U盘", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "禁止使用私人U盘吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "外接存储有什么规定", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "私人U盘能不能用", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "公司加密盘可以用吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "文档加密要求", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "机密级文档要加密吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "未脱敏数据能外发吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "文档加密怎么规定的", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "双因素认证要求", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "VPN要开MFA吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "邮箱强制开启双因素吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "MFA强制范围", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "办公电脑锁屏规定", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "离开座位要锁屏吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "空闲超时多久锁屏", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "电脑锁屏超时15分钟吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "钓鱼邮件怎么处理", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "easy"}
+{"query": "可疑链接要上报安全邮箱吗", "gold_doc_keys": ["security_policy"], "tags": ["single_doc", "security"], "difficulty": "medium"}
+{"query": "差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "出差住酒店每天能报多少", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "住宿标准一线城市是多少钱", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "外地出差酒店费用上限", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "一线城市住宿限额？", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "差旅住宿标准有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "一线城市住宿限额有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "请问差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "请问一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "请问差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "请问一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "请问差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "请问一线城市住宿限额？", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "easy"}
+{"query": "请问差旅住宿标准有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "请问一线城市住宿限额有没有说明", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "帮我查一下差旅住宿标准是多少", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "帮我查一下一线城市住宿限额是多少", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "帮我查一下差旅住宿标准怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "帮我查一下一线城市住宿限额怎么规定的", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "帮我查一下差旅住宿标准？", "gold_doc_keys": ["travel_policy"], "tags": ["single_doc", "policy", "travel"], "difficulty": "medium"}
+{"query": "差旅报销时在费用系统里首先要选择什么单据？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "差旅报销必须关联哪一份原始申请？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "住宿发票之外还要上传哪两类附件？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "财务对差旅报销的初审通常需要多久？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "报销申请被退回以后应该怎样处理？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "差旅行程单是否属于必须上传的附件？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "审批记录在差旅报销时需要一并提交吗？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "这份操作手册是否规定城市住宿额度？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "费用系统中的差旅单要和什么记录建立关联？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "退单后修改材料能否沿用原提交还是需要重新提交？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["single_doc", "travel_expense_procedure"], "difficulty": "medium"}
+{"query": "VPN首次登录后为什么必须修改初始密码？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "第一次使用VPN还要绑定哪类认证工具？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "密码连续输错多少次会触发账号锁定？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "账号因输错密码被锁后会持续多长时间？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "账号锁定时可以联系哪个团队协助解锁？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "更换手机时认证器迁移的第一步是什么？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "旧认证设备解绑后怎样绑定新手机？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "账号安全指引是否包含VPN申请开通时效？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "绑定认证器时需要扫描什么内容？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "忘记密码并触发锁定后应走什么解锁渠道？", "gold_doc_keys": ["account_security"], "tags": ["single_doc", "account_security"], "difficulty": "medium"}
+{"query": "会议纪要应记录哪三类核心内容？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "谁负责在会议结束后整理会议结论？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "纪要中的每个行动项必须写明什么？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "会议行动项除了负责人还要写哪个完成条件？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "确认后的会议纪要应该发布到哪里？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "会议决定后来发生变化时为什么要保留记录？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "这份工作法有没有规定会议室提前多久预约？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "纪要里对会议分歧应该如何留痕？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "项目空间中的纪要修改时应保留什么信息？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "主持人整理纪要时需要覆盖行动项吗？", "gold_doc_keys": ["meeting_minutes"], "tags": ["single_doc", "meeting_minutes"], "difficulty": "medium"}
+{"query": "采购需求提交时必须写清哪三项内容？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "新供应商进入名录前需要完成哪些审查？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "供应商廉洁承诺在哪个流程阶段提交？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "采购合同付款按照什么节点执行？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "采购付款申请必须关联哪类业务单据？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "采购需求中的预算归属是否必须明确？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "供应商资质审查之外还要完成哪项价格工作？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "这份采购制度是否规定日常报销加签金额？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "验收标准应该在采购需求的哪个阶段写明？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "采购订单与付款申请之间是什么关系？", "gold_doc_keys": ["procurement_policy"], "tags": ["single_doc", "procurement_policy"], "difficulty": "medium"}
+{"query": "普通业务日志的标准保存期限是多久？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "安全审计日志需要保留多少年？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "数据超过留存期限后由什么方式销毁？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "自动销毁数据是否需要遵循审批策略？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "处于诉讼保全期间的数据还能按期删除吗？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "审计期间为什么要暂停数据销毁？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "这份留存制度是否说明数据跨境备案要求？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "业务日志和审计日志的保存周期是否相同？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "哪些特殊状态会阻止到期数据被销毁？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "系统执行到期销毁前依据的是什么策略？", "gold_doc_keys": ["data_retention"], "tags": ["single_doc", "data_retention"], "difficulty": "medium"}
+{"query": "公司向员工提供哪些健康类福利？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "补充医疗保险是否属于员工福利项目？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "部门团建补贴按照什么口径计算？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "生日关怀通常在什么时候发放？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "员工年度体检由哪份福利说明覆盖？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "团建实际参与人数会影响补贴吗？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "这份福利说明是否规定年假天数？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "病假证明要求能否从员工福利说明中找到？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "节日关怀与生日关怀都属于什么政策范围？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "福利文件有没有说明加班如何调休？", "gold_doc_keys": ["employee_benefits"], "tags": ["single_doc", "employee_benefits"], "difficulty": "medium"}
+{"query": "出差住宿上限和日常费用加签线分别是多少？", "gold_doc_keys": ["travel_policy", "finance_policy"], "tags": ["multi_doc", "travel", "finance"], "difficulty": "hard"}
+{"query": "出差回来多久要报销，备用金又要多久冲账？", "gold_doc_keys": ["travel_policy", "finance_policy"], "tags": ["multi_doc", "travel", "finance"], "difficulty": "hard"}
+{"query": "国际航班能坐什么舱位，合同付款要附哪些材料？", "gold_doc_keys": ["travel_policy", "finance_policy"], "tags": ["multi_doc", "travel", "finance"], "difficulty": "hard"}
+{"query": "年假最多有几天，生日关怀什么时候发？", "gold_doc_keys": ["hr_handbook", "employee_benefits"], "tags": ["multi_doc", "hr", "benefits"], "difficulty": "hard"}
+{"query": "病假要交什么材料，公司还提供哪些健康福利？", "gold_doc_keys": ["hr_handbook", "employee_benefits"], "tags": ["multi_doc", "hr", "benefits"], "difficulty": "hard"}
+{"query": "加班优先怎么处理，团建补贴按什么核算？", "gold_doc_keys": ["hr_handbook", "employee_benefits"], "tags": ["multi_doc", "hr", "benefits"], "difficulty": "hard"}
+{"query": "VPN账号多久开通，首次登录还要做什么？", "gold_doc_keys": ["it_ops", "account_security"], "tags": ["multi_doc", "it", "security"], "difficulty": "hard"}
+{"query": "离职域账号何时禁用，连续输错密码会锁多久？", "gold_doc_keys": ["it_ops", "account_security"], "tags": ["multi_doc", "it", "security"], "difficulty": "hard"}
+{"query": "邮箱容量是多少，邮箱登录需要哪种额外认证？", "gold_doc_keys": ["it_ops", "security_policy"], "tags": ["multi_doc", "it", "security"], "difficulty": "hard"}
+{"query": "电脑多久自动锁屏，普通业务日志保存多长时间？", "gold_doc_keys": ["security_policy", "data_retention"], "tags": ["multi_doc", "security", "retention"], "difficulty": "hard"}
+{"query": "机密文档怎么处理，审计期间的数据能销毁吗？", "gold_doc_keys": ["security_policy", "data_retention"], "tags": ["multi_doc", "security", "retention"], "difficulty": "hard"}
+{"query": "数据出境要办什么，安全审计日志留存多久？", "gold_doc_keys": ["legal_compliance", "data_retention"], "tags": ["multi_doc", "legal", "retention"], "difficulty": "hard"}
+{"query": "会议室要提前多久预约，会议结束后纪要应写什么？", "gold_doc_keys": ["office_guide", "meeting_minutes"], "tags": ["multi_doc", "office", "meeting"], "difficulty": "hard"}
+{"query": "会议室最长能占多久，行动项必须包含哪些信息？", "gold_doc_keys": ["office_guide", "meeting_minutes"], "tags": ["multi_doc", "office", "meeting"], "difficulty": "hard"}
+{"query": "访客怎样登记，会议纪要确认后发布到哪里？", "gold_doc_keys": ["office_guide", "meeting_minutes"], "tags": ["multi_doc", "office", "meeting"], "difficulty": "hard"}
+{"query": "新供应商要做哪些合规检查，采购需求要写哪些内容？", "gold_doc_keys": ["legal_compliance", "procurement_policy"], "tags": ["multi_doc", "legal", "procurement"], "difficulty": "hard"}
+{"query": "对外合同超过多少要会签，采购付款按什么节点执行？", "gold_doc_keys": ["legal_compliance", "procurement_policy"], "tags": ["multi_doc", "legal", "procurement"], "difficulty": "hard"}
+{"query": "供应商资质如何核验，付款申请要关联什么？", "gold_doc_keys": ["legal_compliance", "procurement_policy"], "tags": ["multi_doc", "legal", "procurement"], "difficulty": "hard"}
+{"query": "知识库文件最大多大，底层向量集合叫什么？", "gold_doc_keys": ["product_faq", "arch_doc"], "tags": ["multi_doc", "product", "tech"], "difficulty": "hard"}
+{"query": "产品支持哪些办公能力，Agent工作流用什么编排？", "gold_doc_keys": ["product_faq", "arch_doc"], "tags": ["multi_doc", "product", "tech"], "difficulty": "hard"}
+{"query": "引用角标有什么用，流式回复采用什么协议？", "gold_doc_keys": ["product_faq", "arch_doc"], "tags": ["multi_doc", "product", "tech"], "difficulty": "hard"}
+{"query": "华东销售额是多少，日常费用超过多少又需要负责人加签？", "gold_doc_keys": ["sales_table", "finance_policy"], "tags": ["multi_doc", "tabular", "finance"], "difficulty": "hard"}
+{"query": "哪个区域销售最高，会议室最长可以连续占用多久？", "gold_doc_keys": ["sales_table", "office_guide"], "tags": ["multi_doc", "tabular", "office"], "difficulty": "hard"}
+{"query": "打印机默认怎么打，机密文档外发前又要怎样处理？", "gold_doc_keys": ["office_guide", "security_policy"], "tags": ["multi_doc", "office", "security"], "difficulty": "hard"}
+{"query": "高铁出差能报什么座席，住宿发票报销时又要上传哪些附件？", "gold_doc_keys": ["travel_policy", "travel_expense_procedure"], "tags": ["multi_doc", "travel", "expense"], "difficulty": "hard"}
+{"query": "员工入职要交哪些证明，电脑又在什么时候领取？", "gold_doc_keys": ["hr_handbook", "it_ops"], "tags": ["multi_doc", "hr", "it"], "difficulty": "hard"}
+{"query": "离职时资产和账号分别如何处理？", "gold_doc_keys": ["hr_handbook", "it_ops"], "tags": ["multi_doc", "hr", "it"], "difficulty": "hard"}
+{"query": "远程办公怎么申请，VPN账号从哪里申请？", "gold_doc_keys": ["hr_handbook", "it_ops"], "tags": ["multi_doc", "hr", "it"], "difficulty": "hard"}
+{"query": "个人信息采集和客户文件外发分别受什么约束？", "gold_doc_keys": ["legal_compliance", "security_policy"], "tags": ["multi_doc", "legal", "security"], "difficulty": "hard"}
+{"query": "跨境传输与机密文档外发各要满足什么要求？", "gold_doc_keys": ["legal_compliance", "security_policy"], "tags": ["multi_doc", "legal", "security"], "difficulty": "hard"}
+{"query": "备用金和门禁卡补办分别要多少钱？", "gold_doc_keys": ["finance_policy", "office_guide"], "tags": ["multi_doc", "finance", "office"], "difficulty": "hard"}
+{"query": "季度预算何时交，会议室又要提前多久订？", "gold_doc_keys": ["finance_policy", "office_guide"], "tags": ["multi_doc", "finance", "office"], "difficulty": "hard"}
+{"query": "故障报修有哪些入口，门禁卡丢了找谁？", "gold_doc_keys": ["it_ops", "office_guide"], "tags": ["multi_doc", "it", "office"], "difficulty": "hard"}
+{"query": "软件安装渠道和数据沙箱隔离方式分别是什么？", "gold_doc_keys": ["it_ops", "arch_doc"], "tags": ["multi_doc", "it", "tech"], "difficulty": "hard"}
+{"query": "系统检索使用什么向量库，产品又允许沙箱执行哪些语言？", "gold_doc_keys": ["arch_doc", "product_faq"], "tags": ["multi_doc", "tech", "product"], "difficulty": "hard"}
+{"query": "知识库问答如何开启，检索用了哪两种技术？", "gold_doc_keys": ["product_faq", "arch_doc"], "tags": ["multi_doc", "product", "tech"], "difficulty": "hard"}
+{"query": "访客网络怎么连，VPN为什么还要绑定认证器？", "gold_doc_keys": ["office_guide", "account_security"], "tags": ["multi_doc", "office", "security"], "difficulty": "hard"}
+{"query": "报销系统要关联什么申请，差旅发票多久内提交？", "gold_doc_keys": ["travel_expense_procedure", "travel_policy"], "tags": ["multi_doc", "travel", "expense"], "difficulty": "hard"}
+{"query": "住宿发票要作为附件吗，一线城市上限又是多少？", "gold_doc_keys": ["travel_expense_procedure", "travel_policy"], "tags": ["multi_doc", "travel", "expense"], "difficulty": "hard"}
+{"query": "财务初审多久完成，对公付款有哪些批次？", "gold_doc_keys": ["travel_expense_procedure", "finance_policy"], "tags": ["multi_doc", "expense", "finance"], "difficulty": "hard"}
+{"query": "采购合同付款需要什么前提，对公付款通常哪天处理？", "gold_doc_keys": ["procurement_policy", "finance_policy"], "tags": ["multi_doc", "procurement", "finance"], "difficulty": "hard"}
+{"query": "新供应商的采购审查和合规问卷分别是什么？", "gold_doc_keys": ["procurement_policy", "legal_compliance"], "tags": ["multi_doc", "procurement", "legal"], "difficulty": "hard"}
+{"query": "业务日志保存多久，公司密码又要求多少天更换一次？", "gold_doc_keys": ["data_retention", "security_policy"], "tags": ["multi_doc", "retention", "security"], "difficulty": "hard"}
+{"query": "竞业限制多长，离职账号哪天停用？", "gold_doc_keys": ["legal_compliance", "it_ops"], "tags": ["multi_doc", "legal", "it"], "difficulty": "hard"}
+{"query": "年假怎么递增，公司年度健康福利有哪些？", "gold_doc_keys": ["hr_handbook", "employee_benefits"], "tags": ["multi_doc", "hr", "benefits"], "difficulty": "hard"}
+{"query": "周末值班补贴能否叠加，加班又优先怎么补偿？", "gold_doc_keys": ["travel_policy", "hr_handbook"], "tags": ["multi_doc", "travel", "hr"], "difficulty": "hard"}
+{"query": "单笔费用超过多少要加签，对外合同超过多少要会签？", "gold_doc_keys": ["finance_policy", "legal_compliance"], "tags": ["multi_doc", "finance", "legal"], "difficulty": "hard"}
+{"query": "打印规范和机密文档加密要求分别是什么？", "gold_doc_keys": ["office_guide", "security_policy"], "tags": ["multi_doc", "office", "security"], "difficulty": "hard"}
+{"query": "产品会话记忆保留几轮，业务日志又保留多久？", "gold_doc_keys": ["product_faq", "data_retention"], "tags": ["multi_doc", "product", "retention"], "difficulty": "hard"}
+{"query": "日历助手能做什么，会议纪要的行动项怎么写？", "gold_doc_keys": ["product_faq", "meeting_minutes"], "tags": ["multi_doc", "product", "meeting"], "difficulty": "hard"}
+{"query": "数据分析沙箱能跑什么语言，架构上如何隔离？", "gold_doc_keys": ["product_faq", "arch_doc"], "tags": ["multi_doc", "product", "tech"], "difficulty": "hard"}
+{"query": "差旅申请和差旅报销分别要关联哪些审批信息？", "gold_doc_keys": ["travel_policy", "travel_expense_procedure"], "tags": ["multi_doc", "travel", "expense"], "difficulty": "hard"}
+{"query": "合同付款和采购付款各需要哪些附件或关联单据？", "gold_doc_keys": ["finance_policy", "procurement_policy"], "tags": ["multi_doc", "finance", "procurement"], "difficulty": "hard"}
+{"query": "MFA适用于哪些系统，认证器换手机如何迁移？", "gold_doc_keys": ["security_policy", "account_security"], "tags": ["multi_doc", "security"], "difficulty": "hard"}
+{"query": "新员工材料和设备领取分别在什么时候完成？", "gold_doc_keys": ["hr_handbook", "it_ops"], "tags": ["multi_doc", "hr", "it"], "difficulty": "hard"}
+{"query": "个人U盘为什么不能用，敏感数据到期后怎样销毁？", "gold_doc_keys": ["security_policy", "data_retention"], "tags": ["multi_doc", "security", "retention"], "difficulty": "hard"}
+{"query": "访客临时卡离开时怎么处理，会议行动项又要写清哪些内容？", "gold_doc_keys": ["office_guide", "meeting_minutes"], "tags": ["multi_doc", "office", "meeting"], "difficulty": "hard"}
+{"query": "数据跨境和数据留存分别由哪套规则约束？", "gold_doc_keys": ["legal_compliance", "data_retention"], "tags": ["multi_doc", "legal", "retention"], "difficulty": "hard"}
+{"query": "知识库上传格式与向量检索组件分别有哪些？", "gold_doc_keys": ["product_faq", "arch_doc"], "tags": ["multi_doc", "product", "tech"], "difficulty": "hard"}
+{"query": "销售最强区域是哪一个，备用金领取上限又是多少？", "gold_doc_keys": ["sales_table", "finance_policy"], "tags": ["multi_doc", "tabular", "finance"], "difficulty": "hard"}
+{"query": "报销手册没写额度，那一线城市住宿究竟按多少封顶？", "gold_doc_keys": ["travel_policy"], "tags": ["hard_negative", "travel", "expense"], "difficulty": "hard"}
+{"query": "我会上传住宿发票，但想查的是归来后最迟多久提交。", "gold_doc_keys": ["travel_policy"], "tags": ["hard_negative", "travel", "expense"], "difficulty": "hard"}
+{"query": "不是生日福利，入职满一年到底有多少天可休？", "gold_doc_keys": ["hr_handbook"], "tags": ["hard_negative", "hr", "benefits"], "difficulty": "hard"}
+{"query": "体检政策先不用说，病假审批要求哪类证明？", "gold_doc_keys": ["hr_handbook"], "tags": ["hard_negative", "hr", "benefits"], "difficulty": "hard"}
+{"query": "账号操作手册只讲首次登录，VPN开通时效去哪里看？", "gold_doc_keys": ["it_ops"], "tags": ["hard_negative", "it", "security"], "difficulty": "hard"}
+{"query": "我问的是邮箱空间，不是邮箱双因素认证，默认多少GB？", "gold_doc_keys": ["it_ops"], "tags": ["hard_negative", "it", "security"], "difficulty": "hard"}
+{"query": "认证器换机不等于改密码，公司密码多久必须换一次？", "gold_doc_keys": ["security_policy"], "tags": ["hard_negative", "security"], "difficulty": "hard"}
+{"query": "留存制度说的是日志，我要查电脑空闲多久会锁屏。", "gold_doc_keys": ["security_policy"], "tags": ["hard_negative", "security", "retention"], "difficulty": "hard"}
+{"query": "会议纪要怎么写先不管，会议室最长可以连续用多久？", "gold_doc_keys": ["office_guide"], "tags": ["hard_negative", "office", "meeting"], "difficulty": "hard"}
+{"query": "不是行动项负责人，我要找访客离开时应归还什么。", "gold_doc_keys": ["office_guide"], "tags": ["hard_negative", "office", "meeting"], "difficulty": "hard"}
+{"query": "采购付款按验收走，但日常费用超过多少要负责人加签？", "gold_doc_keys": ["finance_policy"], "tags": ["hard_negative", "finance", "procurement"], "difficulty": "hard"}
+{"query": "差旅报销有附件清单，对公付款的处理日期是哪两个？", "gold_doc_keys": ["finance_policy"], "tags": ["hard_negative", "finance", "expense"], "difficulty": "hard"}
+{"query": "采购有资质审查，我问合规制度要求新供应商填什么。", "gold_doc_keys": ["legal_compliance"], "tags": ["hard_negative", "legal", "procurement"], "difficulty": "hard"}
+{"query": "不是数据保存期限，跨境传输前必须做哪类评估？", "gold_doc_keys": ["legal_compliance"], "tags": ["hard_negative", "legal", "retention"], "difficulty": "hard"}
+{"query": "上传指南提到知识库，我想知道后端向量集合的固定名称。", "gold_doc_keys": ["arch_doc"], "tags": ["hard_negative", "tech", "product"], "difficulty": "hard"}
+{"query": "产品支持沙箱不等于实现方式，代码实际隔离在哪里？", "gold_doc_keys": ["arch_doc"], "tags": ["hard_negative", "tech", "product"], "difficulty": "hard"}
+{"query": "架构里说流式协议，我问前端引用角标能不能打开原文。", "gold_doc_keys": ["product_faq"], "tags": ["hard_negative", "product", "tech"], "difficulty": "hard"}
+{"query": "底层用什么数据库先不谈，知识库单文件最多允许多大？", "gold_doc_keys": ["product_faq"], "tags": ["hard_negative", "product", "tech"], "difficulty": "hard"}
+{"query": "福利说明没有休假天数，年假最高上限应查员工手册。", "gold_doc_keys": ["hr_handbook"], "tags": ["hard_negative", "hr", "benefits"], "difficulty": "hard"}
+{"query": "员工手册说离职交接，生日关怀具体在哪个月发？", "gold_doc_keys": ["employee_benefits"], "tags": ["hard_negative", "benefits", "hr"], "difficulty": "hard"}
+{"query": "安全制度要求MFA，但连续输错密码锁定多久看哪份指引？", "gold_doc_keys": ["account_security"], "tags": ["hard_negative", "security"], "difficulty": "hard"}
+{"query": "VPN申请工单不是我要的，换手机后认证器应该怎么迁移？", "gold_doc_keys": ["account_security"], "tags": ["hard_negative", "security", "it"], "difficulty": "hard"}
+{"query": "制度规定住宿额度，我现在只想知道报销系统要关联哪张单。", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["hard_negative", "expense", "travel"], "difficulty": "hard"}
+{"query": "差旅政策讲十五天，财务初审通常需要几个工作日？", "gold_doc_keys": ["travel_expense_procedure"], "tags": ["hard_negative", "expense", "travel"], "difficulty": "hard"}
+{"query": "费用报销要加签，但采购需求里必须先写明哪三类信息？", "gold_doc_keys": ["procurement_policy"], "tags": ["hard_negative", "procurement", "finance"], "difficulty": "hard"}
+{"query": "合规问卷不是全部，供应商入采购名录前还要做什么？", "gold_doc_keys": ["procurement_policy"], "tags": ["hard_negative", "procurement", "legal"], "difficulty": "hard"}
+{"query": "跨境规则不等于留存规则，普通业务日志保留多久？", "gold_doc_keys": ["data_retention"], "tags": ["hard_negative", "retention", "legal"], "difficulty": "hard"}
+{"query": "安全事件要及时上报，但审计日志自身保存几年？", "gold_doc_keys": ["data_retention"], "tags": ["hard_negative", "retention", "security"], "difficulty": "hard"}
+{"query": "会议室预约提前量不是重点，纪要行动项必须写哪两项？", "gold_doc_keys": ["meeting_minutes"], "tags": ["hard_negative", "meeting", "office"], "difficulty": "hard"}
+{"query": "会议规范限制时长，我问决策变更为什么要保留记录。", "gold_doc_keys": ["meeting_minutes"], "tags": ["hard_negative", "meeting", "office"], "difficulty": "hard"}
+{"query": "员工手册讲年假，公司补充医疗属于哪份福利说明？", "gold_doc_keys": ["employee_benefits"], "tags": ["hard_negative", "benefits", "hr"], "difficulty": "hard"}
+{"query": "团建活动不是差旅，补贴金额按什么人数口径核算？", "gold_doc_keys": ["employee_benefits"], "tags": ["hard_negative", "benefits", "travel"], "difficulty": "hard"}
+{"query": "华东KPI很高，但销售额最低的区域到底是哪一个？", "gold_doc_keys": ["sales_table"], "tags": ["hard_negative", "tabular"], "difficulty": "hard"}
+{"query": "西部渠道薄弱与销售均值无关，各区均值具体是多少？", "gold_doc_keys": ["sales_table"], "tags": ["hard_negative", "tabular"], "difficulty": "hard"}
+{"query": "打印机审批和印章审批别混淆，彩色输出需要谁先批准？", "gold_doc_keys": ["office_guide"], "tags": ["hard_negative", "office", "legal"], "difficulty": "hard"}
+{"query": "合同章要登记，但合同金额超过什么数才需公司法务会签？", "gold_doc_keys": ["legal_compliance"], "tags": ["hard_negative", "legal", "finance"], "difficulty": "hard"}
+{"query": "产品能创建日程，我要查的是取消会议是否也支持。", "gold_doc_keys": ["product_faq"], "tags": ["hard_negative", "product", "calendar"], "difficulty": "hard"}
+{"query": "会议纪要发布在项目空间，不等于知识库文档可点击引用。", "gold_doc_keys": ["product_faq"], "tags": ["hard_negative", "product", "meeting"], "difficulty": "hard"}
+{"query": "远程办公要抄送领导，单次最长持续多久？", "gold_doc_keys": ["hr_handbook"], "tags": ["hard_negative", "hr", "it"], "difficulty": "hard"}
+{"query": "软件只能装白名单应用，那故障报修还有哪两种入口？", "gold_doc_keys": ["it_ops"], "tags": ["hard_negative", "it"], "difficulty": "hard"}

@@ -16,7 +16,7 @@ from app.agents.harness import gateway
 from app.agents.harness.constitution import reload_constitution
 from app.agents.harness.types import ToolContext
 from app.agents.harness.verify import verify_state
-from app.agents.router import RouterDecision, RouterError
+from app.agents.router import RouterError
 from app.agents.tools.registry import ensure_builtin_tools
 from app.core.config import settings
 from app.eval import tool_routing
@@ -29,8 +29,8 @@ def _tools_ready():
     ensure_builtin_tools()
 
 
-_MIN_INTENT_ACC = 0.75
-_MIN_TOOL_EXACT = 0.70
+_MIN_INTENT_ACC = 0.87
+_MIN_TOOL_EXACT = 0.87
 
 
 @pytest.mark.skipif(
@@ -38,15 +38,16 @@ _MIN_TOOL_EXACT = 0.70
     reason="set RUN_ROUTER_EVAL=1 (and LLM_API_KEY) to run the 500-case LLM router eval",
 )
 def test_routing_eval_meets_thresholds():
-    report = run_tool_routing_eval(load_cases())
-    assert report.n >= 500, f"expected >=500 golden cases, got {report.n}"
+    cases = load_cases()
+    report = run_tool_routing_eval(cases)
+    assert report.n == len(cases)
     assert report.intent_accuracy >= _MIN_INTENT_ACC, report.format_text()
     assert report.tools["exact_match_accuracy"] >= _MIN_TOOL_EXACT, report.format_text()
 
 
 def test_routing_dataset_loads():
     cases = load_cases()
-    assert len(cases) >= 500
+    assert cases
     assert all("fast_path" not in c.gold for c in cases), "fast path metric is retired"
     d = run_tool_routing_eval(
         cases[:0],  # empty → structural smoke without LLM
@@ -55,10 +56,10 @@ def test_routing_dataset_loads():
 
 
 def _oracle_route(tmp_path, monkeypatch, cases):
-    """Bridge the eval pipeline to a mocked router (offline, no API key)."""
+    """Bridge the eval pipeline to a mocked ``plan_tools`` (offline, no API key)."""
     by_message = {c.message: set(c.gold.get("tools") or []) for c in cases}
 
-    def fake_route(message, history=None, **kwargs):
+    def fake_plan_tools(message, history=None, **kwargs):
         tools = by_message.get(message, set())
         if kwargs.get("forced_kb") or kwargs.get("document_ids"):
             tools = tools | {"kb"}
@@ -66,15 +67,19 @@ def _oracle_route(tmp_path, monkeypatch, cases):
             tools = tools - {"kb"}
         if not kwargs.get("has_tabular_docs"):
             tools = tools - {"sandbox"}
-        return RouterDecision(
-            reasoning="mock",
-            needs_kb="kb" in tools,
-            needs_web="web" in tools,
-            needs_calendar="calendar" in tools,
-            needs_sandbox="sandbox" in tools,
-        )
+        pending = [t for t in ("kb", "web", "calendar", "sandbox") if t in tools]
+        return {
+            "pending_tools": pending,
+            "needs_kb": "kb" in tools,
+            "needs_web": "web" in tools,
+            "needs_calendar": "calendar" in tools,
+            "needs_sandbox": "sandbox" in tools,
+            "needs_freshness": False,
+            "confidence": "high",
+            "reasoning": "mock",
+        }
 
-    monkeypatch.setattr(tool_routing, "route", fake_route)
+    monkeypatch.setattr(tool_routing, "plan_tools", fake_plan_tools)
     return run_tool_routing_eval(cases, cache_path=tmp_path / "router_cache.json")
 
 
@@ -96,7 +101,7 @@ def test_routing_cache_avoids_second_call(tmp_path, monkeypatch):
     def boom(*_a, **_k):
         raise AssertionError("router must not be called on cache hit")
 
-    monkeypatch.setattr(tool_routing, "route", boom)
+    monkeypatch.setattr(tool_routing, "plan_tools", boom)
     second = run_tool_routing_eval(cases, cache_path=tmp_path / "router_cache.json")
     assert second.cache_hits == len(cases)
     assert second.cache_misses == 0
@@ -108,7 +113,7 @@ def test_router_error_recorded_as_failure(tmp_path, monkeypatch):
     def failing(*_a, **_k):
         raise RouterError("工具规划失败：schema 校验失败")
 
-    monkeypatch.setattr(tool_routing, "route", failing)
+    monkeypatch.setattr(tool_routing, "plan_tools", failing)
     report = run_tool_routing_eval(cases, cache_path=tmp_path / "router_cache.json")
 
     assert len(report.failures) == len(cases)

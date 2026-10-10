@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.eval.env import bootstrap, resolve_target
+from app.eval.env import ensure_bootstrap
 
-bootstrap(resolve_target())
+ensure_bootstrap(isolate_app_db=True)
 
 from app.eval.rag_retrieval import DEFAULT_DATASET, load_cases, run_rag_retrieval_eval  # noqa: E402
 from app.eval.report import RunContext, SuiteResult, make_run_dir, write_run  # noqa: E402
@@ -26,12 +26,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--k", type=int, default=None)
     parser.add_argument("--zhipu-rerank", action="store_true")
     parser.add_argument("--min-recall", type=float, default=None)
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help="Real ingest_document chunking + hybrid/Qdrant retrieval (needs EVAL_TARGET=services)",
+    )
     return parser
 
 
 def run(args: argparse.Namespace) -> SuiteResult:
+    import os
+
     cases = load_cases(args.dataset)
-    report = run_rag_retrieval_eval(cases, k=args.k, use_zhipu_rerank=args.zhipu_rerank)
+    production = bool(getattr(args, "production", False))
+    if production and os.environ.get("EVAL_TARGET") != "services":
+        # Never degrade silently: a keyword run recorded as "full" still passes the
+        # recall floor while the hybrid/rerank path stays untested.
+        raise RuntimeError(
+            "--production 需要 MinIO + Qdrant（services 目标）。"
+            "请用 Compose 运行：docker compose --profile eval run --rm eval "
+            "python scripts/eval.py run rag --profile full；"
+            "如需关键词对照档，请去掉 --production（smoke 档即为此用途）。"
+        )
+    report = run_rag_retrieval_eval(
+        cases, k=args.k, use_zhipu_rerank=args.zhipu_rerank, production=production
+    )
     payload = report.to_dict()
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

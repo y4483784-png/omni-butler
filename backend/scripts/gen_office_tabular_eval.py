@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -34,6 +35,7 @@ _TAG_CONCEPT = {
     "filter": "filter",
     "date": "filter",
     "rate": "derive",
+    "derive": "derive",
     "dirty": "dirty_parse",
     "join_ok": "join",
     "join_refuse": "refusal",
@@ -117,6 +119,54 @@ def _write_fixtures() -> dict[str, pd.DataFrame]:
     products = [{"SKU": f"SKU{i:03d}", "单价": round(rng.uniform(10, 500), 2)} for i in range(1, 16)]
     df_prod = pd.DataFrame(products)
 
+    # Keep new fixtures on an independent stream so future additions cannot
+    # change the established six fixture files and their frozen gold values.
+    rng2 = random.Random(SEED + 1)
+    expense_categories = ["差旅", "市场", "办公", "培训"]
+    expense_rows = []
+    for i in range(1, 61):
+        expense_rows.append(
+            {
+                "费用单号": f"EX{i:04d}",
+                "部门": depts[i % len(depts)],
+                "类别": expense_categories[i % len(expense_categories)],
+                "金额": round(rng2.uniform(80, 8000), 2),
+                "报销状态": ["已通过", "待审核", "已驳回"][i % 3],
+                "发生日期": (date(2025, 1, 1) + timedelta(days=i)).isoformat(),
+            }
+        )
+    df_expense = pd.DataFrame(expense_rows)
+
+    project_rows = []
+    for i in range(1, 41):
+        budget = round(rng2.uniform(100_000, 1_000_000), 2)
+        project_rows.append(
+            {
+                "项目编号": f"PRJ{i:03d}",
+                "项目名称": f"项目{i}",
+                "部门": depts[i % len(depts)],
+                "预算": budget,
+                "已用金额": round(budget * rng2.uniform(0.15, 1.05), 2),
+                "进度": round(rng2.uniform(0.1, 1.0), 3),
+                "状态": ["正常", "延期", "受阻"][i % 3],
+                "负责人": f"负责人{(i % 12) + 1}",
+            }
+        )
+    df_project = pd.DataFrame(project_rows)
+
+    inventory_rows = []
+    for i in range(1, 51):
+        inventory_rows.append(
+            {
+                "SKU": f"INV{i:03d}",
+                "类别": ["硬件", "耗材", "礼品", "配件"][i % 4],
+                "库存数量": rng2.randint(0, 300),
+                "单价": round(rng2.uniform(5, 3000), 2),
+                "仓库": ["北京仓", "上海仓", "广州仓"][i % 3],
+            }
+        )
+    df_inventory = pd.DataFrame(inventory_rows)
+
     frames = {
         "employees.csv": df_emp,
         "attendance.csv": df_att,
@@ -124,6 +174,9 @@ def _write_fixtures() -> dict[str, pd.DataFrame]:
         "returns.csv": df_ret,
         "sales_regions.csv": df_sales,
         "products.csv": df_prod,
+        "expenses.csv": df_expense,
+        "projects.csv": df_project,
+        "inventory.csv": df_inventory,
     }
     for name, df in frames.items():
         df.to_csv(FIXTURES / name, index=False, encoding="utf-8-sig")
@@ -150,8 +203,10 @@ def _case(
     prior_ir: dict | None = None,
     accept_percent: bool = False,
     require_derive: bool = False,
+    gold_method: str | None = None,
 ) -> dict:
     primary = fixtures[0]
+    frozen_gold = round(float(gold), 6) if gold is not None else None
     row: dict = {
         "id": cid,
         "query": query,
@@ -166,13 +221,11 @@ def _case(
         "missing_tokens": missing_tokens or [],
         "accept_percent": accept_percent,
         "require_derive": require_derive,
+        "gold": frozen_gold,
+        "gold_method": gold_method or ("pandas" if frozen_gold is not None else None),
+        "prior_ir": prior_ir,
+        "gold_plan": gold_plan or {},
     }
-    if gold is not None:
-        row["gold"] = gold
-    if gold_plan:
-        row["gold_plan"] = gold_plan
-    if prior_ir:
-        row["prior_ir"] = prior_ir
     return row
 
 
@@ -182,6 +235,9 @@ def _build_cases(frames: dict[str, pd.DataFrame]) -> list[dict]:
     emp = frames["employees.csv"]
     ord_df = frames["orders.csv"]
     ret = frames["returns.csv"]
+    expense = frames["expenses.csv"]
+    project = frames["projects.csv"]
+    inventory = frames["inventory.csv"]
     regions = ["华东", "华北", "华南", "西南", "西北"]
 
     cases: list[dict] = []
@@ -192,7 +248,7 @@ def _build_cases(frames: dict[str, pd.DataFrame]) -> list[dict]:
         n += 1
         cid = kwargs.pop("id", None) or f"ot_{n:03d}"
         split = kwargs.pop("split", "full")
-        if n <= 20:
+        if n <= 30:
             split = "smoke"
         cases.append(_case(cid, split=split, **kwargs))
 
@@ -691,19 +747,285 @@ def _build_cases(frames: dict[str, pd.DataFrame]) -> list[dict]:
         accept_percent=True,
     )
 
-    # pad to ~90 if short
-    while len(cases) < 88:
-        i = len(cases)
-        region = regions[i % len(regions)]
-        g = float(ord_df.loc[ord_df["大区"] == region, "金额"].sum())
+    if len(cases) != 74:
+        raise ValueError(f"unexpected reviewed base case count: {len(cases)}")
+
+    # --- expenses.csv: 35 distinct objective questions ---
+    for department in sorted(expense["部门"].unique()):
+        part = expense[expense["部门"] == department]
+        expense_specs = [
+            (
+                f"{department}的费用金额合计是多少？",
+                float(part["金额"].sum()),
+                ["sum", "filter"],
+                {"operation": "sum", "filters": [{"column": "部门", "op": "eq", "value": department}]},
+            ),
+            (
+                f"{department}单笔费用的平均金额是多少？",
+                float(part["金额"].mean()),
+                ["mean", "filter"],
+                {"operation": "avg", "filters": [{"column": "部门", "op": "eq", "value": department}]},
+            ),
+            (
+                f"{department}已通过的报销单共有多少笔？",
+                float((part["报销状态"] == "已通过").sum()),
+                ["count", "filter"],
+                {
+                    "operation": "count",
+                    "filters": [
+                        {"column": "部门", "op": "eq", "value": department},
+                        {"column": "报销状态", "op": "eq", "value": "已通过"},
+                    ],
+                },
+            ),
+            (
+                f"{department}金额最高的一笔费用是多少？",
+                float(part["金额"].max()),
+                ["max", "filter"],
+                {"operation": "max", "filters": [{"column": "部门", "op": "eq", "value": department}]},
+            ),
+        ]
+        for query, gold, tags, plan in expense_specs:
+            add(
+                query=query,
+                difficulty="medium",
+                tags=tags,
+                fixtures=["expenses.csv"],
+                gold=gold,
+                gold_plan={**plan, "derive": False},
+            )
+
+    for category in sorted(expense["类别"].unique()):
+        part = expense[expense["类别"] == category]
+        for query, gold, operation in [
+            (f"{category}类费用一共花了多少？", float(part["金额"].sum()), "sum"),
+            (f"{category}类费用的平均单笔金额是多少？", float(part["金额"].mean()), "avg"),
+            (f"{category}类报销记录有多少条？", float(len(part)), "count"),
+        ]:
+            add(
+                query=query,
+                difficulty="medium",
+                tags=[operation if operation != "avg" else "mean", "filter"],
+                fixtures=["expenses.csv"],
+                gold=gold,
+                gold_plan={
+                    "operation": operation,
+                    "filters": [{"column": "类别", "op": "eq", "value": category}],
+                    "derive": False,
+                },
+            )
+
+    for query, gold, tags, plan in [
+        ("expenses.csv全部费用金额合计是多少？", float(expense["金额"].sum()), ["sum"], {"operation": "sum"}),
+        ("expenses.csv平均每笔费用金额是多少？", float(expense["金额"].mean()), ["mean"], {"operation": "avg"}),
+        ("费用明细中最高金额是多少？", float(expense["金额"].max()), ["max"], {"operation": "max"}),
+        ("待审核报销单有多少笔？", float((expense["报销状态"] == "待审核").sum()), ["count", "filter"], {"operation": "count", "filters": [{"column": "报销状态", "op": "eq", "value": "待审核"}]}),
+        ("已驳回的费用记录共有多少条？", float((expense["报销状态"] == "已驳回").sum()), ["count", "filter"], {"operation": "count", "filters": [{"column": "报销状态", "op": "eq", "value": "已驳回"}]}),
+        ("费用表里涉及多少个不同部门？", float(expense["部门"].nunique()), ["count_distinct"], {"operation": "count_distinct"}),
+        ("所有费用金额的中位数是多少？", float(expense["金额"].median()), ["median"], {"operation": "median"}),
+    ]:
         add(
-            query=f"orders.csv {region}大区订单金额合计",
-            difficulty="easy" if i % 2 == 0 else "hard",
-            tags=["sum", "filter"],
-            fixtures=["orders.csv"],
-            gold=g,
-            gold_plan={"operation": "sum", "filters": [{"column": "大区", "op": "eq", "value": region}]},
+            query=query,
+            difficulty="easy",
+            tags=tags,
+            fixtures=["expenses.csv"],
+            gold=gold,
+            gold_plan={**plan, "derive": False},
         )
+
+    # --- projects.csv: 35 project portfolio questions ---
+    for department in sorted(project["部门"].unique()):
+        part = project[project["部门"] == department]
+        project_specs = [
+            (f"{department}项目预算合计多少？", float(part["预算"].sum()), "sum", "预算"),
+            (f"{department}项目已用金额总计多少？", float(part["已用金额"].sum()), "sum", "已用金额"),
+            (f"{department}项目的平均进度是多少？", float(part["进度"].mean()), "avg", "进度"),
+            (f"{department}延期项目有多少个？", float((part["状态"] == "延期").sum()), "count", "状态"),
+        ]
+        for query, gold, operation, measure in project_specs:
+            filters = [{"column": "部门", "op": "eq", "value": department}]
+            if "延期" in query:
+                filters.append({"column": "状态", "op": "eq", "value": "延期"})
+            add(
+                query=query,
+                difficulty="medium",
+                tags=[operation if operation != "avg" else "mean", "filter"],
+                fixtures=["projects.csv"],
+                gold=gold,
+                gold_plan={
+                    "operation": operation,
+                    "measure": measure,
+                    "filters": filters,
+                    "derive": False,
+                },
+                accept_percent=measure == "进度",
+            )
+
+    for status in sorted(project["状态"].unique()):
+        part = project[project["状态"] == status]
+        for query, gold, operation, measure in [
+            (f"状态为{status}的项目共有多少个？", float(len(part)), "count", "项目编号"),
+            (f"{status}项目的预算合计是多少？", float(part["预算"].sum()), "sum", "预算"),
+            (f"{status}项目的平均进度是多少？", float(part["进度"].mean()), "avg", "进度"),
+        ]:
+            add(
+                query=query,
+                difficulty="medium",
+                tags=[operation if operation != "avg" else "mean", "filter"],
+                fixtures=["projects.csv"],
+                gold=gold,
+                gold_plan={
+                    "operation": operation,
+                    "measure": measure,
+                    "filters": [{"column": "状态", "op": "eq", "value": status}],
+                    "derive": False,
+                },
+                accept_percent=measure == "进度",
+            )
+
+    for query, gold, tags, plan in [
+        ("项目清单总共有多少个项目？", float(len(project)), ["count"], {"operation": "count"}),
+        ("全部项目预算总额是多少？", float(project["预算"].sum()), ["sum"], {"operation": "sum", "measure": "预算"}),
+        ("全部项目已用金额合计多少？", float(project["已用金额"].sum()), ["sum"], {"operation": "sum", "measure": "已用金额"}),
+        ("项目总体平均进度是多少？", float(project["进度"].mean()), ["mean"], {"operation": "avg", "measure": "进度"}),
+        ("单个项目预算最大值是多少？", float(project["预算"].max()), ["max"], {"operation": "max", "measure": "预算"}),
+        ("项目已用金额的最大值是多少？", float(project["已用金额"].max()), ["max"], {"operation": "max", "measure": "已用金额"}),
+        ("项目表中有多少位不同负责人？", float(project["负责人"].nunique()), ["count_distinct"], {"operation": "count_distinct", "measure": "负责人"}),
+        ("已用金额超过预算的项目有多少个？", float((project["已用金额"] > project["预算"]).sum()), ["count", "derive"], {"operation": "count", "derive": True}),
+        ("所有延期项目的数量是多少？", float((project["状态"] == "延期").sum()), ["count", "filter"], {"operation": "count", "filters": [{"column": "状态", "op": "eq", "value": "延期"}]}),
+        ("当前受阻项目一共有几个？", float((project["状态"] == "受阻").sum()), ["count", "filter"], {"operation": "count", "filters": [{"column": "状态", "op": "eq", "value": "受阻"}]}),
+    ]:
+        add(
+            query=query,
+            difficulty="hard" if "derive" in tags else "easy",
+            tags=tags,
+            fixtures=["projects.csv"],
+            gold=gold,
+            gold_plan={**plan, "derive": plan.get("derive", False)},
+            require_derive="derive" in tags,
+            accept_percent=plan.get("measure") == "进度",
+        )
+
+    # --- inventory.csv: 30 stock questions ---
+    inventory = inventory.copy()
+    inventory["库存价值"] = inventory["库存数量"] * inventory["单价"]
+    for category in sorted(inventory["类别"].unique()):
+        part = inventory[inventory["类别"] == category]
+        inventory_specs = [
+            (f"{category}类商品库存数量合计多少？", float(part["库存数量"].sum()), "sum", False),
+            (f"{category}类商品平均单价是多少？", float(part["单价"].mean()), "avg", False),
+            (f"{category}类商品库存价值合计多少？", float(part["库存价值"].sum()), "sum", True),
+            (f"{category}类零库存商品有多少种？", float((part["库存数量"] == 0).sum()), "count", False),
+        ]
+        for query, gold, operation, derive in inventory_specs:
+            add(
+                query=query,
+                difficulty="hard" if derive else "medium",
+                tags=[operation if operation != "avg" else "mean", "filter", *(["derive"] if derive else [])],
+                fixtures=["inventory.csv"],
+                gold=gold,
+                gold_plan={
+                    "operation": operation,
+                    "filters": [{"column": "类别", "op": "eq", "value": category}],
+                    "derive": derive,
+                },
+                require_derive=derive,
+            )
+
+    for warehouse in sorted(inventory["仓库"].unique()):
+        part = inventory[inventory["仓库"] == warehouse]
+        for query, gold, operation in [
+            (f"{warehouse}库存数量总计多少？", float(part["库存数量"].sum()), "sum"),
+            (f"{warehouse}有多少种商品记录？", float(len(part)), "count"),
+            (f"{warehouse}商品平均单价是多少？", float(part["单价"].mean()), "avg"),
+        ]:
+            add(
+                query=query,
+                difficulty="medium",
+                tags=[operation if operation != "avg" else "mean", "filter"],
+                fixtures=["inventory.csv"],
+                gold=gold,
+                gold_plan={
+                    "operation": operation,
+                    "filters": [{"column": "仓库", "op": "eq", "value": warehouse}],
+                    "derive": False,
+                },
+            )
+
+    for query, gold, tags, plan in [
+        ("inventory.csv共有多少种商品？", float(len(inventory)), ["count"], {"operation": "count"}),
+        ("全部商品库存数量合计是多少？", float(inventory["库存数量"].sum()), ["sum"], {"operation": "sum", "measure": "库存数量"}),
+        ("库存表商品平均单价是多少？", float(inventory["单价"].mean()), ["mean"], {"operation": "avg", "measure": "单价"}),
+        ("库存数量为零的商品有多少种？", float((inventory["库存数量"] == 0).sum()), ["count", "filter"], {"operation": "count", "filters": [{"column": "库存数量", "op": "eq", "value": 0}]}),
+        ("整张库存表的库存价值合计多少？", float(inventory["库存价值"].sum()), ["sum", "derive"], {"operation": "sum", "derive": True}),
+    ]:
+        add(
+            query=query,
+            difficulty="hard" if "derive" in tags else "easy",
+            tags=tags,
+            fixtures=["inventory.csv"],
+            gold=gold,
+            gold_plan={**plan, "derive": plan.get("derive", False)},
+            require_derive="derive" in tags,
+        )
+
+    # --- 20 regional order slices, each tests a different operation ---
+    for region in regions:
+        part = ord_df[ord_df["大区"] == region]
+        for query, gold, operation, measure in [
+            (f"{region}大区订单金额最大值是多少？", float(part["金额"].max()), "max", "金额"),
+            (f"{region}大区订单金额最小值是多少？", float(part["金额"].min()), "min", "金额"),
+            (f"{region}大区订单金额中位数是多少？", float(part["金额"].median()), "median", "金额"),
+            (f"{region}大区有多少个不同客户？", float(part["客户"].nunique()), "count_distinct", "客户"),
+        ]:
+            add(
+                query=query,
+                difficulty="medium",
+                tags=[operation, "filter"],
+                fixtures=["orders.csv"],
+                gold=gold,
+                gold_plan={
+                    "operation": operation,
+                    "measure": measure,
+                    "filters": [{"column": "大区", "op": "eq", "value": region}],
+                    "derive": False,
+                },
+            )
+
+    for query, fixtures, missing in [
+        ("expenses.csv里有没有发票税号列，若有请计数。", ["expenses.csv"], ["发票税号"]),
+        ("projects.csv能否统计客户满意度平均值？", ["projects.csv"], ["客户满意度"]),
+        ("inventory.csv是否包含供应商评级字段？", ["inventory.csv"], ["供应商评级"]),
+        ("请按不存在的合同号关联expenses.csv与projects.csv。", ["expenses.csv", "projects.csv"], ["join", "合同号"]),
+        ("将inventory.csv和products.csv按缺失的商品编号关联。", ["inventory.csv", "products.csv"], ["join", "商品编号"]),
+        ("projects.csv里能否汇总未提供的实际收益？", ["projects.csv"], ["实际收益"]),
+    ]:
+        add(
+            query=query,
+            difficulty="hard",
+            tags=["missing", *(["join_refuse"] if len(fixtures) > 1 else [])],
+            fixtures=fixtures,
+            expect_uncomputable=True,
+            missing_tokens=missing,
+            gold_plan={"uncomputable": True},
+        )
+
+    if len(cases) != 200:
+        raise ValueError(f"expected 200 non-padding cases, got {len(cases)}")
+    # Keep the deterministic smoke slice at 30 known compiler-contract cases.
+    # ot_029 deliberately tests the unsupported colloquial negation "未取消"
+    # and belongs in full, not in the must-pass plan smoke gate.
+    smoke_ids = {row["id"] for row in cases[:31] if row["id"] != "ot_029"}
+    if len(smoke_ids) != 30:
+        raise ValueError(f"unexpected smoke selection: {len(smoke_ids)}")
+    for row in cases:
+        row["split"] = "smoke" if row["id"] in smoke_ids else "full"
+    normalized: dict[str, str] = {}
+    for row in cases:
+        key = re.sub(r"[\W_]+", "", row["query"], flags=re.UNICODE).casefold()
+        if key in normalized:
+            raise ValueError(f"duplicate tabular query: {normalized[key]} / {row['id']}")
+        normalized[key] = row["id"]
 
     return cases
 
@@ -724,7 +1046,7 @@ def main() -> None:
     OUT_JSONL.parent.mkdir(parents=True, exist_ok=True)
     with OUT_JSONL.open("w", encoding="utf-8") as f:
         for row in cases:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            f.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
     smoke = sum(1 for c in cases if c.get("split") == "smoke")
     join_ok = sum(1 for c in cases if "join_ok" in c.get("tags", []))
     print(f"Wrote {len(cases)} cases ({smoke} smoke, {join_ok} join_ok) -> {OUT_JSONL}")
