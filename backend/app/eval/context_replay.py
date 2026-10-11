@@ -699,6 +699,15 @@ def _agg(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def _compacted(level: str) -> float:
+    """1 when compose actually dropped into compact/emergency.
+
+    ``warn`` only shrinks the evidence pool. Counting it as compaction made the
+    rate look healthy while the tight-budget path never discarded turns.
+    """
+    return 1.0 if level in ("compact", "emergency") else 0.0
+
+
 def _slice_report(results: list[CaseResult]) -> dict[str, Any]:
     active = [r for r in results if not r.skipped]
     overall = {
@@ -721,7 +730,7 @@ def _slice_report(results: list[CaseResult]) -> dict[str, Any]:
         else None,
         "est_tokens_mean": round(_agg([float(r.est_tokens) for r in active]), 2),
         "compose_ms_p50": round(statistics.median([r.compose_ms for r in active]), 3) if active else 0.0,
-        "compaction_rate": round(_agg([0.0 if r.compose_level == "safe" else 1.0 for r in active]), 4),
+        "compaction_rate": round(_agg([_compacted(r.compose_level) for r in active]), 4),
         "summary_rate": round(_agg([1.0 if r.summary_calls > 0 else 0.0 for r in active]), 4),
         "n": len(active),
         "skipped": sum(1 for r in results if r.skipped),
@@ -887,7 +896,7 @@ def run_context_eval(
                 4,
             ),
             "compose_compression": round(
-                _agg([0.0 if r.compose_level == "safe" else 1.0 for r in all_results if not r.skipped]),
+                _agg([_compacted(r.compose_level) for r in all_results if not r.skipped]),
                 4,
             ),
             "summary_fail_rate": round(
@@ -917,6 +926,13 @@ def gate_report(report: EvalReport, baseline: dict[str, Any] | None) -> list[str
     # needle_presence is diagnostic only (reported, not gated).
 
     if not baseline:
+        return fails
+
+    base_split = str(baseline.get("split") or "")
+    report_split = str(report.split or "")
+    if base_split and report_split and base_split != report_split:
+        fails.append(f"split mismatch: report={report_split} baseline={base_split}")
+        # Numbers from another split are not a regression signal.
         return fails
 
     def _base(arm: str, metric: str) -> float | None:

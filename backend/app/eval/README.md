@@ -417,9 +417,13 @@ docker compose --profile eval run --rm eval python scripts/eval.py run tabular -
 
 ### 门禁
 
-- 硬：`invariant_violations==0`；每个桶 `full.needle_presence >= legacy`；`pending_retention==1.0`
-- 相对基线：`data/eval/context_eval_baseline.json`（进 git；`--update-baseline` 更新）
-- 跌幅：needle>0.03 / fact_recall>0.05 / abstention>0.05；token 涨>10%；summary_fail_rate>5% → exit 1
+`needle_presence` 只写进报告，不设门禁。abstention 跌幅没有实现，不要把它当成已生效的门槛。
+
+实际会失败的条件：
+
+- 硬：`invariant_violations==0`；`pending_retention==1.0`；`arms.full.overall.compaction_rate>=0.05`（只把 `compact` / `emergency` 算进压缩率，`warn` 不算）
+- 基线：`data/eval/context_eval_baseline.json`（进 git；`--update-baseline` 更新）。报告的 `split` 必须和基线一致，smoke 对 full 基线直接失败，不拿两组数字互比
+- live 相对基线：`fact_recall` 跌超过 0.05；`actual_tokens_mean` 涨超过 10%；`summary_fail_rate>5%` → exit 1
 - 报告：`reports/context/latest.json`（gitignore 整个 `reports/`）
 
 ### 提交前建议
