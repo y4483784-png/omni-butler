@@ -179,6 +179,42 @@ JUDGE_PROMPTS = {
 }
 
 
+def score_live_answer(
+    messages: list[dict],
+    *,
+    question: str,
+    gold: str,
+    judge_mode: str,
+) -> tuple[str, int | None, float | None, float | None, bool, str]:
+    """Return answer, prompt tokens, fact_recall, token_f1, infra_error, reason.
+
+    A rate-limit or timeout is infra: fact_recall stays unset so an empty draft
+    is not stored as a wrong answer. Invalid judge JSON still falls back inside
+    ``judge_answer``; only transport failures raise.
+    """
+    from app.core.llm import LLMInfraError, complete_json, complete_text_with_usage, resolved_chat_model
+
+    judge_model = resolved_judge_model()
+    try:
+        answer, actual = complete_text_with_usage(
+            messages,
+            model=resolved_chat_model(),
+            raise_on_error=True,
+        )
+        ok, _reason = judge_answer(
+            mode=judge_mode,
+            question=question,
+            gold=gold,
+            hypothesis=answer or "",
+            complete_json_fn=lambda msgs: complete_json(
+                msgs, model=judge_model, raise_on_error=True
+            ),
+        )
+        return answer or "", actual, (1.0 if ok else 0.0), token_f1(answer or "", gold), False, ""
+    except LLMInfraError as exc:
+        return "", None, None, None, True, str(exc)[:200]
+
+
 def judge_answer(
     *,
     mode: str,
@@ -292,6 +328,8 @@ class CaseResult:
     skip_reason: str = ""
     summary_calls: int = 0
     summary_failures: int = 0
+    infra_error: bool = False
+    infra_error_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -315,6 +353,8 @@ class CaseResult:
             "skip_reason": self.skip_reason,
             "summary_calls": self.summary_calls,
             "summary_failures": self.summary_failures,
+            "infra_error": self.infra_error,
+            "infra_error_reason": self.infra_error_reason,
         }
 
 
@@ -335,6 +375,7 @@ class EvalReport:
     answer_model: str = ""
     judge_model: str = ""
     self_judged: bool = False
+    n_infra_error: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -350,6 +391,7 @@ class EvalReport:
             "answer_model": self.answer_model,
             "judge_model": self.judge_model,
             "self_judged": self.self_judged,
+            "n_infra_error": self.n_infra_error,
         }
 
     def format_text(self) -> str:
@@ -593,10 +635,9 @@ def replay_case(
             answer = None
             cache_obj = cache if cache is not None else {}
 
+            infra_error = False
+            infra_reason = ""
             if live and not skipped:
-                from app.core.llm import complete_json, complete_text_with_usage, resolved_chat_model
-
-                judge_model = resolved_judge_model()
                 ck = _cache_key(arm, messages, question)
                 if not refresh_cache and ck in cache_obj:
                     cached = cache_obj[ck]
@@ -604,25 +645,27 @@ def replay_case(
                     actual = cached.get("actual_tokens")
                     fact = cached.get("fact_recall")
                     tf1 = cached.get("token_f1")
+                    infra_error = bool(cached.get("infra_error"))
+                    infra_reason = str(cached.get("infra_error_reason") or "")
+                    if infra_error:
+                        fact = None
+                        tf1 = None
                 else:
-                    answer, actual = complete_text_with_usage(messages, model=resolved_chat_model())
-                    ok, _reason = judge_answer(
-                        mode=judge_mode,
+                    answer, actual, fact, tf1, infra_error, infra_reason = score_live_answer(
+                        messages,
                         question=question,
                         gold=gold_answer,
-                        hypothesis=answer or "",
-                        # Judge with a model other than the one that answered:
-                        # self-grading inflates agreement.
-                        complete_json_fn=lambda msgs: complete_json(msgs, model=judge_model),
+                        judge_mode=judge_mode,
                     )
-                    fact = 1.0 if ok else 0.0
-                    tf1 = token_f1(answer or "", gold_answer)
-                    cache_obj[ck] = {
-                        "answer": answer,
-                        "actual_tokens": actual,
-                        "fact_recall": fact,
-                        "token_f1": tf1,
-                    }
+                    # Do not cache an infra miss as fact_recall=0. A later run with
+                    # a healthy model must be allowed to score the turn.
+                    if not infra_error:
+                        cache_obj[ck] = {
+                            "answer": answer,
+                            "actual_tokens": actual,
+                            "fact_recall": fact,
+                            "token_f1": tf1,
+                        }
 
             return CaseResult(
                 case_id=str(case.get("id")),
@@ -645,6 +688,8 @@ def replay_case(
                 skip_reason=skip_reason,
                 summary_calls=summary_calls,
                 summary_failures=summary_failures,
+                infra_error=infra_error,
+                infra_error_reason=infra_reason,
             )
         finally:
             db.close()
@@ -781,6 +826,20 @@ def run_context_eval(
                     "answer": r.answer,
                 }
             )
+        if r.infra_error:
+            failures.append(
+                {
+                    "id": r.case_id,
+                    "arm": r.arm,
+                    "type": r.case_type,
+                    "bucket": r.bucket,
+                    "metric": "infra_error",
+                    "expected": "",
+                    "got": r.infra_error_reason,
+                    "probe": None,
+                    "answer": r.answer,
+                }
+            )
         if live and r.fact_recall is not None and r.fact_recall < 0.5:
             failures.append(
                 {
@@ -814,6 +873,7 @@ def run_context_eval(
         answer_model=_answer_model_name() if live else "",
         judge_model=resolved_judge_model() if live else "",
         self_judged=bool(live and resolved_judge_model() == _answer_model_name()),
+        n_infra_error=sum(1 for r in all_results if r.infra_error),
         arms=arm_blocks,
         invariants={"violations": len(violations), "cases": [r.case_id for r in violations[:50]]},
         efficiency={

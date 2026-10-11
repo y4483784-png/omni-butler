@@ -4,8 +4,9 @@
 Usage:
   python scripts/eval.py list
   python scripts/eval.py run rag --profile smoke
-  python scripts/eval.py run yz --profile full --target services
-  python scripts/eval.py last yz
+  python scripts/eval.py run agent --profile full --target services
+  python scripts/eval.py last agent
+  # yz 套件已下线，不要再 run yz。历史脚本 scripts/run_yz_eval.py 不在注册表里。
 """
 
 from __future__ import annotations

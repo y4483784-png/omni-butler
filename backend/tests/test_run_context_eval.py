@@ -40,6 +40,27 @@ def test_live_requires_explicit_opt_in(monkeypatch):
     assert "RUN_CTX_EVAL" in (result.report.get("error") or "")
 
 
+def test_live_infra_is_not_a_zero_fact_recall(monkeypatch):
+    from app.core.llm import LLMInfraError
+    from app.eval.context_replay import score_live_answer
+
+    def boom(*_a, **_k):
+        raise LLMInfraError("RateLimitError: slow down")
+
+    # Imported inside score_live_answer, so patch the defining module.
+    monkeypatch.setattr("app.core.llm.complete_text_with_usage", boom)
+    answer, _tokens, fact, _f1, infra, reason = score_live_answer(
+        [{"role": "user", "content": "hi"}],
+        question="预算是多少",
+        gold="80000",
+        judge_mode="strict",
+    )
+    assert infra is True
+    assert fact is None
+    assert answer == ""
+    assert "RateLimit" in reason
+
+
 def test_gate_flags_degraded_compaction(monkeypatch):
     """The compaction floor is part of the context gates, not just a report field."""
     from app.eval.gates import GATES

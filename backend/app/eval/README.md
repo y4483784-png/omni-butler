@@ -264,15 +264,9 @@ Judge LLM / Embeddings 走现有智谱 OpenAI 兼容端点（`LLM_BASE_URL` + `L
 
 ### 运行
 
-```bash
-cd backend
+`yz` 已从 `scripts/eval.py` 注册表移除，**不要**再执行 `python scripts/eval.py run yz`。对照请跑 `agent`。历史旁路脚本 `scripts/run_yz_eval.py` 仍在仓库里，但不进门禁、也不要当现行入口。
 
-python scripts/eval.py run yz --profile smoke    # 需 Compose eval 服务
-python scripts/eval.py run yz --profile full
-# 兼容旧入口仍可用；报告写入 reports/yz/...
-```
-
-报告输出：`backend/reports/yz/latest.json` + `runs/<ts>/` + 终端摘要。
+报告若手工跑过历史脚本，旧文件在 `backend/reports/yz/`（该目录已被 gitignore）。
 
 ## 8. 依据核验忠实度评测（grounding + ragas）
 
@@ -369,13 +363,13 @@ docker compose --profile eval run --rm eval python scripts/eval.py run tabular -
 
 | 门禁 | 条件 |
 |------|------|
-| 必过 | `--dry-compile --split smoke` → 20/20 plan |
+| 必过 | `--dry-compile --split smoke` → 30/30 plan |
 | 必过 | 生成器幂等、join 推断、假缺列修复单测 |
-| 软门禁（VM Docker） | smoke live ≥ 18/20；full `join_ok` ≥ 10/14 |
+| 软门禁（VM Docker） | smoke live ≥ 27/30；full `join_ok` ≥ 10/14 |
 
 ### 目标阈值（live 修复后）
 
-- smoke exec ≥ **90%**（18/20+）
+- smoke exec ≥ **90%**（27/30+）
 - full exec ≥ **80%**
 - `rate` / `dirty` tag exec 应接近 plan（非 0%）
 

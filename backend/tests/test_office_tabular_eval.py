@@ -282,6 +282,34 @@ def test_merge_schemas_is_a_pure_column_union():
     ) == before
 
 
+def test_operation_none_is_not_a_match_for_rate_max_min_avg():
+    from app.services.data_analysis import AnalysisSpec
+
+    bare = AnalysisSpec(operation="none")
+    for op in ("rate", "max", "min", "avg"):
+        case = {"gold_plan": {"operation": op}, "tags": [], "expect_uncomputable": False}
+        assert plan_matches(bare, case) is False
+    # A rate encoded as mean-of-flag still matches; the operation alias is what was loose.
+    rated = AnalysisSpec(operation="none", metrics=[{"kind": "mean", "column": "取消标记"}])
+    assert plan_matches(
+        rated,
+        {"gold_plan": {"operation": "rate"}, "tags": ["rate"], "expect_uncomputable": False},
+    )
+
+
+def test_empty_measure_columns_do_not_satisfy_gold_measure():
+    from app.services.data_analysis import AnalysisSpec
+
+    case = {
+        "gold_plan": {"operation": "sum", "measure": "预算"},
+        "tags": ["sum"],
+        "expect_uncomputable": False,
+    }
+    assert plan_matches(AnalysisSpec(operation="sum", measure_columns=[]), case) is False
+    assert plan_matches(AnalysisSpec(operation="sum", measure_columns=["预算"]), case) is True
+    assert plan_matches(AnalysisSpec(operation="sum", measure_columns=["金额"]), case) is False
+
+
 def test_join_case_plan_matches_gold_filters():
     """ot_050 used to resolve its filter column from a row-count artefact of the real
     merge; the header union resolves it from the header, which is what the gold says."""

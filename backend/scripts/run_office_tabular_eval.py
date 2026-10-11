@@ -2,7 +2,7 @@
 
 Usage:
   python scripts/gen_office_tabular_eval.py          # regenerate fixtures + jsonl
-  python scripts/run_office_tabular_eval.py          # live smoke (20 cases)
+  python scripts/run_office_tabular_eval.py          # live smoke (30 cases)
   python scripts/run_office_tabular_eval.py --split full
   python scripts/run_office_tabular_eval.py --dry-compile --split full
 """
@@ -281,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--split",
         choices=("smoke", "full", "all"),
         default=None,
-        help="smoke=20 cases; full=all cases; default smoke for live, full for dry-compile",
+        help="smoke=30 cases; full=all cases; default smoke for live, full for dry-compile",
     )
     ap.add_argument(
         "--planner",
