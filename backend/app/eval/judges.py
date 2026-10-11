@@ -24,6 +24,14 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+# Same strings ``append_grounding_disclaimer`` writes. Importing them keeps a
+# copy edit from desyncing the judge (the note reuses refusal wording).
+from app.agents.harness.critique import (
+    _DISCLAIMER_HEADER,
+    _DISCLAIMER_MARKERS,
+    _UNAVAILABLE_NOTE,
+)
+
 TASK_TYPES = ("fact_qa", "compute", "refuse", "chat", "calendar", "multi_tool", "no_tool")
 
 _CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
@@ -69,8 +77,51 @@ class Verdict:
         return {"ok": self.ok, "reason": self.reason, **({"detail": self.detail} if self.detail else {})}
 
 
+def strip_grounding_disclaimer(answer: str) -> str:
+    """Drop the grounding note production appends after the draft.
+
+    ``append_grounding_disclaimer`` suffixes either ``_DISCLAIMER_HEADER``
+    (plus bullet lines) or ``_UNAVAILABLE_NOTE``. Both open with a ``---``
+    separator and a marker in ``_DISCLAIMER_MARKERS``. Judges score the draft
+    only; the note is not a refusal.
+    """
+    text = answer or ""
+    if not text:
+        return ""
+    cut = _grounding_disclaimer_start(text)
+    if cut is None:
+        return text
+    return text[:cut].rstrip()
+
+
+def _grounding_disclaimer_start(text: str) -> int | None:
+    """Index of a production grounding note, or None when the draft has none."""
+    hits = [
+        idx
+        for idx in (text.find(_DISCLAIMER_HEADER), text.find(_UNAVAILABLE_NOTE))
+        if idx != -1
+    ]
+    if hits:
+        return min(hits)
+    # Parenthetical copy can drift; still cut from the separator that
+    # introduces a known marker through the end of the answer.
+    found: list[int] = []
+    for marker in _DISCLAIMER_MARKERS:
+        start = 0
+        while start < len(text):
+            idx = text.find(marker, start)
+            if idx == -1:
+                break
+            sep = text.rfind("---", 0, idx)
+            if sep != -1 and text[sep + 3 : idx].strip() == "":
+                found.append(sep)
+                break
+            start = idx + len(marker)
+    return min(found) if found else None
+
+
 def is_refusal(answer: str) -> bool:
-    return bool(_REFUSAL_RE.search(answer or ""))
+    return bool(_REFUSAL_RE.search(strip_grounding_disclaimer(answer)))
 
 
 def cn_numeral_to_int(text: str) -> int | None:
@@ -173,7 +224,8 @@ def judge_completion(
     abstained_numbers_allowed: Iterable[float] = (),
 ) -> Verdict:
     """Return whether the task counts as *completed* under its type's rule."""
-    answer = answer or ""
+    # Every task type scores the draft. The appended grounding note is not part of it.
+    answer = strip_grounding_disclaimer(answer or "")
     if not answer.strip():
         return Verdict(False, "empty_answer")
     if task_type == "refuse":
