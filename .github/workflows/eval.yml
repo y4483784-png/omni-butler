@@ -40,7 +40,7 @@ jobs:
 
       - name: Offline test suite
         env:
-          DATABASE_URL: sqlite+pysqlite:///:memory:
+          DATABASE_URL: sqlite+pysqlite:///./ci-eval.db
           REDIS_ENABLED: "false"
           CELERY_TASK_ALWAYS_EAGER: "true"
           SANDBOX_RUNNER_URL: ""
@@ -118,7 +118,7 @@ jobs:
 
       - name: Offline smokes (no Compose, no paid LLM)
         env:
-          DATABASE_URL: sqlite+pysqlite:///:memory:
+          DATABASE_URL: sqlite+pysqlite:///./ci-eval.db
           REDIS_ENABLED: "false"
           CELERY_TASK_ALWAYS_EAGER: "true"
           SANDBOX_RUNNER_URL: ""
