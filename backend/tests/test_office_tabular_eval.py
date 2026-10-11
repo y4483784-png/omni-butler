@@ -190,6 +190,53 @@ def test_planner_error_is_not_a_heuristic_pass(monkeypatch):
     report = aggregate_report(rows, mode="live")
     assert report["planner_error_count"] == 1
     assert report["planner_error_rate"] == pytest.approx(1.0)
+    assert row["spec_source"] == "heuristic_fallback"
+
+
+def test_nonempty_heuristic_ir_is_not_an_llm_plan(monkeypatch):
+    """complete_json returning None still yields a heuristic ir. That is not llm."""
+    scripts = ROOT / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import run_office_tabular_eval as runner
+    from app.services.data_analysis import AnalysisOutcome
+
+    case = next(c for c in _load_cases() if c["split"] == "smoke" and not c["expect_uncomputable"])
+    monkeypatch.setattr(runner, "_PLANNER", "llm")
+    monkeypatch.setattr("app.sandbox.runner.docker_available", lambda *a, **k: True)
+    monkeypatch.setattr(
+        runner,
+        "analyze_local_tables",
+        lambda *a, **k: AnalysisOutcome(
+            ok=True,
+            steps=[],
+            summary={"metrics": []},
+            ir={"operation": "sum", "measure_columns": ["金额"], "filters": []},
+            plan_source="heuristic_fallback",
+        ),
+    )
+    row = runner.eval_exec([case])[0]
+    assert row["planner_ok"] is False
+    assert row["spec_source"] == "heuristic_fallback"
+    assert row["plan_ok"] is False
+    assert row["failure_kind"] == "planner_error"
+
+
+def test_plan_source_is_heuristic_fallback_when_llm_returns_none(monkeypatch):
+    from app.services.data_analysis import _plan_analysis_spec
+    from app.services.tabular_inspect import infer_tabular_schema
+
+    monkeypatch.setattr("app.services.data_analysis.complete_json", lambda *a, **k: None)
+    schema = infer_tabular_schema(FIXTURES / "orders.csv")
+    spec, source = _plan_analysis_spec("orders.csv 金额总和", schema)
+    assert source == "heuristic_fallback"
+    assert spec.to_ir().to_dict()  # heuristic ir is non-empty
+    monkeypatch.setattr(
+        "app.services.data_analysis.complete_json",
+        lambda *a, **k: {"operation": "sum", "measure_columns": ["金额"]},
+    )
+    _spec, source = _plan_analysis_spec("orders.csv 金额总和", schema)
+    assert source == "llm"
 
 
 def test_planner_error_rate_zero_when_planner_unused():

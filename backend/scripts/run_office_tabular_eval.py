@@ -211,10 +211,13 @@ def eval_exec(cases: list[dict]) -> list[dict]:
         planner_used = _PLANNER == "llm"
         planner_ok: bool | None = None
         spec_source = "heuristic_ablation"
+        # A heuristic ir is non-empty even when complete_json returned None.
+        # Only an explicit llm plan_source counts as the production planner.
+        llm_plan = planner_used and outcome.plan_source == "llm" and bool(outcome.ir)
         if planner_used:
-            planner_ok = bool(outcome.ir)
-            spec_source = "llm" if outcome.ir else "heuristic_fallback"
-        if planner_used and outcome.ir:
+            planner_ok = llm_plan
+            spec_source = "llm" if llm_plan else "heuristic_fallback"
+        if llm_plan:
             spec = AnalysisSpec(
                 operation=str(outcome.ir.get("operation") or heuristic_spec.operation),
                 filters=list(outcome.ir.get("filters") or []),

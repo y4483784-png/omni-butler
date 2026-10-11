@@ -47,6 +47,8 @@ def test_preflight_tabular_full_services_checks_runner_not_docker(monkeypatch):
     cli = _load_eval_cli()
     monkeypatch.setattr(cli, "_http_ok", lambda _url: True)
     monkeypatch.setattr(cli, "_docker_ok", lambda: False)
+    # These cases are about the sandbox probe, not whether a key happens to be set.
+    monkeypatch.setattr(cli, "_llm_key_ok", lambda: True)
     errors = cli.preflight(get_suite("tabular"), "services", "full", [])
     assert errors == []
 
@@ -56,6 +58,7 @@ def test_preflight_tabular_full_services_reports_runner(monkeypatch):
     monkeypatch.setenv("SANDBOX_RUNNER_URL", "http://sandbox-runner:8002")
     monkeypatch.setattr(cli, "_http_ok", lambda _url: False)
     monkeypatch.setattr(cli, "_docker_ok", lambda: True)
+    monkeypatch.setattr(cli, "_llm_key_ok", lambda: True)
     errors = cli.preflight(get_suite("tabular"), "services", "full", [])
     assert errors and "sandbox-runner" in errors[0]
     assert "omni-sandbox" not in errors[0]
@@ -64,6 +67,7 @@ def test_preflight_tabular_full_services_reports_runner(monkeypatch):
 def test_preflight_tabular_full_venv_still_needs_local_image(monkeypatch):
     cli = _load_eval_cli()
     monkeypatch.setattr(cli, "_docker_ok", lambda: False)
+    monkeypatch.setattr(cli, "_llm_key_ok", lambda: True)
     errors = cli.preflight(get_suite("tabular"), "venv", "full", [])
     assert errors and "omni-sandbox" in errors[0]
 
@@ -100,6 +104,8 @@ def test_degradation_reason_detects_keyword_fallback():
     rag = {"metrics": {"mode": "keyword_paragraph", "degraded": True}}
     assert "degraded" in cli._degradation_reason(rag, "full")
     assert cli._degradation_reason({"metrics": {"mode": "production_hybrid", "degraded": False}}, "full") == ""
+    midrun = {"metrics": {"mode": "production_degraded", "degraded": True}}
+    assert "production_degraded" in cli._degradation_reason(midrun, "full")
     tabular = {"degraded": True, "planner_error_rate": 0.5, "planner_error_count": 3}
     reason = cli._degradation_reason(tabular, "full")
     assert "planner" in reason and "3" in reason
