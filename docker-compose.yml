@@ -181,7 +181,8 @@ services:
           memory: 512m
 
   # One-shot eval runner (not started by normal up/start/ps).
-  # Usage: docker compose --profile eval run --rm eval python scripts/eval.py run yz --profile smoke
+  # Usage: docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile smoke
+  # yz 套件已从注册表移除，不要再 run yz。
   eval:
     <<: *backend-env
     image: omni-butler-backend:local

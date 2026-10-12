@@ -190,6 +190,53 @@ def test_planner_error_is_not_a_heuristic_pass(monkeypatch):
     report = aggregate_report(rows, mode="live")
     assert report["planner_error_count"] == 1
     assert report["planner_error_rate"] == pytest.approx(1.0)
+    assert row["spec_source"] == "heuristic_fallback"
+
+
+def test_nonempty_heuristic_ir_is_not_an_llm_plan(monkeypatch):
+    """complete_json returning None still yields a heuristic ir. That is not llm."""
+    scripts = ROOT / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import run_office_tabular_eval as runner
+    from app.services.data_analysis import AnalysisOutcome
+
+    case = next(c for c in _load_cases() if c["split"] == "smoke" and not c["expect_uncomputable"])
+    monkeypatch.setattr(runner, "_PLANNER", "llm")
+    monkeypatch.setattr("app.sandbox.runner.docker_available", lambda *a, **k: True)
+    monkeypatch.setattr(
+        runner,
+        "analyze_local_tables",
+        lambda *a, **k: AnalysisOutcome(
+            ok=True,
+            steps=[],
+            summary={"metrics": []},
+            ir={"operation": "sum", "measure_columns": ["金额"], "filters": []},
+            plan_source="heuristic_fallback",
+        ),
+    )
+    row = runner.eval_exec([case])[0]
+    assert row["planner_ok"] is False
+    assert row["spec_source"] == "heuristic_fallback"
+    assert row["plan_ok"] is False
+    assert row["failure_kind"] == "planner_error"
+
+
+def test_plan_source_is_heuristic_fallback_when_llm_returns_none(monkeypatch):
+    from app.services.data_analysis import _plan_analysis_spec
+    from app.services.tabular_inspect import infer_tabular_schema
+
+    monkeypatch.setattr("app.services.data_analysis.complete_json", lambda *a, **k: None)
+    schema = infer_tabular_schema(FIXTURES / "orders.csv")
+    spec, source = _plan_analysis_spec("orders.csv 金额总和", schema)
+    assert source == "heuristic_fallback"
+    assert spec.to_ir().to_dict()  # heuristic ir is non-empty
+    monkeypatch.setattr(
+        "app.services.data_analysis.complete_json",
+        lambda *a, **k: {"operation": "sum", "measure_columns": ["金额"]},
+    )
+    _spec, source = _plan_analysis_spec("orders.csv 金额总和", schema)
+    assert source == "llm"
 
 
 def test_planner_error_rate_zero_when_planner_unused():
@@ -233,6 +280,34 @@ def test_merge_schemas_is_a_pure_column_union():
         list(orders.measure_candidates),
         list(orders.dimension_candidates),
     ) == before
+
+
+def test_operation_none_is_not_a_match_for_rate_max_min_avg():
+    from app.services.data_analysis import AnalysisSpec
+
+    bare = AnalysisSpec(operation="none")
+    for op in ("rate", "max", "min", "avg"):
+        case = {"gold_plan": {"operation": op}, "tags": [], "expect_uncomputable": False}
+        assert plan_matches(bare, case) is False
+    # A rate encoded as mean-of-flag still matches; the operation alias is what was loose.
+    rated = AnalysisSpec(operation="none", metrics=[{"kind": "mean", "column": "取消标记"}])
+    assert plan_matches(
+        rated,
+        {"gold_plan": {"operation": "rate"}, "tags": ["rate"], "expect_uncomputable": False},
+    )
+
+
+def test_empty_measure_columns_do_not_satisfy_gold_measure():
+    from app.services.data_analysis import AnalysisSpec
+
+    case = {
+        "gold_plan": {"operation": "sum", "measure": "预算"},
+        "tags": ["sum"],
+        "expect_uncomputable": False,
+    }
+    assert plan_matches(AnalysisSpec(operation="sum", measure_columns=[]), case) is False
+    assert plan_matches(AnalysisSpec(operation="sum", measure_columns=["预算"]), case) is True
+    assert plan_matches(AnalysisSpec(operation="sum", measure_columns=["金额"]), case) is False
 
 
 def test_join_case_plan_matches_gold_filters():

@@ -7,13 +7,16 @@ Replaces the template-farmed YZ set. Principles:
 * ``task_type`` + structured ``answer_spec`` instead of substring ``gold_facts``,
 * refusals carry no ``gold_doc_keys``; attendance aggregates are ``sandbox`` tasks,
   consistent with the routing suite's labelling convention,
-* numeric gold is recomputed from the CSV fixture, never typed by hand.
+* numeric gold is recomputed from the CSV fixture when it is present, never typed
+  by hand. A clean checkout has no CSV (gitignored); the generator then reads the
+  frozen ``seeds/yz_attendance.jsonl``, same default as ``gen_yz_eval.py``.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 from statistics import mean
@@ -165,9 +168,123 @@ REFUSE_TABLE: list[str] = [
 ]
 
 
-def load_csv() -> list[dict]:
+_EMPLOYEE_RE = re.compile(r"工号([A-Za-z0-9]+)的(.+?)，")
+_HEADCOUNT_SUFFIX = "共有多少名员工出现在考勤表中？"
+_LATE_SUFFIX = "所有员工迟到次数合计是多少？"
+_GAP_QUERY = "实际出勤少于应出勤的员工有多少？"
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+
+
+def load_csv_if_present() -> list[dict] | None:
+    """Local attendance fixture. Absent on a clean checkout (gitignored)."""
+    if not CSV_FIXTURE.is_file():
+        return None
     with CSV_FIXTURE.open(encoding="utf-8-sig", newline="") as fh:
         return list(csv.DictReader(fh))
+
+
+def _employees_from_seed(seed_rows: list[dict]) -> list[dict]:
+    """Rebuild the columns the lookup / threshold tasks need from frozen summaries."""
+    employees: list[dict] = []
+    for row in seed_rows:
+        if "employee_summary" not in (row.get("tags") or []):
+            continue
+        match = _EMPLOYEE_RE.match(str(row.get("query") or ""))
+        facts = list(row.get("gold_facts") or [])
+        if match is None or len(facts) < 5:
+            raise ValueError(f"attendance seed employee_summary is not usable: {row.get('query')}")
+        employees.append(
+            {
+                "工号": match.group(1),
+                "姓名": str(facts[0]),
+                "实际出勤天数": str(facts[1]),
+                "迟到次数": str(facts[2]),
+                "请假天数": str(facts[3]),
+                "加班时长(小时)": str(facts[4]),
+            }
+        )
+    if len(employees) < 6:
+        raise ValueError(f"attendance seed has {len(employees)} employee summaries, need >= 6")
+    return employees
+
+
+def _department_pairs(csv_rows: list[dict] | None, seed_rows: list[dict]) -> list[tuple[str, str, int, int, int, int]]:
+    """Sorted-department rotation: (prev, next, head_prev, head_next, late_prev, late_next)."""
+    if csv_rows is not None:
+        names = sorted({row["部门"] for row in csv_rows})
+
+        def group(name: str) -> list[dict]:
+            return [row for row in csv_rows if row["部门"] == name]
+
+        return [
+            (
+                prev,
+                nxt,
+                len(group(prev)),
+                len(group(nxt)),
+                sum(int(row["迟到次数"]) for row in group(prev)),
+                sum(int(row["迟到次数"]) for row in group(nxt)),
+            )
+            for prev, nxt in zip(names, names[1:] + names[:1])
+        ]
+
+    stats: dict[str, dict[str, int]] = {}
+    for row in seed_rows:
+        if "department_aggregate" not in (row.get("tags") or []):
+            continue
+        query = str(row.get("query") or "")
+        facts = row.get("gold_facts") or []
+        if not facts:
+            continue
+        value = int(float(facts[0]))
+        if query.endswith(_HEADCOUNT_SUFFIX):
+            stats.setdefault(query[: -len(_HEADCOUNT_SUFFIX)], {})["n"] = value
+        elif query.endswith(_LATE_SUFFIX):
+            stats.setdefault(query[: -len(_LATE_SUFFIX)], {})["late"] = value
+    names = sorted(stats)
+    if not names or any("n" not in stats[name] or "late" not in stats[name] for name in names):
+        raise ValueError("attendance seed is missing department headcount or late totals")
+    return [
+        (prev, nxt, stats[prev]["n"], stats[nxt]["n"], stats[prev]["late"], stats[nxt]["late"])
+        for prev, nxt in zip(names, names[1:] + names[:1])
+    ]
+
+
+def _multi_tool_counts(csv_rows: list[dict] | None, seed_rows: list[dict]) -> tuple[int, int, int, int]:
+    """late>5, late>3, actual<expected, leave>2. The gap count is a seed aggregate."""
+    if csv_rows is not None:
+        late = [int(row["迟到次数"]) for row in csv_rows]
+        leave = [float(row["请假天数"]) for row in csv_rows]
+        actual = [int(row["实际出勤天数"]) for row in csv_rows]
+        expected = [int(row["应出勤天数"]) for row in csv_rows]
+        return (
+            sum(value > 5 for value in late),
+            sum(value > 3 for value in late),
+            sum(got < exp for got, exp in zip(actual, expected)),
+            sum(value > 2 for value in leave),
+        )
+    employees = _employees_from_seed(seed_rows)
+    late = [int(row["迟到次数"]) for row in employees]
+    leave = [float(row["请假天数"]) for row in employees]
+    gap = next(
+        (int(float(row["gold_facts"][0])) for row in seed_rows if row.get("query") == _GAP_QUERY),
+        None,
+    )
+    if gap is None:
+        raise ValueError(f"attendance seed missing {_GAP_QUERY}")
+    return (
+        sum(value > 5 for value in late),
+        sum(value > 3 for value in late),
+        gap,
+        sum(value > 2 for value in leave),
+    )
 
 
 def fmt(v: float) -> float:
@@ -206,12 +323,17 @@ def build_cases() -> list[dict]:
             tags=["fact", *tags])
 
     # --- attendance: aggregates are sandbox compute tasks (routing-suite convention) ---
-    source = load_csv()
+    # CSV is the local refresh source. A clean checkout uses the frozen seed so
+    # regenerating agent_tasks.jsonl stays byte-idempotent without the gitignored file.
+    csv_rows = load_csv_if_present()
+    seed_rows = _read_jsonl(ATT_SEED)
+    if csv_rows is None:
+        print(
+            f"attendance CSV missing ({CSV_FIXTURE.name}); using frozen seed {ATT_SEED.name}",
+            file=sys.stderr,
+        )
     sandbox = {"intent": "data_analysis", "tools": ["sandbox"]}
-    agg = [
-        json.loads(l) for l in ATT_SEED.read_text(encoding="utf-8").splitlines()
-        if l.strip() and not l.startswith("#")
-    ]
+    agg = seed_rows
     for r in agg:
         tags = set(r["tags"])
         if not tags & {"department_aggregate", "global_aggregate"}:
@@ -223,26 +345,20 @@ def build_cases() -> list[dict]:
         add(query=r["query"], task_type="compute", route_gold=sandbox, gold_doc_keys=[ATT],
             answer_spec=num(value, 0.01), tags=["attendance", "aggregate"])
 
-    depts = sorted({s["部门"] for s in source})
-
-    def dept(d):
-        return [s for s in source if s["部门"] == d]
-
     # multi-turn compute follow-ups ("那X部门呢")
-    for a, b in zip(depts, depts[1:] + depts[:1]):
+    for a, b, _na, nb, la, lb in _department_pairs(csv_rows, seed_rows):
         add(query=f"那{b}呢？",
-            history=turns(f"{a}一共有多少名员工出现在考勤表里？", f"{a}共有{len(dept(a))}名员工。"),
+            history=turns(f"{a}一共有多少名员工出现在考勤表里？", f"{a}共有{_na}名员工。"),
             task_type="compute", route_gold=sandbox, gold_doc_keys=[ATT],
-            answer_spec=num(len(dept(b))), tags=["attendance", "multiturn", "headcount"])
-        la = sum(int(s["迟到次数"]) for s in dept(a))
-        lb = sum(int(s["迟到次数"]) for s in dept(b))
+            answer_spec=num(nb), tags=["attendance", "multiturn", "headcount"])
         add(query=f"{b}的合计是多少？",
             history=turns(f"{a}所有员工迟到次数加起来是多少？", f"{a}迟到次数合计{la}次。"),
             task_type="compute", route_gold=sandbox, gold_doc_keys=[ATT],
             answer_spec=num(lb), tags=["attendance", "multiturn", "late_total"])
 
     # employee lookups stay on the KB path (cell lookup, not statistics)
-    for item in source[:6]:
+    lookup_rows = csv_rows[:6] if csv_rows is not None else _employees_from_seed(seed_rows)[:6]
+    for item in lookup_rows:
         spec = allof(
             num(int(item["实际出勤天数"])), num(int(item["迟到次数"])),
             num(float(item["请假天数"]), 0.01), num(float(item["加班时长(小时)"]), 0.01),
@@ -253,16 +369,13 @@ def build_cases() -> list[dict]:
             tags=["attendance", "lookup"])
 
     # multi-tool: policy threshold + table statistics
-    late = [int(s["迟到次数"]) for s in source]
-    leave = [float(s["请假天数"]) for s in source]
-    actual = [int(s["实际出勤天数"]) for s in source]
-    expected = [int(s["应出勤天数"]) for s in source]
+    late_gt_5, late_gt_3, attendance_gap, leave_gt_2 = _multi_tool_counts(csv_rows, seed_rows)
     multi = {"intent": "data_analysis", "tools": ["kb", "sandbox"]}
     for q, v in [
-        ("按公司制度里全勤奖的迟到标准，统计考勤表里迟到次数超过 5 次的员工有几个？", sum(x > 5 for x in late)),
-        ("制度规定迟到超过 3 次要重点关注，考勤表里迟到次数超过 3 次的有多少人？", sum(x > 3 for x in late)),
-        ("结合考勤制度，看看表里实际出勤天数少于应出勤天数的员工有多少名？", sum(a < e for a, e in zip(actual, expected))),
-        ("参考制度里的事假规定，考勤表中请假超过 2 天的员工有几个？", sum(x > 2 for x in leave)),
+        ("按公司制度里全勤奖的迟到标准，统计考勤表里迟到次数超过 5 次的员工有几个？", late_gt_5),
+        ("制度规定迟到超过 3 次要重点关注，考勤表里迟到次数超过 3 次的有多少人？", late_gt_3),
+        ("结合考勤制度，看看表里实际出勤天数少于应出勤天数的员工有多少名？", attendance_gap),
+        ("参考制度里的事假规定，考勤表中请假超过 2 天的员工有几个？", leave_gt_2),
     ]:
         add(query=q, task_type="multi_tool", route_gold=multi, gold_doc_keys=[ATT, POLICY],
             answer_spec=num(v), tags=["multi_tool", "attendance"])

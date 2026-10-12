@@ -198,23 +198,32 @@ def _vector_ranked(
     user_id: int,
     limit: int,
     document_ids: list[int] | None = None,
-) -> list[int]:
-    if not settings.rag_hybrid_enabled or not settings.llm_api_key:
-        return []
+) -> tuple[list[int], str]:
+    """Return ``(chunk_ids, error)``.
+
+    An empty error means the vector leg ran (hits may still be empty). A non-empty
+    error means hybrid retrieval was requested and then skipped or failed. Callers
+    that only want ids can ignore the second value; eval uses it so a mid-run
+    failure is not reported as a healthy production hybrid.
+    """
+    if not settings.rag_hybrid_enabled:
+        return [], ""
+    if not settings.llm_api_key:
+        return [], "missing_api_key"
     if not vector_store.is_available():
-        return []
+        return [], "qdrant_unavailable"
     try:
         qv = embed_query(query)
         hits = vector_store.search(
             qv, user_id=user_id, top_k=limit, document_ids=document_ids
         )
-        return [h.chunk_id for h in hits]
+        return [h.chunk_id for h in hits], ""
     except EmbeddingError as e:
         logger.info("vector retrieve skipped: %s", e)
-        return []
+        return [], f"embedding:{e}"
     except Exception as e:
         logger.warning("vector retrieve failed: %s", e)
-        return []
+        return [], f"vector:{e}"
 
 
 def retrieve(
@@ -223,6 +232,7 @@ def retrieve(
     user_id: int = 1,
     top_k: int | None = None,
     document_ids: list[int] | None = None,
+    diag: dict | None = None,
 ) -> list[RetrievedChunk]:
     k = top_k if top_k is not None else settings.rag_top_k
     candidate_k = max(k, int(settings.rag_candidate_k or k))
@@ -231,7 +241,9 @@ def retrieve(
 
     kw = _keyword_ranked(db, query, user_id, limit=candidate_k, document_ids=ids)
     kw_ids = [c.id for _, c, _ in kw]
-    vec_ids = _vector_ranked(query, user_id, limit=vec_n, document_ids=ids)
+    vec_ids, vec_err = _vector_ranked(query, user_id, limit=vec_n, document_ids=ids)
+    if diag is not None:
+        diag["vector_error"] = vec_err
 
     if not kw_ids and not vec_ids:
         return []
@@ -301,7 +313,7 @@ def retrieve(
             for s in seeds
         ]
 
-    ranked = rerank_hits(query, expanded, top_n=k)
+    ranked = rerank_hits(query, expanded, top_n=k, diag=diag)
 
     out: list[RetrievedChunk] = []
     for i, item in enumerate(ranked, start=1):

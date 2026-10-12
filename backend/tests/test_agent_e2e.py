@@ -28,6 +28,33 @@ def test_stratified_sample_covers_types():
 
 
 @pytest.mark.unit
+def test_wrapped_llm_infra_is_not_scored_as_empty_answer(monkeypatch):
+    from app.core.llm import LLMInfraError
+    from app.eval.agent_e2e import run_task
+
+    def boom(*_a, **_k):
+        raise RuntimeError("answer node failed") from LLMInfraError("APITimeoutError: timed out")
+
+    monkeypatch.setattr("app.agents.workflow.run_agent_workflow", boom)
+    task = {
+        "id": "t",
+        "query": "你好",
+        "task_type": "chat",
+        "history": [],
+        "route_gold": {"intent": "chat", "tools": []},
+        "context": {
+            "has_kb_docs": True,
+            "has_tabular_docs": True,
+            "document_keys": [],
+            "pending_calendar": None,
+        },
+    }
+    res = run_task(object(), task)
+    assert res.failed_layer == "infra_error"
+    assert res.verdict == {}
+    assert "empty_answer" not in (res.error or "")
+
+
 def test_aggregate_excludes_infra_from_completion():
     rows = [
         TaskResult("a", "q", "fact_qa", False, completion_ok=True),

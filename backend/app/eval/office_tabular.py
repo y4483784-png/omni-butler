@@ -138,20 +138,22 @@ def plan_matches(spec: AnalysisSpec, case: dict) -> bool:
         return False
     if gp.get("measure"):
         measures = [str(m) for m in (getattr(spec, "measure_columns", None) or [])]
-        if measures and str(gp.get("measure")) not in measures:
+        # An empty measure list used to pass whenever gold named a column.
+        if str(gp.get("measure")) not in measures:
             return False
     if gp.get("operation") == "rate":
-        op_ok = bool(spec.derive) or spec.operation in ("none", "avg")
-        if any(
+        # "none" is not a rate. The compiler may still encode 占比 as a mean metric
+        # or a derive step after rewriting the operation; that signal is what matches.
+        has_mean = any(
             isinstance(m, dict) and str(m.get("kind")) == "mean"
             for m in (spec.metrics or [])
-        ):
-            op_ok = True
-    if gp.get("operation") == "max" and spec.operation in ("max", "none"):
+        )
+        op_ok = bool(spec.derive) or has_mean or spec.operation in ("rate", "avg")
+    if gp.get("operation") == "max" and spec.operation == "max":
         op_ok = True
-    if gp.get("operation") == "min" and spec.operation in ("min", "none"):
+    if gp.get("operation") == "min" and spec.operation == "min":
         op_ok = True
-    if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "none", "profile"):
+    if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "profile"):
         op_ok = True
     if not op_ok:
         return False
@@ -165,7 +167,7 @@ def plan_matches(spec: AnalysisSpec, case: dict) -> bool:
             return False
         if "join_ok" in (case.get("tags") or []):
             if str(spec.operation) != str(gp.get("operation")):
-                if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "none", "profile"):
+                if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "profile"):
                     pass
                 elif gp.get("operation") == "count_distinct" and spec.operation == "count":
                     pass

@@ -214,6 +214,18 @@ def workflow_kwargs(task: dict[str, Any], document_ids: list[int] | None) -> dic
     }
 
 
+def _infra_from(exc: BaseException) -> LLMInfraError | None:
+    """Walk cause/context so a graph wrapper does not hide a model timeout."""
+    cur: BaseException | None = exc
+    seen: set[int] = set()
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, LLMInfraError):
+            return cur
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
 def run_task(
     db,
     task: dict[str, Any],
@@ -255,14 +267,14 @@ def run_task(
         res.answer = answer or ""
         res.thinking_tail = list(out.get("thinking_steps") or [])[-4:]
         citations = out.get("citations") or []
-    except LLMInfraError as exc:
-        res.failed_layer = "infra_error"
-        res.error = str(exc)[:200]
-        res.latency_s = time.monotonic() - t0
-        return res
     except Exception as exc:  # noqa: BLE001 - one broken task must not kill the run
-        res.failed_layer = "workflow_error"
-        res.error = f"{type(exc).__name__}: {str(exc)[:200]}"
+        infra = _infra_from(exc)
+        if infra is not None:
+            res.failed_layer = "infra_error"
+            res.error = str(infra)[:200]
+        else:
+            res.failed_layer = "workflow_error"
+            res.error = f"{type(exc).__name__}: {str(exc)[:200]}"
         res.latency_s = time.monotonic() - t0
         return res
     res.latency_s = time.monotonic() - t0

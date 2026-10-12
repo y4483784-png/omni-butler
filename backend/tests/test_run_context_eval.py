@@ -40,6 +40,44 @@ def test_live_requires_explicit_opt_in(monkeypatch):
     assert "RUN_CTX_EVAL" in (result.report.get("error") or "")
 
 
+def test_live_infra_is_not_a_zero_fact_recall(monkeypatch):
+    from app.core.llm import LLMInfraError
+    from app.eval.context_replay import score_live_answer
+
+    def boom(*_a, **_k):
+        raise LLMInfraError("RateLimitError: slow down")
+
+    # Imported inside score_live_answer, so patch the defining module.
+    monkeypatch.setattr("app.core.llm.complete_text_with_usage", boom)
+    answer, _tokens, fact, _f1, infra, reason = score_live_answer(
+        [{"role": "user", "content": "hi"}],
+        question="预算是多少",
+        gold="80000",
+        judge_mode="strict",
+    )
+    assert infra is True
+    assert fact is None
+    assert answer == ""
+    assert "RateLimit" in reason
+
+
+def test_gate_report_rejects_split_mismatch():
+    from app.eval.context_replay import EvalReport, gate_report
+
+    report = EvalReport(
+        n=32,
+        split="smoke",
+        mode="extractive",
+        arms={"full": {"overall": {"pending_retention": 1.0}}},
+        invariants={"violations": 0},
+    )
+    fails = gate_report(report, {"split": "full", "arms": {"full": {"overall": {"fact_recall": 0.9}}}})
+    assert any("split mismatch" in item for item in fails)
+    # Same split does not add that failure.
+    report.split = "full"
+    assert not any("split mismatch" in item for item in gate_report(report, {"split": "full", "n": 1}))
+
+
 def test_gate_flags_degraded_compaction(monkeypatch):
     """The compaction floor is part of the context gates, not just a report field."""
     from app.eval.gates import GATES

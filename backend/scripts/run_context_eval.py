@@ -93,7 +93,10 @@ def run(args: argparse.Namespace) -> SuiteResult:
 
     if args.update_baseline:
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
-        args.baseline.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        args.baseline.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
         print(f"updated baseline -> {args.baseline}")
 
     if args.json:

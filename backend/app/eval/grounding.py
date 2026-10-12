@@ -23,7 +23,7 @@ from app.agents.workflow import build_pool_prompt
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
 from app.core.llm import LLMInfraError, complete_text, resolved_chat_model
-from app.eval.judges import is_refusal
+from app.eval.judges import is_refusal, strip_grounding_disclaimer
 from app.eval.ragas_judge import run_ragas_rows
 from app.eval.yz_fullchain import (
     YZ_EVAL_USER_ID,
@@ -295,6 +295,11 @@ def generate_grounded_answer(
     return final, draft, included, critique, repaired, sandbox_gate
 
 
+def answer_body_for_scoring(answer: str) -> str:
+    """Score the draft. The grounding note is not a claim and not a refusal."""
+    return strip_grounding_disclaimer(answer or "")
+
+
 def _mean(vals: list[float | None]) -> float | None:
     nums = [float(v) for v in vals if v is not None]
     if not nums:
@@ -390,7 +395,7 @@ def run_grounding_eval(
             if not contexts and case.contexts:
                 contexts = list(case.contexts)
             rule_hits = sandbox_number_mismatches(
-                final,
+                answer_body_for_scoring(final),
                 evidence,
                 sandbox_gate=sandbox_gate,
             )
@@ -430,7 +435,7 @@ def run_grounding_eval(
         ragas_rows = [
             {
                 "question": case_results[i].query,
-                "answer": case_results[i].answer,
+                "answer": answer_body_for_scoring(case_results[i].answer),
                 "contexts": case_results[i].contexts or [""],
             }
             for i in answerable_idx
@@ -446,7 +451,7 @@ def run_grounding_eval(
             draft_rows = [
                 {
                     "question": case_results[i].query,
-                    "answer": case_results[i].draft,
+                    "answer": answer_body_for_scoring(case_results[i].draft),
                     "contexts": case_results[i].contexts or [""],
                 }
                 for i in repaired_idxs
