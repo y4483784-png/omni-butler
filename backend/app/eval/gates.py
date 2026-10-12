@@ -41,14 +41,7 @@ GATES: dict[tuple[str, str], list[Gate]] = {
         Gate("metrics.recall_at_k", min=0.93),
         Gate("metrics.mrr", min=0.88),
     ],
-    ("yz", "smoke"): [
-        Gate("retrieval.recall_at_k", min=0.80),
-    ],
-    ("yz", "full"): [
-        Gate("retrieval.recall_at_k", min=0.95),
-        Gate("fact_containment_mean", min=0.65),
-        Gate("citation_hit_rate", min=0.80),
-    ],
+    # "yz" is retired (see suites.py). Do not keep dead floors that nothing evaluates.
     ("agent", "smoke"): [
         Gate("core_completion_rate", min=0.30),
         Gate("infra_error_rate", max=0.05, max_drop=None),
@@ -69,8 +62,10 @@ GATES: dict[tuple[str, str], list[Gate]] = {
         Gate("smoke_plan_accuracy", min=0.90),
     ],
     ("tabular", "full"): [
-        Gate("accuracy", min=0.30),
-        Gate("join_success_accuracy", min=0.30),
+        # README target: full exec ≥ 80%, join_ok ≥ 10/14. Floors used to be 0.30,
+        # which let a weak run pass. A miss here is a real fail, not a reason to lower the bar.
+        Gate("accuracy", min=0.80),
+        Gate("join_success_accuracy", min=10 / 14, note="README join_ok ≥ 10/14"),
         Gate("planner_error_rate", max=0.0, max_drop=None, note="LLM planner failures must be zero"),
     ],
     ("context", "smoke"): [

@@ -78,18 +78,30 @@ def test_infra_and_planner_error_rates_are_gated():
     tab_ok = evaluate_gates(
         "tabular",
         "full",
-        {"accuracy": 0.5, "join_success_accuracy": 0.5, "planner_error_rate": 0.0},
+        {"accuracy": 0.85, "join_success_accuracy": 0.80, "planner_error_rate": 0.0},
     )
     assert tab_ok["ok"] is True
     tab_bad = evaluate_gates(
         "tabular",
         "full",
-        {"accuracy": 0.5, "join_success_accuracy": 0.5, "planner_error_rate": 0.1},
+        {"accuracy": 0.85, "join_success_accuracy": 0.80, "planner_error_rate": 0.1},
     )
     assert tab_bad["ok"] is False
+    watered = evaluate_gates(
+        "tabular",
+        "full",
+        {"accuracy": 0.50, "join_success_accuracy": 0.50, "planner_error_rate": 0.0},
+    )
+    assert watered["ok"] is False
+    assert any("accuracy" in m for m in watered["failed"])
 
 
 @pytest.mark.unit
+def test_retired_yz_suite_has_no_gates():
+    assert ("yz", "smoke") not in GATES
+    assert ("yz", "full") not in GATES
+
+
 def test_agent_gates_read_core_completion_not_headline():
     metrics = [g.metric for g in GATES[("agent", "full")]]
     assert "core_completion_rate" in metrics

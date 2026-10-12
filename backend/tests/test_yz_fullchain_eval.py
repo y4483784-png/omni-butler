@@ -11,6 +11,8 @@ from unittest.mock import patch
 import pytest
 
 from app.eval.yz_fullchain import (
+    YZ_FIXTURE_DIR,
+    YZ_FIXTURES,
     YZEvalCase,
     fact_containment,
     load_cases,
@@ -95,6 +97,9 @@ def test_run_ragas_metrics_without_api_key():
 
 
 def test_yz_fullchain_smoke(memory_blob_store, monkeypatch):
+    csv_fixture = YZ_FIXTURE_DIR / YZ_FIXTURES["attendance_csv"]
+    if not csv_fixture.is_file():
+        pytest.skip("YZ attendance CSV is gitignored and not in a clean checkout")
     monkeypatch.setattr(
         "app.eval.yz_fullchain.complete_text",
         lambda messages, **kw: "演示回答：月度累计迟到超过5次，取消当季度全勤奖资格 [1]",

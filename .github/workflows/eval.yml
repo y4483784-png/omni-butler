@@ -4,7 +4,8 @@ name: eval
 #  - offline: hermetic. No LLM, no MinIO/Qdrant, no Docker. Runs on every push.
 #  - rls: Postgres service container; exercises the row-level-security isolation
 #         test that is skipped on SQLite.
-# The eval suites that need LLM keys or Compose middleware are manual-only.
+# Suites that need an LLM key or Compose middleware stay manual.
+# workflow_dispatch runs the offline smokes (lint, pytest, rag, tabular, context).
 
 on:
   push:
@@ -39,7 +40,7 @@ jobs:
 
       - name: Offline test suite
         env:
-          DATABASE_URL: "sqlite+pysqlite:///:memory:"
+          DATABASE_URL: sqlite+pysqlite:///./ci-eval.db
           REDIS_ENABLED: "false"
           CELERY_TASK_ALWAYS_EAGER: "true"
           SANDBOX_RUNNER_URL: ""
@@ -107,17 +108,38 @@ jobs:
         run: python -m pytest tests/test_rls_postgres.py -q
 
   eval-smoke:
-    name: eval suites smoke (needs LLM key + middleware)
+    name: offline eval smoke
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Placeholder
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
         run: |
-          echo "Run these from a Compose host with LLM_API_KEY and the middleware up:"
-          echo "  export GIT_SHA=\$(git rev-parse --short HEAD)"
-          echo "  docker compose --profile eval run --rm eval python scripts/eval.py run routing --profile smoke"
-          echo "  docker compose --profile eval run --rm eval python scripts/eval.py run rag --profile smoke"
-          echo "  docker compose --profile eval run --rm eval python scripts/eval.py run tabular --profile smoke"
-          echo "  docker compose --profile eval run --rm eval python scripts/eval.py run context --profile smoke"
-          echo "  docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile smoke"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Dataset lint
+        run: python scripts/lint_eval_datasets.py
+
+      - name: Offline smokes (no Compose, no paid LLM)
+        env:
+          DATABASE_URL: sqlite+pysqlite:///./ci-eval.db
+          REDIS_ENABLED: "false"
+          CELERY_TASK_ALWAYS_EAGER: "true"
+          SANDBOX_RUNNER_URL: ""
+          SECRET_KEY: test-secret-key
+          ADMIN_PASSWORD: test-admin-pass
+          LLM_API_KEY: ""
+          OPENAI_API_KEY: ""
+        run: |
+          python scripts/eval.py run pytest --profile smoke
+          python scripts/eval.py run rag --profile smoke
+          python scripts/eval.py run tabular --profile smoke
+          python scripts/eval.py run context --profile smoke

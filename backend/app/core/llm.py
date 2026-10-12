@@ -290,8 +290,19 @@ def complete_text_with_usage(
     return "", None
 
 
-def complete_json(messages: list[dict], model: str | None = None) -> dict | None:
-    """Non-streaming JSON completion for short classifiers (intent router)."""
+def complete_json(
+    messages: list[dict],
+    model: str | None = None,
+    *,
+    raise_on_error: bool = False,
+) -> dict | None:
+    """Non-streaming JSON completion for short classifiers (intent router).
+
+    The default still returns None on failure so production classifiers keep
+    their fallbacks. Eval callers pass ``raise_on_error=True`` so a timeout or
+    rate limit is an infra error instead of a silently empty plan or grade.
+    Invalid JSON stays None: that is a parse miss, not transport failure.
+    """
     if not settings.llm_api_key:
         return None
 
@@ -308,7 +319,10 @@ def complete_json(messages: list[dict], model: str | None = None) -> dict | None
             )
         raw = (resp.choices[0].message.content or "").strip()
         return _parse_json_object(raw)
-    except Exception:
+    except Exception as exc:
+        if raise_on_error:
+            _STATS["infra_errors"] += 1
+            raise LLMInfraError(f"{type(exc).__name__}: {exc}") from exc
         return None
 
 

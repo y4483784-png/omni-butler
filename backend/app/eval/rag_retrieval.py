@@ -127,7 +127,54 @@ def seed_eval_corpus(db: Session) -> dict[str, int]:
     return key_to_id
 
 
-def seed_eval_corpus_production(db: Session) -> dict[str, int]:
+_VECTOR_INDEX_FAILURES = ("跳过向量化", "向量化失败", "向量写入失败")
+
+
+def vector_index_failed(warning: str) -> bool:
+    text = warning or ""
+    return any(marker in text for marker in _VECTOR_INDEX_FAILURES)
+
+
+def classify_rag_run(
+    *,
+    production: bool,
+    zhipu_rerank: bool,
+    ingest_warnings: list[str],
+    call_diags: list[dict],
+) -> dict[str, Any]:
+    """Decide whether a run may be labeled ``production_hybrid``.
+
+    Keyword smoke is intentionally degraded. A production run that lost embeddings,
+    vector search, or the requested reranker mid-flight is also degraded, and must
+    not keep ``mode=production_hybrid`` with ``degraded=false``.
+    """
+    reasons: list[str] = []
+    if production:
+        for warning in ingest_warnings:
+            if vector_index_failed(warning):
+                reasons.append(f"ingest:{(warning or '')[:180]}")
+        for diag in call_diags:
+            err = str((diag or {}).get("vector_error") or "")
+            if err:
+                reasons.append(f"vector:{err[:180]}")
+            if zhipu_rerank and (diag or {}).get("rerank_fallback"):
+                reasons.append("rerank:heuristic_fallback")
+    seen: set[str] = set()
+    unique: list[str] = []
+    for reason in reasons:
+        if reason not in seen:
+            seen.add(reason)
+            unique.append(reason)
+    if not production:
+        mode, degraded = "keyword_paragraph", True
+    elif unique:
+        mode, degraded = "production_degraded", True
+    else:
+        mode, degraded = "production_hybrid", False
+    return {"mode": mode, "degraded": degraded, "degraded_reasons": unique[:12]}
+
+
+def seed_eval_corpus_production(db: Session) -> tuple[dict[str, int], list[str]]:
     """Ingest the corpus through the production path (blob store -> parse -> chunk -> embed -> Qdrant).
 
     Replaces the paragraph-split shortcut so chunking (size/overlap), headings and
@@ -149,6 +196,7 @@ def seed_eval_corpus_production(db: Session) -> dict[str, int]:
 
     store = get_blob_store()
     key_to_id: dict[str, int] = {}
+    ingest_warnings: list[str] = []
     for key, spec in _CORPUS.items():
         path = CORPUS_ROOT / spec["filename"]
         data = path.read_bytes()
@@ -168,9 +216,11 @@ def seed_eval_corpus_production(db: Session) -> dict[str, int]:
         db.refresh(doc)
         if doc.status != "ready":
             raise RuntimeError(f"rag eval ingest failed for {spec['filename']}: {doc.error or doc.status}")
+        if vector_index_failed(doc.warning or ""):
+            ingest_warnings.append(f"{spec['filename']}: {doc.warning}")
         key_to_id[key] = doc.id
     db.commit()
-    return key_to_id
+    return key_to_id, ingest_warnings
 
 
 @dataclass
@@ -187,6 +237,7 @@ class RagEvalReport:
             f"  hit@k        {self.metrics.get('hit_at_k', 0):.2%}",
             f"  MRR          {self.metrics.get('mrr', 0):.4f}",
             f"  scored rows  {self.metrics.get('n_scored', 0)}",
+            f"  mode         {self.metrics.get('mode', '')}  degraded={self.metrics.get('degraded')}",
         ]
         for name, sl in (self.metrics.get("slices") or {}).items():
             lines.append(
@@ -233,14 +284,21 @@ def run_rag_retrieval_eval(
     db = SessionLocal()
     try:
         _activate(db)
-        key_to_id = seed_eval_corpus_production(db) if production else seed_eval_corpus(db)
+        ingest_warnings: list[str] = []
+        if production:
+            key_to_id, ingest_warnings = seed_eval_corpus_production(db)
+        else:
+            key_to_id = seed_eval_corpus(db)
         gold_sets: list[set[str]] = []
         pred_ranked: list[list[str]] = []
         failures: list[dict[str, Any]] = []
+        call_diags: list[dict[str, Any]] = []
 
         for case in items:
             gold_ids = {str(key_to_id[k]) for k in case.gold_doc_keys if k in key_to_id}
-            hits = retrieve(db, case.query, user_id=EVAL_USER_ID, top_k=top_k)
+            diag: dict[str, Any] = {}
+            hits = retrieve(db, case.query, user_id=EVAL_USER_ID, top_k=top_k, diag=diag)
+            call_diags.append(diag)
             ranked_docs: list[str] = []
             seen: set[str] = set()
             for h in hits:
@@ -278,11 +336,15 @@ def run_rag_retrieval_eval(
                     "mrr": round(float(rep.get("mrr", 0)), 4),
                 }
         # Precision@k is bounded by 1/k for single-doc gold; keep it out of gates/key metrics.
+        path = classify_rag_run(
+            production=production,
+            zhipu_rerank=use_zhipu_rerank,
+            ingest_warnings=ingest_warnings,
+            call_diags=call_diags,
+        )
         metrics = {
             **metrics,
-            "mode": "production_hybrid" if production else "keyword_paragraph",
-            # A keyword-paragraph run must never masquerade as the production path.
-            "degraded": not production,
+            **path,
             "hybrid_enabled": bool(settings.rag_hybrid_enabled),
             "slices": slices,
             "precision_at_k_note": "bounded by |gold|/k; informational",

@@ -2,7 +2,7 @@
 
 Usage:
   python scripts/gen_office_tabular_eval.py          # regenerate fixtures + jsonl
-  python scripts/run_office_tabular_eval.py          # live smoke (20 cases)
+  python scripts/run_office_tabular_eval.py          # live smoke (30 cases)
   python scripts/run_office_tabular_eval.py --split full
   python scripts/run_office_tabular_eval.py --dry-compile --split full
 """
@@ -211,10 +211,13 @@ def eval_exec(cases: list[dict]) -> list[dict]:
         planner_used = _PLANNER == "llm"
         planner_ok: bool | None = None
         spec_source = "heuristic_ablation"
+        # A heuristic ir is non-empty even when complete_json returned None.
+        # Only an explicit llm plan_source counts as the production planner.
+        llm_plan = planner_used and outcome.plan_source == "llm" and bool(outcome.ir)
         if planner_used:
-            planner_ok = bool(outcome.ir)
-            spec_source = "llm" if outcome.ir else "heuristic_fallback"
-        if planner_used and outcome.ir:
+            planner_ok = llm_plan
+            spec_source = "llm" if llm_plan else "heuristic_fallback"
+        if llm_plan:
             spec = AnalysisSpec(
                 operation=str(outcome.ir.get("operation") or heuristic_spec.operation),
                 filters=list(outcome.ir.get("filters") or []),
@@ -278,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--split",
         choices=("smoke", "full", "all"),
         default=None,
-        help="smoke=20 cases; full=all cases; default smoke for live, full for dry-compile",
+        help="smoke=30 cases; full=all cases; default smoke for live, full for dry-compile",
     )
     ap.add_argument(
         "--planner",

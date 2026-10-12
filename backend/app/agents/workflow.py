@@ -547,7 +547,9 @@ def run_agent_workflow(
             and should_ground_answer(evidence=evidence, direct_answer=direct)
         ):
             thinking.append("正在根据证据核对结论")
-            draft = complete_text(llm_messages)
+            # Infra failures must surface (eval: infra_error; SSE: the existing
+            # error event). A silent "" was scored as an ordinary empty answer.
+            draft = complete_text(llm_messages, raise_on_error=True)
             sandbox_gate = should_apply_sandbox_number_gate(
                 evidence=included or evidence,
                 needs_sandbox=bool(state.get("needs_sandbox")),
