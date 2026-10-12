@@ -598,13 +598,13 @@ Redis 是可丢失的加速/协调层，不是业务数据源；不可达时系�
 
 | 用途 | key 依据 | 默认 TTL / 限制 |
 |------|----------|-----------------|
-| Tier 2 路由决策精确缓存 | 消息 + 历史 + KB/表格可用性 + 路由模型/版本 | 3 天 |
+| Tier 2 路由决策精确缓存 | 消息 + 历史 + KB/表格可用性 + 路由模型/版本 + 路由提示词指纹 | 3 天 |
 | query embedding 精确缓存 | 归一化问题 + embedding 模型 + provider 地址 | 7 天 |
 | 联网搜索结果缓存 | query + 引擎 + 数量 + 时效/内容参数 | 5 分钟 |
 | 模型分布式并发槽 | 模型名 | `.env` 的供应商并发上限；任务结束释放，180 秒租约兜底 |
 | `/api/chat` 每用户滑动窗口 | user id | 默认 30 次/60 秒，超限返回 HTTP 429 + `Retry-After` |
 
-只缓存精确相同的中间结果，不做高风险的「相似问题直接复用最终答案」。主要配置见 `.env.example`：`ROUTER_CACHE_TTL`、`EMBEDDING_CACHE_TTL`、`WEB_CACHE_TTL`、`LLM_MODEL_CONCURRENCY_LIMITS`、`CHAT_RATE_LIMIT`。修改路由提示词/结构后应递增 `app/agents/router.py` 的 `_ROUTER_CACHE_VERSION` 使旧决策自然失效。
+只缓存精确相同的中间结果，不做高风险的「相似问题直接复用最终答案」。主要配置见 `.env.example`：`ROUTER_CACHE_TTL`、`EMBEDDING_CACHE_TTL`、`WEB_CACHE_TTL`、`LLM_MODEL_CONCURRENCY_LIMITS`、`CHAT_RATE_LIMIT`。路由 Redis key 含 `ROUTER_SYSTEM` 的指纹（与评测磁盘缓存的 `prompt_sha` 相同），改提示词后旧决策自动失效；决策字段结构变化时仍应递增 `app/agents/router.py` 的 `_ROUTER_CACHE_VERSION`。评测进程会设置 `EVAL_SKIP_ROUTER_REDIS=1`，full 刷新不会把 Redis 里的旧决策写入 `router_cache.json`。线上流量不设该变量，缓存照常生效。
 
 ## Celery（文档入库队列）
 

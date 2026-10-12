@@ -55,6 +55,62 @@ def test_wrapped_llm_infra_is_not_scored_as_empty_answer(monkeypatch):
     assert "empty_answer" not in (res.error or "")
 
 
+def _chat_task() -> dict:
+    return {
+        "id": "t",
+        "query": "公司几点上班",
+        "task_type": "fact_qa",
+        "history": [],
+        "route_gold": {"intent": "rag", "tools": ["kb"]},
+        "context": {
+            "has_kb_docs": True,
+            "has_tabular_docs": True,
+            "document_keys": [],
+            "pending_calendar": None,
+        },
+    }
+
+
+@pytest.mark.unit
+def test_router_infra_is_infra_error_not_workflow_error(monkeypatch):
+    from app.agents.router import RouterInfraError
+    from app.eval.agent_e2e import run_task
+
+    def boom(*_a, **_k):
+        raise RouterInfraError("工具规划失败：RateLimitError: slow down")
+
+    # Through the real graph, not a pre-wrapped workflow exception: a wrapper
+    # that dropped the RouterInfraError type would score this as workflow_error.
+    monkeypatch.setattr("app.agents.workflow.plan_tools", boom)
+    res = run_task(object(), _chat_task())
+    assert res.failed_layer == "infra_error"
+    assert res.completion_ok is False
+
+
+@pytest.mark.unit
+def test_router_schema_error_stays_in_core_denominator(monkeypatch):
+    from app.agents.router import RouterError
+    from app.eval.agent_e2e import run_task
+
+    def boom(*_a, **_k):
+        raise RouterError("工具规划失败：schema 校验失败")
+
+    monkeypatch.setattr("app.agents.workflow.run_agent_workflow", boom)
+    res = run_task(object(), _chat_task())
+    assert res.failed_layer == "workflow_error"
+
+    rows = [
+        TaskResult("a", "q", "fact_qa", False, completion_ok=True),
+        res,
+        TaskResult("c", "q", "fact_qa", False, failed_layer="infra_error"),
+    ]
+    report = aggregate(rows)
+    # Schema miss stays scored; the infra row does not. 1 of 2 core rows completed.
+    assert report["core_n"] == 2
+    assert report["core_completion_rate"] == pytest.approx(0.5)
+    assert report["n_infra_error"] == 1
+
+
 def test_aggregate_excludes_infra_from_completion():
     rows = [
         TaskResult("a", "q", "fact_qa", False, completion_ok=True),

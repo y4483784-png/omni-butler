@@ -82,6 +82,9 @@ def test_sliding_window_allow_async(monkeypatch):
 
 
 def test_router_cache_skips_llm(monkeypatch):
+    # Eval bootstrap leaks these flags in-process; this test is the production path.
+    monkeypatch.delenv("EVAL_SKIP_ROUTER_REDIS", raising=False)
+    monkeypatch.delenv("EVAL_BOOTSTRAPPED", raising=False)
     cached = {
         "reasoning": "cached",
         "needs_kb": True,

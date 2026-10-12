@@ -30,7 +30,6 @@ from app.agents.harness.types import ToolResult
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
 from app.core.llm import (
-    LLMInfraError,
     complete_text,
     complete_text_with_usage,
     resolved_chat_model,
@@ -214,13 +213,20 @@ def workflow_kwargs(task: dict[str, Any], document_ids: list[int] | None) -> dic
     }
 
 
-def _infra_from(exc: BaseException) -> LLMInfraError | None:
-    """Walk cause/context so a graph wrapper does not hide a model timeout."""
+def _infra_from(exc: BaseException) -> BaseException | None:
+    """Walk cause/context so a graph wrapper does not hide a model timeout.
+
+    Router rate-limit / timeout is ``RouterInfraError`` (an ``LLMInfraError``).
+    A bare provider timeout with the same type name is infra too, so it leaves
+    ``core_completion_rate`` instead of counting as ``workflow_error``.
+    """
+    from app.core.llm import is_llm_infra_exception
+
     cur: BaseException | None = exc
     seen: set[int] = set()
     while cur is not None and id(cur) not in seen:
         seen.add(id(cur))
-        if isinstance(cur, LLMInfraError):
+        if is_llm_infra_exception(cur):
             return cur
         cur = cur.__cause__ or cur.__context__
     return None

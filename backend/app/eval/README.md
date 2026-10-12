@@ -127,11 +127,13 @@ python scripts/eval.py run rag --profile full          # --zhipu-rerank
 
 确定性 smoke 在 2026-09-17 的重建基线为 Recall@k **0.9888**、MRR **0.9322**；同日智谱 rerank full 为 Recall@k **0.9912**、MRR **0.9796**。回归门槛取较低基线减约 0.05，即 Recall@k ≥ **0.93**、MRR ≥ **0.88**；full 使用相同 Recall 门槛。
 
+难负例切片（`hard_negative`，n=40）在同一关键词基线上是 Recall@k **1.0**、MRR **0.875**（命中还在，排序更靠后）。只看整体均值时，这一切片掉 0.17 的 MRR 只会把总 MRR 拉低约 0.018，仍能过 0.88。因此 smoke/full 另设切片门槛：Recall@k ≥ **0.95**、MRR ≥ **0.82**（约低于该切片基线 0.05）。整体门槛不另收紧，它们已经落在已公布基线减 0.05 附近。
+
 ## 2. 标准指标定义
 
 ### Intent（单标签分类）
 
-- **Accuracy** = 预测 intent 与 gold 一致的比例  
+- **Accuracy** = 预测 intent 与 gold 一致的比例。限流、超时等基础设施失败不进入分母，并单独报告 `infra_error_rate`；schema 规划失败仍记为 `error`，留在分母里。全是基础设施失败时准确率为 0，不能靠空分母记成 100%。
 - **Macro-F1** = 各类别 F1 的算术平均（关注长尾 intent）  
 - **Confusion matrix** = 混淆矩阵，定位「calendar 被判成 chat」等
 
@@ -228,7 +230,7 @@ python scripts/eval.py run routing --profile full
 | 证据 | gold 文档引用 / sandbox 是否执行（限定文档范围的题必须引用限定文档） |
 | 完成 | `judges.judge_completion(task_type, answer_spec)` |
 
-指标：`task_completion_rate`（附 bootstrap 95% CI）对外报数；**门禁只看 `core_completion_rate`**（`fact_qa` + `compute` + `multi_tool` + `no_tool`），把 `chat` / `calendar` / `refuse` 这类近乎白送的部分排除在外。另设 `infra_error_rate ≤ 0.05`，避免大模型大面积报错时靠幸存题目过门槛。拒答题不带 `gold_doc_keys`；考勤汇总标 `sandbox`。
+指标：`task_completion_rate`（附 bootstrap 95% CI）对外报数；**门禁只看 `core_completion_rate`**（`fact_qa` + `compute` + `multi_tool` + `no_tool`），把 `chat` / `calendar` / `refuse` 这类近乎白送的部分排除在外。另设 `infra_error_rate ≤ 0.05`，避免大模型大面积报错时靠幸存题目过门槛。路由阶段的限流、超时和同类传输失败记为 `infra_error`（与作答路径的 `LLMInfraError` 相同），不进入 `core_completion_rate` 分母；schema 校验失败仍是 `workflow_error`。拒答题不带 `gold_doc_keys`；考勤汇总标 `sandbox`。
 
 ```bash
 docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile smoke

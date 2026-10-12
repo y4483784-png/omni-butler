@@ -59,6 +59,11 @@ def bootstrap(
     """
     os.environ["EVAL_TARGET"] = target
     os.environ["EVAL_BOOTSTRAPPED"] = "1"
+    # Router Redis is shared across processes and keyed by a frozen EVAL_TODAY.
+    # A full refresh must call the model and write disk cache itself; it must
+    # not copy a stale Redis decision under the new prompt fingerprint.
+    # Embeddings and rate limits still use Redis on the services target.
+    os.environ["EVAL_SKIP_ROUTER_REDIS"] = "1"
     # Frozen "today": answer/router prompts embed the date; keep web-staleness cases stable.
     os.environ.setdefault("EVAL_TODAY", "2026-09-19")
 
