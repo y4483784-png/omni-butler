@@ -13,7 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from app.agents.router import RouterError, intent_from_decision, plan_tools
+from app.agents.router import (
+    RouterError,
+    intent_from_decision,
+    plan_tools,
+    router_failure_is_infra,
+)
 from app.eval.metrics import (
     confusion_matrix,
     multilabel_report,
@@ -66,6 +71,7 @@ class CaseResult:
     tags: list[str]
     confidence: str | None = None
     error: str | None = None
+    infra_error: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +85,7 @@ class CaseResult:
             "tools_exact_ok": self.tools_exact_ok,
             "confidence": self.confidence,
             "error": self.error,
+            "infra_error": self.infra_error,
             "tags": self.tags,
         }
 
@@ -96,11 +103,17 @@ class EvalReport:
     cache_misses: int = 0
     intent_derived_accuracy: float = 0.0
     n_error: int = 0
+    n_infra_error: int = 0
+    infra_error_rate: float = 0.0
+    n_scored: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "n": self.n,
+            "n_scored": self.n_scored,
             "n_error": self.n_error,
+            "n_infra_error": self.n_infra_error,
+            "infra_error_rate": round(self.infra_error_rate, 4),
             "intent": {
                 "derived_accuracy": round(self.intent_derived_accuracy, 4),
                 "accuracy": round(self.intent_accuracy, 4),
@@ -118,8 +131,9 @@ class EvalReport:
 
     def format_text(self) -> str:
         lines = [
-            f"=== Omni-Butler Tool Routing Eval (n={self.n}) ===",
+            f"=== Omni-Butler Tool Routing Eval (n={self.n}, scored={self.n_scored}) ===",
             f"  cache hits/misses  {self.cache_hits}/{self.cache_misses}",
+            f"  infra errors       {self.n_infra_error} ({self.infra_error_rate:.2%})",
             "",
             "Intent (single-label)",
             f"  accuracy     {self.intent_accuracy:.2%}",
@@ -174,11 +188,10 @@ def router_fingerprint() -> dict[str, Any]:
     """Model + prompt identity: a changed router must never hit a stale cache entry."""
     from app.agents import router as router_mod
     from app.core.llm import resolved_router_model
-    from app.core.prompts import ROUTER_SYSTEM
 
     return {
         "model": resolved_router_model(),
-        "prompt_sha": hashlib.sha256(ROUTER_SYSTEM.encode("utf-8")).hexdigest()[:12],
+        "prompt_sha": router_mod.router_prompt_sha(),
         "cache_version": getattr(router_mod, "_ROUTER_CACHE_VERSION", 0),
     }
 
@@ -292,11 +305,27 @@ def predict_case(
         # annotate for caller stats
         case._cache_hit = cache_used  # type: ignore[attr-defined]
     except RouterError as exc:
-        # Sentinel label: never matches gold, so failures cannot inflate accuracy.
+        # Schema misses use the sentinel ``error`` label so they cannot inflate
+        # accuracy. Rate-limit / timeout are infra: they leave the denominator.
+        infra = router_failure_is_infra(exc)
         pred_intent = "error"
         pred_tools = []
         error = str(exc)
         case._cache_hit = False  # type: ignore[attr-defined]
+        return CaseResult(
+            case_id=case.id,
+            message=case.message,
+            gold_intent=gold_intent,
+            pred_intent=pred_intent,
+            gold_tools=gold_tools,
+            pred_tools=pred_tools,
+            intent_ok=False,
+            tools_exact_ok=False,
+            tags=case.tags,
+            confidence=confidence,
+            error=error,
+            infra_error=infra,
+        )
 
     return CaseResult(
         case_id=case.id,
@@ -357,35 +386,49 @@ def run_tool_routing_eval(
     if predictor is None:
         _save_cache(cpath, cache)
 
-    gold_intents = [r.gold_intent for r in results]
-    pred_intents = [r.pred_intent for r in results]
-    intent_acc = sum(r.intent_ok for r in results) / len(results) if results else 1.0
+    # Infra (rate-limit / timeout) is not a routing miss. Schema failures stay
+    # in the denominator as the sentinel ``error`` intent.
+    scored_rows = [r for r in results if not r.infra_error]
+    n_infra = sum(1 for r in results if r.infra_error)
+    if not results:
+        intent_acc = 1.0
+        intent_derived_acc = 1.0
+    elif not scored_rows:
+        # Every row was transport failure. Do not report a vacuous 1.0.
+        intent_acc = 0.0
+        intent_derived_acc = 0.0
+    else:
+        intent_acc = sum(r.intent_ok for r in scored_rows) / len(scored_rows)
+        derived_ok = sum(
+            1
+            for r in scored_rows
+            if r.pred_intent == intent_from_decision(
+                {f"needs_{t}": True for t in r.gold_tools}
+            )
+        )
+        intent_derived_acc = derived_ok / len(scored_rows)
+
+    gold_intents = [r.gold_intent for r in scored_rows]
+    pred_intents = [r.pred_intent for r in scored_rows]
     intent_cm = confusion_matrix(gold_intents, pred_intents, labels=INTENT_LABELS)
     intent_macro_f1 = _intent_macro_f1_from_confusion(intent_cm, INTENT_LABELS)
 
-    gold_sets = [set(r.gold_tools) for r in results]
-    pred_sets = [set(r.pred_tools) for r in results]
+    gold_sets = [set(r.gold_tools) for r in scored_rows]
+    pred_sets = [set(r.pred_tools) for r in scored_rows]
     tools_rep = multilabel_report(gold_sets, pred_sets, labels=TOOL_LABELS)
+    tools_dict = tools_rep.to_dict()
+    if results and not scored_rows:
+        tools_dict["exact_match_accuracy"] = 0.0
 
     # Diagnostic only: queue order is fixed by code and empty-gold rows would score 1.0.
     traj = {}
-    scored = [r for r in results if r.gold_tools]
+    traj_rows = [r for r in scored_rows if r.gold_tools]
     for k in (1, 2, 3, 4):
         traj[f"k={k}"] = (
-            sum(recall_at_k(r.gold_tools, r.pred_tools, k) for r in scored) / len(scored)
-            if scored
+            sum(recall_at_k(r.gold_tools, r.pred_tools, k) for r in traj_rows) / len(traj_rows)
+            if traj_rows
             else 1.0
         )
-    # Intent is a lossy projection of the tool set (sandbox > kb > calendar > web > chat);
-    # report accuracy against the *derived* gold so labelling quirks cannot hide or fake errors.
-    derived_ok = sum(
-        1
-        for r in results
-        if r.pred_intent == intent_from_decision(
-            {f"needs_{t}": True for t in r.gold_tools}
-        )
-    )
-    intent_derived_acc = derived_ok / len(results) if results else 1.0
 
     failures = [r for r in results if not r.intent_ok or not r.tools_exact_ok or r.error]
 
@@ -394,11 +437,14 @@ def run_tool_routing_eval(
         intent_accuracy=intent_acc,
         intent_macro_f1=intent_macro_f1,
         intent_confusion=intent_cm,
-        tools=tools_rep.to_dict(),
+        tools=tools_dict,
         trajectory_recall_at_k=traj,
         failures=failures,
         cache_hits=hits,
         cache_misses=misses,
         intent_derived_accuracy=intent_derived_acc,
-        n_error=sum(1 for r in results if r.error),
+        n_error=sum(1 for r in results if r.error and not r.infra_error),
+        n_infra_error=n_infra,
+        infra_error_rate=(n_infra / len(results)) if results else 0.0,
+        n_scored=len(scored_rows),
     )

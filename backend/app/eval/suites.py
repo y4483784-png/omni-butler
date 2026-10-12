@@ -74,6 +74,7 @@ SUITES: dict[str, SuiteSpec] = {
             "raw.tools.macro.f1",
             "raw.intent.accuracy",
             "raw.intent.derived_accuracy",
+            "raw.infra_error_rate",
         ),
         profiles={
             "smoke": ["--require-cache"],  # replay disk cache; stale fingerprint -> fail
@@ -100,6 +101,7 @@ SUITES: dict[str, SuiteSpec] = {
             "raw.metrics.recall_at_k",
             "raw.metrics.hit_at_k",
             "raw.metrics.mrr",
+            "raw.metrics.slices.hard_negative.recall_at_k",
             "raw.metrics.slices.hard_negative.mrr",
         ),
         profiles={

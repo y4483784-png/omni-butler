@@ -16,7 +16,7 @@ from app.agents.harness import gateway
 from app.agents.harness.constitution import reload_constitution
 from app.agents.harness.types import ToolContext
 from app.agents.harness.verify import verify_state
-from app.agents.router import RouterError
+from app.agents.router import RouterError, RouterInfraError
 from app.agents.tools.registry import ensure_builtin_tools
 from app.core.config import settings
 from app.eval import tool_routing
@@ -118,6 +118,73 @@ def test_router_error_recorded_as_failure(tmp_path, monkeypatch):
 
     assert len(report.failures) == len(cases)
     assert all("工具规划失败" in (f.error or "") for f in report.failures)
+    assert report.n_infra_error == 0
+    assert report.n_scored == len(cases)
+    assert report.intent_accuracy == pytest.approx(0.0)
+
+
+def test_routing_infra_excluded_from_accuracy_denominator(tmp_path, monkeypatch):
+    """Rate-limit rows leave the accuracy denominator; schema misses stay in it."""
+    pool = [c for c in load_cases() if not c.context.get("pending_calendar")]
+    with_tools = [c for c in pool if c.gold.get("tools")]
+    chat = [c for c in pool if not c.gold.get("tools")]
+    # Schema miss must have a non-empty gold set; empty-gold chat would still
+    # exact-match the router's empty prediction and hide the denominator bug.
+    cases = [with_tools[0], with_tools[1], chat[0]]
+    infra_id = cases[0].id
+    schema_id = cases[1].id
+    by_message = {c.message: set(c.gold.get("tools") or []) for c in cases}
+
+    def fake_plan_tools(message, history=None, **kwargs):
+        case = next(c for c in cases if c.message == message)
+        if case.id == infra_id:
+            raise RouterInfraError("工具规划失败：APITimeoutError: timed out")
+        if case.id == schema_id:
+            raise RouterError("工具规划失败：schema 校验失败")
+        tools = by_message.get(message, set())
+        if kwargs.get("forced_kb") or kwargs.get("document_ids"):
+            tools = tools | {"kb"}
+        if not kwargs.get("has_kb_docs"):
+            tools = tools - {"kb"}
+        if not kwargs.get("has_tabular_docs"):
+            tools = tools - {"sandbox"}
+        pending = [t for t in ("kb", "web", "calendar", "sandbox") if t in tools]
+        return {
+            "pending_tools": pending,
+            "needs_kb": "kb" in tools,
+            "needs_web": "web" in tools,
+            "needs_calendar": "calendar" in tools,
+            "needs_sandbox": "sandbox" in tools,
+            "needs_freshness": False,
+            "confidence": "high",
+            "reasoning": "mock",
+        }
+
+    monkeypatch.setattr(tool_routing, "plan_tools", fake_plan_tools)
+    report = run_tool_routing_eval(cases, cache_path=tmp_path / "router_cache.json")
+    # 1 correct + 1 schema miss scored; the timeout is not a miss.
+    assert report.n == 3
+    assert report.n_scored == 2
+    assert report.n_error == 1
+    assert report.n_infra_error == 1
+    assert report.infra_error_rate == pytest.approx(1 / 3)
+    assert report.intent_accuracy == pytest.approx(0.5)
+    assert report.tools["exact_match_accuracy"] == pytest.approx(0.5)
+    assert any(f.infra_error for f in report.failures)
+
+
+def test_routing_all_infra_does_not_score_perfect(tmp_path, monkeypatch):
+    cases = [c for c in load_cases() if c.gold.get("tools")][:2]
+
+    def failing(*_a, **_k):
+        raise RouterInfraError("工具规划失败：RateLimitError: 429")
+
+    monkeypatch.setattr(tool_routing, "plan_tools", failing)
+    report = run_tool_routing_eval(cases, cache_path=tmp_path / "router_cache.json")
+    assert report.n_scored == 0
+    assert report.infra_error_rate == pytest.approx(1.0)
+    assert report.intent_accuracy == pytest.approx(0.0)
+    assert report.tools["exact_match_accuracy"] == pytest.approx(0.0)
 
 
 # Contract tests (gateway / verify) — not routing metrics, kept separate
