@@ -15,11 +15,39 @@ def test_eval_suites_declare_gates_for_full():
     assert missing == [], f"full profile missing gates: {missing}"
 
 
+def _rag_metrics(**overrides):
+    metrics = {
+        "recall_at_k": 0.99,
+        "mrr": 0.93,
+        "slices": {
+            "hard_negative": {"recall_at_k": 1.0, "mrr": 0.875, "n": 40},
+        },
+    }
+    metrics.update(overrides)
+    return {"metrics": metrics}
+
+
 @pytest.mark.unit
 def test_absolute_floor_fails():
-    out = evaluate_gates("rag", "full", {"metrics": {"recall_at_k": 0.5, "mrr": 0.9}})
+    out = evaluate_gates("rag", "full", _rag_metrics(recall_at_k=0.5))
     assert out["ok"] is False
-    assert any("recall_at_k" in m for m in out["failed"])
+    assert any(m.startswith("metrics.recall_at_k=") for m in out["failed"])
+
+
+@pytest.mark.unit
+def test_hard_negative_slice_fails_when_overall_still_passes():
+    """A hard-negative drop that the saturated mean can absorb must still fail."""
+    collapsed = _rag_metrics()
+    collapsed["metrics"]["slices"] = {
+        "hard_negative": {"recall_at_k": 0.80, "mrr": 0.70, "n": 40},
+    }
+    out = evaluate_gates("rag", "smoke", collapsed)
+    assert out["ok"] is False
+    assert any("hard_negative.recall_at_k" in m for m in out["failed"])
+    assert any("hard_negative.mrr" in m for m in out["failed"])
+
+    healthy = evaluate_gates("rag", "full", _rag_metrics())
+    assert healthy["ok"] is True
 
 
 @pytest.mark.unit

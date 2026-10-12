@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from app.core.embeddings import EmbeddingError
+from app.eval.gates import GATES
 from app.eval.rag_retrieval import classify_rag_run, load_cases, run_rag_retrieval_eval
 from app.rag.rerank import rerank_hits
 from app.rag.expand import ExpandedHit
 from app.rag.retrieval import _vector_ranked
 
-_MIN_RECALL = 0.93
-_MIN_MRR = 0.88
+
+def _rag_floor(metric: str) -> float:
+    for gate in GATES[("rag", "smoke")]:
+        if gate.metric == metric and gate.min is not None:
+            return gate.min
+    raise AssertionError(metric)
 
 
 def test_rag_retrieval_eval_meets_floor():
@@ -17,10 +22,14 @@ def test_rag_retrieval_eval_meets_floor():
     assert cases
     report = run_rag_retrieval_eval(cases, use_zhipu_rerank=False)
     assert report.n == len(cases)
-    # 2026-09-17 reviewed-set baseline: recall=.9888, MRR=.9322.
-    # Five-point regression budget keeps the gate meaningful but stable.
-    assert report.metrics["recall_at_k"] >= _MIN_RECALL, report.format_text()
-    assert report.metrics["mrr"] >= _MIN_MRR, report.format_text()
+    # 2026-09-17 keyword baseline: recall=.9888, MRR=.9322.
+    # hard_negative slice on that path: recall=1.0, MRR=.875 (n=40).
+    assert report.metrics["recall_at_k"] >= _rag_floor("metrics.recall_at_k"), report.format_text()
+    assert report.metrics["mrr"] >= _rag_floor("metrics.mrr"), report.format_text()
+    hard = report.metrics["slices"]["hard_negative"]
+    assert hard["n"] == 40
+    assert hard["recall_at_k"] >= _rag_floor("metrics.slices.hard_negative.recall_at_k"), report.format_text()
+    assert hard["mrr"] >= _rag_floor("metrics.slices.hard_negative.mrr"), report.format_text()
     # Keyword smoke is not the production path.
     assert report.metrics["mode"] == "keyword_paragraph"
     assert report.metrics["degraded"] is True

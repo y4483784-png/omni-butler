@@ -33,13 +33,21 @@ GATES: dict[tuple[str, str], list[Gate]] = {
         Gate("intent.accuracy", min=0.87),
         Gate("tools.exact_match_accuracy", min=0.87),
     ],
+    # Overall floors stay ~0.05 under the 2026-09-17 keyword baseline
+    # (recall 0.9888 / MRR 0.9322). That mean can absorb a hard-negative
+    # collapse: the slice is 40/400. Keyword hard_negative on the same run is
+    # recall 1.0 / MRR 0.875, so the slice floors sit ~0.05 under those numbers.
     ("rag", "smoke"): [
         Gate("metrics.recall_at_k", min=0.93),
         Gate("metrics.mrr", min=0.88),
+        Gate("metrics.slices.hard_negative.recall_at_k", min=0.95),
+        Gate("metrics.slices.hard_negative.mrr", min=0.82),
     ],
     ("rag", "full"): [
         Gate("metrics.recall_at_k", min=0.93),
         Gate("metrics.mrr", min=0.88),
+        Gate("metrics.slices.hard_negative.recall_at_k", min=0.95),
+        Gate("metrics.slices.hard_negative.mrr", min=0.82),
     ],
     # "yz" is retired (see suites.py). Do not keep dead floors that nothing evaluates.
     ("agent", "smoke"): [
