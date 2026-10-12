@@ -38,9 +38,20 @@ def test_bootstrap_venv_overwrites_compose_leftovers(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://x")
     bootstrap("venv", sqlite_path=tmp_path / "e.db")
     assert os.environ["REDIS_ENABLED"] == "false"
+    assert os.environ["EVAL_SKIP_ROUTER_REDIS"] == "1"
     assert os.environ["SANDBOX_RUNNER_URL"] == ""
     assert os.environ["SANDBOX_TMP_DIR"] == ""
     assert os.environ["DATABASE_URL"].startswith("sqlite")
+
+
+def test_bootstrap_services_keeps_redis_but_skips_router_cache(monkeypatch):
+    monkeypatch.setenv("REDIS_ENABLED", "true")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://omni@localhost/omni")
+    bootstrap("services")
+    assert os.environ["REDIS_ENABLED"] == "true"
+    assert os.environ["DATABASE_URL"].startswith("postgresql")
+    assert os.environ["EVAL_SKIP_ROUTER_REDIS"] == "1"
+    assert os.environ["EVAL_BOOTSTRAPPED"] == "1"
 
 
 def test_preflight_tabular_full_services_checks_runner_not_docker(monkeypatch):

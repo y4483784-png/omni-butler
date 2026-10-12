@@ -55,6 +55,53 @@ class LLMInfraError(RuntimeError):
     """Rate-limit / timeout that survived retries (eval: infra error, not a model answer)."""
 
 
+# Exception *type* names, not message text. A schema miss that quotes "timeout"
+# in the validation error must stay a model failure.
+_INFRA_TYPE_MARKERS = (
+    "Timeout",
+    "RateLimit",
+    "Connection",
+    "ConnectError",
+    "ServiceUnavailable",
+    "InternalServer",
+    "RemoteProtocol",
+    "APIConnection",
+    "ReadError",
+    "WriteError",
+    "NetworkError",
+)
+_INFRA_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+
+
+def is_llm_infra_exception(exc: BaseException) -> bool:
+    """True for rate-limit, timeout, and similar transport failures.
+
+    Schema/parse errors (``LLMStructuredError``) are model misses, not infra.
+    """
+    if isinstance(exc, LLMInfraError):
+        return True
+    if isinstance(exc, LLMStructuredError):
+        return False
+    name = type(exc).__name__
+    if any(marker in name for marker in _INFRA_TYPE_MARKERS):
+        return True
+    status = getattr(exc, "status_code", None)
+    try:
+        code = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        code = None
+    return code in _INFRA_STATUS_CODES
+
+
+def llm_infra_backoff_seconds(attempt: int) -> float:
+    """Wait before retrying attempt ``attempt`` (1-based) after rate-limit/timeout.
+
+    Matches the answer-path schedule (2s, 4s, 8s) but caps at 8s. The router
+    sits on the user request; two attempts therefore pause once, for 2s.
+    """
+    return min(8.0, 2.0 ** max(1, int(attempt)))
+
+
 def resolved_chat_model() -> str:
     return (settings.chat_model or "").strip() or settings.llm_model
 
@@ -356,9 +403,11 @@ def complete_json_schema(
     model: str | None = None,
     max_attempts: int | None = None,
 ) -> dict[str, Any]:
-    """Schema-constrained JSON completion. Raises LLMStructuredError on failure.
+    """Schema-constrained JSON completion. Raises LLMStructuredError on schema failure.
 
-    Uses OpenAI-compatible ``response_format=json_schema`` (Zhipu GLM supports it).
+    Rate-limit, timeout, and similar transport errors retry with backoff, then
+    raise ``LLMInfraError`` so callers can treat them as infrastructure rather
+    than a bad plan. Uses OpenAI-compatible ``response_format=json_schema``.
     Retries up to ``max_attempts`` (default ``settings.router_max_attempts``), feeding
     validation/parse errors back to the model. Never returns None / silent fallback.
     """
@@ -411,6 +460,22 @@ def complete_json_schema(
         except Exception as exc:
             last_err = f"{type(exc).__name__}: {str(exc)[:300]}"
             logger.warning("complete_json_schema attempt %s/%s failed: %s", attempt, attempts, last_err)
+            if is_llm_infra_exception(exc):
+                # Transport failures are not schema misses. Back off, then surface
+                # LLMInfraError so eval can drop them from the accuracy denominator.
+                if attempt >= attempts:
+                    _STATS["infra_errors"] += 1
+                    raise LLMInfraError(last_err) from exc
+                _STATS["retries"] += 1
+                delay = llm_infra_backoff_seconds(attempt)
+                logger.warning(
+                    "complete_json_schema infra backoff %.0fs (attempt %s/%s)",
+                    delay,
+                    attempt,
+                    attempts,
+                )
+                time.sleep(delay)
+                continue
             if attempt >= attempts:
                 break
             msgs = list(messages) + [
