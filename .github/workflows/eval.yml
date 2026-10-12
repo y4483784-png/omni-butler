@@ -14,7 +14,7 @@ on:
 
 defaults:
   run:
-    working-directory: omni-butler/backend
+    working-directory: backend
 
 jobs:
   offline:
@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: omni-butler/backend/requirements*.txt
+          cache-dependency-path: backend/requirements*.txt
 
       - name: Install dependencies
         run: |
@@ -50,11 +50,6 @@ jobs:
   rls:
     name: postgres row-level security
     runs-on: ubuntu-latest
-    # Checkout is the repo root (backend/ lives here). The workflow-level
-    # default still points at omni-butler/backend, which this repo does not have.
-    defaults:
-      run:
-        working-directory: backend
     services:
       postgres:
         image: postgres:16
