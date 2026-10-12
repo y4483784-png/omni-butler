@@ -50,6 +50,11 @@ jobs:
   rls:
     name: postgres row-level security
     runs-on: ubuntu-latest
+    # Checkout is the repo root (backend/ lives here). The workflow-level
+    # default still points at omni-butler/backend, which this repo does not have.
+    defaults:
+      run:
+        working-directory: backend
     services:
       postgres:
         image: postgres:16
@@ -70,13 +75,15 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: omni-butler/backend/requirements*.txt
+          cache-dependency-path: backend/requirements*.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      # Migrations stay on the container superuser (table owner). Same split as
+      # Compose: DATABASE_MIGRATE_URL=omni, runtime DATABASE_URL=omni_app.
       - name: Apply migrations (creates the RLS policies)
         env:
           DATABASE_URL: postgresql+psycopg://omni:omni@localhost:5432/omni_butler
@@ -85,9 +92,19 @@ jobs:
           ADMIN_PASSWORD: test-admin-pass
         run: alembic upgrade head
 
+      # Superusers bypass FORCE RLS. Create the non-superuser login before pytest
+      # so SessionLocal matches production (ensure_app_role no-ops if the URLs match).
+      - name: Ensure non-superuser app role
+        env:
+          DATABASE_URL: postgresql+psycopg://omni_app:omni@localhost:5432/omni_butler
+          DATABASE_MIGRATE_URL: postgresql+psycopg://omni:omni@localhost:5432/omni_butler
+          SECRET_KEY: test-secret-key
+          ADMIN_PASSWORD: test-admin-pass
+        run: python -c "from app.core.db import ensure_app_role; ensure_app_role()"
+
       - name: Row-level security isolation
         env:
-          DATABASE_URL: postgresql+psycopg://omni:omni@localhost:5432/omni_butler
+          DATABASE_URL: postgresql+psycopg://omni_app:omni@localhost:5432/omni_butler
           DATABASE_MIGRATE_URL: postgresql+psycopg://omni:omni@localhost:5432/omni_butler
           REDIS_ENABLED: "false"
           SECRET_KEY: test-secret-key

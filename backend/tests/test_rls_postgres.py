@@ -33,8 +33,15 @@ def _ensure_user(db, user_id: int, external_id: str) -> None:
 
 
 def _cleanup(db) -> None:
-    """Committed rows survive a rollback, so delete them explicitly."""
+    """Committed rows survive a rollback, so delete them explicitly.
+
+    The app role is subject to FORCE RLS, so a document delete only sees the
+    tenant in the current GUC. Delete each user's rows under that user's
+    context; otherwise the users FK delete fails on the rows RLS hid.
+    """
+    db.rollback()
     for user_id in (_ALICE, _BOB):
+        set_rls_context(db, user_id)
         db.execute(text("DELETE FROM documents WHERE user_id = :u"), {"u": user_id})
         db.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
     db.commit()
@@ -51,8 +58,17 @@ def test_rls_policies_are_installed():
         policies = db.execute(
             text("SELECT count(*) FROM pg_policies WHERE tablename = 'documents'")
         ).scalar()
+        bypass = db.execute(
+            text(
+                "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user"
+            )
+        ).scalar()
         assert forced is True, "documents must have FORCE ROW LEVEL SECURITY (alembic 0004)"
         assert int(policies or 0) >= 1, "documents must carry an RLS policy"
+        assert bypass is False, (
+            "SessionLocal must be a non-superuser role without BYPASSRLS; "
+            "superusers ignore FORCE RLS"
+        )
     finally:
         db.close()
 
