@@ -25,6 +25,10 @@ def test_build_cases_smoke_and_coverage():
     smoke = [c for c in cases if c["split"] == "smoke"]
     types = {c["type"] for c in smoke}
     assert len(types) == 8
+    # Smoke stays on the cheap buckets. Those histories do not reach the compact
+    # threshold, so the smoke profile must not hard-gate compaction_rate.
+    assert {c["bucket_turns"] for c in smoke} <= {12, 30}
+    assert any(c["bucket_turns"] >= 60 for c in cases if c["split"] == "full")
     for c in cases:
         assert c["bucket_turns"] in (12, 30, 60, 120)
         assert len(c["history"]) == c["bucket_turns"] * 2

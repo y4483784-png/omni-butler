@@ -147,7 +147,10 @@ SUITES: dict[str, SuiteSpec] = {
         id="grounding",
         title="依据核验忠实度",
         kind="eval",
-        description="ground_and_repair + ragas faithfulness（120 题，三路均衡）。",
+        description=(
+            "ground_and_repair + ragas faithfulness（120 题，三路均衡）。"
+            "冒烟前 24 条没有不可答题；n_unanswerable=0 时跳过 refusal_accuracy，不算失败。"
+        ),
         requires=("llm", "minio"),
         targets=("services", "venv"),
         key_metrics=(
@@ -190,7 +193,10 @@ SUITES: dict[str, SuiteSpec] = {
         id="context",
         title="ContextManager 回放",
         kind="eval",
-        description="摘要 / 窗口 / 多臂对照（context_recall.jsonl）。",
+        description=(
+            "摘要 / 窗口 / 多臂对照（context_recall.jsonl）。"
+            "冒烟是 12/30 轮短桶探针，不把 compaction_rate 当硬门禁；完整档才卡压缩率。"
+        ),
         requires=(),
         targets=("venv", "services"),
         key_metrics=("raw.n", "raw.invariants.violations"),

@@ -307,6 +307,8 @@ docker compose --profile eval run --rm eval python scripts/eval.py run grounding
 
 报告：`backend/reports/grounding/latest.json`。含按 `source` 分组的 mean faithfulness、repair_rate、disclaimer_rate、sandbox_rule_hit_rate。
 
+冒烟档固定取文件前 24 条（kb / web / sandbox 各 8），这 24 条全是可答题，`n_unanswerable=0`，`refusal_accuracy` 没有分母。这时跳过该门禁，**不算失败**。冒烟报告里一旦真有拒答率，仍要 ≥ 0.40。完整档不受影响：`faithfulness_mean` ≥ 0.70，`refusal_accuracy` ≥ 0.60。缺了拒答率（完整档题集里有不可答题）仍然失败。
+
 ## 9. 办公表格客观短答案评测（office_tabular）
 
 与 grounding 冻结集分离：金标准是数字/实体，程序比对（容忍 `0.082` ≡ `8.2%`）。对标 DABstep / InfiAgent-DABench 的**闭式短答案准确率**，主看执行结果而非 SQL/代码字符串匹配。
@@ -423,7 +425,9 @@ docker compose --profile eval run --rm eval python scripts/eval.py run tabular -
 
 实际会失败的条件：
 
-- 硬：`invariant_violations==0`；`pending_retention==1.0`；`arms.full.overall.compaction_rate>=0.05`（只把 `compact` / `emergency` 算进压缩率，`warn` 不算）
+- 冒烟与完整档都硬卡：`invariant_violations==0`；`pending_retention==1.0`
+- 只有完整档硬卡 `arms.full.overall.compaction_rate>=0.05`（只把 `compact` / `emergency` 算进压缩率，`warn` 不算）
+- 冒烟档是短桶探针（只要 12/30 轮），和完整档不可比。这些对话到不了压缩阈值，产品正常时 `compaction_rate` 也是 0，所以不把压缩率当冒烟硬门禁。压缩有没有发生，看完整档。
 - 基线：`data/eval/context_eval_baseline.json`（进 git；`--update-baseline` 更新）。报告的 `split` 必须和基线一致，smoke 对 full 基线直接失败，不拿两组数字互比
 - live 相对基线：`fact_recall` 跌超过 0.05；`actual_tokens_mean` 涨超过 10%；`summary_fail_rate>5%` → exit 1
 - 报告：`reports/context/latest.json`（gitignore 整个 `reports/`）

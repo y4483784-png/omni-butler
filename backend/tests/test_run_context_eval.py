@@ -79,11 +79,14 @@ def test_gate_report_rejects_split_mismatch():
 
 
 def test_gate_flags_degraded_compaction(monkeypatch):
-    """The compaction floor is part of the context gates, not just a report field."""
+    """Compaction is a full-profile floor. Smoke is a short-bucket probe."""
     from app.eval.gates import GATES
 
-    metrics = [g.metric for g in GATES[("context", "smoke")]]
-    assert "arms.full.overall.compaction_rate" in metrics
+    smoke = [g.metric for g in GATES[("context", "smoke")]]
+    full = [g.metric for g in GATES[("context", "full")]]
+    assert "arms.full.overall.compaction_rate" not in smoke
+    assert "arms.full.overall.compaction_rate" in full
+    assert "arms.full.overall.pending_retention" in smoke
 
 
 @pytest.mark.parametrize("profile", ["smoke", "full"])

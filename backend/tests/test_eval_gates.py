@@ -130,6 +130,103 @@ def test_retired_yz_suite_has_no_gates():
     assert ("yz", "full") not in GATES
 
 
+def _healthy_context_report(*, compaction_rate: float) -> dict:
+    return {
+        "n": 32,
+        "invariants": {"violations": 0},
+        "arms": {
+            "full": {
+                "overall": {
+                    "pending_retention": 1.0,
+                    "compaction_rate": compaction_rate,
+                }
+            }
+        },
+    }
+
+
+@pytest.mark.unit
+def test_context_smoke_does_not_hard_gate_compaction_rate():
+    """Short-bucket smoke cannot compact; a zero rate must not fail a healthy run.
+
+    Full still requires compaction_rate >= 0.05. That floor is the product check.
+    """
+    smoke_metrics = [g.metric for g in GATES[("context", "smoke")]]
+    full_metrics = [g.metric for g in GATES[("context", "full")]]
+    assert "arms.full.overall.compaction_rate" not in smoke_metrics
+    assert "arms.full.overall.compaction_rate" in full_metrics
+
+    healthy_smoke = evaluate_gates("context", "smoke", _healthy_context_report(compaction_rate=0.0))
+    assert healthy_smoke["ok"] is True
+    assert healthy_smoke["failed"] == []
+
+    quiet_full = evaluate_gates("context", "full", _healthy_context_report(compaction_rate=0.0))
+    assert quiet_full["ok"] is False
+    assert any("compaction_rate" in item and "< min" in item for item in quiet_full["failed"])
+
+    healthy_full = evaluate_gates("context", "full", _healthy_context_report(compaction_rate=0.0651))
+    assert healthy_full["ok"] is True
+
+
+@pytest.mark.unit
+def test_context_smoke_still_fails_real_invariant_breaks():
+    broken = _healthy_context_report(compaction_rate=0.0)
+    broken["invariants"] = {"violations": 2}
+    broken["arms"]["full"]["overall"]["pending_retention"] = 0.5
+    out = evaluate_gates("context", "smoke", broken)
+    assert out["ok"] is False
+    assert any("violations" in item for item in out["failed"])
+    assert any("pending_retention" in item for item in out["failed"])
+
+
+@pytest.mark.unit
+def test_grounding_smoke_skips_refusal_when_no_unanswerable_rows():
+    """n_unanswerable=0 makes refusal_accuracy undefined. That skip is not a fail.
+
+    A reported rate is still scored. Full still fails when the rate is missing,
+    because the full set is supposed to contain unanswerable rows.
+    """
+    empty = evaluate_gates("grounding", "smoke", {"n_unanswerable": 0, "refusal_accuracy": None})
+    assert empty["ok"] is True
+    assert empty["failed"] == []
+    assert empty["skipped"] == ["refusal_accuracy"]
+    assert empty["checked"] == []
+
+    present = evaluate_gates(
+        "grounding", "smoke", {"n_unanswerable": 4, "refusal_accuracy": 0.75}
+    )
+    assert present["ok"] is True
+    assert present["checked"][0]["metric"] == "refusal_accuracy"
+
+    low = evaluate_gates("grounding", "smoke", {"n_unanswerable": 4, "refusal_accuracy": 0.25})
+    assert low["ok"] is False
+    assert any("refusal_accuracy" in item and "< min" in item for item in low["failed"])
+
+    dropped = evaluate_gates("grounding", "smoke", {"n_unanswerable": 4})
+    assert dropped["ok"] is False
+    assert any("refusal_accuracy" in item and "missing" in item for item in dropped["failed"])
+
+    unknown = evaluate_gates("grounding", "smoke", {})
+    assert unknown["ok"] is False
+    assert any("missing" in item for item in unknown["failed"])
+
+    full_missing = evaluate_gates(
+        "grounding",
+        "full",
+        {"faithfulness_mean": 0.9, "n_unanswerable": 24, "refusal_accuracy": None},
+    )
+    assert full_missing["ok"] is False
+    assert any("refusal_accuracy" in item and "missing" in item for item in full_missing["failed"])
+
+    full_low = evaluate_gates(
+        "grounding",
+        "full",
+        {"faithfulness_mean": 0.9, "n_unanswerable": 24, "refusal_accuracy": 0.5},
+    )
+    assert full_low["ok"] is False
+    assert any("refusal_accuracy=0.5000" in item for item in full_low["failed"])
+
+
 def test_agent_gates_read_core_completion_not_headline():
     metrics = [g.metric for g in GATES[("agent", "full")]]
     assert "core_completion_rate" in metrics

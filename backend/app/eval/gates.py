@@ -21,6 +21,11 @@ class Gate:
     # A declared gate whose metric is absent means the suite stopped reporting it.
     # Silence must not read as "passed", so missing metrics fail by default.
     allow_missing: bool = False
+    # Dotted path of a denominator. When this gate's metric is absent AND that
+    # denominator is numeric 0, the rate is undefined for this sample — skip it
+    # instead of failing. A present metric is still scored against min/max.
+    # If the denominator is missing or non-zero, a missing metric still fails.
+    missing_ok_if_zero: str | None = None
 
 
 # (suite, profile) -> gates. Floors sit ~0.05 under the first calibrated baseline.
@@ -59,8 +64,16 @@ GATES: dict[tuple[str, str], list[Gate]] = {
         Gate("routing.tool_exact_match", min=0.55),
         Gate("infra_error_rate", max=0.05, max_drop=None),
     ],
+    # Smoke takes the first 24 rows (8 kb / 8 web / 8 sandbox), all answerable.
+    # refusal_accuracy is undefined when n_unanswerable is 0; that is a sample
+    # fact, not a dropped metric. The floor still applies once the rate exists.
     ("grounding", "smoke"): [
-        Gate("refusal_accuracy", min=0.40),
+        Gate(
+            "refusal_accuracy",
+            min=0.40,
+            missing_ok_if_zero="n_unanswerable",
+            note="undefined when the smoke prefix has no expect_unanswerable rows",
+        ),
     ],
     ("grounding", "full"): [
         Gate("faithfulness_mean", min=0.70),
@@ -76,17 +89,15 @@ GATES: dict[tuple[str, str], list[Gate]] = {
         Gate("join_success_accuracy", min=10 / 14, note="README join_ok ≥ 10/14"),
         Gate("planner_error_rate", max=0.0, max_drop=None, note="LLM planner failures must be zero"),
     ],
+    # Smoke is a short-bucket probe (12/30 turns only) and is not comparable to
+    # full. Those histories stay under the compact threshold even when
+    # ContextManager is healthy, so compaction_rate=0 is the sample, not a
+    # product miss. Invariants and pending_retention stay hard. The compaction
+    # floor lives on the full profile, whose 60/120-turn buckets can actually
+    # compact (healthy runs land near 0.065).
     ("context", "smoke"): [
         Gate("invariants.violations", max=0.0, max_drop=None),
         Gate("arms.full.overall.pending_retention", min=1.0, max_drop=None),
-        # Guards the tight-budget setting: without a floor the compaction path can
-        # quietly stop being exercised while every other compose metric looks fine.
-        Gate(
-            "arms.full.overall.compaction_rate",
-            min=0.05,
-            max_drop=None,
-            note="compose must actually compact on some cases",
-        ),
     ],
     ("context", "full"): [
         Gate("invariants.violations", max=0.0, max_drop=None),
@@ -124,6 +135,27 @@ def _metrics_root(report: dict[str, Any]) -> dict[str, Any]:
     return report.get("metrics") if isinstance(report.get("metrics"), dict) and "n" not in report else report
 
 
+def _metric_value(report: dict[str, Any], path: str) -> float | None:
+    cur = _num(_dig(report, path))
+    if cur is None:
+        cur = _num(_dig(_metrics_root(report), path))
+    return cur
+
+
+def _missing_metric_ok(gate: Gate, report: dict[str, Any]) -> bool:
+    """True when an absent metric must not fail the run.
+
+    ``allow_missing`` is the blanket opt-out. ``missing_ok_if_zero`` is narrower:
+    the rate cannot be computed because its denominator is 0. Any other absence
+    still fails, including a zero-denominator field that the report forgot.
+    """
+    if gate.allow_missing:
+        return True
+    if not gate.missing_ok_if_zero:
+        return False
+    return _metric_value(report, gate.missing_ok_if_zero) == 0
+
+
 def evaluate_gates(
     suite: str,
     profile: str,
@@ -134,8 +166,9 @@ def evaluate_gates(
 
     ``baseline`` is the previous same-profile ``report.json`` payload (its ``raw``
     section is the suite report). A gate whose metric is missing FAILS unless the
-    gate explicitly sets ``allow_missing`` — a silently dropped metric from a
-    refactor must not read as "passed".
+    gate explicitly sets ``allow_missing``, or ``missing_ok_if_zero`` names a
+    denominator that is 0 (the rate is undefined for this sample). A silently
+    dropped metric from a refactor must not read as "passed".
     """
     gates = GATES.get((suite, profile), [])
     base_raw = (baseline or {}).get("raw") if baseline else None
@@ -143,11 +176,9 @@ def evaluate_gates(
     checked: list[dict[str, Any]] = []
     skipped: list[str] = []
     for g in gates:
-        cur = _num(_dig(report, g.metric))
+        cur = _metric_value(report, g.metric)
         if cur is None:
-            cur = _num(_dig(_metrics_root(report), g.metric))
-        if cur is None:
-            if g.allow_missing:
+            if _missing_metric_ok(g, report):
                 skipped.append(g.metric)
                 continue
             failed.append(f"{g.metric} missing from report")
