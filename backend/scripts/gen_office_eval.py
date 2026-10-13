@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.eval.contracts import RoutingCase, normalize_text
+from app.eval.jsonl_io import write_jsonl
 
 SEED = ROOT / "data" / "eval" / "seeds" / "routing_utterances.jsonl"
 SEED_EXTRA = ROOT / "data" / "eval" / "seeds" / "routing_multiturn_extra.jsonl"
@@ -69,13 +70,7 @@ def build_cases() -> list[dict]:
 
 def main() -> int:
     rows = build_cases()
-    OUT.write_text(
-        "\n".join(
-            json.dumps(row, ensure_ascii=False, allow_nan=False) for row in rows
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    write_jsonl(OUT, rows)
     print(f"wrote {len(rows)} office routing cases -> {OUT}")
     return 0
 

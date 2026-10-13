@@ -7,8 +7,15 @@ import argparse
 import hashlib
 import json
 import random
+import sys
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.eval.jsonl_io import write_jsonl  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[1] / "data" / "eval" / "context_recall.jsonl"
 
@@ -512,12 +519,7 @@ def build_cases(*, seeds: tuple[int, ...] = (7, 21, 43)) -> list[dict[str, Any]]
 
 def write_dataset(path: Path | None = None) -> Path:
     out = path or OUT
-    cases = build_cases()
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        "\n".join(json.dumps(c, ensure_ascii=False, allow_nan=False) for c in cases) + "\n",
-        encoding="utf-8",
-    )
+    write_jsonl(out, build_cases())
     return out
 
 

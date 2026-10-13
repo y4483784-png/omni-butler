@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import random
 import re
 from datetime import date, timedelta
@@ -21,6 +20,7 @@ import sys
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.eval.jsonl_io import write_jsonl  # noqa: E402
 from app.services.tabular_clean import clean_sales_frame  # noqa: E402
 
 _TAG_CONCEPT = {
@@ -1043,10 +1043,7 @@ def _enrich_case(row: dict) -> dict:
 def main() -> None:
     frames = _write_fixtures()
     cases = [_enrich_case(c) for c in _build_cases(frames)]
-    OUT_JSONL.parent.mkdir(parents=True, exist_ok=True)
-    with OUT_JSONL.open("w", encoding="utf-8") as f:
-        for row in cases:
-            f.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
+    write_jsonl(OUT_JSONL, cases)
     smoke = sum(1 for c in cases if c.get("split") == "smoke")
     join_ok = sum(1 for c in cases if "join_ok" in c.get("tags", []))
     print(f"Wrote {len(cases)} cases ({smoke} smoke, {join_ok} join_ok) -> {OUT_JSONL}")

@@ -17,6 +17,7 @@ from app.eval.contracts import (
     normalize_text,
     validate_all,
 )
+from app.eval.jsonl_io import normalize_newlines, write_jsonl
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -101,21 +102,49 @@ def test_jsonl_files_are_one_object_per_nonempty_line():
     ],
 )
 def test_generators_are_byte_idempotent(script, dataset):
-    """Regenerating must reproduce the committed file byte for byte.
+    """Regenerating must reproduce the committed file, aside from newline style.
 
     Comparing two runs against each other (the previous shape of this test) passes
     even when the committed dataset was hand-edited, so gold could drift silently.
+    CRLF from an HGFS/Windows checkout is not content drift: both sides are folded
+    to LF before the compare. A real gold edit still fails.
     """
     path = ROOT / "data" / "eval" / dataset
     committed = path.read_bytes()
     subprocess.run([sys.executable, f"scripts/{script}"], cwd=ROOT, check=True)
     try:
-        assert path.read_bytes() == committed, (
+        regenerated = path.read_bytes()
+        assert normalize_newlines(regenerated) == normalize_newlines(committed), (
             f"{dataset} changed when regenerated from {script}: the committed dataset "
             "is not reproducible (hand-edited gold?)"
         )
+        assert b"\r" not in regenerated, f"{script} wrote a CR; generators must emit LF"
     finally:
         path.write_bytes(committed)
+
+
+def test_newline_normalization_ignores_crlf_but_not_content():
+    """The idempotency compare must forgive CRLF and still catch a gold edit."""
+    lf = b'{"id": "a"}\n{"id": "b"}\n'
+    crlf = lf.replace(b"\n", b"\r\n")
+    assert b"\r\n" in crlf
+    assert normalize_newlines(crlf) == normalize_newlines(lf)
+    drifted = lf.replace(b'"b"', b'"c"')
+    assert normalize_newlines(crlf) != normalize_newlines(drifted)
+
+
+def test_crlf_checkout_still_matches_generator_output(tmp_path):
+    """A shared-disk checkout that rewrote LF to CRLF is not a generator drift."""
+    from scripts.gen_grounding_eval import build_cases
+
+    path = tmp_path / "grounding_faithfulness.jsonl"
+    write_jsonl(path, build_cases())
+    lf = path.read_bytes()
+    assert b"\r" not in lf
+    crlf = lf.replace(b"\n", b"\r\n")
+    assert normalize_newlines(crlf) == lf
+    edited = crlf.replace(b"gf_kb_001", b"gf_kb_999", 1)
+    assert normalize_newlines(edited) != lf
 
 
 def test_agent_answer_specs_are_recomputable():

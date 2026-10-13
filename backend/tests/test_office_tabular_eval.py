@@ -38,10 +38,18 @@ def test_office_dataset_scale():
 
 
 def test_generator_idempotent():
+    """Same contract as the shared idempotency test: CRLF checkout is not drift."""
+    from app.eval.jsonl_io import normalize_newlines
+
     before = DATASET.read_bytes()
-    subprocess.run([sys.executable, str(GEN)], check=True, cwd=str(ROOT))
-    after = DATASET.read_bytes()
-    assert before == after
+    try:
+        subprocess.run([sys.executable, str(GEN)], check=True, cwd=str(ROOT))
+        after = DATASET.read_bytes()
+        assert normalize_newlines(before) == normalize_newlines(after)
+        assert b"\r" not in after
+    finally:
+        if DATASET.read_bytes() != before:
+            DATASET.write_bytes(before)
 
 
 def test_office_compile_median_and_filter():

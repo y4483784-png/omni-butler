@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.eval.contracts import AgentCase, normalize_text
+from app.eval.jsonl_io import write_jsonl
 
 CSV_FIXTURE = ROOT / "tests" / "YZ测试文档" / "测试用例.csv"
 YZ_SEED = ROOT / "data" / "eval" / "seeds" / "yz_queries.jsonl"
@@ -492,10 +493,7 @@ def build_cases() -> list[dict]:
 
 def main() -> int:
     rows = build_cases()
-    OUT.write_text(
-        "\n".join(json.dumps(r, ensure_ascii=False, allow_nan=False) for r in rows) + "\n",
-        encoding="utf-8",
-    )
+    write_jsonl(OUT, rows)
     multi = sum(1 for r in rows if r["history"])
     print(f"wrote {len(rows)} agent tasks -> {OUT} (multi-turn {multi}, {multi/len(rows):.0%})")
     return 0

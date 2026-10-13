@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.eval.contracts import YZCase, normalize_text
+from app.eval.jsonl_io import write_jsonl
 
 SEED = ROOT / "data" / "eval" / "seeds" / "yz_queries.jsonl"
 ATTENDANCE_SEED = ROOT / "data" / "eval" / "seeds" / "yz_attendance.jsonl"
@@ -243,22 +244,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.refresh_attendance_seed:
         attendance = build_attendance_cases_from_csv()
-        ATTENDANCE_SEED.write_text(
-            "\n".join(
-                json.dumps(row, ensure_ascii=False, allow_nan=False) for row in attendance
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        write_jsonl(ATTENDANCE_SEED, attendance)
         print(f"refreshed {len(attendance)} attendance seeds -> {ATTENDANCE_SEED}")
     rows = build_cases()
-    OUT.write_text(
-        "\n".join(
-            json.dumps(row, ensure_ascii=False, allow_nan=False) for row in rows
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    write_jsonl(OUT, rows)
     print(f"wrote {len(rows)} YZ cases -> {OUT}")
     return 0
 
