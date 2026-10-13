@@ -607,6 +607,43 @@ def test_sandbox_tool_produces_artifact():
     assert any("沙箱" in s for s in r["thinking_steps"])
 
 
+def test_grounded_answer_raises_llm_infra_instead_of_empty_draft():
+    from app.core.llm import LLMInfraError
+
+    fake = SearchOutcome(
+        results=[SearchHit(title="新闻", url="https://n.example/1", snippet="摘要", media="站")],
+        query_used="q",
+        count=8,
+        recency_filter="oneDay",
+    )
+
+    def boom(*_a, **kwargs):
+        assert kwargs.get("raise_on_error") is True
+        raise LLMInfraError("APITimeoutError: timed out")
+
+    with (
+        patch("app.agents.tools.web.search_planned", return_value=fake),
+        patch(
+            "app.agents.workflow.plan_tools",
+            return_value={
+                "pending_tools": ["web"],
+                "needs_freshness": True,
+                "needs_kb": False,
+                "needs_web": True,
+                "needs_calendar": False,
+                "needs_sandbox": False,
+            },
+        ),
+        patch("app.agents.workflow.complete_text", side_effect=boom),
+    ):
+        try:
+            run_agent_workflow(object(), message="今天有什么 AI 新闻", history=[], has_kb_docs=False)  # type: ignore[arg-type]
+        except LLMInfraError as exc:
+            assert "timed out" in str(exc)
+        else:
+            raise AssertionError("LLM infra failure was swallowed into an empty answer")
+
+
 def test_tier1_greeting_skips_llm(monkeypatch):
     import app.agents.router as router_mod
 

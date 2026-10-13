@@ -178,17 +178,28 @@ def rerank_hits(
     *,
     top_n: int,
     reranker: Reranker | None = None,
+    diag: dict | None = None,
 ) -> list[RankedHit]:
-    """Rerank with soft-fail to heuristic."""
+    """Rerank with soft-fail to heuristic.
+
+    ``diag["rerank_fallback"]`` is set when a non-heuristic reranker was attempted
+    and the heuristic path was used instead. A configured heuristic reranker does
+    not count as a fallback.
+    """
     if not hits:
         return []
     n = max(1, int(top_n))
     primary = reranker or resolve_reranker()
     heuristic = HeuristicReranker()
+    if diag is not None:
+        diag["rerank_fallback"] = False
     try:
         if isinstance(primary, HeuristicReranker):
             return primary.rerank(query, hits, top_n=n)
         return primary.rerank(query, hits, top_n=n)
     except Exception as e:
         logger.warning("rerank failed, falling back to heuristic: %s", e)
+        if diag is not None:
+            diag["rerank_fallback"] = True
+            diag["rerank_error"] = f"{type(e).__name__}: {e}"
         return heuristic.rerank(query, hits, top_n=n)

@@ -32,6 +32,7 @@ from app.services.analysis_ir import (
     validate_ir_against_schema,
     validate_patch_code,
 )
+from app.services.tabular_clean import SANDBOX_CLEAN_SNIPPET
 from app.services.tabular_inspect import TabularSchema, infer_tabular_schema, schema_to_hints
 from app.storage import document_exists, document_local_path
 
@@ -117,6 +118,10 @@ class AnalysisOutcome:
     asked_ids: list[str] = field(default_factory=list)
     analysis_uncomputable: bool = False
     ir: dict[str, Any] = field(default_factory=dict)
+    # "llm" when complete_json returned a plan; "heuristic_fallback" when the
+    # production planner was asked and the model returned nothing; "" when the
+    # planner did not run. Eval must not infer "llm" from a non-empty ir.
+    plan_source: str = ""
 
 
 @dataclass
@@ -337,7 +342,13 @@ def _plan_analysis_spec(
     history: list[dict] | None = None,
     *,
     prior_ir: dict[str, Any] | None = None,
-) -> AnalysisSpec:
+) -> tuple[AnalysisSpec, str]:
+    """Return ``(spec, plan_source)``.
+
+    ``plan_source`` is ``llm`` only when ``complete_json`` returned an object.
+    ``None`` (timeout, rate limit, empty body) falls back to the heuristic plan
+    and is labeled ``heuristic_fallback`` — the resulting ir is non-empty either way.
+    """
     hints = schema_to_hints(schema)
     hist: list[Any] = list(history or [])[-4:]
     if prior_ir:
@@ -371,8 +382,8 @@ def _plan_analysis_spec(
         except Exception:
             pass
     if not isinstance(parsed, dict):
-        return AnalysisSpec.from_ir(validate_ir_against_schema(base, schema))
-    return AnalysisSpec.from_ir(merge_llm_plan(parsed, base, schema))
+        return AnalysisSpec.from_ir(validate_ir_against_schema(base, schema)), "heuristic_fallback"
+    return AnalysisSpec.from_ir(merge_llm_plan(parsed, base, schema)), "llm"
 
 
 def _choose_engine(schema: TabularSchema, ir: AnalysisIR) -> str:
@@ -383,29 +394,19 @@ def _choose_engine(schema: TabularSchema, ir: AnalysisIR) -> str:
         return "duckdb"
     return "pandas"
 
-_SANDBOX_HELPERS = r'''
+_SANDBOX_HELPERS = SANDBOX_CLEAN_SNIPPET + r'''
 def load_frames(path, policy):
     if path.endswith(".csv"):
-        df0 = pd.read_csv(path)
-        for c in list(df0.columns):
-            if str(c).strip() == "":
-                df0 = df0.drop(columns=[c])
-                continue
-            if df0[c].dtype == object:
-                s = df0[c].astype(str).str.strip()
-                cleaned = s.str.replace(",", "", regex=False).str.replace("%", "", regex=False)
-                nums = pd.to_numeric(cleaned, errors="coerce")
-                if nums.notna().sum() >= 1:
-                    df0[c] = nums.where(nums.notna(), df0[c])
-        return [df0]
+        df0 = pd.read_csv(path, dtype=str, keep_default_na=False)
+        return [clean_loaded_frame(df0)]
     xls = pd.ExcelFile(path)
     names = xls.sheet_names if policy != "single_sheet" else xls.sheet_names[:1]
     frames = []
     for sn in names:
-        df0 = pd.read_excel(path, sheet_name=sn)
+        df0 = pd.read_excel(path, sheet_name=sn, dtype=str)
         if df0 is None or df0.empty:
             continue
-        df0.columns = [str(c).strip() for c in df0.columns]
+        df0 = clean_loaded_frame(df0)
         df0["__sheet__"] = sn
         frames.append(df0)
     return frames
@@ -413,7 +414,7 @@ def load_frames(path, policy):
 def load_frames_duckdb(path, policy):
     try:
         if path.endswith(".csv"):
-            return [duckdb.read_csv(path).df()]
+            return [clean_loaded_frame(duckdb.read_csv(path).df())]
     except Exception:
         pass
     return load_frames(path, policy)
@@ -421,19 +422,13 @@ def load_frames_duckdb(path, policy):
 def ensure_numeric(df, cols):
     for c in cols:
         if c in df.columns:
-            if df[c].dtype == object:
-                s = df[c].astype(str).str.strip().str.replace("%", "", regex=False).str.replace(",", "", regex=False)
-                df[c] = pd.to_numeric(s, errors="coerce")
-            else:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-    # Also coerce any object column that looks partially numeric (dirty sparse rows)
+            df[c] = df[c].map(parse_numeric_cell)
     for c in list(df.columns):
-        if c in cols or df[c].dtype != object:
+        if c in cols:
             continue
-        s = df[c].astype(str).str.strip().str.replace("%", "", regex=False).str.replace(",", "", regex=False)
-        nums = pd.to_numeric(s, errors="coerce")
-        if nums.notna().sum() >= 1:
-            df[c] = nums
+        parsed = df[c].map(parse_numeric_cell)
+        if parsed.notna().sum() >= max(1, int(len(parsed) * 0.5)):
+            df[c] = parsed
     return df
 
 def apply_filters(df, filters):
@@ -828,6 +823,7 @@ def _execute_analysis_spec(
     spec: AnalysisSpec,
     steps: list[str],
     filename: str,
+    plan_source: str = "",
 ) -> AnalysisOutcome:
     """Shared sandbox execution path for DB-backed and local-table analysis."""
     ir = spec.to_ir()
@@ -913,6 +909,7 @@ def _execute_analysis_spec(
         asked_ids=asked,
         analysis_uncomputable=uncomputable,
         ir=spec.to_ir().to_dict(),
+        plan_source=plan_source,
     )
 
 
@@ -924,8 +921,13 @@ def analyze_local_tables(
     prior_ir: dict[str, Any] | None = None,
     feedback: str = "",
     stage_copy: bool = False,
+    planner: str = "heuristic",
 ) -> AnalysisOutcome:
-    """Run tabular analysis on local fixture paths (eval + tests, no DB)."""
+    """Run tabular analysis on local fixture paths (eval + tests, no DB).
+
+    ``planner="llm"`` uses the production LLM planner; ``"heuristic"`` is the
+    deterministic ablation arm.
+    """
     if not files:
         return AnalysisOutcome(ok=False, steps=["未提供表格文件"], error="no files")
 
@@ -1044,12 +1046,18 @@ def analyze_local_tables(
             ir={"join_key": "", "join_left": "", "join_right": ""},
         )
 
-    spec = _heuristic_spec(
-        plan_message,
-        schema,
-        file_schemas=file_schemas,
-        prior_ir=prior_ir,
-    )
+    plan_source = ""
+    if planner == "llm":
+        # Production planner (workflow -> run_analysis -> _plan_analysis_spec).
+        spec, plan_source = _plan_analysis_spec(plan_message, schema, history, prior_ir=prior_ir)
+    else:
+        spec = _heuristic_spec(
+            plan_message,
+            schema,
+            file_schemas=file_schemas,
+            prior_ir=prior_ir,
+        )
+        plan_source = "heuristic"
     ir = validate_ir_against_schema(spec.to_ir(), schema)
     ir.source_hint = primary_name
     ir.join_left = join_left
@@ -1077,6 +1085,7 @@ def analyze_local_tables(
         spec=spec,
         steps=steps,
         filename=primary_name,
+        plan_source=plan_source,
     )
 
 
@@ -1130,7 +1139,7 @@ def run_analysis(
             plan_message = f"{message}\n\n【补算反馈】{feedback}"
             steps.append("根据指标缺口反馈重新规划")
 
-        spec = _plan_analysis_spec(plan_message, schema, history=history, prior_ir=prior_ir)
+        spec, plan_source = _plan_analysis_spec(plan_message, schema, history=history, prior_ir=prior_ir)
         ir = spec.to_ir()
         ir.source_hint = doc.filename or ""
         ir.engine = _choose_engine(schema, ir)  # type: ignore[assignment]
@@ -1234,4 +1243,5 @@ def run_analysis(
             spec=spec,
             steps=steps,
             filename=doc.filename or "",
+            plan_source=plan_source,
         )

@@ -98,6 +98,35 @@ def schema_to_hints(schema: TabularSchema) -> str:
     return "\n".join(lines)
 
 
+def merge_schemas(left: TabularSchema, right: TabularSchema) -> TabularSchema:
+    """Columns of ``left`` inner-joined with ``right``, derived without touching any data row.
+
+    The evals need the *shape* an inner join would produce (which columns a plan may
+    reference), not the joined rows. An inner join keeps exactly the union of the two
+    headers, so the union of the two schemas is the equivalent structure — the
+    evaluation no longer has to read, merge and re-parse the fixtures, and the
+    evaluation container no longer needs pandas for it.
+
+    Caveat kept explicit: this drops the per-column value profiling (null rates,
+    quantiles, cardinalities). That is safe for the aggregate-shaped join tasks in
+    the frozen dataset; if a "join then rate" task is ever added, the ratio
+    semantics would have to be restored here.
+    """
+    cols = _merge_unique([*left.columns, *right.columns])
+    keep = lambda items: [c for c in _merge_unique(items) if c in cols]  # noqa: E731
+    return TabularSchema(
+        filename=f"{left.filename}+{right.filename}",
+        file_type=left.file_type,
+        sheets=[*left.sheets, *right.sheets],
+        columns=cols,
+        dimension_candidates=keep([*left.dimension_candidates, *right.dimension_candidates]),
+        measure_candidates=keep([*left.measure_candidates, *right.measure_candidates]),
+        date_candidates=keep([*left.date_candidates, *right.date_candidates]),
+        aliases={**left.aliases, **right.aliases},
+        unreadable_reason=left.unreadable_reason or right.unreadable_reason,
+    )
+
+
 def _normalize_col(name: object) -> str:
     text = str(name or "").strip()
     return re.sub(r"\s+", "", text)

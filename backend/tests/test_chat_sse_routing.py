@@ -305,6 +305,19 @@ def test_context_summary_injected_and_ui_keeps_full_history(auth_client: TestCli
     assert len(ui.json()) >= 24
 
 
+def test_chat_sse_runs_real_workflow_with_fake_llm(auth_client: TestClient, fake_llm):
+    """``/chat`` SSE without mocking the workflow — LLM is faked at the seam."""
+    sid = _seed_session_with_kb()
+    r = auth_client.post("/api/chat", json={"session_id": sid, "message": "你好"})
+    assert r.status_code == 200, r.text
+    events = _parse_sse(r.text)
+    types = [e["type"] for e in events]
+    assert types[0] == "ack"
+    assert events[0]["path"] == "agent"
+    assert "done" in types
+    assert "error" not in types
+
+
 if __name__ == "__main__":
     test_agent_path_yields_early_progress()
     test_plain_chat_still_goes_through_agent_path()

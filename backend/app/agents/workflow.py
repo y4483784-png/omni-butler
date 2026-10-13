@@ -92,6 +92,7 @@ class WorkflowResult(TypedDict):
     pending_calendar: dict | None
     artifact: dict | None
     analysis_summary: dict | None
+    context_stats: dict | None
 
 
 def _sse_intent(
@@ -439,6 +440,7 @@ def run_agent_workflow(
         )
         included: list[dict] = []
         llm_messages: list[dict] = []
+        compose_stats: dict = dict(ctx.get("stats") or {})
         if direct:
             llm_messages = []
         elif evidence or intent != "chat":
@@ -463,6 +465,7 @@ def run_agent_workflow(
                     "direct_answer": direct,
                     "pending_calendar": state.get("pending_calendar"),
                     "artifact": state.get("artifact"),
+                    "context_stats": compose_stats,
                 }
             pool_text, included = build_pool_prompt(evidence)
             sandbox_note = ""
@@ -498,6 +501,7 @@ def run_agent_workflow(
                 sandbox_note=sandbox_note,
                 has_evidence_system=True,
             )
+            compose_stats = dict(bundle.stats or {})
             if rebuilt:
                 included = rebuilt
         else:
@@ -521,6 +525,7 @@ def run_agent_workflow(
                 sandbox_note="",
                 has_evidence_system=False,
             )
+            compose_stats = dict(bundle.stats or {})
 
         citations = [
             {
@@ -542,7 +547,9 @@ def run_agent_workflow(
             and should_ground_answer(evidence=evidence, direct_answer=direct)
         ):
             thinking.append("正在根据证据核对结论")
-            draft = complete_text(llm_messages)
+            # Infra failures must surface (eval: infra_error; SSE: the existing
+            # error event). A silent "" was scored as an ordinary empty answer.
+            draft = complete_text(llm_messages, raise_on_error=True)
             sandbox_gate = should_apply_sandbox_number_gate(
                 evidence=included or evidence,
                 needs_sandbox=bool(state.get("needs_sandbox")),
@@ -568,6 +575,7 @@ def run_agent_workflow(
             "direct_answer": direct,
             "pending_calendar": state.get("pending_calendar"),
             "artifact": state.get("artifact"),
+            "context_stats": compose_stats,
         }
 
     def after_plan(state: WorkflowState) -> Literal["retrieve_node", "answer_node"]:
@@ -619,6 +627,7 @@ def run_agent_workflow(
         "pending_calendar": out.get("pending_calendar"),
         "artifact": out.get("artifact"),
         "analysis_summary": out.get("analysis_summary"),
+        "context_stats": out.get("context_stats") if isinstance(out.get("context_stats"), dict) else None,
     }
 
 

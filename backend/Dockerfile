@@ -14,7 +14,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY . /app
 
+# `EVAL_DEV_DEPS=1` also installs requirements-dev.txt so the eval container can run
+# the pytest suite (`eval.py run pytest`). Default stays off: the api image must not
+# carry test-only dependencies.
+ARG EVAL_DEV_DEPS=0
+
 RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && if [ "$EVAL_DEV_DEPS" = "1" ]; then pip install --no-cache-dir -r /app/requirements-dev.txt; fi \
     && printf '%s\n' \
         '#!/bin/sh' \
         'set -e' \

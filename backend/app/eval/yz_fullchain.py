@@ -18,11 +18,13 @@ from sqlalchemy.orm import Session
 from app.agents.workflow import build_pool_prompt
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
-from app.core.llm import complete_text
+from app.eval.tenant import ensure_eval_user
+from app.core.llm import LLMInfraError, complete_text, resolved_chat_model
+from app.eval.judges import is_refusal, number_matches
 from app.eval.metrics import multilabel_report, retrieval_report
 from app.eval.ragas_judge import run_ragas_metrics
 from app.eval.tool_routing import EvalCase as RoutingEvalCase, predict_case
-from app.models.models import Chunk, Document, User
+from app.models.models import Chunk, Document
 from app.rag import vector_store
 from app.rag.ingestion import ingest_document
 from app.rag.retrieval import retrieve
@@ -78,7 +80,7 @@ class CaseResult:
     contexts: list[str]
     pred_doc_ids: list[str]
     gold_doc_ids: list[str]
-    fact_containment: float
+    fact_containment: float | None
     citation_hit: bool | None
     retrieval_hit: bool
     expect_unanswerable: bool
@@ -88,16 +90,23 @@ class CaseResult:
     pred_tools: list[str] | None = None
     routing_ok: bool | None = None
     ragas: dict[str, float | None] = field(default_factory=dict)
+    refused: bool | None = None
+    fail_reasons: list[str] = field(default_factory=list)
+    error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "refused": self.refused,
+            "fail_reasons": self.fail_reasons,
             "id": self.case_id,
             "query": self.query,
             "answer": self.answer[:500],
             "contexts_count": len(self.contexts),
             "pred_doc_ids": self.pred_doc_ids,
             "gold_doc_ids": self.gold_doc_ids,
-            "fact_containment": round(self.fact_containment, 4),
+            "fact_containment": (
+                round(self.fact_containment, 4) if self.fact_containment is not None else None
+            ),
             "citation_hit": self.citation_hit,
             "retrieval_hit": self.retrieval_hit,
             "expect_unanswerable": self.expect_unanswerable,
@@ -107,31 +116,44 @@ class CaseResult:
             "pred_tools": self.pred_tools,
             "routing_ok": self.routing_ok,
             "ragas": self.ragas,
+            "error": self.error,
         }
 
 
 @dataclass
 class YZEvalReport:
     n: int
-    retrieval: dict[str, float]
-    fact_containment_mean: float
+    retrieval: dict[str, float | int]
+    fact_containment_mean: float | None
     citation_hit_rate: float | None
     ragas: dict[str, float | None]
     routing: dict[str, Any] | None
     failures: list[dict[str, Any]] = field(default_factory=list)
     skipped_ragas: bool = False
+    failure_buckets: dict[str, int] = field(default_factory=dict)
+    refusal_accuracy: float | None = None
+    n_infra_error: int = 0
+    fact_containment_ci95: dict[str, float] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "failure_buckets": self.failure_buckets,
+            "refusal_accuracy": self.refusal_accuracy,
             "n": self.n,
             "retrieval": {k: round(v, 4) for k, v in self.retrieval.items()},
-            "fact_containment_mean": round(self.fact_containment_mean, 4),
+            "fact_containment_mean": (
+                round(self.fact_containment_mean, 4)
+                if self.fact_containment_mean is not None
+                else None
+            ),
             "citation_hit_rate": (
                 round(self.citation_hit_rate, 4) if self.citation_hit_rate is not None else None
             ),
             "ragas": self.ragas,
             "routing": self.routing,
             "skipped_ragas": self.skipped_ragas,
+            "n_infra_error": self.n_infra_error,
+            "fact_containment_ci95": self.fact_containment_ci95,
             "failures": self.failures,
         }
 
@@ -142,9 +164,16 @@ class YZEvalReport:
             "Retrieval",
             f"  precision@k  {self.retrieval.get('precision_at_k', 0):.2%}",
             f"  recall@k     {self.retrieval.get('recall_at_k', 0):.2%}",
+            f"  hit@k        {self.retrieval.get('hit_at_k', 0):.2%}",
             f"  MRR          {self.retrieval.get('mrr', 0):.4f}",
+            f"  scored rows  {self.retrieval.get('n_scored', 0)}",
             "",
-            f"Fact containment (mean)  {self.fact_containment_mean:.2%}",
+            "Fact containment (mean)  "
+            + (
+                f"{self.fact_containment_mean:.2%}"
+                if self.fact_containment_mean is not None
+                else "n/a"
+            ),
         ]
         if self.citation_hit_rate is not None:
             lines.append(f"Citation hit rate        {self.citation_hit_rate:.2%}")
@@ -186,32 +215,8 @@ def load_cases(path: str | Path | None = None) -> list[YZEvalCase]:
 
 
 def ensure_yz_eval_user(db: Session) -> None:
-    """Create fixed-id eval user so documents.user_id FK / RLS can succeed.
-
-    Do not bump users_id_seq: runtime role omni_app has USAGE/SELECT only
-    (setval needs UPDATE), and MAX(id)=92002 would skip ordinary user ids.
-    Explicit PK insert does not consume the serial.
-    """
-    existing = db.query(User).filter(User.id == YZ_EVAL_USER_ID).first()
-    if existing is not None:
-        return
-    taken = db.query(User).filter(User.external_id == YZ_EVAL_EXTERNAL_ID).first()
-    if taken is not None:
-        raise RuntimeError(
-            f"external_id {YZ_EVAL_EXTERNAL_ID!r} exists as users.id={taken.id}, "
-            f"expected id={YZ_EVAL_USER_ID}"
-        )
-    db.add(
-        User(
-            id=YZ_EVAL_USER_ID,
-            external_id=YZ_EVAL_EXTERNAL_ID,
-            name="YZ Eval Fixture",
-            password_hash="",
-            is_active=1,
-            is_admin=0,
-        )
-    )
-    db.flush()
+    """Create fixed-id eval user so documents.user_id FK / RLS can succeed."""
+    ensure_eval_user(db, YZ_EVAL_USER_ID, YZ_EVAL_EXTERNAL_ID, "YZ Eval Fixture")
 
 
 def clear_yz_corpus(db: Session) -> None:
@@ -291,15 +296,36 @@ def generate_answer(query: str, evidence: list[dict[str, Any]]) -> tuple[str, li
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": query},
     ]
-    answer = complete_text(messages)
+    answer = complete_text(
+        messages,
+        model=resolved_chat_model(),
+        retries=4,
+        raise_on_error=True,
+    )
     return answer, included
 
 
-def fact_containment(answer: str, gold_facts: list[str]) -> float:
+_NUMERIC_FACT_RE = re.compile(r"^[-+]?\d[\d,]*(?:\.\d+)?%?$")
+
+
+def _fact_in_answer(answer_lower: str, answer: str, fact: str) -> bool:
+    """Numeric facts match on number boundaries (``2`` must not hit ``12``)."""
+    f = str(fact).strip()
+    if not f:
+        return False
+    if _NUMERIC_FACT_RE.match(f):
+        try:
+            return number_matches(answer, float(f.rstrip("%").replace(",", "")), tol=1e-9)
+        except ValueError:
+            pass
+    return f.lower() in answer_lower
+
+
+def fact_containment(answer: str, gold_facts: list[str]) -> float | None:
     if not gold_facts:
-        return 1.0
+        return None
     text = (answer or "").lower()
-    hits = sum(1 for f in gold_facts if f and str(f).lower() in text)
+    hits = sum(1 for f in gold_facts if _fact_in_answer(text, answer or "", f))
     return hits / len(gold_facts)
 
 
@@ -412,11 +438,34 @@ def run_yz_fullchain_eval(
                     ranked_docs.append(did)
 
             evidence = _hits_to_evidence(hits)
-            answer, included = generate_answer(case.query, evidence)
+            try:
+                answer, included = generate_answer(case.query, evidence)
+            except LLMInfraError as exc:
+                cr = CaseResult(
+                    case_id=case.id,
+                    query=case.query,
+                    answer="",
+                    contexts=[],
+                    pred_doc_ids=ranked_docs[:top_k],
+                    gold_doc_ids=sorted(gold_ids),
+                    fact_containment=None,
+                    citation_hit=None,
+                    retrieval_hit=bool(gold_ids.intersection(ranked_docs[:top_k])) if gold_ids else True,
+                    expect_unanswerable=case.expect_unanswerable,
+                    fail_reasons=["infra_error"],
+                )
+                cr.error = str(exc)[:200]
+                case_results.append(cr)
+                continue
             contexts = [str(e.get("content") or e.get("snippet") or "") for e in included]
 
             fc = fact_containment(answer, case.gold_facts)
-            cite = citation_hit(answer, included, case.gold_doc_keys, key_to_id)
+            # Correct refusals carry no [n] citation; do not score them as citation misses.
+            cite = (
+                None
+                if case.expect_unanswerable
+                else citation_hit(answer, included, case.gold_doc_keys, key_to_id)
+            )
             ret_hit = bool(gold_ids.intersection(ranked_docs[:top_k])) if gold_ids else True
 
             gold_intent = pred_intent = None
@@ -450,13 +499,21 @@ def run_yz_fullchain_eval(
                 gold_tools=gold_tools,
                 pred_tools=pred_tools,
                 routing_ok=routing_ok,
+                refused=is_refusal(answer) if case.expect_unanswerable else None,
             )
             case_results.append(cr)
 
-            gold_sets.append(gold_ids)
-            pred_ranked.append(ranked_docs)
+            # Chat/unanswerable cases without retrieval gold are evaluated by
+            # routing/refusal metrics, not counted as zero-recall retrieval rows.
+            if gold_ids:
+                gold_sets.append(gold_ids)
+                pred_ranked.append(ranked_docs)
 
-            if not skip_ragas and case.gold.get("intent") != "chat":
+            if (
+                not skip_ragas
+                and case.gold.get("intent") != "chat"
+                and not case.expect_unanswerable
+            ):
                 ragas_rows.append(
                     {
                         "question": case.query,
@@ -467,7 +524,14 @@ def run_yz_fullchain_eval(
                 )
 
         retrieval = retrieval_report(gold_sets, pred_ranked, k=top_k)
-        fc_mean = sum(c.fact_containment for c in case_results) / max(len(case_results), 1)
+        scored = [c for c in case_results if "infra_error" not in (c.fail_reasons or [])]
+        fc_values = [
+            c.fact_containment for c in scored if c.fact_containment is not None
+        ]
+        fc_mean = sum(fc_values) / len(fc_values) if fc_values else None
+        from app.eval.stats import bootstrap_ci
+
+        fc_ci = bootstrap_ci(fc_values) if fc_values else None
         cite_rate = (
             sum(1 for x in citation_scores if x) / len(citation_scores) if citation_scores else None
         )
@@ -494,13 +558,32 @@ def run_yz_fullchain_eval(
             }
 
         failures: list[dict[str, Any]] = []
+        buckets: dict[str, int] = {}
         for cr, case in zip(case_results, items):
-            low_fc = bool(case.gold_facts) and cr.fact_containment < 0.5
-            bad_ret = cr.gold_doc_ids and not cr.retrieval_hit
-            bad_cite = cr.citation_hit is False
-            bad_route = cr.routing_ok is False
-            if low_fc or bad_ret or bad_cite or bad_route:
+            if "infra_error" in (cr.fail_reasons or []):
+                buckets["infra_error"] = buckets.get("infra_error", 0) + 1
                 failures.append(cr.to_dict())
+                continue
+            reasons: list[str] = []
+            if case.expect_unanswerable:
+                if not cr.refused:
+                    reasons.append("bad_refusal")  # fabricated an answer
+            else:
+                if cr.fact_containment is not None and cr.fact_containment < 0.5:
+                    reasons.append("low_fact")
+                if cr.gold_doc_ids and not cr.retrieval_hit:
+                    reasons.append("retrieval_miss")
+                if cr.citation_hit is False:
+                    reasons.append("no_citation")
+            if cr.routing_ok is False:
+                reasons.append("misrouted")
+            cr.fail_reasons = reasons
+            for r in reasons:
+                buckets[r] = buckets.get(r, 0) + 1
+            if reasons:
+                failures.append(cr.to_dict())
+        unans = [c for c in case_results if c.refused is not None]
+        refusal_acc = (sum(1 for c in unans if c.refused) / len(unans)) if unans else None
 
         return YZEvalReport(
             n=len(items),
@@ -511,6 +594,10 @@ def run_yz_fullchain_eval(
             routing=routing_summary,
             failures=failures,
             skipped_ragas=skip_ragas,
+            failure_buckets=buckets,
+            refusal_accuracy=None if refusal_acc is None else round(refusal_acc, 4),
+            n_infra_error=sum(1 for c in case_results if "infra_error" in (c.fail_reasons or [])),
+            fact_containment_ci95=fc_ci,
         )
     finally:
         if not skip_ingest:
