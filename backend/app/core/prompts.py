@@ -93,6 +93,12 @@ _NO_EVIDENCE = """本轮未取得任何可用证据。
 
 
 def today_str() -> str:
+    # Eval freezes "today" (EVAL_TODAY=YYYY-MM-DD) so date-dependent answers are reproducible.
+    import os
+
+    frozen = (os.environ.get("EVAL_TODAY") or "").strip()
+    if frozen:
+        return frozen
     return date.today().isoformat()
 
 

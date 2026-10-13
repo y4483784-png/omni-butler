@@ -79,6 +79,66 @@ def auth_client() -> TestClient:
     return client
 
 
+@pytest.fixture
+def fake_llm(monkeypatch):
+    """Deterministic LLM stubs used by workflow / chat tests (no network)."""
+
+    async def _stream(*_a, **_k):
+        for ch in "你好":
+            yield ch
+
+    def _complete_text(*_a, **_k):
+        return "演示回答"
+
+    def _complete_json(*_a, **_k):
+        return {
+            "reasoning": "mock chat",
+            "needs_kb": False,
+            "needs_web": False,
+            "needs_calendar": False,
+            "needs_sandbox": False,
+            "needs_freshness": False,
+            "confidence": "high",
+        }
+
+    def _complete_json_schema(*_a, **_k):
+        return _complete_json()
+
+    def _critique(*_a, **_k):
+        """Grounding critique: accept the draft as-is, no repair, no network call."""
+        return {
+            "verdict": "ok",
+            "unsupported": [],
+            "reason": "stub",
+            "needs_repair": False,
+            "repaired_answer": "",
+        }
+
+    def _summary(*_a, **_k):
+        return {"summary": "（测试摘要）"}
+
+    monkeypatch.setattr("app.core.llm.stream_chat", _stream)
+    monkeypatch.setattr("app.core.llm.complete_text", _complete_text)
+    monkeypatch.setattr("app.core.llm.complete_json", _complete_json)
+    monkeypatch.setattr("app.core.llm.complete_json_schema", _complete_json_schema)
+    monkeypatch.setattr("app.agents.router.complete_json_schema", _complete_json_schema)
+    monkeypatch.setattr("app.agents.workflow.complete_text", _complete_text)
+    monkeypatch.setattr("app.api.chat.stream_chat", _stream)
+    # Seams bound at import time: patching app.core.llm alone leaves these pointing at
+    # the real client, so with a live key in .env the test would call the network.
+    monkeypatch.setattr("app.agents.harness.critique.complete_text", _critique, raising=False)
+    monkeypatch.setattr(
+        "app.agents.harness.critique.complete_json_schema", _complete_json_schema, raising=False
+    )
+    monkeypatch.setattr("app.agents.context.summary.complete_json", _summary, raising=False)
+    monkeypatch.setattr("app.services.memory.complete_json", _complete_json, raising=False)
+    monkeypatch.setattr("app.agents.tools.web.complete_json", _complete_json, raising=False)
+    monkeypatch.setattr(
+        "app.agents.tools.web.complete_json_schema", _complete_json_schema, raising=False
+    )
+    yield
+
+
 def login_as(client: TestClient, username: str, password: str) -> dict:
     client.cookies.clear()
     r = client.post("/api/auth/login", json={"username": username, "password": password})

@@ -37,14 +37,26 @@ SUITES: dict[str, SuiteSpec] = {
         kind="pytest",
         description="单元与契约测试；强制 SQLite，不连生产中间件。",
         requires=(),
-        targets=("venv",),
+        # pytest is a dev dependency; it lives in the venv, and the eval image is
+        # built from the production requirements. services stays allowed so a test
+        # image that installs requirements-dev.txt can run the same suite.
+        targets=("venv", "services"),
         key_metrics=("metrics.passed", "metrics.failed", "metrics.skipped"),
         pytest_paths={
+            # Smoke must cover the eval infrastructure itself: gates, judges, report
+            # writer, dataset contracts and the end-to-end helpers are exactly the
+            # code that decides whether every other suite passes.
             "smoke": [
                 "tests/test_health.py",
                 "tests/test_router.py",
                 "tests/test_harness_gateway.py",
                 "tests/test_eval_metrics.py",
+                "tests/test_eval_gates.py",
+                "tests/test_eval_judges.py",
+                "tests/test_eval_report.py",
+                "tests/test_eval_stats.py",
+                "tests/test_eval_datasets_contract.py",
+                "tests/test_agent_e2e.py",
             ],
             "full": ["tests"],
         },
@@ -58,13 +70,21 @@ SUITES: dict[str, SuiteSpec] = {
         requires=("llm",),
         targets=("venv", "services"),
         key_metrics=(
-            "raw.intent.accuracy",
-            "raw.intent.macro_f1",
             "raw.tools.exact_match_accuracy",
+            "raw.tools.macro.f1",
+            "raw.intent.accuracy",
+            "raw.intent.derived_accuracy",
+            "raw.infra_error_rate",
         ),
         profiles={
-            "smoke": [],  # use disk cache if present
-            "full": ["--refresh-cache", "--min-intent-acc", "0.82", "--min-tool-exact", "0.78"],
+            "smoke": ["--require-cache"],  # replay disk cache; stale fingerprint -> fail
+            "full": [
+                "--refresh-cache",
+                "--min-intent-acc",
+                "0.87",
+                "--min-tool-exact",
+                "0.87",
+            ],
         },
         module="scripts.run_office_eval",
         default_target="venv",
@@ -78,52 +98,70 @@ SUITES: dict[str, SuiteSpec] = {
         requires=(),
         targets=("venv", "services"),
         key_metrics=(
-            "raw.metrics.precision_at_k",
             "raw.metrics.recall_at_k",
+            "raw.metrics.hit_at_k",
             "raw.metrics.mrr",
+            "raw.metrics.slices.hard_negative.recall_at_k",
+            "raw.metrics.slices.hard_negative.mrr",
         ),
         profiles={
             "smoke": [],
-            "full": ["--zhipu-rerank"],
+            # full: production ingest + hybrid on services; keyword fallback in venv
+            "full": ["--zhipu-rerank", "--production", "--min-recall", "0.93"],
         },
         module="scripts.run_rag_eval",
         default_target="venv",
         needs_blob_stub=True,
     ),
-    "yz": SuiteSpec(
-        id="yz",
-        title="YZ 全链路评测",
+    "agent": SuiteSpec(
+        id="agent",
+        title="端到端 Agent 任务评测",
         kind="eval",
-        description="upload → ingest → retrieve → answer（+ 可选 ragas）。",
-        requires=("llm", "minio", "qdrant"),
+        description=(
+            "真实 run_agent_workflow：路由/证据/完成三层分别计分，按 task_type 判定；"
+            "web 为确定性桩，sandbox/MinIO/Qdrant 为真实服务。"
+        ),
+        requires=("llm", "minio", "qdrant", "sandbox"),
         targets=("services",),
         key_metrics=(
-            "raw.retrieval.recall_at_k",
-            "raw.fact_containment_mean",
-            "raw.citation_hit_rate",
+            "raw.task_completion_rate",
+            "raw.task_completion_ci95.lo",
+            "raw.task_completion_ci95.hi",
+            "raw.routing.tool_exact_match",
+            "raw.evidence.evidence_rate",
+            "raw.multiturn_completion_rate",
         ),
         profiles={
-            "smoke": ["--limit", "10", "--skip-ragas"],
-            "full": ["--zhipu-rerank"],
+            "smoke": ["--limit", "30"],
+            "full": [],
         },
-        module="scripts.run_yz_eval",
+        module="scripts.run_agent_eval",
         default_target="services",
         isolate_app_db=False,
     ),
+    # "yz" (upload → ingest → retrieve → answer side path) is retired: the "agent"
+    # suite drives the real workflow instead. The runner script and dataset file are
+    # kept for historical comparison, but the suite is no longer registered, so it
+    # cannot be run or gated by accident.
     "grounding": SuiteSpec(
         id="grounding",
         title="依据核验忠实度",
         kind="eval",
-        description="ground_and_repair + ragas faithfulness（48 题）。",
+        description=(
+            "ground_and_repair + ragas faithfulness（120 题，三路均衡）。"
+            "冒烟前 24 条没有不可答题；n_unanswerable=0 时跳过 refusal_accuracy，不算失败。"
+        ),
         requires=("llm", "minio"),
         targets=("services", "venv"),
         key_metrics=(
             "raw.faithfulness_mean",
+            "raw.refusal_accuracy",
+            "raw.repair_delta",
             "raw.repair_rate",
             "raw.disclaimer_rate",
         ),
         profiles={
-            "smoke": ["--skip-ragas", "--limit", "8"],
+            "smoke": ["--skip-ragas", "--limit", "24"],
             "full": ["--score-drafts"],
         },
         module="scripts.run_grounding_eval",
@@ -144,7 +182,8 @@ SUITES: dict[str, SuiteSpec] = {
         ),
         profiles={
             "smoke": ["--dry-compile", "--split", "smoke"],
-            "full": ["--split", "full"],
+            # full: production LLM planner (heuristic is the `--planner heuristic` ablation arm)
+            "full": ["--split", "full", "--planner", "llm"],
         },
         module="scripts.run_office_tabular_eval",
         default_target="venv",
@@ -154,7 +193,10 @@ SUITES: dict[str, SuiteSpec] = {
         id="context",
         title="ContextManager 回放",
         kind="eval",
-        description="摘要 / 窗口 / 多臂对照（context_recall.jsonl）。",
+        description=(
+            "摘要 / 窗口 / 多臂对照（context_recall.jsonl）。"
+            "冒烟是 12/30 轮短桶探针，不把 compaction_rate 当硬门禁；完整档才卡压缩率。"
+        ),
         requires=(),
         targets=("venv", "services"),
         key_metrics=("raw.n", "raw.invariants.violations"),
@@ -166,7 +208,7 @@ SUITES: dict[str, SuiteSpec] = {
                 "--split",
                 "full",
                 "--arms",
-                "legacy,window,window_summary,full,oracle",
+                "legacy,full",
                 "--gate",
             ],
         },

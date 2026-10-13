@@ -5,17 +5,28 @@ No silent regex fallback. LLM failure raises RouterError.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
+import time
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import settings
-from app.core.llm import LLMStructuredError, complete_json_schema, resolved_router_model
+from app.core.llm import (
+    LLMInfraError,
+    LLMStructuredError,
+    complete_json_schema,
+    llm_infra_backoff_seconds,
+    resolved_router_model,
+)
 from app.core.prompts import plan_user, router_system, today_str
 from app.core.redis import json_get, json_set, stable_key
 
 logger = logging.getLogger(__name__)
+# Bump when the cached decision shape changes. Prompt edits invalidate on their
+# own: the Redis key includes router_prompt_sha() (same hash as the disk cache).
 _ROUTER_CACHE_VERSION = 2
 
 Intent = Literal["chat", "rag", "web_search", "calendar", "data_analysis"]
@@ -52,6 +63,14 @@ class RouterDecision(BaseModel):
 
 class RouterError(RuntimeError):
     """Tool planning failed; callers must surface to the user (no silent chat fallback)."""
+
+
+class RouterInfraError(RouterError, LLMInfraError):
+    """Rate-limit, timeout, or transport failure while planning tools.
+
+    Subclasses both so chat still surfaces a router error, and eval treats the
+    failure as infrastructure (out of the accuracy / core-completion denominator).
+    """
 
 
 ROUTER_JSON_SCHEMA: dict[str, Any] = {
@@ -195,6 +214,20 @@ def _llm_decide(
                     },
                 ]
                 continue
+        except LLMInfraError as exc:
+            last_err = str(exc)
+            if attempt >= max_attempts:
+                raise RouterInfraError(f"工具规划失败：{last_err}") from exc
+            delay = llm_infra_backoff_seconds(attempt)
+            logger.warning(
+                "router infra backoff %.0fs (attempt %s/%s): %s",
+                delay,
+                attempt,
+                max_attempts,
+                last_err,
+            )
+            time.sleep(delay)
+            continue
         except LLMStructuredError as exc:
             last_err = str(exc)
             if attempt >= max_attempts:
@@ -208,6 +241,66 @@ def _llm_decide(
                 },
             ]
     raise RouterError(f"工具规划失败：{last_err}")
+
+
+def router_prompt_sha() -> str:
+    """Short hash of ``ROUTER_SYSTEM``. Disk and Redis caches share this prefix."""
+    from app.core.prompts import ROUTER_SYSTEM
+
+    return hashlib.sha256(ROUTER_SYSTEM.encode("utf-8")).hexdigest()[:12]
+
+
+def router_cache_key(
+    plan_text: str,
+    *,
+    has_kb_docs: bool,
+    has_tabular_docs: bool,
+    model: str,
+    prompt_sha: str | None = None,
+    today: str | None = None,
+) -> str:
+    """Redis key for one route decision. Includes the prompt fingerprint."""
+    return stable_key(
+        "route",
+        {
+            "v": _ROUTER_CACHE_VERSION,
+            "date": today_str() if today is None else today,
+            "prompt_sha": router_prompt_sha() if prompt_sha is None else prompt_sha,
+            "plan_user": plan_text,
+            "has_kb_docs": has_kb_docs,
+            "has_tabular_docs": has_tabular_docs,
+            "model": model,
+        },
+    )
+
+
+def router_redis_cache_active() -> bool:
+    """Production caches route decisions. Eval must not read or write them.
+
+    ``--profile full`` skips the disk cache and would otherwise copy a stale
+    Redis hit into ``router_cache.json`` under the new prompt fingerprint.
+    Services eval keeps Redis for embeddings and rate limits; only this cache
+    is bypassed. venv eval also sets ``REDIS_ENABLED=false``.
+    """
+    if os.environ.get("EVAL_SKIP_ROUTER_REDIS") == "1":
+        return False
+    if os.environ.get("EVAL_BOOTSTRAPPED") == "1":
+        return False
+    return True
+
+
+def router_failure_is_infra(exc: BaseException) -> bool:
+    """True when ``exc`` or a cause/context is a rate-limit, timeout, or transport error."""
+    from app.core.llm import is_llm_infra_exception
+
+    cur: BaseException | None = exc
+    seen: set[int] = set()
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if is_llm_infra_exception(cur):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
 
 
 def route(
@@ -245,24 +338,22 @@ def route(
         max_chars=int(settings.context_router_chars),
         context_line=context_line,
     )
-    cache_key = stable_key(
-        "route",
-        {
-            "v": _ROUTER_CACHE_VERSION,
-            "date": today_str(),
-            "plan_user": plan_text,
-            "has_kb_docs": has_kb_docs,
-            "has_tabular_docs": has_tabular_docs,
-            "model": resolved_router_model(),
-        },
-    )
-    cached = json_get(cache_key)
+    use_cache = router_redis_cache_active()
+    cache_key = ""
     decided: RouterDecision | None = None
-    if isinstance(cached, dict):
-        try:
-            decided = RouterDecision.model_validate(cached)
-        except ValidationError:
-            logger.warning("ignoring invalid cached router decision")
+    if use_cache:
+        cache_key = router_cache_key(
+            plan_text,
+            has_kb_docs=has_kb_docs,
+            has_tabular_docs=has_tabular_docs,
+            model=resolved_router_model(),
+        )
+        cached = json_get(cache_key)
+        if isinstance(cached, dict):
+            try:
+                decided = RouterDecision.model_validate(cached)
+            except ValidationError:
+                logger.warning("ignoring invalid cached router decision")
     if decided is None:
         decided = _llm_decide(
             message,
@@ -271,7 +362,8 @@ def route(
             has_tabular_docs=has_tabular_docs,
             context_line=context_line,
         )
-        json_set(cache_key, decided.model_dump(), ttl=settings.router_cache_ttl)
+        if use_cache:
+            json_set(cache_key, decided.model_dump(), ttl=settings.router_cache_ttl)
     return _apply_availability(
         decided, has_kb_docs=has_kb_docs, has_tabular_docs=has_tabular_docs
     )
@@ -383,10 +475,15 @@ __all__ = [
     "Intent",
     "RouterDecision",
     "RouterError",
+    "RouterInfraError",
     "ROUTER_JSON_SCHEMA",
     "route",
     "plan_tools",
     "plan_needs",
     "classify_intent",
     "intent_from_decision",
+    "router_prompt_sha",
+    "router_cache_key",
+    "router_redis_cache_active",
+    "router_failure_is_infra",
 ]

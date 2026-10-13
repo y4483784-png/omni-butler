@@ -4,8 +4,9 @@
 Usage:
   python scripts/eval.py list
   python scripts/eval.py run rag --profile smoke
-  python scripts/eval.py run yz --profile full --target services
-  python scripts/eval.py last yz
+  python scripts/eval.py run agent --profile full --target services
+  python scripts/eval.py last agent
+  # yz 套件已下线，不要再 run yz。历史脚本 scripts/run_yz_eval.py 不在注册表里。
 """
 
 from __future__ import annotations
@@ -26,12 +27,15 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from app.eval.env import bootstrap, resolve_target, stub_blob_store_if_needed  # noqa: E402
+from app.eval.gates import evaluate_gates  # noqa: E402
 from app.eval.report import (  # noqa: E402
     RunContext,
     SuiteResult,
     latest_path,
     make_run_dir,
+    read_baseline,
     read_latest,
+    reports_root,
     settings_snapshot_safe,
     write_run,
 )
@@ -42,6 +46,24 @@ from app.eval.suites import (  # noqa: E402
     load_suite_module,
     profile_argv,
 )
+
+
+def llm_stats_reset() -> None:
+    try:
+        from app.core.llm import llm_stats_reset as _reset
+
+        _reset()
+    except Exception:
+        pass
+
+
+def llm_stats_snapshot() -> dict[str, Any]:
+    try:
+        from app.core.llm import llm_stats_snapshot as _snap
+
+        return {"llm": _snap()}
+    except Exception:
+        return {}
 
 
 class _Tee:
@@ -95,6 +117,29 @@ def _llm_key_ok() -> bool:
     )
 
 
+def _degradation_reason(report: dict[str, Any], profile: str) -> str:
+    """Human-readable reason when a run fell back off the production path.
+
+    Only the *full* profile promises the production path. The smoke profile is defined
+    as a deterministic replay (keyword retrieval, cache replay, plan-only compile), so
+    falling back there is the profile, not a degradation.
+    """
+    if not isinstance(report, dict) or profile != "full":
+        return ""
+    if report.get("degraded") is True:
+        if "planner_error_rate" in report:
+            return (
+                "degraded: LLM planner failed on "
+                f"{report.get('planner_error_count')} task(s)"
+            )
+        return "degraded: run did not use the production path"
+    metrics = report.get("metrics")
+    if isinstance(metrics, dict) and metrics.get("degraded") is True:
+        mode = metrics.get("mode")
+        return f"degraded: retrieval mode={mode} (production path not exercised)"
+    return ""
+
+
 def _sandbox_runner_health_url() -> str:
     base = (os.environ.get("SANDBOX_RUNNER_URL") or "http://sandbox-runner:8002").strip()
     return base.rstrip("/") + "/health"
@@ -109,8 +154,16 @@ def preflight(suite: SuiteSpec, target: str, profile: str, extra: list[str]) -> 
     # Profile argv + CLI extras after `--` (not only the extras list).
     if suite.id == "tabular" and "--dry-compile" not in flags:
         req.add("sandbox")
+    if suite.id == "tabular" and any(
+        flags[i] == "--planner" and flags[i + 1] == "llm" for i in range(len(flags) - 1)
+    ):
+        req.add("llm")
     if suite.id == "rag" and "--zhipu-rerank" in flags:
         req.add("llm")
+    if suite.id == "rag" and "--production" in flags:
+        # Production ingest needs MinIO + Qdrant regardless of target; the venv
+        # branch below then refuses early instead of degrading silently.
+        req.update({"llm", "minio", "qdrant"})
     if suite.id == "context" and "--live" in flags:
         req.add("llm")
 
@@ -185,10 +238,62 @@ def _cmd_list(_: argparse.Namespace) -> int:
     return 0
 
 
+def _failure_ids(payload: dict[str, Any]) -> set[str]:
+    fails = payload.get("failures") or (payload.get("raw") or {}).get("failures") or []
+    out: set[str] = set()
+    for row in fails:
+        if isinstance(row, dict):
+            out.add(str(row.get("id") or row.get("case_id") or ""))
+        else:
+            out.add(str(row))
+    out.discard("")
+    return out
+
+
+def _profile_runs(suite: str, profile: str) -> list[Path]:
+    base = reports_root() / suite / "runs"
+    if not base.is_dir():
+        return []
+    runs = [
+        p
+        for p in base.iterdir()
+        if p.is_dir() and (p / "report.json").is_file() and f"_{profile}" in p.name
+    ]
+    return sorted(runs, key=lambda p: p.name)
+
+
+def _cmd_diff(args: argparse.Namespace) -> int:
+    """Compare the two most recent same-profile runs: newly failed vs newly fixed."""
+    suite = args.suite
+    profile = args.profile
+    runs = _profile_runs(suite, profile)
+    if len(runs) < 2:
+        print(f"need two {suite}/{profile} runs to diff; found {len(runs)}", file=sys.stderr)
+        return 1
+    prev, cur = runs[-2], runs[-1]
+    prev_rep = json.loads((prev / "report.json").read_text(encoding="utf-8"))
+    cur_rep = json.loads((cur / "report.json").read_text(encoding="utf-8"))
+    old_ids = _failure_ids(prev_rep)
+    new_ids = _failure_ids(cur_rep)
+    newly_failed = sorted(new_ids - old_ids)
+    newly_fixed = sorted(old_ids - new_ids)
+    print(f"diff {suite} profile={profile}")
+    print(f"  previous: {prev}")
+    print(f"  current:  {cur}")
+    print(f"  newly failed ({len(newly_failed)}):")
+    for i in newly_failed[:40]:
+        print(f"    + {i}")
+    print(f"  newly fixed ({len(newly_fixed)}):")
+    for i in newly_fixed[:40]:
+        print(f"    - {i}")
+    return 0
+
+
 def _cmd_last(args: argparse.Namespace) -> int:
     suite = args.suite
-    data = read_latest(suite)
-    path = latest_path(suite)
+    profile = getattr(args, "profile", None)
+    data = read_latest(suite, profile)
+    path = latest_path(suite, profile)
     if data is None:
         print(f"no latest report for {suite}: {path}", file=sys.stderr)
         return 1
@@ -356,6 +461,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     sys.stdout = _Tee(old_out, log_f)  # type: ignore[assignment]
     sys.stderr = _Tee(old_err, log_f)  # type: ignore[assignment]
 
+    # Regression yardstick = last *passing* run, so a failing run cannot become the
+    # baseline for the next one.
+    baseline = read_baseline(suite.id, profile)
+    # Snapshot before the suite mutates settings (rag hybrid/rerank toggles etc.).
+    pre_settings = settings_snapshot_safe()
+    llm_stats_reset()
     try:
         print(f"=== eval {suite.id} profile={profile} target={target} ===")
         print(f"run_dir={run_dir}")
@@ -374,6 +485,37 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 except Exception:
                     pass
 
+        # Unified gates: absolute floors + regression vs previous same-profile run.
+        if suite.kind == "eval":
+            degraded = _degradation_reason(result.report, profile)
+            if degraded:
+                print(f"\ngates: FAILED ({degraded})", file=sys.stderr)
+                result.report["gates"] = {
+                    "ok": False,
+                    "failed": [degraded],
+                    "checked": [],
+                    "skipped": [],
+                }
+                result.exit_code = max(int(result.exit_code), 1)
+            elif int(result.exit_code) == 2:
+                # Hard preflight-style failure (e.g. router cache miss): nothing to
+                # judge, but the report and the index row are still written.
+                print("\ngates: skipped (suite reported a blocking error)")
+            else:
+                gate = evaluate_gates(suite.id, profile, result.report, baseline)
+                result.report["gates"] = gate
+                if gate["checked"] or gate["skipped"]:
+                    print("\ngates:", "OK" if gate["ok"] else "FAILED")
+                    for row in gate["checked"]:
+                        print(f"  {row}")
+                    for miss in gate["skipped"]:
+                        print(f"  (skipped: {miss} not in report)")
+                if not gate["ok"]:
+                    for msg in gate["failed"]:
+                        print(f"GATE FAIL: {msg}", file=sys.stderr)
+                    result.exit_code = max(int(result.exit_code), 1)
+        result.run_stats = {**llm_stats_snapshot(), **(result.run_stats or {})}
+
         ctx = RunContext(
             suite=suite.id,
             profile=profile,
@@ -382,12 +524,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
             started_at=started,
             run_dir=run_dir,
             dataset_path=Path(dataset) if dataset else None,
-            settings_snapshot=settings_snapshot_safe(),
+            settings_snapshot=pre_settings,
             key_metrics=list(suite.key_metrics),
         )
         report_path = write_run(ctx, result)
         print(f"\nreport -> {report_path}")
-        print(f"latest -> {latest_path(suite.id)}")
+        print(f"latest -> {latest_path(suite.id, profile)}")
         return int(result.exit_code)
     finally:
         sys.stdout = old_out
@@ -410,7 +552,13 @@ def build_cli() -> argparse.ArgumentParser:
 
     lp = sub.add_parser("last", help="Show latest report for a suite")
     lp.add_argument("suite", choices=sorted(s.id for s in list_suites()))
+    lp.add_argument("--profile", choices=("smoke", "full"), default=None)
     lp.set_defaults(func=_cmd_last)
+
+    dp = sub.add_parser("diff", help="Diff two latest same-profile runs")
+    dp.add_argument("suite", choices=sorted(s.id for s in list_suites()))
+    dp.add_argument("--profile", choices=("smoke", "full"), default="full")
+    dp.set_defaults(func=_cmd_diff)
 
     return p
 

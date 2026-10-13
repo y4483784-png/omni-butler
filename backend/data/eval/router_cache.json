@@ -1,725 +1,5 @@
 {
-  "f237303e2667e970a838781b14f6cd025ca26cb2dc01d8ceddf7d93a44c301dd": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0577edee6e0a4cb0a867203e23a3cd49fb254072c6044bc4154ae453cc8d7d90": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "eb026832448bdbbfcd5ba6fb9829c561b52f6dfbcfd9462cb7107cdfda828b87": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2406fe07f82561c225256e96eeaf6519cdfe2587dff2e82f2dc6c3faca7705e2": {
-    "reasoning": "用户提出预定会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "dff8da2baa714f1100076ce9409de5f38869837cd2dd991a9f41ccda9c0f2c96": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6ed53ae2453511b321d15b4402c2b03e2131cf626fa586503b86b399340abaec": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a86126b85671f7833cebda6b6a57d2c7889865988cc3ff0b984c2245913b1315": {
-    "reasoning": "需要设置会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "294ab6670268ddaee188335150c1f231a268819a96567606aa6487e99d00b16c": {
-    "reasoning": "需要安排会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f214f97dcc8c76777432b345215d2b7660e77f3e4c180b5f0100e9b94e750782": {
-    "reasoning": "需要安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "09eed0cac432fe1601f36687e40d2f2a1c0442e4d1dd8f90af6df589e59800b7": {
-    "reasoning": "用户请求安排一个具体的会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "aab7db3b2efaf1a95094feb5afc705464c8c0c14977e144110306d9443ef6046": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "47794ee519d052f80205be6ad7c8b9009f55f8af5a9453fa93ea1b65579d613a": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "cd65cef151ae9fbdb5c31541cd1889e433c2ddce84472fada7c7bd0b44cde7e8": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d87b979f6c6c418b322104f68825d7939c4bd3415eb31f2a36232d322eaf7c07": {
-    "reasoning": "用户提出安排会议，需要创建会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "bb0ffe6a2618e9329aef53e8419c94d75e38c17f35513ee0c310a5fbdcad0141": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "e55a3e1dd9338a89f3be87ef6b1c5ade7da3ecb3acf74123b152762f5bdbd3db": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "48d47d9d33fa0c6a71929ff7678e1edfac51a5d7feead738022872cb8b17bb42": {
-    "reasoning": "需要设置会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "503c56a3e8428b751f99986100457286fe41355a198670e86e1b7d48beeaee05": {
-    "reasoning": "需要安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0e1d31029dac690511c964e216a65988c9225ef3e145f44223a77fdb699b59d3": {
-    "reasoning": "需要安排会议",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f6a8c4d68362343d3c7081a4c3ac231f8799b1544be9f65d6f1a476117d04e5b": {
-    "reasoning": "用户请求安排一个具体的会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c38f16c41e763e87bf25c277e3c0065c18b0147e6efe2c7ff9b6cc4869b97d65": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "024c77ae738a543f45c67539fc7115e248bbb3a43fcecc6afd748595b9148afb": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "1fd22e852202dbfdf3e6adb7e198ca64e136ae3d822f21ed89574142bbcfbf62": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "cb4d5f6d1cb6baa6ea68337512aa5daf77d620e40b0963d9a9bcb947fb474ecb": {
-    "reasoning": "用户提出安排会议，需要创建会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ace7f9d205f019f03a6b9ea0d2e6e9a1058edebe7b393a01d179cb1b94168842": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "8d7466d3dfa6e58c186e50d4c660c0980d4542bdcf9b8e7dce529bb584e79be1": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d1bec763b69159d900605465a8c7d72c540765fcd3373193d8c648d920966051": {
-    "reasoning": "需要设置会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d39be5e0cde88025f663c846c83ac3816ab18b3a101f958e88737e0364387104": {
-    "reasoning": "需要安排会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2d91278024ddfb4741a37496c6dfe1c03907875f123daa6d8b75fde5cd6484e2": {
-    "reasoning": "需要安排会议",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2bdd5f6fe46aca34affb87a503eb51370b87cacfcdf5b223ff91df2abe89b125": {
-    "reasoning": "用户请求安排一个具体的会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "4738501cc4051b0fe5b4ed7d36cbc46fc5015a950b553b8fd3e07954895ad7a5": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2fca93ff256de5c166b52e73d0e8cd1a67f8b21d8a8af66aa499f1c598d8e851": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ab8e615e8c236bcd7ec982141c2a1cbb4a82c923543f95c1697a12edd818d43d": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d0672e908883af624e9e795762dd7c52b6ee7eb9e9c6fb059b74adaa7cd89ed9": {
-    "reasoning": "用户提出安排会议，需要创建会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "80167ec23db257b34cc3f6a132576a6a2e84ad4d81c696e6ffc8b85ad6e0de73": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "fad3aa92a468a7d27c1c1ea4a795a847b8be0a4b57a0c0b82731cecca9aff7b4": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c0da7040031a00af50c9483b0bd06ed87747ae384a1fbe05425a05f05dc85cc7": {
-    "reasoning": "需要设置会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "274037b74b539a072807c651e5bb2793fda89128cfab00e03890b5e771b81c43": {
-    "reasoning": "需要安排会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "9ea1f461105b22e3046eccd19409d803a4ea9e6e924ed650623797d76a84c114": {
-    "reasoning": "需要创建会议",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "1707966b41283fb509105e8455db87d0908a114bddbbb0d5595701151c94ffdf": {
-    "reasoning": "用户请求安排一个具体的会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "800790db81bbe8317b014ee70498476d9ea97056ec4b7ed3806bfaa19f042c65": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "496bcce9e9fda3cd1ac5ba185d8b6251d2e2bf9640611dadfffe2fa673df8005": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "4926ea511a157ac1263cee29ab2724ff5006ad924200efcfadd83f2288fbecd3": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "27567a4087e60dbd873d89ed08f0fb5ebb54774eda174f255bea06c13286340f": {
-    "reasoning": "用户提出安排会议，需要创建会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "5a5154d444fcb7543290d7a661b280a446e64249ed9d5af576281a49cb6a6d9d": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d978047b3934c750aa86fc2b7704c8335d27fa705e07c42d420d465cca66423f": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b65b09219f7f2c0c4ab89a51d20e79c9523f86b64108478adec9eb52ab2d3913": {
-    "reasoning": "需要设置一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "539f78f6e9e82bdc5f8abc6ae1270029686dff2bc22ddb0728bd7bd44576294e": {
-    "reasoning": "需要安排会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2ff131fbf9adaff32341bd2c695e2e6d0c859faa8fa20561f3bb5adbad9aa26a": {
-    "reasoning": "需要创建会议",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "55d966083df1db1772aeaa4722ef723a333ace898b5c6fb1ab97c3e9896a1e13": {
-    "reasoning": "用户请求安排一个具体的会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d2d5ecdfcb49ea7ecaee9a73356128cfb1e3038a7cf06355141052e21c3e90c7": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "89087bc061360e024ac5a31213bd05bda797806ef2ffdb533fb295e39021c3d7": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "4dedabb4c1c582898c65e7a3da7f0060eea9370a0c391d3affa272e95b6873da": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "7aea6a62f3d2b38496702b47085082eec7b8c512b028f3aa1006f90f80e046dd": {
-    "reasoning": "用户提出安排会议，需要创建会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "904bb1b0fbf40306eeabd94e0fa68df3a4c2e0bf6563b80eeb5f7887c2170204": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0ffc7a23cb4008c2f243ac92c818fd951eb4e0a9d13c5bb633f992925af00d0a": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "1600b7e98f6beed7e889605d9923858ceedb06860f58d1ab7a38ab85e26f95b3": {
-    "reasoning": "需要设置会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3d6dcd7157b89e5fdfee853c9df1c10a6057bf05696298b591f5b052d9215c4a": {
-    "reasoning": "需要安排会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c4fc92dd010d9ac7d12ad58d01735197ee13b9fce94bbdf629fee79c5bd4b94d": {
-    "reasoning": "需要创建会议",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "489c673ee2f897baec5fa1aa68ca3285066427a477046a9886af09077d007b69": {
-    "reasoning": "用户请求安排一个具体的会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b3fe7e5bd9d9521d2660a595a64999fc2b89113d6f3f1d66d8bd3d7ed264d49f": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3db5f626ddd4a26f36ee1a26300ea1387bc1f1d7feae153fef7a6bf8b6924602": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "dcfc4a84878a1eff7ffe234e95b69d5a4936829e7612b1249a93196a4306c56b": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "71227f4ee08aa0a7076b068e317ccf992b714779adf72bbc64c2fcb0bbf1f779": {
-    "reasoning": "用户提出安排会议，需要创建会议。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "14f8e64c6c959c7aa551ab00f67f594b9d5e26457606adbc8946488e4afb0ea2": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "35c8f363f0a45ad123cf19b3b458b59db1619d96b8ab8268a5ddfcaf96aa742f": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "4c4b05d2b671d0d05d3cc7ef0200d8b381755bcbcf818a389b9a3445852c7982": {
-    "reasoning": "需要设置会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "43fa1af0096f1dcbc6a730a439e765cbf9fdcabef3097d54f4a0dce4c7f0a29d": {
-    "reasoning": "需要安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "9930d7694ad1f69cdda7dfe30f212a0e3b6e9e2ffbf2a48caca404f3ec7976c1": {
-    "reasoning": "需要创建会议",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "346794db870984169487a5e7d9e413970947891171d37f26ad0472e41e9f440e": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c9fad3501b36abf971323ca2e1431fbbe7500c4e71fee859acd2625ee386b3a6": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "cbccd494e28bfe63e57b91458ac1144350d3e130909110bb10f989be42a4a7d0": {
-    "reasoning": "用户提出安排会议的具体时间。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "7c8fe12862d13e510ffe3c9256510960c1eca7c74179244aeb404066b5972022": {
-    "reasoning": "用户请求在日历中添加一个会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "dfd74025b9ea42bb41dab4b71c0f1110406a28275028dc47d6749065ea40e75e": {
-    "reasoning": "用户提出安排会议，需要使用日程工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "5b4d533e58b596c8e3ce0c38fa688d9af46aef2366a2228b6dc8d1ba18f3d2d5": {
-    "reasoning": "用户请求安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "66d55d39204d03b81b0b0fe82e490a87450309c12a92bb821ae48c4d84f19bcf": {
-    "reasoning": "用户请求将评审会排入日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c7029f71db38a217ce9c5053dae12a9f1ef1622ed9e154b7cc9ba3affd07e9c2": {
-    "reasoning": "需要设置会议提醒。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "bc5776539f3f161c6066b8fa7bcde1fada45e3d70027e0e1335f2152ad578d53": {
-    "reasoning": "需要安排会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "8d9fb64e65d458a864305bdb818fc8e319599a97ec283d2eebfa543efea3c1d6": {
-    "reasoning": "需要创建会议",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "83a4466ec0cc84f35b32d98de960b2db7e1f16f91effdb08a40a2c8f4b69a690": {
-    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a00126c2c3e134064a242e9a46961bb45f56c80b58a0fc37ee2549351d924929": {
+  "78b39350528235916ea0d31df234c84a0a523b8c5caecf3f4656e3ecb9435855": {
     "reasoning": "纯闲聊",
     "needs_kb": false,
     "needs_web": false,
@@ -728,7 +8,7 @@
     "needs_freshness": false,
     "confidence": "high"
   },
-  "8479abff7b3e52602113e5fecc29ad0403fd6001dd74b0adbd1db60b0044b95f": {
+  "5fd77c0078cf76f967d1526748eadb140b15c9e88ceb48710239e7943fd94871": {
     "reasoning": "确定性闲聊短句",
     "needs_kb": false,
     "needs_web": false,
@@ -737,8 +17,17 @@
     "needs_freshness": false,
     "confidence": "high"
   },
-  "cb9bbefc5453854edc55d78847752726569850e8e64c708c943fb7a9a5becb65": {
-    "reasoning": "纯闲聊",
+  "6f579a4d28299412e18ee30d8dafe4b3e1fab7ade787f1c126736bb7b8cd665f": {
+    "reasoning": "用户请求继续处理之前的事情，但未提供具体信息，属于纯闲聊。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "low"
+  },
+  "5d23159cb3a1ad9fb96fcfaa826012b0532fd43334ac29aa1949b18c19f9fd5f": {
+    "reasoning": "用户请求继续处理之前的任务，但未提供具体信息，因此不需要使用任何工具。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -746,8 +35,8 @@
     "needs_freshness": false,
     "confidence": "high"
   },
-  "4ed3dbdd3deb82aba0a433303fcb7260d53d6f028de0449cf479c1150ccfbc32": {
-    "reasoning": "纯闲聊",
+  "851e838aacb766177d5d3a86d869dc2ec931f68e20722591901455946cced4b9": {
+    "reasoning": "用户在继续之前的对话，没有提出具体问题或请求，因此不需要使用任何工具。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -755,23 +44,14 @@
     "needs_freshness": false,
     "confidence": "high"
   },
-  "03ba165dfa80e1ddc1a5b2a8cf7b999872b744dd5ebe2ebbcb5f433999c39cd6": {
-    "reasoning": "纯闲聊",
+  "5853f901b06215bffce88592d05bb897a8293967c30d58db8ae89fdfdd71c6d9": {
+    "reasoning": "用户请求继续处理之前的事情，但未提供具体信息，因此不需要使用任何工具。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
     "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b63a007fb8cf5ad028a14485523effe376c595888e6962e265edae8967af912a": {
-    "reasoning": "纯闲聊",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
+    "confidence": "low"
   },
   "a52a6f7d4f17e0cc64fcfe90547bbbd78a8075648030af52f07b321f77f57cd9": {
     "reasoning": "纯闲聊",
@@ -825,7 +105,7 @@
     "needs_calendar": false,
     "needs_sandbox": false,
     "needs_freshness": false,
-    "confidence": "high"
+    "confidence": "low"
   },
   "b5e0036e491f76672c1150c92edd81858313cd0cbf943834a3dd2edcbceffa01": {
     "reasoning": "用户请求润色文字，属于写作润色范畴。",
@@ -945,7 +225,7 @@
     "confidence": "high"
   },
   "c23cb9be89d49d4162c6c6e06ff1ce6334c78880647042733626a6b854ef973e": {
-    "reasoning": "询问系统能力范围，属于通用常识定义。",
+    "reasoning": "用户询问系统能做什么，属于通用常识定义。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -1044,7 +324,7 @@
     "confidence": "high"
   },
   "bb669a08ea8f905f6af479d3e4eeb6f7c6f890fb320c2fb8514a5f90951332dd": {
-    "reasoning": "头脑风暴问题通常用于激发创意和思考，不涉及具体事实查询或数据分析。",
+    "reasoning": "头脑风暴问题通常用于激发创意和思考，不涉及具体文档内容或数据分析。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -1242,7 +522,7 @@
     "confidence": "high"
   },
   "278e932a74fc1c6406def0b1298d108160ae824b5007f024946c1f2637f2a4bd": {
-    "reasoning": "用户提问，但没有具体内容，无法判断是否需要特定工具。",
+    "reasoning": "无具体问题，无法判断需要哪些工具。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -1287,7 +567,7 @@
     "confidence": "high"
   },
   "6bcd3326abbf2f82c864c37ee0e3906aaf2d656c7b1db9c01f9dd08b771c1f7e": {
-    "reasoning": "会议纪要结构通常需要包含会议的基本信息、参与人员、会议主题、讨论内容、决议事项和后续行动等部分。",
+    "reasoning": "会议纪要结构通常需要包含会议的基本信息、参与人员、会议主题、讨论内容、决议事项和后续行动。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -1305,7 +585,7 @@
     "confidence": "high"
   },
   "aedc204d5429c815e8ed72820647663b3facee8ceca57bee92d4a8832cc44129": {
-    "reasoning": "用户提问关于帕累托法则，属于通用常识定义，不需要使用任何工具。",
+    "reasoning": "用户询问关于帕累托法则的定义，属于通用常识定义。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -1422,7 +702,7 @@
     "confidence": "high"
   },
   "4252971068fd2439cb2efa04b5d1e4cd4a0ef8e36e8773815ee93c7dac38f5ca": {
-    "reasoning": "写离职告别信开头属于写作润色，不需要使用任何工具。",
+    "reasoning": "写离职告别信开头属于写作润色，不涉及文档事实或数据分析。",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -1432,456 +712,6 @@
   },
   "c5718d0bf350af37b7c4a30b697f8fa48eff3936fb7a5130753025eb9fae6f02": {
     "reasoning": "写入职欢迎辞属于写作润色，不涉及文档事实或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "dfc71c2e5ec27f05d8ddbe1d15c0c010d43f6a4221f85d6f0ce62f75be412338": {
-    "reasoning": "礼貌催进度属于通用常识，不需要使用特定工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b7765454e34c21ab6c1e48bf494cd2dcb090786ab2c687137909014292a6de81": {
-    "reasoning": "用户询问如何拒绝额外工作，这是一个通用问题，不涉及特定文档或数据。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "low"
-  },
-  "e11b13dc1df0a1fa52ba24b884ab0a69e30465c839706f1902d21163b6c4e47f": {
-    "reasoning": "约领导一对一涉及具体时间规划，需要使用日程工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6cb9e20b8167e9c4848d3ebdfe53080a61b417e955890e574de8415e7648677a": {
-    "reasoning": "OKR（目标与关键结果）是通用管理工具，不涉及特定文档或数据，因此不需要使用kb、web、calendar或sandbox工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6be69ea0db6ae22701cbe43ee2cf205ed78434bcf9c9c7d7f6b2dac81e02f899": {
-    "reasoning": "用户询问关于敏捷和瀑布的区别，这是一个通用常识问题。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "9bf2d79ed6bbaeddbb2b169f873797945c3f6a2f8f1f30222e620f4866e94293": {
-    "reasoning": "用户询问技术债的定义，属于通用常识定义。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f63e1710525328151cb672317d2cd68c9edf877d812ec2f119ed0cc4abb23547": {
-    "reasoning": "用户询问如何进行代码审查，这是一个通用问题，需要提供公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ba386ae7db2b194176ea8c6c778843e65363ccbfaa91b306ad61786bb617e3b7": {
-    "reasoning": "用户请求创建一个 standup 模板，这是一个文档事实型提问，需要使用知识库工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "84ac4840fa10ea1c9f2af745e4bb4973017a019240cccb8c9c2c3dc4f77b685d": {
-    "reasoning": "用户请求创建学习计划框架，属于日程安排范畴。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "1403f9dfcc84306255ad0e55ceb88298511f23de8dd41c4df960da69b9224f99": {
-    "reasoning": "通用面试问题清单属于通用常识定义，不涉及用户私有文档内容或内部制度。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b5eb5f2ba86cf02ed1b1fa32bfb6b16dc8a0274dd9a29fe7ddb9b180d8679edb": {
-    "reasoning": "复盘会是一种会议形式，属于通用常识，不需要特定文档或联网搜索。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "446b98a8c5156150915969a7a2f6f8e62ffbce93b1eb48904ad2a24386d6d608": {
-    "reasoning": "用户请求创建一个道歉信模板，这属于写作润色范畴。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "4b9a805de5dcd45098a0f42f0c83c565adda953cf9836a7e6f049984f346a6f1": {
-    "reasoning": "润色请求属于写作润色，不涉及知识库、联网搜索、日程安排或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "low"
-  },
-  "3be77f19965f5173b2938734bbf7d0787706a563a083e23bd05fd33479881f09": {
-    "reasoning": "通用产品介绍通常属于公开信息，无需访问私有文档。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d8cb89c6dad28ee2ece552f8f1db40ccd298d119c8eefc042d5503c79c8edfa1": {
-    "reasoning": "生成电梯演讲通常需要写作和润色工具，但根据当前上下文，没有具体文档或信息提供，因此不需要特定工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "low"
-  },
-  "dce65a47d5a4b8a2783d136dbef7465e272a3f77cd51f9bd35c4f7cfc5815e77": {
-    "reasoning": "设定边界通常涉及公司制度或办公流程，属于内部事实。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "564a12826918f080d87cb5e2f7d97ba23272a57f26a3a64d434cb9e4addeb2d6": {
-    "reasoning": "纯闲聊，不涉及文档内容或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6aa250609a49568a612fc026a8a56f391a086bdc43be2bac8d51182dc6816e45": {
-    "reasoning": "团队建设活动需要创意和策划，属于通用常识范畴。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "cda93ad407645bb4e837374bb3587b1ed38ebe7e06ec44ee77ae2eddae4fe557": {
-    "reasoning": "写问卷开场白属于写作润色，不涉及文档事实或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2c01d9c742c516c1ec8cf4d78fda639c909d0bcc5393f45eb2e9c0ca5cab278c": {
-    "reasoning": "生成满意度调查题干示例属于通用常识定义，不需要使用任何特定工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f1867a9eff98ca089058f434903ffe13d62093a418e6d9680e39f355cda254c3": {
-    "reasoning": "用户询问如何做时间盒，这是一个关于时间管理的方法，属于通用常识。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6d2767a59db5dbfcbc0ba671387924278b4445b25f39fff3df62074601b6f4ee": {
-    "reasoning": "用户提问关于番茄工作法，属于通用常识定义。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6f97f380a36bb4acddaac5aa1e88d990446b201cd57dea6808ce0c0f71ed1052": {
-    "reasoning": "用户请求列出晨间例行事项，需要使用日程工具来创建或修改日程。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "da6966fe7aabb04431797f7c68481f90de35b5e37a33978c8b1442f71614967c": {
-    "reasoning": "纯闲聊，不涉及文档或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a70a55d8a90959fe9b032ad939298201484276dc48fe30cd91e3bcf2cdd78148": {
-    "reasoning": "纯闲聊",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "37469f444b49f6a23c59d20ab62968a5de678a3e592b538662f14be514ee6612": {
-    "reasoning": "用户询问当前状态，属于纯闲聊。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d0e2d579a31c5174d1fc236336d9396a0b2e3b8a0492d2e60053efc4232f5f51": {
-    "reasoning": "纯闲聊",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3b0890a754affc303c0d7a3392fbdf5bd80dd8ed186690ff106d2c18d0425ac0": {
-    "reasoning": "用户请求有趣的话题，不涉及任何文档或数据分析，无需联网搜索或日程安排。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3f00de13a4a2a21b87bb8af4a2f5ccce1860e846c35439044e66af16697ae38d": {
-    "reasoning": "纯闲聊，不涉及文档或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0185f72fea373bde2146ad4fed0ff2d9716ed14f7306130c9fdcc7ce7d37eee5": {
-    "reasoning": "纯闲聊，不涉及文档或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "90880f78860822e3bd1479b35836672b4e11bea5d597bc459059562fbea90c9c": {
-    "reasoning": "笔名起名属于创作类问题，不涉及文档内容或数据分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "74a55052043196690640a566944938683862f4773400ee29a6c887cf039abd56": {
-    "reasoning": "用户请求创作一个短故事的开头，属于写作润色范畴。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "88de4cbba6450048f4e5de8b460bffd8588e1921c215af14a05c4ea7146f4973": {
-    "reasoning": "用户请求用文言文问候，属于通用常识定义。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "e3bd28ee187a662cd886ef80a32d1c187a578b20ed40be518a2c81a90cc1ca38": {
-    "reasoning": "用户请求用方言风格写句谢谢，属于写作润色，不需要使用任何工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "35ad345f6306ed62e9c2ef2c6de09924dc2e1c2ec5bb58698de416245f9d7696": {
-    "reasoning": "用户请求一个简单的数数任务，不涉及任何文档或数据分析，也不需要联网搜索或日程安排。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "fdb5d79127f4a93f956bf83342d16090a70e4987c91311e3d6a12f8ab1b4ca74": {
-    "reasoning": "重复用户的话，无需使用任何工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d132e8dbc0c00e8909dc3e89ade696c85c848029d2eaddb3c52dadd25b108a22": {
-    "reasoning": "用户请求输出一个空列表示例，这属于通用常识定义。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ee9b422799525df2ac162e0679b32d12a79fbae6288cb1a5e1e46d97e4d176c2": {
-    "reasoning": "用户请求一个随机励志短句，属于通用常识定义。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "554b48cd08ab9f27ddcd6a4b253402a3adf825146745a7dea6ed8e427b4bb612": {
-    "reasoning": "用户请求避免工作相关话题",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "1dbc8e84ddc5a70cc3a68515f0c3839a1c6e3f206f7b73d017dcdb26d5aaad94": {
-    "reasoning": "纯闲聊",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "9577566296fed05f99ce3cf57b6f86eee37de38325e1a7f386d2bc4a161acfa3": {
-    "reasoning": "纯闲聊",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b66ecb960a95236da310ce5ee65d451c7586798d49cb4465c765e7e3ffabfc30": {
-    "reasoning": "用户请求创造一个非正式的外号，不涉及具体工具需求。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "909c47f3023a6bc5734428f0fca33ccc7d6b6735c86a23d2a33d18907a4d4644": {
-    "reasoning": "确定性闲聊短句",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "97c1fb33188a0cab7350de1628920571361346bb3a18e08329d3fc71a9bd1f40": {
-    "reasoning": "确定性闲聊短句",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "775bd7f0922d97e0ddf6e8c8b87e6a9412344ee4b860de71c636984c8589a7b3": {
-    "reasoning": "纯闲聊、写诗润色、翻译、通用常识定义（「什么是机器学习」）→ 全部 false。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6d9b87448c0dd5f31eb6503d1fdf21d207548396e8d10a6cd5daa95599338d1d": {
-    "reasoning": "用户提问关于金融概念，属于通用常识定义。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "257542b4706d198d02b46c7beb70548556b30f379ee378e70db2b0f7e3b37dea": {
-    "reasoning": "润色文字属于写作润色，不适用kb工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "low"
-  },
-  "1e62df954c85e800e00ede61017cc7b6732e37da738ffdb69a210d25e23bb661": {
-    "reasoning": "用户取消了会议安排请求。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3b2f1ab321628fe61d61eafd7b9759e18eb19b81806e890e0bc0eb55581e7565": {
-    "reasoning": "用户提出取消明天下午的周会，涉及日程修改。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "24a3a75d18334a73dc70332a091dd0fd4ba7fabeb70f0b5d9e4530a4255e4efc": {
-    "reasoning": "纯闲聊",
     "needs_kb": false,
     "needs_web": false,
     "needs_calendar": false,
@@ -1903,60 +733,6 @@
     "needs_kb": true,
     "needs_web": false,
     "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b4b6ef42070f086f520c6279ddfacc8b996953912bd0f40e8773137f85c79518": {
-    "reasoning": "用户请求根据知识库查询报销制度，属于查询内部文档事实。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f845bb74c3486e99cacf9c27060e6aa964460931567e58edf07131753f17876f": {
-    "reasoning": "涉及文档中的事实",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "301f36ab94498310d171355a586b2956d6d6eff3a5d03f264c306601418d9199": {
-    "reasoning": "用户请求绘制柱状图，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d8de1bb1f633745179775cb44ed1f7f030d864f56568b3a29e58c89f96acc441": {
-    "reasoning": "用户请求进行统计操作，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "9c777279b20e111a51563fafd4a517cc355d2f37d090caa0be95debe51d381bc": {
-    "reasoning": "用户未提供具体上下文，无法确定是否需要特定工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "low"
-  },
-  "eeab91958985342c423f9f7959255aed89af2ba8580beb95a74e59f3ce61c6da": {
-    "reasoning": "用户请求修改时间，涉及具体时间规划。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": true,
     "needs_sandbox": false,
     "needs_freshness": false,
     "confidence": "high"
@@ -2753,942 +1529,6 @@
     "needs_freshness": false,
     "confidence": "high"
   },
-  "5d26f82da2ce4fa2683939e73a19ec8ddb16e4589fc0489e6084589b5b90742e": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6c5ef91d8e33e290417c47c72de0a8bdc9e55824398db94392b4e8db906db400": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "147fc0a3bccd718ef454aa78e4fb2f0758f039edbe714b09e46c9063c6be4c0f": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ca55b08bea5666bce1bc0192ca6ef10dd8a5dc965c59fa510a54f3f91ad28fa8": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "4c726efdaad9d0638482977de2c89d104dab71f62413e30d83dc96256cf70515": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a201824746160401a58d3d1eb72ed06c363e175c8b5ecb09bdc1b458e5692f61": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "7d56725e7dda692fcc1de4f0799c8d25731fb19578880b7aa4bde8c1fe487b77": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a56c7bc4540e59edc6514c3c14bb79192fe41e47027c3dfb8335ced30b29905b": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a32cdf275fad1e30900f52e1a1776c44440bdbf00b5200b630daac4b4be53aca": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "e07c94c57e26dedef71b50f21ba2e5a1e56d634f776d363202b066c1479fd07e": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b534bab95e3a318495d4626b3aa5290a778d290fb7b470d656ec12ff6d37cd8a": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c2dea22991c4efeda75ea566eb800e339c90c5286ac20e5c768c9cf25f519b8c": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3914b69614d0a771853f0abe70a5185022a6b6bac9b0360324b6b67d305aa64a": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "249dcdd992d3071396f21ea001a4416911abc5dd06ef1428d6ca440819bdabe2": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "4a48b0f1c17a9430948c5325704802688d678e6dc611ebbddd98751f71008b17": {
-    "reasoning": "用户要求根据文档并搜索最新政策，涉及公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "bf29d3c95f62bd65516cb42e6d20fbb5fc7730dafd67e32a74adfffb5ebce9ba": {
-    "reasoning": "用户强制知识库或指定了文档",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "76991ab83cc39e4c0fcc65cf7237495da9972204ed4d2071611149d6cec1edf7": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d21908a74b9446dfff6dbfeae2b5a10cdfe8d3a45cdce23e274eaa1d01401ea0": {
-    "reasoning": "确定性文档指代",
-    "needs_kb": true,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "02056cc234a5f28ee8c9f88ad169160b2d38c4cfad47c917207864fdac1c549a": {
-    "reasoning": "用户要求对照手册和网上最新发布的信息，需要联网搜索以获取最新信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "b4b410ca36dbc8c1f25c36187f35882123bb6b8de75119bf8a0c2070ab662c59": {
-    "reasoning": "用户要求根据文档对照网上最新公告，需要联网获取最新信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "7cfd2daba4de8af1d8188480175a3ece512f9f066b403f366ca4802aa9955a3c": {
-    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "6ac69667115c134dc9552c74ad49e6b8a73a8d2308b9e3ff170a128332b16b49": {
-    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "8aaafcc6b8c2dd54e4a1bbfe7c1f6b1ccd9310003b8162e810585a36da92ffed": {
-    "reasoning": "用户需要根据文档对照网上最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "3217527473cb85ba8bcd0dceb77a293cfcb7c19ab17f69c680ca630da8e2a9fe": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "dbec57555c306992e841ec747317e18dc9463c04e3e38b1d8e80ca55087b9e2d": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "27b97a82d7828120f1009a0963b34859ff4b00f8b1236b5f7d1c2a41127321d0": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "8a0531fe707f3299344aa72095e4c65ca1a9e82d6eeceb252f1a8e6e7307917a": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "4749dde0d1443b5721e3ae39c0f55672c323c8df83ee179cc49e858a34a83fa2": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "b01a4616fb2ee28f8573fa1f74b8fb29c93808bbde32835b3e2035c8420abbcb": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "ab8de8a6cb2cb6315650e405998d5a28495113f3737bfa27e56f472192c2a7d5": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "7397929ab84ebab91369dbce2719cabc1cdf379a54c5f1a854e0c40742479730": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "936af0938bf3cc7584acf4bd9cf8068482969d928659457f5cc0eb0d4ea5938d": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "45899af1a2d381ec09a7a734d40b2f8d8abde411903995db7efde9d533623e3b": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "c7197b667a55e9224314d16378bf5c5287f07f919ab8cdb7c312117281c339e9": {
-    "reasoning": "用户需要根据文档对照网上的最新公告，涉及公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": true,
-    "confidence": "high"
-  },
-  "faae4f399f2e7c765e4c74268642e5e07b2419281e5cd403165a4668a0f33a68": {
-    "reasoning": "用户请求对销售表进行数据可视化（柱状图）和统计（均值）。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f4b7938913dca59b801ec133e209de36b7832a515c333dffead7321b2999df46": {
-    "reasoning": "用户请求对 csv 文件进行分组统计，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c8412d47314221900d987616e0ee8b9dce55bd5c51610030376980dad4be61fe": {
-    "reasoning": "用户需要根据 Excel 中的销售额数据绘制折线图，这需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "82f4fa9b89af1bc3fca0957118a35c09a972e72b83dbe6b5c392337eb83a6a01": {
-    "reasoning": "用户询问表格中的排名情况，需要使用数据分析工具进行排序。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2681b49c147c9a64be5e0480cb9069e41daef58aa15b7eafe9b8d8172215e568": {
-    "reasoning": "用户请求分析上传数据的分布，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ffd637d389b48938ba3849bdbe63480883b9c9efb15a6bcecf5b3cb7b8767bce": {
-    "reasoning": "用户请求对xlsx文件进行透视分析，涉及表格数据操作。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0a7d0142ba1636d7f255d3a73b1a8a48f2dbf608ab9920f88ea1966de5678333": {
-    "reasoning": "用户请求对各区域销量进行求和，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b53e70b43742575993a2fd3b427b4ba87e6f64fc20eaa509842688d5bb16087a": {
-    "reasoning": "用户请求绘制饼图以查看占比，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "32876e5fe38805826dc6b8f637f362e4e5d77d212832b65cd0d276fb4c79e8cc": {
-    "reasoning": "用户请求使用 pandas 进行数据分析，需要使用到数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "07c9a9b0d19100bff0da2f32aeff34557674da8f15bcb97202c9289486720788": {
-    "reasoning": "用户需要根据月份对 dataframe 进行汇总，这需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "c355cdfdcf1fada37ac428cac4fa126649933f44c81847f73429816b38b8ebd7": {
-    "reasoning": "用户请求可视化转化漏斗，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "23ce80636016efc56287007837cfdc7dfb4f06f77f19da711a29f6f74bd9fec8": {
-    "reasoning": "用户请求图表展示近 7 天活跃情况，需要使用数据分析工具进行统计和可视化。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0201933d94f23c2f8387e8e309cc3a074249b943f75fab6796277f53162877e8": {
-    "reasoning": "需要对比各部门的KPI，这通常涉及到对表格数据的分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "7436cbaec296a815658a8ed224d57de5fea52aa8c40cd93d67e824e4c88be217": {
-    "reasoning": "用户请求查看趋势变化，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "836203f4b9b4215fb2a8bcfac997bd715541aaa176b88b14b12801da3456a420": {
-    "reasoning": "用户请求对总营收进行求和，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "571fc129cca59b9dfd5dbcacfde2c2d29f089c2a53bb559aea64b23ad85b94e3": {
-    "reasoning": "用户请求计算均值和方差，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "1b39c5b45c625a2fafb5268e8306490d2ef63ee71471116090d47e6df67b2cc7": {
-    "reasoning": "用户询问排名前五的产品，需要使用数据分析工具进行排序。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "7297fd4a1fd1ca035f8c35c0cb4b74cd339f6bc3a6796fedb2f2670475fbd742": {
-    "reasoning": "用户请求绘制分布直方图，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "554625e187e09d1f0f120577eea2a5aeb1de6bd6be6ad808e970347da58ea168": {
-    "reasoning": "用户需要统计城市订单数，这需要使用数据分析工具进行分组统计。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a142c16d47986f26d9dc606ea2d2a33305bb7024470ce13148a1db318f9a6681": {
-    "reasoning": "用户询问透视表相关内容，需要使用数据分析工具进行操作。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "7126acdb3f66015cc0c3832dcdc2952b6c44c4637ab7301cab38ed4de2c661e1": {
-    "reasoning": "用户请求对Excel表格中的毛利进行分析，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "25c83cadbaca1a598c4f47d426293f909574c11f93a0f060663d2efd2da10cd1": {
-    "reasoning": "统计用户数需要使用数据分析工具",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "8ef1f00c160faf205020a9e956277db364d182e124804c240c5a9f0ea089efc1": {
-    "reasoning": "用户请求在表格中求最大最小值，属于数据分析操作。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "29e2261fcd1d5962dbff0df1e301cd4af2fb84b85d2a8d7ba2f8b0fc5c2c0a4f": {
-    "reasoning": "用户请求画图展示库存周转，需要使用数据分析沙箱工具进行数据分析和可视化。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "bd7cf3d987663870aca749e838a7c53e7914c554c540b293916a619a0842afac": {
-    "reasoning": "用户需要统计缺货 SKU 数量，这需要使用数据分析工具对表格进行处理。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "9597640e65e26f4cfed7b648dbfd64fe22054e528d7eea76aa603cb8a960ecc1": {
-    "reasoning": "需要统计本月退货率，涉及对表格数据的汇总分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ae702281cd5d7cf19f7fd04dde2257db8d4f28f3473828be04d42b56b7f7196c": {
-    "reasoning": "分析复购分布需要使用数据分析工具，因此需要使用sandbox工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "5dc10815ea20330f708b34a1fb40761225b3de49a65984f700bdebcb71313d53": {
-    "reasoning": "需要使用数据分析工具来绘制柱状图展示各班组产量。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "db47d1a5f883cbb639a3b3a2b961db0550f3ad79b38a55fa04c376aa7a61dbf9": {
-    "reasoning": "用户需要对比预算与实际，这通常涉及到对表格数据的分析，因此需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "bf9f51d489ca7fef93ed74b7eee4a89a098458d5269c2fd5a66b0083b7ddce85": {
-    "reasoning": "用户请求查看费用结构的饼图，需要使用数据分析工具进行数据可视化。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a9cfb5f765960b67637729514bbca48d7932f51b09662523016dd328d07e5bea": {
-    "reasoning": "需要统计表格中客户贡献的数据，以确定贡献最大的前20位客户。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "94b9dddf2b94d4b9ef9fb452d29674489e57ee9f78d3e539b74b3b125dc81425": {
-    "reasoning": "用户请求使用 pandas 进行描述性统计，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0f66664b1b3df6a9a614c5ee654c01a9d04813cdb21aafe10ba60b1523bb37d9": {
-    "reasoning": "用户需要通过历史数据来预测趋势，通常需要先查看数据的变化趋势，因此需要使用数据分析工具进行绘图。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "95ce00f7c3636e1a042f882e8226044e87e602f0fa01581482155fd0238bc052": {
-    "reasoning": "用户询问表格透视 HR 人数，需要使用数据分析工具进行统计。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "28b2c546bc1b0c384476e178ec95d2a2be686b9961453a1d852c41b9844d05a6": {
-    "reasoning": "用户需要计算加班时长的均值，这需要使用数据分析工具对表格进行处理。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "db8a999a65327b174e3847a1fcf516f5ca88f05a65e2d845b286d0f747becb39": {
-    "reasoning": "用户需要查看 csv 文件中的转化率分组情况，这需要使用数据分析工具进行分组和计算。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f041f748c9a6500b3130dfc2a0934f0486787ddfb1972fa9b96eee7c75cffb2e": {
-    "reasoning": "用户请求对销售额进行可视化排名，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "7447f9e205eaf8f2518aa1ac4e96e40f095a48f359eebc6bf0175bbab3d3391c": {
-    "reasoning": "用户请求分析异常值分布，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "161495bd315467e05cee4e222c125618c811d7af2bd0ad59d47c2ab849f0269b": {
-    "reasoning": "求和各成本中心需要对表格数据进行统计汇总，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "93bff72ff12921903d0d4cd37bfcc10d94c7e4331fd145f136b2533cc6dd0ad9": {
-    "reasoning": "用户询问平均响应时长统计，需要使用数据分析工具进行计算。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "21e24306d6784731c1f8510f973d1f4dfa03e2f77e0bc7d45a3f8bef674a1575": {
-    "reasoning": "用户请求绘制柱状图，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "6359e4b1d43ecac064a9204b9da9cbed8696c9f75885244c64f95a24175590bd": {
-    "reasoning": "用户询问关于Excel透视表中的品类销量，需要使用数据分析工具进行统计。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "316927e2f9c0955f4d37e3787452ba0c3263c1f733fbf955d01f10c90f9d0b8e": {
-    "reasoning": "用户请求对表格进行排名。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "76e7d6dee62cd74b9bf0fb483269dd6f2c58adfa1e468968b3fb3aa03767311f": {
-    "reasoning": "用户请求统计并画图日活数据，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "29a859fb8ff215fa1343226e727d207dd0dedc7be2f9d9a3ce860469d3cecc78": {
-    "reasoning": "用户询问关于 csv 分析漏斗的步骤，需要使用数据分析工具进行分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "db346e18e25c929270291a3688a5bf5f95631e511591c991f4d9908968b21344": {
-    "reasoning": "用户需要针对xlsx文件进行毛利率的汇总，这需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "a9ab5d1ce5998ae5a2d0b75ecdb7eaf379501c76ada311ebae92b9866b5250d8": {
-    "reasoning": "用户询问的是关于表格数据的分组均值，需要使用数据分析工具进行计算。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "101b3524b982c2c0c96c98e1cf4bfb6abd380d4704976577bbaf836bf178a354": {
-    "reasoning": "用户请求绘制折线图，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "307e932d988671dc5d7fccaa6fe70c21c9cdb1725dfe4aa777c1297a1bf94ffa": {
-    "reasoning": "饼图通常用于展示费用占比，需要使用数据分析工具进行计算和绘图。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "5a08b617292cfef2ed467c54007b8564731a02376cf178827cd7e7c54885e039": {
-    "reasoning": "需要根据供应商的排名信息进行查询，这通常涉及到对表格数据的分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3d5d0fcec061eb861ecacc9f853b02e068a41bc307c877663a0e18ccdfb72223": {
-    "reasoning": "用户请求查看金额的分布情况，需要使用数据分析工具进行统计和分组。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "9afe2036229ce81d22b674d5ee371e8b558c72a854292100259d206e93400fcc": {
-    "reasoning": "用户询问关于 pandas 的透视交叉表，需要使用联网搜索获取相关信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
-    "needs_sandbox": false,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "d155a7a200c06e7e9f4dac1df178e43b8168ee59c22d2723706244f0dd1d06f9": {
-    "reasoning": "用户请求统计投诉量趋势并画图，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "ecd41a761a039c133adcbb531fdcc0509c35e9a175d3e40e7d4fd5749d6e364a": {
-    "reasoning": "用户请求对表格数据进行合计与平均计算，这需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "b0aff4ac9c2b9f7e953017eb4d4cd7abe9302e95877abdba3e3d2828b1c1df30": {
-    "reasoning": "用户请求可视化库存结构，需要使用数据分析工具进行数据可视化。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "eb24dfbca2bbb80ea70fad6c66a3ceb207fa4ae2ad123065f11fb30d397e979e": {
-    "reasoning": "用户需要分析 Excel 里的退货数据，这涉及到对表格数据的统计和分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "3728ebf63cff43cc0343fc3d872100829fc5011f85d0d72da118293bc44efaee": {
-    "reasoning": "用户请求对 CSV 文件进行柱状对比图绘制，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "fad763793cc09c7ab1c294ff44a0f88610ac84139b158bf20d97eac6eab6dbbd": {
-    "reasoning": "用户请求查看 xlsx 文件中的折线图以分析增长情况，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "0e66da903fbb829d9a3e48889db8017308e9db8f89be2d657414a8768c99caec": {
-    "reasoning": "用户需要汇总并排名 SKU，这需要使用数据分析工具对表格进行处理。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "406422523d7208d30ef8c1e6058ff66ab8fc6fb36b41bc2874f7931c6e505fd0": {
-    "reasoning": "用户请求统计各部门的均值，需要使用数据分析工具进行计算。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "58dff0c20571868cac0fef70edac9cedbc2fc3617fbb7b1c60edc5c52f539020": {
-    "reasoning": "用户请求绘制转化率分布图，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "140dfa767e2641138beb58274921c04ee2da011ed4a99552f4a52905810a1d3b": {
-    "reasoning": "需要分析地区销量数据，这通常涉及到对表格数据的透视和统计。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "1798e74bb0d15365336dcede1f896a46b39bd4ded10e8272d8120242ce27ae0d": {
-    "reasoning": "用户需要分析表格中的环比变化，这涉及到对表格数据的统计和分析。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "f0651409c061cea30e534ffdc8f77d3b0d34de267715c0c569a052f0a6eddc09": {
-    "reasoning": "用户请求获取数据中的top值并进行可视化，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "be5cf818320215dc5bc3e17d2c4f1b565c1e0455c68e98adf1fbd91a26431563": {
-    "reasoning": "用户请求对数据进行分组统计并绘制图表，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "75299fc01bb25fdd78c433f4f9b345c95b38a8fed524fefaa86ccd6f1730e9e6": {
-    "reasoning": "用户询问关于 Excel 柱状图费用的问题，需要使用数据分析工具来处理。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2335deba830bb3b4e9d8ffa3e9b46be8ac750f8b72002e0f73e7362bef031ea6": {
-    "reasoning": "用户询问关于 csv 饼图结构的问题，需要使用数据分析工具来生成饼图。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2325380411252881922d4a2dd9410fd2ce983ecd4ba9a31c851a463ec1580244": {
-    "reasoning": "用户询问 xlsx 文件的趋势折线，需要使用数据分析工具进行绘图。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "bb222ce09565226918c597fa282eec2fcfaaea3dc387da3c2dc6939ed3971c34": {
-    "reasoning": "用户请求分析数据并出图，需要使用数据分析沙箱工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
-  "2be3021ed321776b0c8a5c1d1e8165cc4e1737484078b2388e9f4ff01346a2bf": {
-    "reasoning": "用户请求对表格进行简单统计报表，需要使用数据分析工具。",
-    "needs_kb": false,
-    "needs_web": false,
-    "needs_calendar": false,
-    "needs_sandbox": true,
-    "needs_freshness": false,
-    "confidence": "high"
-  },
   "50c3d6e34cdc9c67b6574778ee0cf4c9ae1df0431d5caf30cfa29b01cd89b810": {
     "reasoning": "用户请求搜索最新的行业政策新闻，需要联网获取公开信息。",
     "needs_kb": false,
@@ -4104,7 +1944,7 @@
     "confidence": "high"
   },
   "2d1a338534fac4503c5f6f31b9f719f3a972cba175c3ce588e802d5cbe1721c5": {
-    "reasoning": "用户询问官网客服公告的更新情况，需要联网获取最新信息。",
+    "reasoning": "用户询问官网客服公告的更新情况，需要联网获取最新的公开信息。",
     "needs_kb": false,
     "needs_web": true,
     "needs_calendar": false,
@@ -4229,8 +2069,1214 @@
     "needs_freshness": true,
     "confidence": "high"
   },
-  "1e05f4213edf6c3a67d28dc3fe2998b30286a2a8bf879393a8497d215d7af877": {
-    "reasoning": "用户请求联网获取天气预警信号，需要使用联网搜索工具。",
+  "f237303e2667e970a838781b14f6cd025ca26cb2dc01d8ceddf7d93a44c301dd": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0577edee6e0a4cb0a867203e23a3cd49fb254072c6044bc4154ae453cc8d7d90": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "eb026832448bdbbfcd5ba6fb9829c561b52f6dfbcfd9462cb7107cdfda828b87": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2406fe07f82561c225256e96eeaf6519cdfe2587dff2e82f2dc6c3faca7705e2": {
+    "reasoning": "用户提出预定会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "dff8da2baa714f1100076ce9409de5f38869837cd2dd991a9f41ccda9c0f2c96": {
+    "reasoning": "用户请求安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6ed53ae2453511b321d15b4402c2b03e2131cf626fa586503b86b399340abaec": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a86126b85671f7833cebda6b6a57d2c7889865988cc3ff0b984c2245913b1315": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "294ab6670268ddaee188335150c1f231a268819a96567606aa6487e99d00b16c": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f214f97dcc8c76777432b345215d2b7660e77f3e4c180b5f0100e9b94e750782": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "09eed0cac432fe1601f36687e40d2f2a1c0442e4d1dd8f90af6df589e59800b7": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "aab7db3b2efaf1a95094feb5afc705464c8c0c14977e144110306d9443ef6046": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "47794ee519d052f80205be6ad7c8b9009f55f8af5a9453fa93ea1b65579d613a": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cd65cef151ae9fbdb5c31541cd1889e433c2ddce84472fada7c7bd0b44cde7e8": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d87b979f6c6c418b322104f68825d7939c4bd3415eb31f2a36232d322eaf7c07": {
+    "reasoning": "用户提出安排会议，需要创建会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bb0ffe6a2618e9329aef53e8419c94d75e38c17f35513ee0c310a5fbdcad0141": {
+    "reasoning": "用户请求安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e55a3e1dd9338a89f3be87ef6b1c5ade7da3ecb3acf74123b152762f5bdbd3db": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "48d47d9d33fa0c6a71929ff7678e1edfac51a5d7feead738022872cb8b17bb42": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "503c56a3e8428b751f99986100457286fe41355a198670e86e1b7d48beeaee05": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0e1d31029dac690511c964e216a65988c9225ef3e145f44223a77fdb699b59d3": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f6a8c4d68362343d3c7081a4c3ac231f8799b1544be9f65d6f1a476117d04e5b": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c38f16c41e763e87bf25c277e3c0065c18b0147e6efe2c7ff9b6cc4869b97d65": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "024c77ae738a543f45c67539fc7115e248bbb3a43fcecc6afd748595b9148afb": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1fd22e852202dbfdf3e6adb7e198ca64e136ae3d822f21ed89574142bbcfbf62": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cb4d5f6d1cb6baa6ea68337512aa5daf77d620e40b0963d9a9bcb947fb474ecb": {
+    "reasoning": "用户提出安排会议，需要创建会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ace7f9d205f019f03a6b9ea0d2e6e9a1058edebe7b393a01d179cb1b94168842": {
+    "reasoning": "用户请求安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8d7466d3dfa6e58c186e50d4c660c0980d4542bdcf9b8e7dce529bb584e79be1": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d1bec763b69159d900605465a8c7d72c540765fcd3373193d8c648d920966051": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d39be5e0cde88025f663c846c83ac3816ab18b3a101f958e88737e0364387104": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2d91278024ddfb4741a37496c6dfe1c03907875f123daa6d8b75fde5cd6484e2": {
+    "reasoning": "需要安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2bdd5f6fe46aca34affb87a503eb51370b87cacfcdf5b223ff91df2abe89b125": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4738501cc4051b0fe5b4ed7d36cbc46fc5015a950b553b8fd3e07954895ad7a5": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2fca93ff256de5c166b52e73d0e8cd1a67f8b21d8a8af66aa499f1c598d8e851": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ab8e615e8c236bcd7ec982141c2a1cbb4a82c923543f95c1697a12edd818d43d": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d0672e908883af624e9e795762dd7c52b6ee7eb9e9c6fb059b74adaa7cd89ed9": {
+    "reasoning": "用户提出安排会议，需要创建会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "80167ec23db257b34cc3f6a132576a6a2e84ad4d81c696e6ffc8b85ad6e0de73": {
+    "reasoning": "用户请求安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "fad3aa92a468a7d27c1c1ea4a795a847b8be0a4b57a0c0b82731cecca9aff7b4": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c0da7040031a00af50c9483b0bd06ed87747ae384a1fbe05425a05f05dc85cc7": {
+    "reasoning": "需要设置会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "274037b74b539a072807c651e5bb2793fda89128cfab00e03890b5e771b81c43": {
+    "reasoning": "需要安排会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9ea1f461105b22e3046eccd19409d803a4ea9e6e924ed650623797d76a84c114": {
+    "reasoning": "需要创建会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1707966b41283fb509105e8455db87d0908a114bddbbb0d5595701151c94ffdf": {
+    "reasoning": "用户请求安排一个具体的会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "800790db81bbe8317b014ee70498476d9ea97056ec4b7ed3806bfaa19f042c65": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "496bcce9e9fda3cd1ac5ba185d8b6251d2e2bf9640611dadfffe2fa673df8005": {
+    "reasoning": "用户提出安排会议的具体时间。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "4926ea511a157ac1263cee29ab2724ff5006ad924200efcfadd83f2288fbecd3": {
+    "reasoning": "用户请求在日历中添加一个会议提醒。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "27567a4087e60dbd873d89ed08f0fb5ebb54774eda174f255bea06c13286340f": {
+    "reasoning": "用户提出安排会议，需要创建会议。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5a5154d444fcb7543290d7a661b280a446e64249ed9d5af576281a49cb6a6d9d": {
+    "reasoning": "用户请求安排一个会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d978047b3934c750aa86fc2b7704c8335d27fa705e07c42d420d465cca66423f": {
+    "reasoning": "用户请求将评审会排入日程。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "faae4f399f2e7c765e4c74268642e5e07b2419281e5cd403165a4668a0f33a68": {
+    "reasoning": "用户请求对销售表进行数据可视化（柱状图）和统计（均值）。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f4b7938913dca59b801ec133e209de36b7832a515c333dffead7321b2999df46": {
+    "reasoning": "用户请求对 csv 文件进行分组统计，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c8412d47314221900d987616e0ee8b9dce55bd5c51610030376980dad4be61fe": {
+    "reasoning": "用户需要根据 Excel 中的销售额数据绘制折线图，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "82f4fa9b89af1bc3fca0957118a35c09a972e72b83dbe6b5c392337eb83a6a01": {
+    "reasoning": "用户询问表格中的排名情况，需要使用数据分析工具进行排序。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2681b49c147c9a64be5e0480cb9069e41daef58aa15b7eafe9b8d8172215e568": {
+    "reasoning": "用户请求分析上传数据的分布，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ffd637d389b48938ba3849bdbe63480883b9c9efb15a6bcecf5b3cb7b8767bce": {
+    "reasoning": "用户请求对xlsx文件进行透视分析，涉及数据分析操作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0a7d0142ba1636d7f255d3a73b1a8a48f2dbf608ab9920f88ea1966de5678333": {
+    "reasoning": "用户请求对各区域销量进行求和，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "b53e70b43742575993a2fd3b427b4ba87e6f64fc20eaa509842688d5bb16087a": {
+    "reasoning": "用户请求绘制饼图以查看占比，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "32876e5fe38805826dc6b8f637f362e4e5d77d212832b65cd0d276fb4c79e8cc": {
+    "reasoning": "用户请求使用 pandas 进行数据分析，需要使用到数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "07c9a9b0d19100bff0da2f32aeff34557674da8f15bcb97202c9289486720788": {
+    "reasoning": "用户需要根据月份对 dataframe 进行汇总，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c355cdfdcf1fada37ac428cac4fa126649933f44c81847f73429816b38b8ebd7": {
+    "reasoning": "用户请求可视化转化漏斗，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "23ce80636016efc56287007837cfdc7dfb4f06f77f19da711a29f6f74bd9fec8": {
+    "reasoning": "用户请求图表展示近 7 天活跃情况，需要使用数据分析工具进行统计和可视化。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0201933d94f23c2f8387e8e309cc3a074249b943f75fab6796277f53162877e8": {
+    "reasoning": "需要对比各部门的KPI，这通常涉及到对表格数据的分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7436cbaec296a815658a8ed224d57de5fea52aa8c40cd93d67e824e4c88be217": {
+    "reasoning": "用户请求查看趋势变化，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "836203f4b9b4215fb2a8bcfac997bd715541aaa176b88b14b12801da3456a420": {
+    "reasoning": "用户请求对总营收进行求和，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "571fc129cca59b9dfd5dbcacfde2c2d29f089c2a53bb559aea64b23ad85b94e3": {
+    "reasoning": "用户请求计算均值和方差，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1b39c5b45c625a2fafb5268e8306490d2ef63ee71471116090d47e6df67b2cc7": {
+    "reasoning": "用户询问排名前五的产品，需要使用数据分析工具进行排序。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7297fd4a1fd1ca035f8c35c0cb4b74cd339f6bc3a6796fedb2f2670475fbd742": {
+    "reasoning": "用户请求绘制分布直方图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "554625e187e09d1f0f120577eea2a5aeb1de6bd6be6ad808e970347da58ea168": {
+    "reasoning": "用户需要统计城市订单数，这需要使用数据分析工具进行分组统计。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a142c16d47986f26d9dc606ea2d2a33305bb7024470ce13148a1db318f9a6681": {
+    "reasoning": "用户询问透视表相关内容，需要使用数据分析工具进行操作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7126acdb3f66015cc0c3832dcdc2952b6c44c4637ab7301cab38ed4de2c661e1": {
+    "reasoning": "用户请求对Excel表格中的毛利进行分析，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "25c83cadbaca1a598c4f47d426293f909574c11f93a0f060663d2efd2da10cd1": {
+    "reasoning": "统计用户数需要使用数据分析工具",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8ef1f00c160faf205020a9e956277db364d182e124804c240c5a9f0ea089efc1": {
+    "reasoning": "用户请求在表格中求最大最小值，属于数据分析操作。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "29e2261fcd1d5962dbff0df1e301cd4af2fb84b85d2a8d7ba2f8b0fc5c2c0a4f": {
+    "reasoning": "用户请求画图展示库存周转，需要使用数据分析沙箱工具进行数据分析和可视化。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bd7cf3d987663870aca749e838a7c53e7914c554c540b293916a619a0842afac": {
+    "reasoning": "用户需要统计缺货 SKU 数量，这需要使用数据分析工具对表格进行处理。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9597640e65e26f4cfed7b648dbfd64fe22054e528d7eea76aa603cb8a960ecc1": {
+    "reasoning": "需要统计本月退货率，涉及对表格数据的汇总分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ae702281cd5d7cf19f7fd04dde2257db8d4f28f3473828be04d42b56b7f7196c": {
+    "reasoning": "分析复购分布需要使用数据分析工具，因此需要使用sandbox工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5dc10815ea20330f708b34a1fb40761225b3de49a65984f700bdebcb71313d53": {
+    "reasoning": "需要使用数据分析工具来绘制柱状图展示各班组产量。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "db47d1a5f883cbb639a3b3a2b961db0550f3ad79b38a55fa04c376aa7a61dbf9": {
+    "reasoning": "用户需要对比预算与实际，这通常涉及到对表格数据的分析，因此需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bf9f51d489ca7fef93ed74b7eee4a89a098458d5269c2fd5a66b0083b7ddce85": {
+    "reasoning": "用户请求查看饼图以了解费用结构，这需要使用数据分析工具来处理表格数据。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a9cfb5f765960b67637729514bbca48d7932f51b09662523016dd328d07e5bea": {
+    "reasoning": "需要统计表格中客户贡献的数据，以确定贡献最大的前20位客户。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "94b9dddf2b94d4b9ef9fb452d29674489e57ee9f78d3e539b74b3b125dc81425": {
+    "reasoning": "用户请求使用 pandas 进行描述性统计，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "0f66664b1b3df6a9a614c5ee654c01a9d04813cdb21aafe10ba60b1523bb37d9": {
+    "reasoning": "用户需要查看历史数据趋势，这通常需要通过数据分析工具进行。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "95ce00f7c3636e1a042f882e8226044e87e602f0fa01581482155fd0238bc052": {
+    "reasoning": "用户询问表格透视 HR 人数，需要使用数据分析工具进行统计。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "28b2c546bc1b0c384476e178ec95d2a2be686b9961453a1d852c41b9844d05a6": {
+    "reasoning": "用户需要计算加班时长的均值，这需要使用数据分析工具对表格进行处理。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "db8a999a65327b174e3847a1fcf516f5ca88f05a65e2d845b286d0f747becb39": {
+    "reasoning": "用户需要查看 csv 文件中的转化率分组情况，这需要使用数据分析工具进行分组和计算。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "f041f748c9a6500b3130dfc2a0934f0486787ddfb1972fa9b96eee7c75cffb2e": {
+    "reasoning": "用户请求对销售额进行排名的可视化，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "7447f9e205eaf8f2518aa1ac4e96e40f095a48f359eebc6bf0175bbab3d3391c": {
+    "reasoning": "用户请求分析异常值分布，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "161495bd315467e05cee4e222c125618c811d7af2bd0ad59d47c2ab849f0269b": {
+    "reasoning": "求和各成本中心需要对表格数据进行统计汇总，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "93bff72ff12921903d0d4cd37bfcc10d94c7e4331fd145f136b2533cc6dd0ad9": {
+    "reasoning": "用户询问平均响应时长统计，需要使用数据分析工具进行计算。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "21e24306d6784731c1f8510f973d1f4dfa03e2f77e0bc7d45a3f8bef674a1575": {
+    "reasoning": "用户请求绘制柱状图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6359e4b1d43ecac064a9204b9da9cbed8696c9f75885244c64f95a24175590bd": {
+    "reasoning": "用户询问关于Excel透视表中的品类销量，需要使用数据分析工具进行统计。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "316927e2f9c0955f4d37e3787452ba0c3263c1f733fbf955d01f10c90f9d0b8e": {
+    "reasoning": "用户请求对表格进行排名操作，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "76e7d6dee62cd74b9bf0fb483269dd6f2c58adfa1e468968b3fb3aa03767311f": {
+    "reasoning": "用户请求统计并画图日活数据，需要使用数据分析沙箱工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "29a859fb8ff215fa1343226e727d207dd0dedc7be2f9d9a3ce860469d3cecc78": {
+    "reasoning": "用户询问关于 csv 分析漏斗的步骤，需要使用数据分析工具进行分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "db346e18e25c929270291a3688a5bf5f95631e511591c991f4d9908968b21344": {
+    "reasoning": "用户需要针对xlsx文件进行毛利率的汇总，这需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a9ab5d1ce5998ae5a2d0b75ecdb7eaf379501c76ada311ebae92b9866b5250d8": {
+    "reasoning": "用户询问的是表格中的统计信息，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "101b3524b982c2c0c96c98e1cf4bfb6abd380d4704976577bbaf836bf178a354": {
+    "reasoning": "用户请求绘制折线图，需要使用数据分析工具。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "307e932d988671dc5d7fccaa6fe70c21c9cdb1725dfe4aa777c1297a1bf94ffa": {
+    "reasoning": "饼图通常用于展示费用占比，需要使用数据分析工具进行计算和绘图。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "5a08b617292cfef2ed467c54007b8564731a02376cf178827cd7e7c54885e039": {
+    "reasoning": "需要根据供应商的排名信息进行查询，这通常涉及到对表格数据的分析。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9c871f47f685b45141503c49c535e4aa17fbbafee8f0864e5d8ffa72d4ac9144": {
+    "reasoning": "用户需要修改会议时间，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a4c51f0fb87baa5dfec099f5b96e030bd8ce94e2da9be74beea1ef78635afba6": {
+    "reasoning": "用户需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "44bca29b996776a6d57033e1e4edbf2a3f0f856207f759cc9fd3bc871cec21fc": {
+    "reasoning": "需要添加参会人员信息以安排会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "04757ea9303dc736fd032687f5958730afeeb3aceca42f0e0f7db59601f1e8e5": {
+    "reasoning": "用户需要更改会议地点，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d427bab88f4db58d8536eb066b2d47f1703e1e74d1f445745ccb86d2f85e71dd": {
+    "reasoning": "用户需要修改会议标题，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3c3e4d340b2fd7db7ee742b826d95922f5324de001d619c4035e3c46753e323a": {
+    "reasoning": "用户需要修改会议的结束时间，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "bf5b29f60b175e2a9b2409ac9642be3793b680023862c90ef18d7342b7a2bf84": {
+    "reasoning": "用户需要修改会议参会人信息，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "41d938ece91488b61b98c8bad32c11729787a34c70abddfc7377c95d5b7b1ebe": {
+    "reasoning": "用户需要修改会议安排，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "28b84716bb5bfbc8b8109b3cd88f77b625fa116c11fc179bc9da3d975e62f851": {
+    "reasoning": "用户需要设置会议提醒时间，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2bf1201071c6d75df89c0c8604943e1c04f0fc172e9b63d4a02375001250c695": {
+    "reasoning": "需要修改会议的周期信息，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "1a622634dc62455f54c2117ef5159f04fd97cf43d1a081c7548982f699aea01a": {
+    "reasoning": "用户请求取消已安排的会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "65002557c2206e70e9be4f623e9dbdd5f7f4d6276505b90834b7710fe1a17640": {
+    "reasoning": "用户需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "43ee5411962fe856cf7015597a450b2704131e1bd42203b3ceb4c25178d54182": {
+    "reasoning": "用户需要修改会议日期，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "83afb8a2485091b1fbd44f364b49a824d73103717b357c4cd0d28945a66435c4": {
+    "reasoning": "需要安排会议并确认参会人员。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2e94bdb991d01d78df4d19354cea68f501860863946423a2e310ab3f10657bee": {
+    "reasoning": "用户需要修改会议时间，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "304eb12758110e7aa7688d9b90c9e4fffdf783134adbee38cac73bba4e894de4": {
+    "reasoning": "修改会议时长需要调整日程安排。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e0ebb5b4fcfddb546bdc2dbf95f9ae1794e6ad929d66739d9d3ad208a04add11": {
+    "reasoning": "需要创建会议提醒",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "eba794c8f764b8eadebcff5a3047ae82e7e98ebd5cc5e2ed104438bd83d7614c": {
+    "reasoning": "用户需要补充会议说明，涉及具体会议安排。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "e58915fe1bff6fd4a0f714c3c79de697aa0413e3b5292e265738237a52fec10c": {
+    "reasoning": "用户请求修改会议安排，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "6407172c4e54a051786902176f4d1b2506bc7d68432fae466e0df8296616f885": {
+    "reasoning": "用户需要设置会议的结束日期，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "68bc55daafe79a646d5d76e81e03d172ed9d2630420aaae6de37943a31f27715": {
+    "reasoning": "需要安排会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "87569004c9b1c4b1c4c1bf55709a6b5a05b533a62e591a99148f68b9c740c140": {
+    "reasoning": "需要设置会议提醒",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "99f61bf4fa129c520fed7049d17080a66c652baa3c935463d03a44eb44073f2b": {
+    "reasoning": "用户需要按照上海时间安排跨国同步会议，涉及具体时间规划。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "41f9a8bfa7a2a63ae274ad1f619c2dbe7369629b2b28936e672d692c59002442": {
+    "reasoning": "创建会议",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "516956df60be64062e9c625f230b4f230e15e9661679d4bc128a169ef2448517": {
+    "reasoning": "用户要求查询公司差旅标准和网上酒店均价，涉及内部政策和公开信息。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "7f2bd0e3031edb9bcdaca56934f5312cb91e55f67e0d82ad17f6c3bb1b4f012f": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "c0f9e142de34aa5baeb57693dcfd1abfd12cc2fb4617851ce7d4a13da76b447f": {
+    "reasoning": "用户请求获取内部年假规定和今年法定节假日安排，这两者都属于内部文档内容，需要使用kb工具来回答。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "a08ca290da8ecd6b3e64fdcbfa6b4d68a68adc25180841de08033c319e28f2bf": {
+    "reasoning": "用户要求查询公司远程办公制度，属于内部文档事实；同时询问行业执行情况，需要联网搜索最新信息。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "beef0622531b1b71bdc97889dabb6025b60120e1a1bc1e896d6f3d0bcf929ddb": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "2e89ba6f77c7f85b3d173765b1c43871a004c3b78627519bbeaf10ca2974b451": {
+    "reasoning": "用户要求查找内部合同审批线和最新监管要求，这两者都需要使用内部文档和公开信息。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "fb3d4cc1553f5c0e1a1b41b301621e454e3a830e71e76857b18e01bce44363b2": {
+    "reasoning": "用户要求整理内部数据出境流程和监管部门最新公告，涉及内部数据和公开信息，需要使用联网搜索和私有知识库工具。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "f9bbf2dfd3fa9e488b1a72d8f46646ee6047610197625bc7bd1391f0ed4dafd3": {
+    "reasoning": "用户要求查内部MFA要求和查看服务商故障，涉及内部材料和公开信息，需要使用kb和web工具。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "d5ce036efe19508fbb76ee9e4bfb065a6abc16ff680a9a915bcb103c94643966": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "599e77b76af10263b69adb7019961dcd93a9007b9ed06599926def6ab40b5afc": {
+    "reasoning": "用户要求查看公司VPN申请办法，属于内部文档内容，需要使用kb工具。同时，用户还要求查询运营商当前网络状态，属于公开信息，需要使用web工具。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "5be435742455a14434ccd4034cce4ddc463173a0fa4642c10c0e5393c750458d": {
+    "reasoning": "用户要求对照内部会议制度与网上推荐的高效会议方法，需要使用内部文档和公开信息。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "d597875a95fd42bccbec2b8ec2facb4303025b1904104191ffc6863100a74d6d": {
+    "reasoning": "用户要求处理内部材料和公开信息，涉及公司采购流程和供应商风险，需要使用知识库和联网搜索工具。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "eccc28d1def67e32561527ddfec0b7939eda2ab328352fd35b9e3c183b6102f7": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "8da452928cb53037803075ad7e95f13667b13a6a557e2d0e9d3e4c56980a45ce": {
+    "reasoning": "用户要求对照内部加班规则和本地最新劳动政策，需要使用私有知识库和联网搜索工具。",
+    "needs_kb": true,
+    "needs_web": true,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": true,
+    "confidence": "high"
+  },
+  "af4941e4ff34aef5972a196e5d16b68b9909a7875d3daf55c3655e765aed1c14": {
+    "reasoning": "核实公司支持的文件格式和官网最新兼容列表需要访问公开信息，且信息具有时效性。",
     "needs_kb": false,
     "needs_web": true,
     "needs_calendar": false,
@@ -4238,265 +3284,319 @@
     "needs_freshness": true,
     "confidence": "high"
   },
-  "c4bdfc8a10eb8994820d52f83cf85966ee1abc4742794e8bac1a899e31ac04bb": {
-    "reasoning": "用户请求搜索行业峰会日程新闻，需要联网获取公开信息。",
-    "needs_kb": false,
+  "df72df8f8b757c7649dc4ffb9345af398eea39065f5d25f9e8b60d94b5a22ab6": {
+    "reasoning": "用户要求检查内部锁屏要求是否符合最新安全基线，需要联网搜索最新的安全基线信息，同时需要查看内部文档中的锁屏要求。",
+    "needs_kb": true,
     "needs_web": true,
     "needs_calendar": false,
     "needs_sandbox": false,
     "needs_freshness": true,
     "confidence": "high"
   },
-  "e519ecca452159a5dd23932dcfc832e8d4c031718649b713472e014c04db8d32": {
-    "reasoning": "用户请求查找热点舆情，需要联网搜索获取最新信息。",
-    "needs_kb": false,
+  "f7f92bd0e202cfa0d2f36c504b5b9ac207eb7dcebc202c6660ba8bc9b727d9e3": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "98b5ea22e947eb47f731c0bd347fd7bc7bf85f9d15e1de7e4bb7eadd906fb1b9": {
+    "reasoning": "用户询问内部竞业期限和最新司法解释，这两个问题都涉及内部政策和法律信息，需要使用私有知识库来获取答案。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": false,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "034f44ace08b378f68baa0aee6bfb14dc64fcfa1727e9a8456538d8a41657be0": {
+    "reasoning": "用户要求查找公司内部规定和园区网络公告，属于内部文档和公开信息查询。",
+    "needs_kb": true,
     "needs_web": true,
     "needs_calendar": false,
     "needs_sandbox": false,
     "needs_freshness": true,
     "confidence": "high"
   },
-  "0e75cbf68c6bbedfa8f1882f1440f0a4005d336fee27858092fad64029b91534": {
-    "reasoning": "用户请求进行联网搜索以获取新品发布信息。",
-    "needs_kb": false,
+  "1b8c80312aedd06df010122bef38a6ba6fbdbc4da789317802a990bca68f7bc1": {
+    "reasoning": "用户要求整理内部差旅餐补和网上公开的目的地物价，涉及内部文档和公开信息整理。",
+    "needs_kb": true,
     "needs_web": true,
     "needs_calendar": false,
     "needs_sandbox": false,
     "needs_freshness": true,
     "confidence": "high"
   },
-  "ce61bab12d6c0f57813add081dff5c1c2e6b230e046e216446ea7a3c70e07a46": {
-    "reasoning": "用户请求实时资讯汇总，需要联网获取最新信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "c59d8d185b89c53d121d9a8178935ea304aed3954a79966b953bc1ecd32ead58": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "2aec7a91c95ab1293fcfddf3e2db6f392e75dc0c56d230195929f84ba2c834d3": {
-    "reasoning": "用户请求搜索最新招投标公告，需要联网获取公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "46224cdff33ac9110e03721783fe67904c943f150f36141de882f998ff40a497": {
+    "reasoning": "内部销售定义属于文档事实，需要使用kb工具；计算上传表里的区域销售额需要使用sandbox工具进行数据分析。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "7755ae7f8547bdb4d119262ca364e7f6324167c95dc424b4d7f88cbdd47d0431": {
-    "reasoning": "用户询问官网通知是否有更新，需要联网获取最新信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "2e6ad844186c34d70fe6280c357f8ae20912e1d32a9a39772313f93aba1eec86": {
+    "reasoning": "根据制度中的迟到规则统计考勤表违规人数，需要使用内部文档中的信息进行计算。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "6226d02be57f7c24b195f572ecd6f38af636098ddb110396cbc3f7479849acd0": {
-    "reasoning": "用户请求查找热搜关键词，需要联网搜索获取最新信息。",
+  "eaeeb0139065721b5dfce846507a973942d943a8ab99e085b617e8b8d22dc2a7": {
+    "reasoning": "用户要求筛选超过阈值的费用，需要使用数据分析工具进行筛选操作。",
     "needs_kb": false,
-    "needs_web": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "496f18d379be3d633f89b35afca9bb48bfab3d80003d534acbd7420e78669e45": {
-    "reasoning": "用户请求联网查看政策原文链接，需要获取公开信息。",
+  "e33e304ad1e16a3ac2db8523b1609eeb19e9e4d296aaf96283b1f7b32de20ca1": {
+    "reasoning": "根据用户要求汇总业绩表，需要使用数据分析工具处理表格数据。",
     "needs_kb": false,
-    "needs_web": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "e2638909936eb9eb472df58b728e7372373da2bc383df8ade99550ef0e64bbe5": {
-    "reasoning": "用户请求搜索新闻通稿，需要联网搜索。",
-    "needs_kb": false,
-    "needs_web": true,
+  "6dc6d4f9531a2238ce14b4c4477e2863e012539d76630ada502b8087e87de378": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "3c9cf6f0e4f8ad165316d49b898b500fd66048d414cd5843cb89c3eb887c091a": {
-    "reasoning": "用户请求行情播报，需要联网获取公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "296bf2bd16144dcaaa32725895ca9d7351e3a473073cabb848680b88a80d6156": {
+    "reasoning": "用户要求依据内部年假规则检查休假明细，需要使用私有知识库中的规则来处理文档内容。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "5df8833ed8133eb849bfd84846eea9689f26c8954b511eb898223227231ba150": {
-    "reasoning": "用户询问最新的天气灾害新闻，需要联网获取最新的公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "39e88edec3239c69ed8d418e1fc25203360ae21fd636b33ae2aa1ef7b42e47f2": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "49bb7946e8c376f7af2899eb3395eec2fcfc39108e218e2778e494ab1f4cfbfc": {
-    "reasoning": "用户请求搜索股价异动原因的新闻，需要联网搜索公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "4d61bbcd6767fa3eacf5854cab573e7c4988d0947f6bd08630b6c94a480db786": {
+    "reasoning": "用户要求处理内部材料和后续操作，涉及采购验收要求和供应商交付表的核算，需要使用知识库工具获取相关要求，并使用数据分析沙箱进行核算。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "f7598d7c24ebbc61d0aaf5c50721ceab6f4f9d7ec737d468d7dcc92633a541b5": {
-    "reasoning": "用户请求查找官网安全公告，属于联网搜索的范畴。",
-    "needs_kb": false,
-    "needs_web": true,
+  "2a51883557666b4c1dcac69338cb4553b3d78a368c69802ea8cfc85d69aea8eb": {
+    "reasoning": "根据内部合同门槛筛选付款清单需要使用内部文档中的信息，因此需要使用kb工具。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "54788873e61ff4c4e0f3030fe37fdb86a57a6f5088fadb5ceca0c4e2c72fba48": {
-    "reasoning": "用户询问的是公开信息，需要联网搜索。",
-    "needs_kb": false,
-    "needs_web": true,
+  "12900cc6778e16acd775641d41f4aaf726ca52f8ba8366899eb6e57ebbaf0c3f": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "3e6d6611d7a2af7afa68e6b05f6146f4021b0b03c43f037ffc41987e590f2a3a": {
-    "reasoning": "用户询问实时热点榜，需要联网获取最新信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "282a6a75c472ff7c822842d7f0f6c8d506a92c51241fb5e6a988483b2fc8bee2": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "b36fe863bd71db9a87a383edb0d7235aa8eab47f4cf9a8239812b9e6b3099754": {
-    "reasoning": "用户请求联网搜索更新说明",
-    "needs_kb": false,
-    "needs_web": true,
+  "3ee8f578a37edeb64f9ffb543a4ca42d610b4824369c63953951b42790662cc0": {
+    "reasoning": "用户要求查内部客户分级定义和汇总客户表，涉及内部文档内容，需要使用kb工具查询定义，同时需要sandbox工具进行数据汇总。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "2fde689883a1ea5cebf82abd6bf670b93003d37ed313dff67a3a5496bd419ea4": {
-    "reasoning": "用户请求查看新闻时间线，需要联网搜索最新新闻。",
-    "needs_kb": false,
-    "needs_web": true,
+  "fef204f1d69ddc77ee48bda8522e53085f3c014dc97353e5889be7802fb24b5d": {
+    "reasoning": "根据用户要求处理内部材料和后续操作，需要统计文档清单，这涉及到文档内容的事实查询。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "8d776550d0e82d34cfe53d1dbfb7a44f7d10e5f8b052bc950f04f711674600d9": {
-    "reasoning": "用户请求联网查找政策问答，需要使用联网搜索工具。",
-    "needs_kb": false,
-    "needs_web": true,
+  "d3db70d5cee97205bfc010ef3835d35a8bd24f845180b59c63e17244660d436a": {
+    "reasoning": "用户要求查找退货定义，这需要使用私有知识库；接着计算退货率，需要使用数据分析沙箱。",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "b8dc7f1b5437557cb94b44eb043322cd818cb23acc62d4f25d08a2a6a2a365a7": {
-    "reasoning": "用户请求搜索天气雷达相关的新闻，需要联网获取公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "a978f4090431d243b91a9e435483041ea579139fa85347642b62098dacf8ef2a": {
+    "reasoning": "用户要求查询公司例会时长规定，属于内部制度查询，需要使用kb工具。同时，用户要求安排评审会，需要使用calendar工具。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "5224a595667699038fefd54a720f36201ff5c15e100b2128bfc0820de3f1c436": {
-    "reasoning": "用户询问官网文档更新公告，需要联网获取最新信息。",
-    "needs_kb": false,
-    "needs_web": true,
+  "112cc02310b7d23051f8ef318b8c58fa46180af6c5a7839c1b8aa7740c89c7a4": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "297d6ca680e57fd925efcfe958f71cdc3ff8cfb69d3668ba52861aabd54bfac7": {
-    "reasoning": "用户请求查找行业排名相关的新闻，需要联网搜索。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "a6e8cc900e9263d0590929c5493b8c803bcc674134820b317b9374126556b56c": {
+    "reasoning": "用户要求处理内部材料和后续操作，涉及差旅审批规则和会议安排，需要使用知识库和日程工具。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "6237d1e388de07a137adcab48f8e42829d5279b5528ab80bef2a7bb30840c780": {
-    "reasoning": "热搜里的争议话题需要联网搜索获取最新的公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "2cd1d9b927bd19eef8efb944ca14d5a4fe5dfaf95c8e0ca77f2b866f2059aa34": {
+    "reasoning": "用户要求查清纪要同步时限，涉及内部制度，需要使用知识库工具。同时，用户要求建立会后提醒，需要使用日程工具。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "244d91709ada799accc4e8b7b67ef294f5769254596a044f2aa7299ea05d0a5a": {
-    "reasoning": "用户请求搜索最新的并购消息，需要联网获取公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "3fa58c812c6e578ba1738d41f64e4ad6251e7552030e4578940666a3501200a4": {
+    "reasoning": "创建提醒需要根据制度里的安全上报时限，属于日程管理范畴。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "5d6443ec28574cc88756b29531294cc35697743b171baff57d1087089eafc10f": {
-    "reasoning": "用户询问行情是否有突发新闻，需要联网获取最新的公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "5a23ccf33a615dc9f71d0375813b32a31957d3d97ca94e24c6a47bd365a90abf": {
+    "reasoning": "用户要求查看预算提交截止规则，这属于内部制度查询，需要使用kb工具。同时，用户要求安排一次预算评审，这涉及到日程安排，需要使用calendar工具。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "179a0fdc57ce1ed50e800096f64eb12f5ea746b9c7cf91b7893b7108066505ee": {
-    "reasoning": "用户请求联网查找节假日调休公告，需要获取公开信息。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "25dcce5034f6f1f80d51db0c96cc1c366e79b23c0a47c8c7336b897cb51c248d": {
+    "reasoning": "用户要求查新员工材料清单，属于内部文档事实查询，需要使用kb工具。同时，用户要求约一个入职办理时间，需要使用calendar工具。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "ed352723bcc82ffe638d07a3ab1a19bca9e641b1244a2e9a9763e8e58e5c8705": {
-    "reasoning": "用户请求搜索天气指数，属于公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
+  "5879085a34dc0bc86e064e0d8e9400798e9878e3d374e9d908380ac61de15a0e": {
+    "reasoning": "确定性文档指代",
+    "needs_kb": true,
+    "needs_web": false,
     "needs_calendar": false,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "92306fe9c843e0af86471fb7e10b70ce4bf098a92c0e665d9e70d5c512f0c361": {
-    "reasoning": "用户请求查找政策落地时间的新闻，属于公开信息查询。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "2a6885d9f1b12bc49e6310adba384d27e2be2f7088a897b65f262d32a047d813": {
+    "reasoning": "用户要求查询内部规则并创建审批提醒，涉及内部文档事实和日程安排。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "01f666ed6b3ed680ec07ae7246b328e355dd4dad243d24cea0a1bb652be95204": {
-    "reasoning": "用户询问的是公开信息，需要联网搜索最新说法。",
-    "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+  "c9beb50bd0f0133b23ed474902157125c14d1ea9a277c37259521a9c45fc3667": {
+    "reasoning": "用户要求处理内部材料和安排会议，涉及合同和法务评审，需要使用知识库和日程工具。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
     "confidence": "high"
   },
-  "19d890e775be093b15444cbf7ad30fbede78d60630da2a07e51faca2414f0ad7": {
-    "reasoning": "用户请求搜索实时资讯快讯，需要联网获取最新信息。",
+  "666ede5245862c7331fb8b556f7deb79029547c550ccb91489c0ced8d37161a3": {
+    "reasoning": "需要设置一个跟进提醒，涉及具体时间规划。",
     "needs_kb": false,
-    "needs_web": true,
-    "needs_calendar": false,
+    "needs_web": false,
+    "needs_calendar": true,
     "needs_sandbox": false,
-    "needs_freshness": true,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "cf63d758ff7c7a30ad5cd634699da0eeb81e448dd0a040e76075558a2704729d": {
+    "reasoning": "用户要求处理内部材料和后续操作，涉及查询季度预算提交时间和安排会议，需要使用日程工具和知识库工具。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "3b18c377e5ba40e199555727633195c6ce3d8f49d7d16a8aabc3b35b47cacbca": {
+    "reasoning": "需要查询内部文档中的数据销毁周期信息，并创建到期复核提醒，涉及文档事实和日程安排。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "9158227b65c550ce62daa488ee3b3b86c16a8baf2fa53e9c481e2baa7c58065b": {
+    "reasoning": "根据用户要求安排会议，需要使用日程工具进行会议的创建和修改。",
+    "needs_kb": false,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
+    "confidence": "high"
+  },
+  "ea7d8e54546ed14a293efa6f5d1cfe273fdf5f86375416fcadfb299c79396b68": {
+    "reasoning": "用户要求查看离职交接要求，这需要使用私有知识库来获取文档中的信息。同时，用户还要求约一次交接会议，这需要使用日程工具来创建会议。",
+    "needs_kb": true,
+    "needs_web": false,
+    "needs_calendar": true,
+    "needs_sandbox": false,
+    "needs_freshness": false,
     "confidence": "high"
   }
 }

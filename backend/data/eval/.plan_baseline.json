@@ -1,0 +1,191 @@
+{
+ "ot_041": {
+  "operation": "sum",
+  "filters": "[]",
+  "group_by": "订单号",
+  "measure_columns": [
+   "退货金额",
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_042": {
+  "operation": "count",
+  "filters": "[]",
+  "group_by": "",
+  "measure_columns": [
+   "取消标记",
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_043": {
+  "operation": "avg",
+  "filters": "[]",
+  "group_by": "订单号",
+  "measure_columns": [
+   "退货金额",
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_044": {
+  "operation": "sum",
+  "filters": "[]",
+  "group_by": "订单号",
+  "measure_columns": [
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_045": {
+  "operation": "median",
+  "filters": "[]",
+  "group_by": "订单号",
+  "measure_columns": [
+   "退货金额",
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_046": {
+  "operation": "count",
+  "filters": "[{\"column\": \"工号\", \"op\": \"gt\", \"value\": 60.0}]",
+  "group_by": "部门",
+  "measure_columns": [
+   "迟到分钟"
+  ],
+  "join_key": "工号",
+  "join_left": "attendance.csv",
+  "join_right": "employees.csv",
+  "uncomputable": "[]",
+  "plan_ok": false
+ },
+ "ot_047": {
+  "operation": "sum",
+  "filters": "[{\"column\": \"部门\", \"op\": \"eq\", \"value\": \"销售\"}]",
+  "group_by": "",
+  "measure_columns": [
+   "迟到分钟"
+  ],
+  "join_key": "工号",
+  "join_left": "attendance.csv",
+  "join_right": "employees.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_048": {
+  "operation": "avg",
+  "filters": "[{\"column\": \"部门\", \"op\": \"eq\", \"value\": \"产品\"}]",
+  "group_by": "部门",
+  "measure_columns": [
+   "迟到分钟"
+  ],
+  "join_key": "工号",
+  "join_left": "attendance.csv",
+  "join_right": "employees.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_049": {
+  "operation": "count",
+  "filters": "[{\"column\": \"部门\", \"op\": \"eq\", \"value\": \"运营\"}]",
+  "group_by": "部门",
+  "measure_columns": [
+   "迟到分钟"
+  ],
+  "join_key": "工号",
+  "join_left": "attendance.csv",
+  "join_right": "employees.csv",
+  "uncomputable": "[]",
+  "plan_ok": false
+ },
+ "ot_050": {
+  "operation": "sum",
+  "filters": "[{\"column\": \"订单号\", \"op\": \"eq\", \"value\": \"华东\"}]",
+  "group_by": "订单号",
+  "measure_columns": [
+   "退货金额",
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": false
+ },
+ "ot_051": {
+  "operation": "max",
+  "filters": "[]",
+  "group_by": "订单号",
+  "measure_columns": [
+   "退货金额",
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": true
+ },
+ "ot_052": {
+  "operation": "count",
+  "filters": "[{\"column\": \"工号\", \"op\": \"gt\", \"value\": 100.0}]",
+  "group_by": "姓名",
+  "measure_columns": [
+   "迟到分钟"
+  ],
+  "join_key": "工号",
+  "join_left": "attendance.csv",
+  "join_right": "employees.csv",
+  "uncomputable": "[]",
+  "plan_ok": false
+ },
+ "ot_053": {
+  "operation": "sum",
+  "filters": "[{\"column\": \"金额\", \"op\": \"gt\", \"value\": 500.0}]",
+  "group_by": "订单号",
+  "measure_columns": [
+   "退货金额",
+   "金额"
+  ],
+  "join_key": "订单号",
+  "join_left": "orders.csv",
+  "join_right": "returns.csv",
+  "uncomputable": "[]",
+  "plan_ok": false
+ },
+ "ot_072": {
+  "operation": "avg",
+  "filters": "[]",
+  "group_by": "",
+  "measure_columns": [
+   "迟到分钟"
+  ],
+  "join_key": "",
+  "join_left": "",
+  "join_right": "",
+  "uncomputable": "[{\"asked\": \"他们\", \"missing_column\": \"他们\", \"reason\": \"表中无列：他们\"}]",
+  "plan_ok": false
+ }
+}

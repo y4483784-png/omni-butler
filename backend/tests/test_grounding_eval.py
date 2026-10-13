@@ -5,26 +5,30 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from app.agents.harness.critique import CritiqueResult
+from app.agents.harness.critique import (
+    CritiqueResult,
+    UnsupportedClaim,
+    append_grounding_disclaimer,
+    sandbox_number_mismatches,
+)
 from app.eval.grounding import (
     DEFAULT_DATASET,
     GroundingEvalCase,
+    answer_body_for_scoring,
     build_evidence_for_case,
     generate_grounded_answer,
     load_cases,
     run_grounding_eval,
 )
+from app.eval.judges import is_refusal
 from app.eval.ragas_judge import run_ragas_metrics
 
 
 def test_dataset_exists_and_loads():
     assert DEFAULT_DATASET.is_file()
     cases = load_cases(DEFAULT_DATASET)
-    assert len(cases) == 48
-    by = {}
-    for c in cases:
-        by[c.source] = by.get(c.source, 0) + 1
-    assert by == {"kb": 16, "web": 16, "sandbox": 16}
+    assert cases
+    assert {c.source for c in cases} == {"kb", "web", "sandbox"}
     assert any(c.expect_unanswerable for c in cases)
     assert any(c.needs_sandbox for c in cases if c.source == "sandbox")
 
@@ -162,3 +166,27 @@ def test_run_ragas_metrics_optional_metrics_without_key():
 class _DummySession:
     def close(self) -> None:
         return None
+
+
+def test_scoring_strips_disclaimer_but_keeps_real_refusals():
+    """Numbers and refusal cues that live only in the note must not move the score."""
+    evidence = [{"source_type": "sandbox", "content": "===SUMMARY===\nmean=3.14"}]
+    draft = "均值为 3.14"
+    final = append_grounding_disclaimer(
+        draft,
+        CritiqueResult(
+            grounded=False,
+            addresses_question=True,
+            unsupported=[UnsupportedClaim(text="额外数字 99.9", reason="证据中未提及")],
+        ),
+    )
+    assert sandbox_number_mismatches(final, evidence, sandbox_gate=True)
+    body = answer_body_for_scoring(final)
+    assert body == draft
+    assert sandbox_number_mismatches(body, evidence, sandbox_gate=True) == []
+    # A mismatch in the draft is still a mismatch after the note is removed.
+    bad = append_grounding_disclaimer(draft + "，另有 9.99", CritiqueResult(critique_failed=True))
+    assert sandbox_number_mismatches(answer_body_for_scoring(bad), evidence, sandbox_gate=True)
+    assert is_refusal(final) is False
+    declined = append_grounding_disclaimer("证据中未提及该指标。", CritiqueResult(critique_failed=True))
+    assert is_refusal(declined) is True

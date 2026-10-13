@@ -25,9 +25,16 @@ class Settings(BaseSettings):
     chat_model: str = ""                             # empty → llm_model
     llm_timeout: float = 120.0                       # 单次流式请求超时（秒）
     llm_max_retries: int = 3                         # PRD §5：超时后自动重试 3 次
+    # Generation knobs, recorded in every eval report so a run's numbers can be
+    # reproduced (or explained) later.
+    llm_temperature: float = 0.2
+    llm_max_tokens: int = 2048
     # Tool router: lighter model preferred; empty → planner_model → llm_model
     planner_model: str = ""
     router_model: str = ""
+    # Eval judge: scoring with the model that produced the answer is self-grading
+    # (and measured 0.34 answer_relevancy on this family), so keep it separate.
+    judge_model: str = "glm-4-air"
     router_max_attempts: int = 2                     # schema validate + retry bound
     # Embedding（与 LLM 共用 base_url / API key；智谱必须用 embedding-2 / embedding-3，勿填聊天模型）
     embedding_model: str = "embedding-3"

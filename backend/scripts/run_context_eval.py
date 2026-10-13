@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.eval.env import bootstrap, resolve_target
+from app.eval.env import ensure_bootstrap
 
-bootstrap(resolve_target())
+ensure_bootstrap(isolate_app_db=True)
 
 from app.eval.context_replay import (  # noqa: E402
     ARMS,
@@ -44,10 +44,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _stratified_live(cases: list, limit: int) -> list:
+    """Round-robin by case type so a 64-row live slice covers every probe kind."""
+    if limit >= len(cases):
+        return list(cases)
+    buckets: dict[str, list] = {}
+    for c in cases:
+        buckets.setdefault(str(c.get("type") or "other"), []).append(c)
+    out: list = []
+    queues = [list(v) for _, v in sorted(buckets.items())]
+    while len(out) < limit and any(queues):
+        for q in queues:
+            if q and len(out) < limit:
+                out.append(q.pop(0))
+    return out
+
+
 def run(args: argparse.Namespace) -> SuiteResult:
     if args.live and os.environ.get("RUN_CTX_EVAL") != "1":
         print("Refusing --live without RUN_CTX_EVAL=1", file=sys.stderr)
         return SuiteResult(report={"error": "RUN_CTX_EVAL required"}, exit_code=2)
+    if args.update_baseline and args.gate:
+        print("Refusing --update-baseline together with --gate", file=sys.stderr)
+        return SuiteResult(report={"error": "cannot update baseline and gate in one run"}, exit_code=2)
 
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     for a in arms:
@@ -56,7 +75,9 @@ def run(args: argparse.Namespace) -> SuiteResult:
             return SuiteResult(report={"error": f"unknown arm {a}"}, exit_code=2)
 
     cases = load_cases(args.dataset, split=args.split)
-    if args.limit is not None:
+    if args.live and args.limit is None:
+        cases = _stratified_live(cases, 64)
+    elif args.limit is not None:
         cases = cases[: max(0, args.limit)]
 
     report = run_context_eval(
@@ -72,7 +93,10 @@ def run(args: argparse.Namespace) -> SuiteResult:
 
     if args.update_baseline:
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
-        args.baseline.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        args.baseline.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
         print(f"updated baseline -> {args.baseline}")
 
     if args.json:

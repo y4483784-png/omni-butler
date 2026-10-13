@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.eval.env import bootstrap, resolve_target
+from app.eval.env import ensure_bootstrap, resolve_target
 
-bootstrap(resolve_target())
+ensure_bootstrap(isolate_app_db=False)
 
 from app.eval.grounding import DEFAULT_DATASET, load_cases, run_grounding_eval  # noqa: E402
 from app.eval.report import RunContext, SuiteResult, make_run_dir, write_run  # noqa: E402

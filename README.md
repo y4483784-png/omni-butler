@@ -598,13 +598,13 @@ Redis 是可丢失的加速/协调层，不是业务数据源；不可达时系�
 
 | 用途 | key 依据 | 默认 TTL / 限制 |
 |------|----------|-----------------|
-| Tier 2 路由决策精确缓存 | 消息 + 历史 + KB/表格可用性 + 路由模型/版本 | 3 天 |
+| Tier 2 路由决策精确缓存 | 消息 + 历史 + KB/表格可用性 + 路由模型/版本 + 路由提示词指纹 | 3 天 |
 | query embedding 精确缓存 | 归一化问题 + embedding 模型 + provider 地址 | 7 天 |
 | 联网搜索结果缓存 | query + 引擎 + 数量 + 时效/内容参数 | 5 分钟 |
 | 模型分布式并发槽 | 模型名 | `.env` 的供应商并发上限；任务结束释放，180 秒租约兜底 |
 | `/api/chat` 每用户滑动窗口 | user id | 默认 30 次/60 秒，超限返回 HTTP 429 + `Retry-After` |
 
-只缓存精确相同的中间结果，不做高风险的「相似问题直接复用最终答案」。主要配置见 `.env.example`：`ROUTER_CACHE_TTL`、`EMBEDDING_CACHE_TTL`、`WEB_CACHE_TTL`、`LLM_MODEL_CONCURRENCY_LIMITS`、`CHAT_RATE_LIMIT`。修改路由提示词/结构后应递增 `app/agents/router.py` 的 `_ROUTER_CACHE_VERSION` 使旧决策自然失效。
+只缓存精确相同的中间结果，不做高风险的「相似问题直接复用最终答案」。主要配置见 `.env.example`：`ROUTER_CACHE_TTL`、`EMBEDDING_CACHE_TTL`、`WEB_CACHE_TTL`、`LLM_MODEL_CONCURRENCY_LIMITS`、`CHAT_RATE_LIMIT`。路由 Redis key 含 `ROUTER_SYSTEM` 的指纹（与评测磁盘缓存的 `prompt_sha` 相同），改提示词后旧决策自动失效；决策字段结构变化时仍应递增 `app/agents/router.py` 的 `_ROUTER_CACHE_VERSION`。评测进程会设置 `EVAL_SKIP_ROUTER_REDIS=1`，full 刷新不会把 Redis 里的旧决策写入 `router_cache.json`。线上流量不设该变量，缓存照常生效。
 
 ## Celery（文档入库队列）
 
@@ -690,6 +690,9 @@ pip install -r requirements-dev.txt   # pytest 等，仅开发机 / venv
 # 列表
 python scripts/eval.py list
 
+# 题集 schema / 去重 / 分布 / gold 引用检查
+python scripts/lint_eval_datasets.py --card
+
 # 冒烟（venv：自动 SQLite + 关 Redis，不连 Compose 中间件）
 python scripts/eval.py run pytest --profile smoke
 python scripts/eval.py run rag --profile smoke
@@ -697,12 +700,23 @@ python scripts/eval.py run tabular --profile smoke
 python scripts/eval.py run context --profile smoke
 
 # 需要 MinIO / Qdrant / Postgres 的套件：用 Compose eval 服务（日常 up 不会拉起）
-docker compose --profile eval run --rm eval python scripts/eval.py run yz --profile smoke
+docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile smoke
 docker compose --profile eval run --rm eval python scripts/eval.py run grounding --profile full
 
-# 最近一次报告
-python scripts/eval.py last rag
-# 文件：backend/reports/<suite>/latest.json 与 reports/index.jsonl
+# 检索完整档要求真跑生产入库 + 混合检索：本地 venv 会在预检阶段直接拒绝（退出码 2），
+# 不会"降级成关键词模式仍然记 full 成绩"。关键词对照就是 smoke 档。
+docker compose --profile eval run --rm eval python scripts/eval.py run rag --profile full
+
+# 最近一次报告（按 profile；smoke 不覆盖 full 的 latest.json）
+python scripts/eval.py last rag --profile smoke
+python scripts/eval.py diff agent --profile full
+# 文件：backend/reports/<suite>/latest-{profile}.json 与 reports/index.jsonl
 ```
 
 办公回归（契约）仍可由 `pytest` 套件覆盖；单独文件也可用 `python -m pytest tests/test_harness_gateway.py -q`。
+
+评测数字的口径（先看这三条，再引用任何指标）：
+
+- **门禁只认完整档**：冒烟档成绩不代表生产路径（路由冒烟是缓存重放，表格冒烟只编译计划、不碰沙箱）。
+- **端到端套件的门禁看 `core_completion_rate`**，不含闲聊 / 日程 / 拒答这类近乎白送的题型；`infra_error_rate` 超 5% 直接判失败。
+- **降级运行不参与判定**：检索按关键词模式跑、或表格大模型规划出现失败，报告会标 `degraded`，入口直接判失败而不是给分数。

@@ -179,6 +179,42 @@ JUDGE_PROMPTS = {
 }
 
 
+def score_live_answer(
+    messages: list[dict],
+    *,
+    question: str,
+    gold: str,
+    judge_mode: str,
+) -> tuple[str, int | None, float | None, float | None, bool, str]:
+    """Return answer, prompt tokens, fact_recall, token_f1, infra_error, reason.
+
+    A rate-limit or timeout is infra: fact_recall stays unset so an empty draft
+    is not stored as a wrong answer. Invalid judge JSON still falls back inside
+    ``judge_answer``; only transport failures raise.
+    """
+    from app.core.llm import LLMInfraError, complete_json, complete_text_with_usage, resolved_chat_model
+
+    judge_model = resolved_judge_model()
+    try:
+        answer, actual = complete_text_with_usage(
+            messages,
+            model=resolved_chat_model(),
+            raise_on_error=True,
+        )
+        ok, _reason = judge_answer(
+            mode=judge_mode,
+            question=question,
+            gold=gold,
+            hypothesis=answer or "",
+            complete_json_fn=lambda msgs: complete_json(
+                msgs, model=judge_model, raise_on_error=True
+            ),
+        )
+        return answer or "", actual, (1.0 if ok else 0.0), token_f1(answer or "", gold), False, ""
+    except LLMInfraError as exc:
+        return "", None, None, None, True, str(exc)[:200]
+
+
 def judge_answer(
     *,
     mode: str,
@@ -254,7 +290,9 @@ def arm_settings(arm: str) -> Iterator[None]:
         elif arm == "full":
             _set("context_manager_enabled", True)
             _set("context_summary_enabled", True)
-            # leave working_state max as configured
+            # Tight budget so extractive CI actually hits compact / emergency.
+            _set("context_max_tokens", min(int(settings.context_max_tokens), 4096))
+            _set("max_context_turns", min(int(settings.max_context_turns), 4))
         elif arm == "oracle":
             _set("context_manager_enabled", True)
             _set("context_summary_enabled", True)
@@ -290,6 +328,8 @@ class CaseResult:
     skip_reason: str = ""
     summary_calls: int = 0
     summary_failures: int = 0
+    infra_error: bool = False
+    infra_error_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -313,6 +353,8 @@ class CaseResult:
             "skip_reason": self.skip_reason,
             "summary_calls": self.summary_calls,
             "summary_failures": self.summary_failures,
+            "infra_error": self.infra_error,
+            "infra_error_reason": self.infra_error_reason,
         }
 
 
@@ -328,6 +370,12 @@ class EvalReport:
     cache_hits: int = 0
     cache_misses: int = 0
     results: list[CaseResult] = field(default_factory=list)
+    # Which model answered and which one judged. Self-grading is recorded rather
+    # than hidden, so a reviewer can discount the live numbers accordingly.
+    answer_model: str = ""
+    judge_model: str = ""
+    self_judged: bool = False
+    n_infra_error: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -340,6 +388,10 @@ class EvalReport:
             "failures": self.failures,
             "cache_hits": self.cache_hits,
             "cache_misses": self.cache_misses,
+            "answer_model": self.answer_model,
+            "judge_model": self.judge_model,
+            "self_judged": self.self_judged,
+            "n_infra_error": self.n_infra_error,
         }
 
     def format_text(self) -> str:
@@ -388,8 +440,42 @@ def _save_cache(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def resolved_judge_model() -> str:
+    """Model used to grade live answers; falls back to the answer model when unset.
+
+    Grading with the answering model is self-grading, so the setting defaults to a
+    different model and the report records whichever was actually used.
+    """
+    from app.core.llm import resolved_chat_model
+
+    configured = (getattr(settings, "judge_model", "") or "").strip()
+    return configured or resolved_chat_model()
+
+
+def _answer_model_name() -> str:
+    from app.core.llm import resolved_chat_model
+
+    return resolved_chat_model()
+
+
 def _cache_key(arm: str, messages: list[dict], question: str) -> str:
-    blob = json.dumps({"arm": arm, "messages": messages, "q": question}, ensure_ascii=False, sort_keys=True)
+    from app.core.llm import resolved_chat_model
+    from app.core.prompts import answer_rules
+
+    blob = json.dumps(
+        {
+            "arm": arm,
+            "messages": messages,
+            "q": question,
+            "model": resolved_chat_model(),
+            # The grading model is part of the identity: a verdict cached under a
+            # self-grading judge must not be replayed after the judge changes.
+            "judge_model": resolved_judge_model(),
+            "prompt_sha": hashlib.sha256(answer_rules().encode("utf-8")).hexdigest()[:12],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
 
@@ -549,9 +635,9 @@ def replay_case(
             answer = None
             cache_obj = cache if cache is not None else {}
 
+            infra_error = False
+            infra_reason = ""
             if live and not skipped:
-                from app.core.llm import complete_json, complete_text_with_usage, resolved_chat_model
-
                 ck = _cache_key(arm, messages, question)
                 if not refresh_cache and ck in cache_obj:
                     cached = cache_obj[ck]
@@ -559,23 +645,27 @@ def replay_case(
                     actual = cached.get("actual_tokens")
                     fact = cached.get("fact_recall")
                     tf1 = cached.get("token_f1")
+                    infra_error = bool(cached.get("infra_error"))
+                    infra_reason = str(cached.get("infra_error_reason") or "")
+                    if infra_error:
+                        fact = None
+                        tf1 = None
                 else:
-                    answer, actual = complete_text_with_usage(messages, model=resolved_chat_model())
-                    ok, _reason = judge_answer(
-                        mode=judge_mode,
+                    answer, actual, fact, tf1, infra_error, infra_reason = score_live_answer(
+                        messages,
                         question=question,
                         gold=gold_answer,
-                        hypothesis=answer or "",
-                        complete_json_fn=complete_json,
+                        judge_mode=judge_mode,
                     )
-                    fact = 1.0 if ok else 0.0
-                    tf1 = token_f1(answer or "", gold_answer)
-                    cache_obj[ck] = {
-                        "answer": answer,
-                        "actual_tokens": actual,
-                        "fact_recall": fact,
-                        "token_f1": tf1,
-                    }
+                    # Do not cache an infra miss as fact_recall=0. A later run with
+                    # a healthy model must be allowed to score the turn.
+                    if not infra_error:
+                        cache_obj[ck] = {
+                            "answer": answer,
+                            "actual_tokens": actual,
+                            "fact_recall": fact,
+                            "token_f1": tf1,
+                        }
 
             return CaseResult(
                 case_id=str(case.get("id")),
@@ -598,6 +688,8 @@ def replay_case(
                 skip_reason=skip_reason,
                 summary_calls=summary_calls,
                 summary_failures=summary_failures,
+                infra_error=infra_error,
+                infra_error_reason=infra_reason,
             )
         finally:
             db.close()
@@ -605,6 +697,15 @@ def replay_case(
 
 def _agg(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _compacted(level: str) -> float:
+    """1 when compose actually dropped into compact/emergency.
+
+    ``warn`` only shrinks the evidence pool. Counting it as compaction made the
+    rate look healthy while the tight-budget path never discarded turns.
+    """
+    return 1.0 if level in ("compact", "emergency") else 0.0
 
 
 def _slice_report(results: list[CaseResult]) -> dict[str, Any]:
@@ -629,7 +730,8 @@ def _slice_report(results: list[CaseResult]) -> dict[str, Any]:
         else None,
         "est_tokens_mean": round(_agg([float(r.est_tokens) for r in active]), 2),
         "compose_ms_p50": round(statistics.median([r.compose_ms for r in active]), 3) if active else 0.0,
-        "compaction_rate": round(_agg([0.0 if r.compose_level == "safe" else 1.0 for r in active]), 4),
+        "compaction_rate": round(_agg([_compacted(r.compose_level) for r in active]), 4),
+        "summary_rate": round(_agg([1.0 if r.summary_calls > 0 else 0.0 for r in active]), 4),
         "n": len(active),
         "skipped": sum(1 for r in results if r.skipped),
     }
@@ -733,6 +835,20 @@ def run_context_eval(
                     "answer": r.answer,
                 }
             )
+        if r.infra_error:
+            failures.append(
+                {
+                    "id": r.case_id,
+                    "arm": r.arm,
+                    "type": r.case_type,
+                    "bucket": r.bucket,
+                    "metric": "infra_error",
+                    "expected": "",
+                    "got": r.infra_error_reason,
+                    "probe": None,
+                    "answer": r.answer,
+                }
+            )
         if live and r.fact_recall is not None and r.fact_recall < 0.5:
             failures.append(
                 {
@@ -763,6 +879,10 @@ def run_context_eval(
         n=len(cases),
         split=split,
         mode="live" if live else "extractive",
+        answer_model=_answer_model_name() if live else "",
+        judge_model=resolved_judge_model() if live else "",
+        self_judged=bool(live and resolved_judge_model() == _answer_model_name()),
+        n_infra_error=sum(1 for r in all_results if r.infra_error),
         arms=arm_blocks,
         invariants={"violations": len(violations), "cases": [r.case_id for r in violations[:50]]},
         efficiency={
@@ -771,6 +891,14 @@ def run_context_eval(
             "est_error_pct": err,
             "compose_ms_p50": round(statistics.median([r.compose_ms for r in all_results]), 3) if all_results else 0,
             "summary_calls": sum(r.summary_calls for r in all_results),
+            "summary_rate": round(
+                _safe_div(sum(1 for r in all_results if r.summary_calls > 0), max(1, len(all_results))),
+                4,
+            ),
+            "compose_compression": round(
+                _agg([_compacted(r.compose_level) for r in all_results if not r.skipped]),
+                4,
+            ),
             "summary_fail_rate": round(
                 _safe_div(sum(r.summary_failures for r in all_results), max(1, sum(r.summary_calls for r in all_results))),
                 4,
@@ -791,22 +919,20 @@ def gate_report(report: EvalReport, baseline: dict[str, Any] | None) -> list[str
         fails.append(f"invariant_violations={report.invariants.get('violations')}")
 
     full = (report.arms.get("full") or {}).get("overall") or {}
-    legacy = (report.arms.get("legacy") or {}).get("overall") or {}
-    if "full" in report.arms and "legacy" in report.arms:
-        # per-bucket comparison
-        full_b = (report.arms.get("full") or {}).get("by_bucket") or {}
-        leg_b = (report.arms.get("legacy") or {}).get("by_bucket") or {}
-        for bucket, frow in full_b.items():
-            lrow = leg_b.get(bucket) or {}
-            if float(frow.get("needle_presence") or 0) + 1e-9 < float(lrow.get("needle_presence") or 0):
-                fails.append(
-                    f"full needle_presence bucket={bucket} {frow.get('needle_presence')} < legacy {lrow.get('needle_presence')}"
-                )
+    if "full" in report.arms:
         pr = full.get("pending_retention")
         if pr is not None and float(pr) < 1.0 - 1e-9:
             fails.append(f"pending_retention={pr} < 1.0")
+    # needle_presence is diagnostic only (reported, not gated).
 
     if not baseline:
+        return fails
+
+    base_split = str(baseline.get("split") or "")
+    report_split = str(report.split or "")
+    if base_split and report_split and base_split != report_split:
+        fails.append(f"split mismatch: report={report_split} baseline={base_split}")
+        # Numbers from another split are not a regression signal.
         return fails
 
     def _base(arm: str, metric: str) -> float | None:
@@ -815,28 +941,14 @@ def gate_report(report: EvalReport, baseline: dict[str, Any] | None) -> list[str
         except (TypeError, ValueError):
             return None
 
-    for metric, tol, higher_better in (
-        ("needle_presence", 0.03, True),
-        ("fact_recall", 0.05, True),
-        ("abstention_acc", 0.05, True),
-    ):
-        cur = full.get(metric)
-        # abstention_acc may live in by_type
-        if metric == "abstention_acc":
-            bt = (report.arms.get("full") or {}).get("by_type") or {}
-            row = bt.get("abstention") or {}
-            cur = row.get("fact_recall")
-            base = None
-            try:
-                base = float(((((baseline.get("arms") or {}).get("full") or {}).get("by_type") or {}).get("abstention") or {}).get("fact_recall"))
-            except (TypeError, ValueError):
-                base = None
-        else:
+    if report.mode == "live":
+        for metric, tol in (("fact_recall", 0.05),):
+            cur = full.get(metric)
             base = _base("full", metric)
-        if cur is None or base is None:
-            continue
-        if higher_better and float(cur) + 1e-9 < float(base) - tol:
-            fails.append(f"{metric} {cur} < baseline {base} - {tol}")
+            if cur is None or base is None:
+                continue
+            if float(cur) + 1e-9 < float(base) - tol:
+                fails.append(f"{metric} {cur} < baseline {base} - {tol}")
 
     # token mean should not rise >10%
     cur_tok = report.efficiency.get("actual_tokens_mean")

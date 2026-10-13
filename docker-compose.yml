@@ -181,7 +181,8 @@ services:
           memory: 512m
 
   # One-shot eval runner (not started by normal up/start/ps).
-  # Usage: docker compose --profile eval run --rm eval python scripts/eval.py run yz --profile smoke
+  # Usage: docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile smoke
+  # yz 套件已从注册表移除，不要再 run yz。
   eval:
     <<: *backend-env
     image: omni-butler-backend:local
@@ -191,6 +192,8 @@ services:
       <<: *backend-environment
       # Honored by resolve_target() (CLI --target > this env > suite default).
       EVAL_TARGET: services
+      # `export GIT_SHA=$(git rev-parse --short HEAD)` before `compose run` (container has no .git).
+      GIT_SHA: ${GIT_SHA:-}
       SANDBOX_RUNNER_URL: http://sandbox-runner:8002
       SANDBOX_TMP_DIR: /var/omni-tmp
       # eval 容器没有 docker.sock；tabular full 走 sandbox-runner，不要查本机镜像。
@@ -199,7 +202,7 @@ services:
       - ./backend/app:/app/app:ro
       - ./backend/scripts:/app/scripts:ro
       - ./backend/data:/app/data
-      - ./backend/tests/YZ测试文档:/app/tests/YZ测试文档:ro
+      - ./backend/tests:/app/tests:ro
       - ./backend/reports:/app/reports
       - /var/omni-tmp:/var/omni-tmp
     depends_on:
