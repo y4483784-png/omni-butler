@@ -46,6 +46,15 @@ def _parse_publish_date(raw: str) -> date | None:
     return None
 
 
+def _today() -> date:
+    from app.core.prompts import today_str
+
+    try:
+        return date.fromisoformat(today_str())
+    except ValueError:
+        return date.today()
+
+
 def web_is_stale(web: list[dict]) -> bool:
     if not web:
         return True
@@ -55,7 +64,8 @@ def web_is_stale(web: list[dict]) -> bool:
         if d is not None:
             parsed.append(d)
     if parsed:
-        stale_count = sum(1 for d in parsed if (date.today() - d).days > 7)
+        today = _today()
+        stale_count = sum(1 for d in parsed if (today - d).days > 7)
         return stale_count >= len(parsed) * 0.8
     title_stale = sum(1 for e in web if _STALE_TITLE.search(str(e.get("title") or "")))
     return title_stale == len(web)

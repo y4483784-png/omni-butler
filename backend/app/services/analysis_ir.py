@@ -430,17 +430,20 @@ def build_heuristic_ir(message: str, schema: TabularSchema) -> AnalysisIR:
                 if "部门" in dim:
                     filters.append(FilterClause(column=dim, op="eq", value=dept_val))
                     break
+    # Negated forms must be checked first: "未取消"/"没取消"/"不含取消" contain "取消".
+    if not filters and re.search(r"(未|没有?|非|不含|除去|排除)取消", text) and any(
+        "取消" in c for c in schema.columns
+    ):
+        for c in schema.columns:
+            if "取消" in c:
+                filters.append(FilterClause(column=c, op="eq", value=0))
+                break
     if not filters and "取消" in text and not _RATE_RE.search(text) and any(
         "取消" in c for c in schema.columns
     ):
         for c in schema.columns:
             if "取消" in c:
                 filters.append(FilterClause(column=c, op="eq", value=1))
-                break
-    if not filters and "未取消" in text and any("取消" in c for c in schema.columns):
-        for c in schema.columns:
-            if "取消" in c:
-                filters.append(FilterClause(column=c, op="eq", value=0))
                 break
     if not filters:
         for dim in schema.dimension_candidates:
@@ -596,7 +599,8 @@ def build_heuristic_ir(message: str, schema: TabularSchema) -> AnalysisIR:
     if _RATE_RE.search(text):
         flag_col = ""
         for c in schema.columns:
-            if c in schema.measure_candidates and any(k in c for k in ("取消", "退货", "失败", "标记")):
+            # 0/1 flag columns (取消标记) use mean-as-rate; counts like 取消数 need div.
+            if c in schema.measure_candidates and any(k in c for k in ("标记", "是否")):
                 flag_col = c
                 break
         if flag_col:

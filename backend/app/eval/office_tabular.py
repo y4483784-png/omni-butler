@@ -132,19 +132,28 @@ def plan_matches(spec: AnalysisSpec, case: dict) -> bool:
         blob = json.dumps(spec.uncomputable, ensure_ascii=False)
         return all(t in blob for t in tokens) if tokens else bool(spec.uncomputable)
 
-    op_ok = str(spec.operation) == str(gp.get("operation") or spec.operation)
+    # A gold plan without an operation used to match *any* spec; require it.
+    op_ok = bool(gp.get("operation")) and str(spec.operation) == str(gp.get("operation"))
+    if gp.get("group_by") and str(getattr(spec, "group_by", "") or "") != str(gp.get("group_by")):
+        return False
+    if gp.get("measure"):
+        measures = [str(m) for m in (getattr(spec, "measure_columns", None) or [])]
+        # An empty measure list used to pass whenever gold named a column.
+        if str(gp.get("measure")) not in measures:
+            return False
     if gp.get("operation") == "rate":
-        op_ok = bool(spec.derive) or spec.operation in ("none", "avg")
-        if any(
+        # "none" is not a rate. The compiler may still encode 占比 as a mean metric
+        # or a derive step after rewriting the operation; that signal is what matches.
+        has_mean = any(
             isinstance(m, dict) and str(m.get("kind")) == "mean"
             for m in (spec.metrics or [])
-        ):
-            op_ok = True
-    if gp.get("operation") == "max" and spec.operation in ("max", "none"):
+        )
+        op_ok = bool(spec.derive) or has_mean or spec.operation in ("rate", "avg")
+    if gp.get("operation") == "max" and spec.operation == "max":
         op_ok = True
-    if gp.get("operation") == "min" and spec.operation in ("min", "none"):
+    if gp.get("operation") == "min" and spec.operation == "min":
         op_ok = True
-    if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "none", "profile"):
+    if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "profile"):
         op_ok = True
     if not op_ok:
         return False
@@ -158,12 +167,15 @@ def plan_matches(spec: AnalysisSpec, case: dict) -> bool:
             return False
         if "join_ok" in (case.get("tags") or []):
             if str(spec.operation) != str(gp.get("operation")):
-                if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "none", "profile"):
+                if gp.get("operation") == "avg" and spec.operation in ("avg", "mean", "profile"):
                     pass
                 elif gp.get("operation") == "count_distinct" and spec.operation == "count":
                     pass
                 else:
                     return False
+            # join_ok used to return True here, ignoring filters entirely.
+            if gp.get("filters") and not _filters_match(spec.filters, gp.get("filters") or []):
+                return False
             return True
     elif "join_ok" in (case.get("tags") or []):
         return False
@@ -265,6 +277,7 @@ def aggregate_report(results: list[dict], *, mode: str) -> dict[str, Any]:
     by_tag: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "exec_ok": 0, "plan_ok": 0})
     by_diff: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "exec_ok": 0, "plan_ok": 0})
     failures: dict[str, int] = defaultdict(int)
+    soft_exec_ok = 0
 
     refuse_expected = [r for r in results if r.get("expect_uncomputable")]
     refuse_hit = sum(1 for r in refuse_expected if r.get("exec_ok"))
@@ -303,7 +316,7 @@ def aggregate_report(results: list[dict], *, mode: str) -> dict[str, Any]:
     by_concept: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "exec_ok": 0, "plan_ok": 0})
     plan_exec_gap_by_tag: dict[str, float] = {}
     top_failures: list[dict[str, Any]] = []
-    soft_exec_ok = 0
+    failed_rows: list[dict[str, Any]] = []
 
     for r in results:
         case_id = r.get("id")
@@ -317,16 +330,17 @@ def aggregate_report(results: list[dict], *, mode: str) -> dict[str, Any]:
             payload = r.get("payload") or {}
             metrics = payload.get("metrics") or []
             actual = metrics[0].get("value") if metrics and isinstance(metrics[0], dict) else None
-            top_failures.append(
-                {
-                    "id": case_id,
-                    "failure_kind": r.get("failure_kind"),
-                    "tags": r.get("tags"),
-                    "expected": r.get("expected"),
-                    "actual": actual,
-                    "error": r.get("error"),
-                }
-            )
+            row_fail = {
+                "id": case_id,
+                "failure_kind": r.get("failure_kind"),
+                "tags": r.get("tags"),
+                "difficulty": r.get("difficulty"),
+                "expected": r.get("expected"),
+                "actual": actual,
+                "error": r.get("error"),
+            }
+            top_failures.append(row_fail)
+            failed_rows.append(row_fail)
 
     for tag, stats in by_tag.items():
         if stats["total"]:
@@ -359,6 +373,31 @@ def aggregate_report(results: list[dict], *, mode: str) -> dict[str, Any]:
         },
         "plan_exec_gap_by_tag": plan_exec_gap_by_tag,
         "top_failures": top_failures,
+        "failures": failed_rows,
+        # Refusal cases sit inside "hard"; report computable vs refusal separately.
+        "computable_accuracy": _acc([r for r in results if not r.get("expect_uncomputable")], "exec_ok"),
+        "refusal_case_accuracy": _acc([r for r in results if r.get("expect_uncomputable")], "exec_ok"),
+        "medium_accuracy": _acc([r for r in results if r.get("difficulty") == "medium"], "exec_ok"),
         "soft_exec_accuracy": soft_exec_ok / total if total else 0.0,
+        "heuristic_plan_accuracy": _acc(results, "heuristic_plan_ok")
+        if any("heuristic_plan_ok" in r for r in results)
+        else plan_ok / total if total else 0.0,
+        # Planner health: how often the production LLM planner produced nothing.
+        # Those rows already count as plan failures above; this is what the gate reads.
+        "planner_error_count": sum(
+            1 for r in results if r.get("planner_used") and not r.get("planner_ok")
+        ),
+        "planner_error_rate": (
+            sum(1 for r in results if r.get("planner_used") and not r.get("planner_ok"))
+            / max(1, sum(1 for r in results if r.get("planner_used")))
+        ),
+        "planner_used_count": sum(1 for r in results if r.get("planner_used")),
+        # Which arm actually produced the plan that was judged, per row. Without this
+        # "plan_accuracy" is ambiguous: a fallback row is judged on the heuristic plan
+        # while the run still calls itself an LLM-planner run.
+        "spec_source_counts": {
+            src: sum(1 for r in results if r.get("spec_source") == src)
+            for src in sorted({str(r.get("spec_source")) for r in results if r.get("spec_source")})
+        },
         "results": results,
     }

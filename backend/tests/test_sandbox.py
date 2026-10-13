@@ -267,7 +267,7 @@ def test_run_analysis_retries_on_stderr():
         patch.object(da, "docker_available", return_value=True),
         patch.object(da, "document_local_path", return_value=nullcontext(Path(__file__))),
         patch.object(da, "infer_tabular_schema", return_value=schema),
-        patch.object(da, "_plan_analysis_spec", return_value=spec),
+        patch.object(da, "_plan_analysis_spec", return_value=(spec, "llm")),
         patch.object(da, "_render_analysis_code", side_effect=["print(1)", "print(2)"]),
         patch.object(da, "run_code", side_effect=fake_run_code),
         patch("app.services.data_analysis.settings.sandbox_max_retries", 3),

@@ -2,7 +2,7 @@
 
 Usage:
   python scripts/gen_office_tabular_eval.py          # regenerate fixtures + jsonl
-  python scripts/run_office_tabular_eval.py          # live smoke (20 cases)
+  python scripts/run_office_tabular_eval.py          # live smoke (30 cases)
   python scripts/run_office_tabular_eval.py --split full
   python scripts/run_office_tabular_eval.py --dry-compile --split full
 """
@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+
+from app.eval.env import ensure_bootstrap
+
+ensure_bootstrap(isolate_app_db=True)
 
 from app.eval.office_tabular import (  # noqa: E402
     aggregate_report,
@@ -27,6 +29,7 @@ from app.eval.office_tabular import (  # noqa: E402
     plan_matches,
     soft_exec_matches,
 )
+from app.eval.report import RunContext, SuiteResult, make_run_dir, write_run  # noqa: E402
 from app.services.data_analysis import (  # noqa: E402
     AnalysisSpec,
     _heuristic_spec,
@@ -36,7 +39,8 @@ from app.services.tabular_inspect import infer_tabular_schema  # noqa: E402
 
 DATASET = ROOT / "data" / "eval" / "office_tabular.jsonl"
 FIXTURES = ROOT / "data" / "eval" / "fixtures"
-REPORT = ROOT / "reports" / "office_tabular_eval_latest.json"
+DEFAULT_DATASET = DATASET
+_PLANNER = "heuristic"
 
 
 def _load_cases(*, split: str) -> list[dict]:
@@ -59,27 +63,20 @@ def _fixture_paths(case: dict) -> list[Path]:
 def _plan_spec(case: dict) -> AnalysisSpec:
     paths = _fixture_paths(case)
     schemas = [(p.name, infer_tabular_schema(p)) for p in paths]
-    primary = paths[0]
     schema = schemas[0][1]
     if len(schemas) > 1:
-        # join_ok: plan on merged-equivalent primary when join inferable
+        # join_ok: the plan must be expressible against the joined shape. That shape is
+        # the union of the two headers, so it is derived from the schemas — no pandas,
+        # no data read, no temporary CSV written into the fixture directory.
         from app.services.analysis_ir import infer_join_from_message
+        from app.services.tabular_inspect import merge_schemas
 
         jl, jr, jk = infer_join_from_message(case["query"], schemas)
         if jk and jl and jr:
-            left = next(p for p in paths if p.name == jl)
-            right = next(p for p in paths if p.name == jr)
-            import pandas as pd
-
-            from app.core.tmpdir import ephemeral_dir
-
-            ldf = pd.read_csv(left)
-            rdf = pd.read_csv(right)
-            merged = ldf.merge(rdf, on=jk, how="inner")
-            tmp_root = ephemeral_dir() or primary.parent
-            tmp = tmp_root / f"_plan_join_{case['id']}.csv"
-            merged.to_csv(tmp, index=False)
-            schema = infer_tabular_schema(tmp)
+            left = next((p for p in paths if p.name == jl), None)
+            right = next((p for p in paths if p.name == jr), None)
+            if left is not None and right is not None:
+                schema = merge_schemas(infer_tabular_schema(left), infer_tabular_schema(right))
     spec = _heuristic_spec(
         case["query"],
         schema,
@@ -156,8 +153,10 @@ def eval_exec(cases: list[dict]) -> list[dict]:
 
     rows = []
     for case in cases:
-        spec = _plan_spec(case)
-        plan_ok = plan_matches(spec, case)
+        heuristic_spec = _plan_spec(case)
+        heuristic_plan_ok = plan_matches(heuristic_spec, case)
+        spec = heuristic_spec
+        plan_ok = heuristic_plan_ok
 
         if case.get("expect_uncomputable"):
             if "join_refuse" in (case.get("tags") or []):
@@ -207,7 +206,36 @@ def eval_exec(cases: list[dict]) -> list[dict]:
             _fixture_paths(case),
             prior_ir=case.get("prior_ir"),
             stage_copy=True,
+            planner=_PLANNER,
         )
+        planner_used = _PLANNER == "llm"
+        planner_ok: bool | None = None
+        spec_source = "heuristic_ablation"
+        # A heuristic ir is non-empty even when complete_json returned None.
+        # Only an explicit llm plan_source counts as the production planner.
+        llm_plan = planner_used and outcome.plan_source == "llm" and bool(outcome.ir)
+        if planner_used:
+            planner_ok = llm_plan
+            spec_source = "llm" if llm_plan else "heuristic_fallback"
+        if llm_plan:
+            spec = AnalysisSpec(
+                operation=str(outcome.ir.get("operation") or heuristic_spec.operation),
+                filters=list(outcome.ir.get("filters") or []),
+                group_by=str(outcome.ir.get("group_by") or ""),
+                measure_columns=list(outcome.ir.get("measure_columns") or []),
+                derive=list(outcome.ir.get("derive") or []),
+                join_key=str(outcome.ir.get("join_key") or ""),
+                join_left=str(outcome.ir.get("join_left") or ""),
+                join_right=str(outcome.ir.get("join_right") or ""),
+                uncomputable=list(outcome.ir.get("uncomputable") or []),
+            )
+            plan_ok = plan_matches(spec, case)
+        elif planner_used:
+            # The production planner produced nothing. That is a planner failure,
+            # NOT a pass for the heuristic ablation arm: keep ``spec``/``exec`` on
+            # the heuristic route so execution still runs, but never let it stand
+            # in for the planner's verdict.
+            plan_ok = False
         payload = outcome.summary or {}
         exec_ok, fk = exec_matches(
             case=case,
@@ -215,7 +243,9 @@ def eval_exec(cases: list[dict]) -> list[dict]:
             spec=spec,
             sandbox_error=outcome.error,
         )
-        if not plan_ok and exec_ok:
+        if planner_used and not planner_ok:
+            fk = "planner_error"
+        elif not plan_ok and exec_ok:
             fk = fk or "wrong_op"
         soft_ok = (not exec_ok) and soft_exec_matches(
             case, payload, tol=float(case.get("tolerance") or 0)
@@ -228,6 +258,10 @@ def eval_exec(cases: list[dict]) -> list[dict]:
                 "tags": case.get("tags"),
                 "expect_uncomputable": False,
                 "plan_ok": plan_ok,
+                "heuristic_plan_ok": heuristic_plan_ok,
+                "planner_used": planner_used,
+                "planner_ok": planner_ok,
+                "spec_source": spec_source,
                 "exec_ok": exec_ok,
                 "soft_exec_ok": soft_ok,
                 "failure_kind": fk,
@@ -240,32 +274,63 @@ def eval_exec(cases: list[dict]) -> list[dict]:
     return rows
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-compile", action="store_true", help="Plan accuracy only (no Docker exec)")
     ap.add_argument(
         "--split",
         choices=("smoke", "full", "all"),
         default=None,
-        help="smoke=20 cases; full=all cases; default smoke for live, full for dry-compile",
+        help="smoke=30 cases; full=all cases; default smoke for live, full for dry-compile",
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--planner",
+        choices=("llm", "heuristic"),
+        default="heuristic",
+        help="llm = production planner (_plan_analysis_spec); heuristic = deterministic ablation arm",
+    )
+    return ap
 
+
+def run(args: argparse.Namespace) -> SuiteResult:
     split = args.split or ("full" if args.dry_compile else "smoke")
     cases = _load_cases(split=split)
     if not cases:
         print(json.dumps({"error": "no cases", "split": split}), file=sys.stderr)
-        return 2
+        return SuiteResult(report={"error": "no cases", "split": split}, exit_code=2)
 
+    global _PLANNER
+    _PLANNER = getattr(args, "planner", "heuristic")
     mode = "dry_compile" if args.dry_compile else "live"
     results = eval_plan(cases) if args.dry_compile else eval_exec(cases)
     report = aggregate_report(results, mode=mode)
     report["split"] = split
+    report["planner"] = "heuristic" if args.dry_compile else _PLANNER
+    # Which arm produced the plan scores. Without this the plan numbers are easy to
+    # misread: the smoke profile scores the heuristic ablation arm (no sandbox, no
+    # LLM), never the production planner.
+    if args.dry_compile:
+        plan_arm = "heuristic"
+        plan_arm_note = "计划档只编译计划、不执行沙箱；分数是启发式臂，不代表生产规划能力"
+    elif _PLANNER == "llm":
+        sources = report.get("spec_source_counts") or {}
+        fallback = int(sources.get("heuristic_fallback") or 0)
+        plan_arm = "llm_with_heuristic_fallback" if fallback else "llm"
+        plan_arm_note = "大模型规划；执行走沙箱" + (
+            f"；其中 {fallback} 题因规划失败改用启发式计划执行" if fallback else ""
+        )
+    else:
+        plan_arm = "heuristic"
+        plan_arm_note = "启发式消融臂；执行走沙箱"
+    report["plan_arm"] = plan_arm
+    report["plan_arm_note"] = plan_arm_note
+    # A run whose planner kept failing is degraded: the numbers do not describe
+    # the production planning path any more.
+    report["degraded"] = bool(
+        report["planner_error_count"] and not args.dry_compile and _PLANNER == "llm"
+    )
     report["passed"] = sum(1 for r in results if r.get("exec_ok"))
     report["total"] = len(results)
-
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     summary = {
         "mode": mode,
@@ -273,10 +338,42 @@ def main() -> int:
         "total": report["total"],
         "accuracy": report["accuracy"],
         "plan_accuracy": report["plan_accuracy"],
+        "planner_error_count": report["planner_error_count"],
         "passed": report["passed"],
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0 if report["passed"] == report["total"] else 1
+    # Pass/fail is decided by app.eval.gates (floor + baseline regression), not 200/200.
+    exit_code = 0
+    samples = [r for r in results if not r.get("exec_ok")]
+    result = SuiteResult(
+        report=report,
+        samples=samples,
+        exit_code=exit_code,
+        dataset_path=DATASET,
+    )
+    return result
+
+
+def main() -> int:
+    from datetime import datetime, timezone
+
+    args = build_parser().parse_args()
+    run_dir = make_run_dir("tabular", "adhoc")
+    result = run(args)
+    write_run(
+        RunContext(
+            suite="tabular",
+            profile="adhoc",
+            target="venv",
+            argv=sys.argv,
+            started_at=datetime.now(timezone.utc),
+            run_dir=run_dir,
+            dataset_path=DATASET,
+            key_metrics=["raw.accuracy", "raw.plan_accuracy", "raw.smoke_accuracy"],
+        ),
+        result,
+    )
+    return int(result.exit_code)
 
 
 if __name__ == "__main__":

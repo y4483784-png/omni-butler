@@ -63,8 +63,9 @@ def build_ragas_llm_embeddings():
         api_key=settings.llm_api_key or "dummy",
         base_url=settings.llm_base_url,
         temperature=0.0,
+        max_tokens=2048,  # LLMDidNotFinishException seen at default limit
         timeout=settings.llm_timeout,
-        max_retries=1,
+        max_retries=3,
     )
     embeddings = OpenAIEmbeddings(
         model=settings.embedding_model,
@@ -104,27 +105,38 @@ def run_ragas_metrics(
     *,
     metrics: Sequence[str] | None = None,
 ) -> dict[str, float | None]:
-    """Run selected ragas metrics; default is the full YZ quartet."""
+    """Run selected ragas metrics; default is the full YZ quartet (aggregate only)."""
+    means, _ = run_ragas_rows(rows, metrics=metrics)
+    return means
+
+
+def run_ragas_rows(
+    rows: list[dict[str, Any]],
+    *,
+    metrics: Sequence[str] | None = None,
+) -> tuple[dict[str, float | None], list[dict[str, float | None]]]:
+    """One ``evaluate()`` call -> (aggregate means, per-row scores)."""
     names = tuple(metrics) if metrics is not None else DEFAULT_METRICS
     empty = {n: None for n in names}
+    empty_rows = [dict(empty) for _ in rows]
     if not rows:
-        return {}
+        return {}, []
     if not settings.llm_api_key:
         logger.warning("LLM_API_KEY missing — skipping ragas")
-        return empty
+        return empty, empty_rows
 
     try:
         from datasets import Dataset
         from ragas import evaluate
     except ImportError as exc:
         logger.warning("ragas not installed: %s", exc)
-        return empty
+        return empty, empty_rows
 
     try:
         metric_objs = _resolve_metrics(names)
     except ValueError as exc:
         logger.warning("%s", exc)
-        return empty
+        return empty, empty_rows
 
     llm, embeddings = build_ragas_llm_embeddings()
     payload: dict[str, list[Any]] = {
@@ -145,10 +157,20 @@ def run_ragas_metrics(
     )
     out: dict[str, float | None] = {}
     df = result.to_pandas()
+    per_row: list[dict[str, float | None]] = []
+    for i in range(len(rows)):
+        row: dict[str, float | None] = {}
+        for col in names:
+            if col in df.columns and i < len(df):
+                val = df[col].iloc[i]
+                row[col] = float(val) if val == val else None
+            else:
+                row[col] = None
+        per_row.append(row)
     for col in names:
         if col in df.columns:
             val = df[col].mean(skipna=True)
             out[col] = float(val) if val == val else None  # NaN check
         else:
             out[col] = None
-    return out
+    return out, per_row

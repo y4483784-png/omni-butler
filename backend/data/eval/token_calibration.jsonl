@@ -1,0 +1,30 @@
+{"id": "tok_cjk_01", "kind": "cjk", "text": "请根据差旅制度说明住宿标准与报销流程。", "prompt_tokens": 12}
+{"id": "tok_cjk_02", "kind": "cjk", "text": "我们约定明天下午三点在三号会议室与王总开会，预算上限八万元。", "prompt_tokens": 19}
+{"id": "tok_cjk_03", "kind": "cjk", "text": "长期记忆中的偏好应在回答时参考，但不要逐条复述给用户。", "prompt_tokens": 17}
+{"id": "tok_cjk_04", "kind": "cjk", "text": "未完成日程草稿：周会（待补：地点、参会人）。", "prompt_tokens": 14}
+{"id": "tok_cjk_05", "kind": "cjk", "text": "会话摘要应保留用户目标、关键数字、未完成任务与工具失败原因。", "prompt_tokens": 19}
+{"id": "tok_latin_01", "kind": "latin", "text": "Please summarize the quarterly sales report for Q3.", "prompt_tokens": 13}
+{"id": "tok_latin_02", "kind": "latin", "text": "The return rate is 8.2 percent based on the sandbox metrics.", "prompt_tokens": 15}
+{"id": "tok_latin_03", "kind": "latin", "text": "Schedule a meeting with Alice tomorrow at 15:00 in room A3.", "prompt_tokens": 15}
+{"id": "tok_latin_04", "kind": "latin", "text": "Context manager keeps system and latest user messages under emergency watermark.", "prompt_tokens": 20}
+{"id": "tok_latin_05", "kind": "latin", "text": "Needle in a haystack evaluation for long conversation recall.", "prompt_tokens": 16}
+{"id": "tok_mix_01", "kind": "mix", "text": "退货率为 8.2%，对应小数 0.082，请用表格输出。", "prompt_tokens": 14}
+{"id": "tok_mix_02", "kind": "mix", "text": "Meeting 改到周四 15:00，地点仍是 3号会议室。", "prompt_tokens": 13}
+{"id": "tok_mix_03", "kind": "mix", "text": "RAG top_k=6，candidate_k=20，请核对 citation [1][2]。", "prompt_tokens": 14}
+{"id": "tok_mix_04", "kind": "mix", "text": "budget max_tokens=32000，reserve_ratio=0.25，usable 约为 24000。", "prompt_tokens": 17}
+{"id": "tok_mix_05", "kind": "mix", "text": "pending_calendar missing_fields=['location','attendees']。", "prompt_tokens": 15}
+{"id": "tok_table_01", "kind": "table", "text": "员工,部门,出勤天数\n张三,研发,20\n李四,销售,18\n王五,人事,22", "prompt_tokens": 17}
+{"id": "tok_table_02", "kind": "table", "text": "region,sales\n华东,1200000\n华南,850000\n华北,905000", "prompt_tokens": 13}
+{"id": "tok_table_03", "kind": "table", "text": "===SUMMARY_JSON===\n{\"metrics\":[{\"id\":\"sum_sales\",\"value\":2955000}]}", "prompt_tokens": 17}
+{"id": "tok_table_04", "kind": "table", "text": "订单号,金额,状态\nA001,1280,已发货\nA002,960,退货中\nA003,2100,已完成", "prompt_tokens": 19}
+{"id": "tok_table_05", "kind": "table", "text": "date,late_count\n2024-01,3\n2024-02,5\n2024-03,2", "prompt_tokens": 12}
+{"id": "tok_long_01", "kind": "cjk", "text": "关于出差报销：城市间交通可报火车或机票经济舱；市内交通凭票据实报；住宿按城市档位；餐饮按天定额。提交时需附行程单与发票，超标部分自理。", "prompt_tokens": 42}
+{"id": "tok_long_02", "kind": "mix", "text": "ContextManager 在 warn 水位先收缩证据池到 8000 字，再在 compact 水位按逻辑轮次丢弃最旧对话，emergency 时只保留 system 与最近一轮 user。", "prompt_tokens": 39}
+{"id": "tok_long_03", "kind": "latin", "text": "The evaluation harness replays scripted office dialogues under five arms: legacy window, plain window, window plus summary, full context manager, and an oracle that barely compresses.", "prompt_tokens": 46}
+{"id": "tok_empty_01", "kind": "empty", "text": "", "prompt_tokens": 0}
+{"id": "tok_short_01", "kind": "cjk", "text": "好的", "prompt_tokens": 2}
+{"id": "tok_short_02", "kind": "latin", "text": "OK", "prompt_tokens": 1}
+{"id": "tok_num_01", "kind": "mix", "text": "预算上限 80000 元，人均 320，人数 25。", "prompt_tokens": 11}
+{"id": "tok_num_02", "kind": "mix", "text": "时间从 2024-05-08 改到 2024-05-09 15:00。", "prompt_tokens": 11}
+{"id": "tok_num_03", "kind": "cjk", "text": "一共四十五人，会议室可容纳六十人。", "prompt_tokens": 11}
+{"id": "tok_punct_01", "kind": "cjk", "text": "【会话摘要】【当前工作状态】（另有 12 轮更早对话未展示）", "prompt_tokens": 18}

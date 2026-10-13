@@ -21,6 +21,8 @@ class ToolContext:
     needs_web: bool = False
     needs_calendar: bool = False
     needs_sandbox: bool = False
+    summary: str = ""
+    working_state: dict | None = None
 
 
 @dataclass

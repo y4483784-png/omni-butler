@@ -93,6 +93,12 @@ _NO_EVIDENCE = """本轮未取得任何可用证据。
 
 
 def today_str() -> str:
+    # Eval freezes "today" (EVAL_TODAY=YYYY-MM-DD) so date-dependent answers are reproducible.
+    import os
+
+    frozen = (os.environ.get("EVAL_TODAY") or "").strip()
+    if frozen:
+        return frozen
     return date.today().isoformat()
 
 
@@ -117,13 +123,24 @@ def plan_system(*, has_kb_docs: bool, has_tabular_docs: bool = False) -> str:
     return router_system(has_kb_docs=has_kb_docs, has_tabular_docs=has_tabular_docs)
 
 
-def plan_user(message: str, history: list[dict], *, turns: int = 2) -> str:
+def plan_user(
+    message: str,
+    history: list[dict],
+    *,
+    turns: int = 2,
+    max_chars: int = 120,
+    context_line: str = "",
+) -> str:
     msgs = [m for m in history if m.get("role") in ("user", "assistant")][-turns * 2 :]
     ctx = "\n".join(
-        f"{'用户' if m['role'] == 'user' else '助手'}：{(m.get('content') or '')[:120]}"
+        f"{'用户' if m['role'] == 'user' else '助手'}：{(m.get('content') or '')[:max_chars]}"
         for m in msgs
     ) or "(无)"
-    return f"最近对话：\n{ctx}\n\n当前提问：{message}"
+    prefix = ""
+    line = (context_line or "").strip()
+    if line:
+        prefix = f"工作状态：{line}\n\n"
+    return f"{prefix}最近对话：\n{ctx}\n\n当前提问：{message}"
 
 
 def rewrite_user(message: str, *, iteration: int = 1) -> str:

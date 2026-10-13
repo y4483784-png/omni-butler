@@ -2,6 +2,90 @@
 
 对标业界 Agent 评测分层（LangSmith / ToolLLM / τ-bench 等），本仓库 **离线** 可跑的指标如下。
 
+## 0. 统一入口（必读）
+
+所有套件经 `backend/scripts/eval.py` 调度。目标优先级：`--target` > 环境变量 `EVAL_TARGET` > 套件默认。venv 目标强制 SQLite + 关 Redis；Compose `eval` 服务会注入 `EVAL_TARGET=services`（日常 `up/start/ps` 不会拉起该服务）。`rag` / `routing` / `context` / `tabular` 即使 target=services 也把应用库指到 scratch SQLite，避免往线上 Postgres 灌评测行、踩 FORCE RLS。`agent` / `yz` / `grounding` 仍用真实库并 `set_rls_context`。`tabular` full 在 services 下探 `sandbox-runner /health`，不在 eval 容器里查 `omni-sandbox` 镜像。对外汇报的 L2 主指标是 **`agent` 任务完成率**；`yz` 已弃用，仅作对照。
+
+Compose `eval` 服务已设 `EVAL_TARGET=services`。**不要**在 eval 容器里查本机 `omni-sandbox` 镜像——live 表格走 `sandbox-runner:8002`。`omni-butler-sandbox-1 Exited` 是镜像占位容器正常退出，不是故障。
+
+## 0b. 各套件与生产路径的差异登记（引用数字前先看这里）
+
+只有一部分套件是"原样跑生产路径"。下表把差异登记在册，**引用任何数字前先确认它属于哪一栏**。
+
+| 套件 / 档位 | 是否生产路径 | 差异点 | 数字该怎么读 |
+|---|---|---|---|
+| `routing` 全部档位 | 部分 | 调用生产 `plan_tools`，但上下文由评测自己组装（生产走 `plan_node`，入参来源不同） | "规划函数的表现"，不是端到端路由表现 |
+| `rag` smoke | ❌ | 语料按空行切段、纯关键词检索、关闭混合与向量；结果按文档去重 | 关键词对照基线，**不代表生产检索** |
+| `rag` full | ✅ | 走 `ingest_document` 生产分块 + 混合检索；报告里 `mode=production_hybrid`、`degraded=false` | 可代表生产检索；`degraded=true` 的运行直接判失败 |
+| `tabular` smoke | ❌ | `--dry-compile`：只编译计划、不执行沙箱；报告里 `plan_arm=heuristic` | "启发式规划臂的计划编译率"，**不代表生产规划能力** |
+| `tabular` full | ✅ | 大模型规划（`spec_source=llm`）+ 沙箱执行；规划失败的行标 `spec_source=heuristic_fallback` 并计入 `planner_error_rate` | `plan_accuracy` 按 `spec_source` 拆分看；`planner_error_rate` 必须为 0 |
+| `grounding` 全部档位 | 部分 | 调用生产 `ground_and_repair_answer`，但证据用冻结上下文，不经过真实检索 | "依据核验组件的忠实度" |
+| `context` 全部档位 | 部分 | 上下文按生产逻辑组装，但历史是脚本化回放；多臂对照（legacy/window/full）是评测专有 | 上下文策略对照；live 档判分模型见 `judge_model` |
+| `agent` 全部档位 | ✅ | 真实 `run_agent_workflow`；仅联网工具是确定性桩 | 唯一可对外汇报的 L2 指标 |
+| `yz` | ❌ 已下线 | 旁路实现（upload→ingest→retrieve→answer），不经过工作流 | 套件已从注册表移除，只保留文件作历史对照；不要引用 |
+
+两条补充规则：
+
+- **降级运行不参与判定**：`rag` 退回关键词模式、`tabular` 出现规划失败时，报告标 `degraded=true`，完整档直接判失败而不是给分数（冒烟档本来就是确定性回放，不在其列）。
+- **判分模型**：`context` live 档判分用 `settings.judge_model`（默认 `glm-4-air`），与作答模型解耦；报告记录 `judge_model` / `answer_model` / `self_judged`。三者相同即"自己判自己"，该档数字要打折看。
+
+| 套件 | smoke | full | 默认 target |
+|------|-------|------|-------------|
+| `pytest` | health/router/gateway/metrics + 评测基础设施测试 | `tests/` 全量 | venv |
+| `routing` | `--require-cache` | `--refresh-cache` + 统一 gates | venv |
+| `rag` | 关键词分段对照 | `--production` ingest + hybrid（services） | venv |
+| `agent` | `--limit 30` | 全量 `run_agent_workflow` | **services** |
+| `grounding` | `--skip-ragas --limit 24` | `--score-drafts`（repair Δ） | **services** |
+| `tabular` | `--dry-compile` heuristic | live `--planner llm` | venv |
+| `context` | extractive legacy vs full + gate | 同 smoke，384 条；live 需 `RUN_CTX_EVAL=1` | venv |
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+
+python scripts/eval.py list
+python scripts/eval.py run pytest --profile smoke
+python scripts/eval.py run rag --profile smoke
+python scripts/eval.py last rag --profile smoke
+
+# Compose 栈已在跑时（端到端）：
+docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile smoke
+python scripts/eval.py diff agent --profile full
+```
+
+### 报告在哪
+
+```
+backend/reports/
+  index.jsonl
+  <suite>/latest.json              # 最近一次 full（smoke 不覆盖）
+  <suite>/latest-{profile}.json
+  <suite>/latest.md
+  <suite>/runs/<YYYYMMDD-HHMMSS>_<profile>/
+      report.json
+      samples.jsonl
+      summary.md
+      stdout.log
+      junit.xml          # 仅 pytest
+```
+
+`report.json` 含 `meta`（suite/profile/target/argv/duration/git/dataset sha）与 `metrics` / `failures`。旧路径 `*_eval_latest.json` 已废弃。
+
+路由缓存 / Context 基线仍在 `data/eval/`（不是报告）：`router_cache.json`、`context_eval_baseline.json`。
+
+### 题集质量检查
+
+所有正式题集由 `data/eval/seeds/*.jsonl` 的冻结问法或可复算 CSV 事实确定性生成，不调用 LLM、不用前后缀循环凑数。提交题集变更前运行：
+
+```bash
+python scripts/lint_eval_datasets.py --card
+python -m pytest tests/test_eval_datasets_contract.py -q
+```
+
+题量、分布和契约状态见 `data/eval/DATASETS.md`。校验会拦截归一化重复、schema 漂移、gold 指向不存在语料及类别失衡。
+
+---
+
 ## 1. 评测对象
 
 | 层级 | 测什么 | 输入 | 金标准 |
@@ -24,25 +108,32 @@ RAG 检索层（可选）：`precision@k` / `recall@k` / `MRR` — 见 `metrics.
 | `RAG_RERANK_PROVIDER` | `zhipu`（默认）/ `none`（启发式） |
 | `RERANK_MODEL` | 智谱模型名，默认 `rerank` |
 
-评测数据集：`backend/data/eval/rag_retrieval.jsonl`（**500** 条口语化问法；seed 语料 10 篇文档）。可用 `python scripts/gen_rag_eval_500.py` 重建。
+评测数据集：`backend/data/eval/rag_retrieval.jsonl`（**400** 条：300 单文档、60 多文档、40 难负例；语料 16 篇文档）。问法冻结在 `data/eval/seeds/rag_queries.jsonl`，语料在 `data/eval/corpus/rag/`；用 `python scripts/gen_rag_eval.py` 重建。
 
 ```bash
-python scripts/run_rag_eval.py
-python scripts/run_rag_eval.py --zhipu-rerank   # 需 LLM_API_KEY
-pytest tests/test_rag_expand_rerank.py tests/test_rag_retrieval_eval.py -q
+python scripts/eval.py run rag --profile smoke
+python scripts/eval.py run rag --profile full          # --zhipu-rerank
+# 兼容旧入口：python scripts/run_rag_eval.py
 ```
 
 指标：
 
+- **Hit@k** = 前 k 个结果中是否至少有一个 gold（单文档题首看）
 - **Precision@k** = 前 k 个预测文档中命中 gold 的比例（按样本平均）
 - **Recall@k** = gold 文档被召回的比例
 - **MRR** = 第一个正确文档排名的倒数平均
+
+无 retrieval gold 的 chat / refusal 样本不进入这些均值；报告同时记录 `n_scored`。单文档 gold 下 Precision@k 的上限受 k 影响，比较检索可用性时优先看 Hit@k / MRR。
+
+确定性 smoke 在 2026-09-17 的重建基线为 Recall@k **0.9888**、MRR **0.9322**；同日智谱 rerank full 为 Recall@k **0.9912**、MRR **0.9796**。回归门槛取较低基线减约 0.05，即 Recall@k ≥ **0.93**、MRR ≥ **0.88**；full 使用相同 Recall 门槛。
+
+难负例切片（`hard_negative`，n=40）在同一关键词基线上是 Recall@k **1.0**、MRR **0.875**（命中还在，排序更靠后）。只看整体均值时，这一切片掉 0.17 的 MRR 只会把总 MRR 拉低约 0.018，仍能过 0.88。因此 smoke/full 另设切片门槛：Recall@k ≥ **0.95**、MRR ≥ **0.82**（约低于该切片基线 0.05）。整体门槛不另收紧，它们已经落在已公布基线减 0.05 附近。
 
 ## 2. 标准指标定义
 
 ### Intent（单标签分类）
 
-- **Accuracy** = 预测 intent 与 gold 一致的比例  
+- **Accuracy** = 预测 intent 与 gold 一致的比例。限流、超时等基础设施失败不进入分母，并单独报告 `infra_error_rate`；schema 规划失败仍记为 `error`，留在分母里。全是基础设施失败时准确率为 0，不能靠空分母记成 100%。
 - **Macro-F1** = 各类别 F1 的算术平均（关注长尾 intent）  
 - **Confusion matrix** = 混淆矩阵，定位「calendar 被判成 chat」等
 
@@ -60,7 +151,7 @@ pytest tests/test_rag_expand_rerank.py tests/test_rag_retrieval_eval.py -q
 
 ## 3. 数据集格式（JSONL）
 
-路径：`backend/data/eval/office_tool_routing.jsonl`（目标 **500** 条；重建：`python scripts/gen_office_eval_500.py`）
+路径：`backend/data/eval/office_tool_routing.jsonl`（**400** 条；含 50 条多工具、至少 80 条多轮和 24 条日历续填；重建：`python scripts/gen_office_eval.py`）
 
 ```json
 {
@@ -89,24 +180,15 @@ pytest tests/test_rag_expand_rerank.py tests/test_rag_retrieval_eval.py -q
 ```bash
 cd backend
 
-# 人类可读报告
-python scripts/run_office_eval.py
-
-# JSON（CI / 看板）
-python scripts/run_office_eval.py --json
-
-# 门槛（CI gate）
-python scripts/run_office_eval.py --min-intent-acc 0.82 --min-tool-exact 0.78
-
-# pytest（默认离线：mock 路由测管线 + gateway 契约；不打真实 API）
-pytest tests/test_harness_office_eval.py tests/test_eval_metrics.py -q
-
-# 真实 LLM 路由打分（500 条真实调用，显式开关才跑）
-RUN_ROUTER_EVAL=1 pytest tests/test_harness_office_eval.py::test_routing_eval_meets_thresholds -q
+python scripts/eval.py run routing --profile smoke
+python scripts/eval.py run routing --profile full
+# 兼容：python scripts/run_office_eval.py --json
 ```
 
-路由评测走 `app.agents.router.route`（严格 LLM 判定），结果缓存在
-`backend/data/eval/router_cache.json`；`run_office_eval.py --refresh-cache` 可强制重打。
+路由评测走生产 `plan_tools`（与 `workflow.plan_node` 相同，含 `context_line` / `pending_calendar` 短路）。结果缓存在
+`backend/data/eval/router_cache.json`；`--refresh-cache` 可强制重打。
+
+400 条重建题集在 2026-09-17 使用 `glm-4-air` 的首轮 full 基线为 Intent Accuracy **0.9225**、Tool Exact **0.9275**。门槛按基线下留约 0.05 回归预算，二者均设为 **0.87**；换模型后应记录新基线再调整，不得改 gold 追分。
 
 ## 5. 扩展数据集
 
@@ -126,11 +208,40 @@ RUN_ROUTER_EVAL=1 pytest tests/test_harness_office_eval.py::test_routing_eval_me
 
 参考：LangSmith classification eval、Berkeley Function Calling Leaderboard、ToolLLM (ICLR) tool-selection 表、agent-eval-harness（intent + retrieval P@k/R@k/MRR）。
 
-## 7. YZ 全链路评测（upload → ingest → retrieve → answer）
+## 6b. 端到端 Agent 评测（主 L2 指标）
+
+题集：`data/eval/agent_tasks.jsonl`（**174** 题；`python scripts/gen_agent_eval.py`）。每题走真实 `run_agent_workflow`；web 为确定性桩；「今天」冻结为 `EVAL_TODAY`。
+
+每题都带 `context`，由题集决定、不再由执行器写死：
+
+| 字段 | 含义 | 题数 |
+|------|------|------|
+| `has_kb_docs` / `has_tabular_docs` | 可用性开关（`_apply_availability` 据此裁剪工具） | 各 4 道反例 |
+| `pending_calendar` | 待续日程；命中 `plan_node` 短路，不经过路由 | 6 |
+| `document_keys` | 限定文档范围（夹具键名，入库后解析成编号） | 5 |
+
+三类新标签：`availability_gate`（8）、`slot_fill`（6）、`doc_scope`（5）。新增题型 `no_tool`：工作区提供不了所需工具时，唯一正确行为是"不执行任何工具并说明数据不可用"；判分要求工具集合为空，答案命中 `answer_spec` 或包含"数据/表格不可用"的说明。
+
+三层分别计分，失败归到第一层：
+
+| 层 | 指标 |
+|----|------|
+| 路由 | 实际执行工具集合 vs `route_gold.tools` |
+| 证据 | gold 文档引用 / sandbox 是否执行（限定文档范围的题必须引用限定文档） |
+| 完成 | `judges.judge_completion(task_type, answer_spec)` |
+
+指标：`task_completion_rate`（附 bootstrap 95% CI）对外报数；**门禁只看 `core_completion_rate`**（`fact_qa` + `compute` + `multi_tool` + `no_tool`），把 `chat` / `calendar` / `refuse` 这类近乎白送的部分排除在外。另设 `infra_error_rate ≤ 0.05`，避免大模型大面积报错时靠幸存题目过门槛。路由阶段的限流、超时和同类传输失败记为 `infra_error`（与作答路径的 `LLMInfraError` 相同），不进入 `core_completion_rate` 分母；schema 校验失败仍是 `workflow_error`。拒答题不带 `gold_doc_keys`；考勤汇总标 `sandbox`。
+
+```bash
+docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile smoke
+docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile full
+```
+
+## 7. YZ 全链路评测（已弃用，请用 agent）
 
 **工作纪律：评测阶段只出报告，不边测边改产品。** Runner 将失败样例写入 `failures` 清单；统一修复另开一轮后再复跑同一套题库。
 
-语料：`backend/tests/YZ测试文档/` 三份文件（产品指南 md、制度 txt、考勤 csv）。金标准：`backend/data/eval/yz_fullchain.jsonl`（**≥380** 条；重建：`python scripts/gen_yz_eval_400.py`）。
+语料：`backend/tests/YZ测试文档/`。**GitHub 只跟踪** `测试用例.md`、`测试用例.txt`。考勤 `测试用例.csv` 只放本机（已 gitignore），克隆公开仓后没有该文件，YZ 全链路评测需自行准备。金标准：`backend/data/eval/yz_fullchain.jsonl`（**400** 条；130 policy + 100 product + 100 attendance + 30 multi-doc + 20 unanswerable + 20 chat；重建：`python scripts/gen_yz_eval.py`）。100 条考勤 gold 已冻结在 `seeds/yz_attendance.jsonl`；本机 CSV 变化时显式加 `--refresh-attendance-seed` 复算。
 
 ### 依赖
 
@@ -155,26 +266,9 @@ Judge LLM / Embeddings 走现有智谱 OpenAI 兼容端点（`LLM_BASE_URL` + `L
 
 ### 运行
 
-```bash
-cd backend
+`yz` 已从 `scripts/eval.py` 注册表移除，**不要**再执行 `python scripts/eval.py run yz`。对照请跑 `agent`。历史旁路脚本 `scripts/run_yz_eval.py` 仍在仓库里，但不进门禁、也不要当现行入口。
 
-# 默认：真实 MinIO 入库 + ragas（需 MinIO、Qdrant、LLM key）
-python scripts/run_yz_eval.py
-
-# 仅检索 + 规则指标（省 API 费用）
-python scripts/run_yz_eval.py --skip-ragas
-
-# 小子集调试
-python scripts/run_yz_eval.py --limit 10 --skip-ragas
-
-# JSON 报告 + 门槛告警（仍只告警，不改代码）
-python scripts/run_yz_eval.py --json --min-recall 0.5
-
-# 烟测（mock 入库，不断言高分）
-pytest tests/test_yz_fullchain_eval.py -q
-```
-
-报告输出：`backend/reports/yz_eval_latest.json` + 终端摘要 + failures Top-N。
+报告若手工跑过历史脚本，旧文件在 `backend/reports/yz/`（该目录已被 gitignore）。
 
 ## 8. 依据核验忠实度评测（grounding + ragas）
 
@@ -185,7 +279,7 @@ pytest tests/test_yz_fullchain_eval.py -q
 | 成稿 | `complete_text` + **核验重写** | 裸 `complete_text` |
 | 证据 | kb 真检索；web/sandbox **冻结片段** | 仅 kb 检索 |
 | 主指标 | ragas **faithfulness**（+ 可选 relevancy） | faithfulness + context_* + fact containment |
-| 题量 | ~48 互异题（每路 16） | ≥380 |
+| 题量 | 120 题（kb/web/sandbox 各 40） | 400 |
 
 **工作纪律**：只出报告，不改 gold 迁就模型；不默认 live 搜索 / Docker 沙箱。
 
@@ -200,52 +294,20 @@ pytest tests/test_yz_fullchain_eval.py -q
 ```bash
 cd backend
 
-# 成稿 + 核验重写 + ragas（需 LLM_API_KEY；kb 题需可入库）
-python scripts/run_grounding_eval.py
-
-# 对照：关闭重写（失败只贴免责）
-python scripts/run_grounding_eval.py --no-repair
-
-# 省费用：只看 repair / disclaimer / sandbox 规则
-python scripts/run_grounding_eval.py --skip-ragas --limit 8
-
-# 门槛告警（非 CI 默认）
-python scripts/run_grounding_eval.py --min-faithfulness 0.75
-
-# 量化「重写是否提高忠实度」（额外 judge 费用）
-python scripts/run_grounding_eval.py --score-drafts
-
-# 烟测（mock，不打真实 API）
-pytest tests/test_grounding_eval.py -q
+python scripts/eval.py run grounding --profile smoke
+python scripts/eval.py run grounding --profile full
 ```
 
-**在 Compose 虚拟机上跑**：api 镜像不挂源码，需重建后 `exec`。`backend/.dockerignore` 已放行 `scripts/` 与 `data/eval/`。
+**在 Compose 虚拟机上跑**：
 
 ```bash
 cd /mnt/hgfs/omni-butler
-export DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0
-docker compose build api
-docker compose up -d --force-recreate api api2
-docker compose exec -w /app api ls scripts/run_grounding_eval.py
-docker compose exec -w /app api ls "tests/YZ测试文档/测试用例.md"
-docker compose exec -w /app api python scripts/run_grounding_eval.py --skip-ragas --limit 8
+docker compose --profile eval run --rm eval python scripts/eval.py run grounding --profile smoke
 ```
 
-kb seed / 检索走 Postgres RLS：runner 会确保 `users.id=92002`（`yz_eval_92002`）存在，再 `set_rls_context`。不调整 `users_id_seq`（`omni_app` 无 UPDATE）。若仍报 RLS / FK，确认已重建包含该改动的 api 镜像。
+报告：`backend/reports/grounding/latest.json`。含按 `source` 分组的 mean faithfulness、repair_rate、disclaimer_rate、sandbox_rule_hit_rate。
 
-若暂时不想重建，可一次性挂载宿主机目录（仍需镜像里已有 `app/eval/grounding.py`）：
-
-```bash
-docker compose run --rm \
-  -v /mnt/hgfs/omni-butler/backend/scripts:/app/scripts:ro \
-  -v /mnt/hgfs/omni-butler/backend/data:/app/data:ro \
-  -v "/mnt/hgfs/omni-butler/backend/tests/YZ测试文档:/app/tests/YZ测试文档:ro" \
-  api python scripts/run_grounding_eval.py --skip-ragas --limit 8
-```
-
-报告：`backend/reports/grounding_eval_latest.json`。含按 `source` 分组的 mean faithfulness、repair_rate、disclaimer_rate、sandbox_rule_hit_rate；`failures` 为 faithfulness &lt; 0.5 或规则命中等样例。
-
-Judge 实现：`app/eval/ragas_judge.py`（YZ 与本评测共用）。
+冒烟档固定取文件前 24 条（kb / web / sandbox 各 8），这 24 条全是可答题，`n_unanswerable=0`，`refusal_accuracy` 没有分母。这时跳过该门禁，**不算失败**。冒烟报告里一旦真有拒答率，仍要 ≥ 0.40。完整档不受影响：`faithfulness_mean` ≥ 0.70，`refusal_accuracy` ≥ 0.60。缺了拒答率（完整档题集里有不可答题）仍然失败。
 
 ## 9. 办公表格客观短答案评测（office_tabular）
 
@@ -253,39 +315,41 @@ Judge 实现：`app/eval/ragas_judge.py`（YZ 与本评测共用）。
 
 ### 数据集与重建
 
-- 数据集：`backend/data/eval/office_tabular.jsonl`（约 **88** 题，`split=smoke` 20 题供默认 live）
-- 夹具：`backend/data/eval/fixtures/`（7 张自造办公表：`employees` / `attendance` / `orders` / `returns` / `sales_regions` / `products` + 回归小表）
+- 数据集：`backend/data/eval/office_tabular.jsonl`（**200** 题，`split=smoke` 30 题）
+- 夹具：`backend/data/eval/fixtures/`（9 张自造办公表：原有员工/考勤/订单/退货/销售/产品，加费用、项目、库存）
 - 重建：`python scripts/gen_office_tabular_eval.py`（pandas 算金标准后冻结进 jsonl）
+
+### 冒烟档为什么只放简单题（重要）
+
+冒烟档计划分走的是**启发式臂**（`plan_arm=heuristic`）。实测该臂的规划通过率：
+
+| 切片 | 通过率 | 原因 |
+|---|---|---|
+| 简单难度 | 40/52 | 问句里直接出现列名，规则能认 |
+| **中等难度** | **5/94** | 中等题全是"按列的值过滤"（部门＝产品/研发、报销状态＝已通过）。**规则只能从问句里认列名，认不出列的值**，所以过滤条件生成不出来 |
+| 困难 · 关联 | 9/14 | 关联分支部分可用 |
+| 困难 · 比率 | 3/4 | — |
+
+因此冒烟档**刻意只收简单题**，中难题交给完整档（走大模型规划器）。这不是数据挑选，而是一条真实能力边界：**启发式规划器无法处理"按数据值过滤"的题**，一旦大模型规划不可用，这类题没有可用的降级方案。
+
+`contracts._tabular_check` 会强制这条组成规则（冒烟档必须含比率题、拒答题、脏数据题，且不得含中等难度与关联题），避免有人重新平衡切片时把它悄悄改掉。
+
+计划打分的口径由报告顶层字段给出：`plan_arm`（`heuristic` / `llm` / `llm_with_heuristic_fallback`）、`plan_arm_note`，以及逐题的 `spec_source`。
 
 ### 运行
 
 ```bash
-# 默认：live 沙箱，仅 smoke（20 题，避免满量 Docker）
-python scripts/run_office_tabular_eval.py
-
-# 计划准确率（无 Docker，可跑 full 88 题）
-python scripts/run_office_tabular_eval.py --dry-compile --split full
-
-# live 全量（可选，耗时长）
-python scripts/run_office_tabular_eval.py --split full
+python scripts/eval.py run tabular --profile smoke   # dry-compile
+python scripts/eval.py run tabular --profile full    # live sandbox
 ```
 
-Compose 虚拟机（需已重建 api 镜像）：
+Compose 虚拟机（live full）：
 
 ```bash
-docker compose exec -w /app api python scripts/gen_office_tabular_eval.py
-docker compose exec -w /app api python scripts/run_office_tabular_eval.py
-docker compose exec -w /app api python scripts/run_office_tabular_eval.py --dry-compile --split full
+docker compose --profile eval run --rm eval python scripts/eval.py run tabular --profile full
 ```
 
-### 两级评测（Plan vs Exec）
-
-| 阶段 | 命令 | 含义 |
-|------|------|------|
-| **Plan** | `--dry-compile` | IR（operation / filters / join_key / uncomputable）与 `gold_plan` 一致 |
-| **Exec** | 默认 live | 沙箱 `SUMMARY_JSON.metrics` 对 `gold.value`；拒答题必须带 `missing` 指定 token |
-
-报告：`backend/reports/office_tabular_eval_latest.json`
+报告：`backend/reports/tabular/latest.json`
 
 ### 主指标与切片
 
@@ -303,13 +367,13 @@ docker compose exec -w /app api python scripts/run_office_tabular_eval.py --dry-
 
 | 门禁 | 条件 |
 |------|------|
-| 必过 | `--dry-compile --split smoke` → 20/20 plan |
+| 必过 | `--dry-compile --split smoke` → 30/30 plan |
 | 必过 | 生成器幂等、join 推断、假缺列修复单测 |
-| 软门禁（VM Docker） | smoke live ≥ 18/20；full `join_ok` ≥ 10/14 |
+| 软门禁（VM Docker） | smoke live ≥ 27/30；full `join_ok` ≥ 10/14 |
 
 ### 目标阈值（live 修复后）
 
-- smoke exec ≥ **90%**（18/20+）
+- smoke exec ≥ **90%**（27/30+）
 - full exec ≥ **80%**
 - `rate` / `dirty` tag exec 应接近 plan（非 0%）
 
@@ -324,4 +388,59 @@ docker compose exec -w /app api python scripts/run_office_tabular_eval.py --dry-
 - **不要**把 grounding_eval 默认改成 live Docker；两条评测线互不替代
 - 拒答题必须带 `missing` 原因词（如「年终奖」「join」）；沙箱崩溃、metrics 为空不算通过
 - 本集**不用** ragas faithfulness 做主分
+
+## 10. 上下文管理评测（ContextManager）
+
+对标 LongMemEval / NIAH / AgentMemBench：固定脚本化历史（教师强制），只变上下文策略；CI 用确定性指标，夜间可跑真实 LLM。
+
+### 分层
+
+| 层 | 内容 | 命令 |
+|----|------|------|
+| L0 | 不变式（system+当前 user、无半轮、角标⊆included、legacy 等价、token MAPE） | `python -m pytest tests/test_context_invariants.py -q` |
+| L1 | 回放 + extractive 摘要；needle_presence / pending_retention | `python scripts/eval.py run context --profile smoke` |
+| 故障 | 摘要失败、估算漂移、异步追赶、regenerate、600 字裁剪 xfail | `python -m pytest tests/test_context_faults.py -q` |
+| L2 | 真实摘要 + 作答 + 裁判（需 API） | `RUN_CTX_EVAL=1 python scripts/run_context_eval.py --live --split full --gate` |
+| L3 | 日志聚合 + 线上会话导出回流 | `python scripts/ctx_log_report.py --log ...` / `python scripts/export_context_case.py --session-id N --question ... --gold-keys ...` |
+
+### 数据集
+
+- 生成：`python scripts/gen_context_eval.py`
+- 路径：`data/eval/context_recall.jsonl`（384 条；8 类型 × 4 桶 × 4 深度 × 3 种子；smoke 32）
+- 字段：`history`（脚本回复）/ `pending_calendar` / `evidence_pool` / `probe{question,gold_keys,judge_mode}`
+- 校准：`data/eval/token_calibration.jsonl`
+
+### 主对照（默认只跑两臂）
+
+| arm | 含义 |
+|-----|------|
+| `legacy` | `CONTEXT_MANAGER_ENABLED=false` |
+| `full` | 完整 ContextManager |
+
+默认 smoke/full 都只比较 `legacy` 与 `full`，对应「完全没做」和「完整实现」。`window`、`window_summary`、`oracle` 仍保留为排障用的可选臂，不进入默认完整测试。
+
+### 门禁
+
+`needle_presence` 只写进报告，不设门禁。abstention 跌幅没有实现，不要把它当成已生效的门槛。
+
+实际会失败的条件：
+
+- 冒烟与完整档都硬卡：`invariant_violations==0`；`pending_retention==1.0`
+- 只有完整档硬卡 `arms.full.overall.compaction_rate>=0.05`（只把 `compact` / `emergency` 算进压缩率，`warn` 不算）
+- 冒烟档是短桶探针（只要 12/30 轮），和完整档不可比。这些对话到不了压缩阈值，产品正常时 `compaction_rate` 也是 0，所以不把压缩率当冒烟硬门禁。压缩有没有发生，看完整档。
+- 基线：`data/eval/context_eval_baseline.json`（进 git；`--update-baseline` 更新）。报告的 `split` 必须和基线一致，smoke 对 full 基线直接失败，不拿两组数字互比
+- live 相对基线：`fact_recall` 跌超过 0.05；`actual_tokens_mean` 涨超过 10%；`summary_fail_rate>5%` → exit 1
+- 报告：`reports/context/latest.json`（gitignore 整个 `reports/`）
+
+### 提交前建议
+
+```bash
+cd backend
+python scripts/eval.py run context --profile smoke
+python -m pytest tests/test_context_manager.py tests/test_context_invariants.py tests/test_context_faults.py tests/test_context_eval_gen.py -q
+```
+
+### 回流
+
+线上失忆 → `export_context_case.py` 写出 `data/eval/context_replays/*.json` → 同一 `run_context_eval.py --dataset` 回归。
 

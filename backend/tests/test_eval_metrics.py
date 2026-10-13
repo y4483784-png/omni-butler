@@ -46,6 +46,26 @@ def test_retrieval_mrr():
     )
     assert out["mrr"] == 0.5
     assert out["recall_at_k"] == 1.0
+    assert out["hit_at_k"] == 1.0
+    assert out["n_scored"] == 1
+
+
+def test_retrieval_report_skips_rows_without_gold():
+    out = retrieval_report(
+        [{"d1"}, set()],
+        [["d1"], ["unrelated"]],
+        k=3,
+    )
+    assert out["recall_at_k"] == 1.0
+    assert out["hit_at_k"] == 1.0
+    assert out["n_scored"] == 1
+
+
+def test_retrieval_report_scores_missing_prediction_as_zero():
+    out = retrieval_report([{"d1"}, {"d2"}], [["d1"]], k=3)
+    assert out["n_scored"] == 2
+    assert out["hit_at_k"] == 0.5
+    assert out["recall_at_k"] == 0.5
 
 
 def test_exact_match_accuracy():

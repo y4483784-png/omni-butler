@@ -25,6 +25,10 @@ class Session(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     title = Column(String, default="新会话")
     pending_calendar = Column(Text, default="")  # JSON draft while a calendar flow is incomplete
+    # ContextManager (H5): compacted older turns + working-state metadata (not UI history)
+    context_summary = Column(Text, default="")
+    context_summary_upto_message_id = Column(Integer, default=0)
+    working_state = Column(Text, default="")  # JSON: evidence refs, last analysis, doc ids
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

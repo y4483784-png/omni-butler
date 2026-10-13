@@ -5,8 +5,22 @@ from __future__ import annotations
 import pytest
 
 from app.agents import router as router_mod
-from app.agents.router import RouterError, classify_intent, plan_tools, route
-from app.core.llm import LLMStructuredError
+from app.agents.router import (
+    RouterError,
+    RouterInfraError,
+    classify_intent,
+    plan_tools,
+    route,
+    router_cache_key,
+    router_prompt_sha,
+)
+from app.core.llm import (
+    LLMInfraError,
+    LLMStructuredError,
+    complete_json_schema,
+    is_llm_infra_exception,
+    llm_infra_backoff_seconds,
+)
 
 
 def test_tier1_certain_chat_exact():
@@ -103,6 +117,207 @@ def test_no_regex_fallback_branch_in_plan_tools():
     assert "_RAG_HINTS" not in src
     assert "sandbox_hint" not in src
     assert "calendar_hint" not in src
+
+
+def _clear_eval_cache_flags(monkeypatch) -> None:
+    monkeypatch.delenv("EVAL_SKIP_ROUTER_REDIS", raising=False)
+    monkeypatch.delenv("EVAL_BOOTSTRAPPED", raising=False)
+
+
+def test_router_cache_key_includes_prompt_fingerprint():
+    base = dict(has_kb_docs=True, has_tabular_docs=False, model="glm-test", today="2026-09-19")
+    same = router_cache_key("计划文本", prompt_sha="abc123", **base)
+    assert same == router_cache_key("计划文本", prompt_sha="abc123", **base)
+    assert same != router_cache_key("计划文本", prompt_sha="def456", **base)
+    assert same != router_cache_key("另一段计划", prompt_sha="abc123", **base)
+    live = router_cache_key("计划文本", **base)
+    assert live == router_cache_key("计划文本", prompt_sha=router_prompt_sha(), **base)
+    assert len(router_prompt_sha()) == 12
+
+
+def test_route_redis_key_uses_live_prompt_sha(monkeypatch):
+    _clear_eval_cache_flags(monkeypatch)
+    seen: dict = {}
+
+    def capture(namespace, payload):
+        seen["namespace"] = namespace
+        seen["payload"] = payload
+        return "route-key"
+
+    monkeypatch.setattr(router_mod, "stable_key", capture)
+    monkeypatch.setattr(router_mod, "json_get", lambda _key: None)
+    monkeypatch.setattr(router_mod, "json_set", lambda *_a, **_k: True)
+
+    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
+        return {
+            "reasoning": "制度事实问",
+            "needs_kb": True,
+            "needs_web": False,
+            "needs_calendar": False,
+            "needs_sandbox": False,
+            "needs_freshness": False,
+            "confidence": "high",
+        }
+
+    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    route("正常工作时间", [], has_kb_docs=True)
+    assert seen["namespace"] == "route"
+    assert seen["payload"]["prompt_sha"] == router_prompt_sha()
+    assert seen["payload"]["v"] == router_mod._ROUTER_CACHE_VERSION
+
+
+def test_eval_bootstrap_bypasses_router_redis(monkeypatch):
+    monkeypatch.setenv("EVAL_SKIP_ROUTER_REDIS", "1")
+
+    def boom_get(*_a, **_k):
+        raise AssertionError("eval must not read the router Redis cache")
+
+    def boom_set(*_a, **_k):
+        raise AssertionError("eval must not write the router Redis cache")
+
+    monkeypatch.setattr(router_mod, "json_get", boom_get)
+    monkeypatch.setattr(router_mod, "json_set", boom_set)
+    calls = {"n": 0}
+
+    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
+        calls["n"] += 1
+        return {
+            "reasoning": "制度事实问",
+            "needs_kb": True,
+            "needs_web": False,
+            "needs_calendar": False,
+            "needs_sandbox": False,
+            "needs_freshness": False,
+            "confidence": "high",
+        }
+
+    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    decision = route("正常工作时间", [], has_kb_docs=True)
+    assert calls["n"] == 1
+    assert decision.needs_kb is True
+
+    monkeypatch.delenv("EVAL_SKIP_ROUTER_REDIS", raising=False)
+    monkeypatch.setenv("EVAL_BOOTSTRAPPED", "1")
+    decision = route("正常工作时间", [], has_kb_docs=True)
+    assert calls["n"] == 2
+    assert decision.needs_kb is True
+
+
+def test_router_rate_limit_backs_off_then_raises_infra(monkeypatch):
+    _clear_eval_cache_flags(monkeypatch)
+    sleeps: list[float] = []
+    monkeypatch.setattr(router_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(router_mod.settings, "router_max_attempts", 3)
+    calls = {"n": 0}
+
+    def boom(*_args, **_kwargs):
+        calls["n"] += 1
+        raise LLMInfraError("RateLimitError: 429")
+
+    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    with pytest.raises(RouterInfraError) as raised:
+        route("公司几点上班", [], has_kb_docs=True)
+    assert calls["n"] == 3
+    assert sleeps == [llm_infra_backoff_seconds(1), llm_infra_backoff_seconds(2)]
+    assert isinstance(raised.value, RouterError)
+    assert router_mod.router_failure_is_infra(raised.value)
+
+
+def test_router_schema_retry_is_not_infra_and_does_not_sleep(monkeypatch):
+    _clear_eval_cache_flags(monkeypatch)
+    sleeps: list[float] = []
+    monkeypatch.setattr(router_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(router_mod.settings, "router_max_attempts", 2)
+
+    def boom(*_args, **_kwargs):
+        raise LLMStructuredError("schema 约束输出失败")
+
+    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    with pytest.raises(RouterError) as raised:
+        route("公司几点上班", [], has_kb_docs=True)
+    assert not isinstance(raised.value, RouterInfraError)
+    assert sleeps == []
+    assert not router_mod.router_failure_is_infra(raised.value)
+
+
+def test_complete_json_schema_rate_limit_backs_off(monkeypatch):
+    from app.core import llm as llm_mod
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(llm_mod.settings, "llm_api_key", "test-key")
+
+    class RateLimitError(Exception):
+        status_code = 429
+
+    calls = {"n": 0}
+
+    class Completions:
+        def create(self, **_kwargs):
+            calls["n"] += 1
+            raise RateLimitError("slow down")
+
+    class Client:
+        def __init__(self):
+            self.chat = type("Chat", (), {})()
+            self.chat.completions = Completions()
+
+    monkeypatch.setattr(llm_mod, "_get_sync_client", lambda: Client())
+    with pytest.raises(LLMInfraError):
+        complete_json_schema(
+            [{"role": "user", "content": "hi"}],
+            schema={"type": "object"},
+            name="router_decision",
+            max_attempts=2,
+        )
+    assert calls["n"] == 2
+    assert sleeps == [llm_infra_backoff_seconds(1)]
+
+
+def test_complete_json_schema_bad_request_stays_structured(monkeypatch):
+    from app.core import llm as llm_mod
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(llm_mod.settings, "llm_api_key", "test-key")
+
+    class BadRequestError(Exception):
+        status_code = 400
+
+    class Completions:
+        def create(self, **_kwargs):
+            raise BadRequestError("invalid schema")
+
+    class Client:
+        def __init__(self):
+            self.chat = type("Chat", (), {})()
+            self.chat.completions = Completions()
+
+    monkeypatch.setattr(llm_mod, "_get_sync_client", lambda: Client())
+    with pytest.raises(LLMStructuredError):
+        complete_json_schema(
+            [{"role": "user", "content": "hi"}],
+            schema={"type": "object"},
+            name="router_decision",
+            max_attempts=2,
+        )
+    assert sleeps == []
+
+
+def test_infra_classification_uses_type_not_message_text():
+    class APITimeoutError(Exception):
+        pass
+
+    class APIStatusError(Exception):
+        def __init__(self):
+            super().__init__("nope")
+            self.status_code = 503
+
+    assert is_llm_infra_exception(APITimeoutError("timed out"))
+    assert is_llm_infra_exception(APIStatusError())
+    assert is_llm_infra_exception(LLMInfraError("RateLimitError: slow down"))
+    assert not is_llm_infra_exception(LLMStructuredError("schema failed after timeout text"))
+    assert not is_llm_infra_exception(ValueError("RateLimitError mentioned in a parse error"))
 
 
 def test_queue_order(monkeypatch):

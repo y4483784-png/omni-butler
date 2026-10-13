@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.agents.router import RouterError
 from app.agents.workflow import run_agent_workflow
+from app.agents.context import build_context, invalidate_summary_if_needed, refresh_session_context
 from app.core.auth import get_current_user
 from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
@@ -24,7 +25,7 @@ from app.models.models import Document, Message, Session as ChatSession, User
 from app.services.artifact import infer_workspace_artifact, prepare_artifact_for_storage
 from app.services.session import auto_name, generate_session_title
 from app.services.data_analysis import has_tabular_docs
-from app.services.memory import inject_system_memory, load_memory_prompt, remember_from_turn
+from app.services.memory import load_memory_prompt, remember_from_turn
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -117,9 +118,9 @@ def _apply_regenerate(
     if history and history[-1]["role"] == "user":
         history = history[:-1]
 
-    limit = settings.max_context_turns * 2
-    if len(history) > limit:
-        history = history[-limit:]
+    max_remaining_id = remaining[-1].id if remaining else 0
+    if invalidate_summary_if_needed(session, max_remaining_id):
+        db.commit()
 
     return session, history, user_content
 
@@ -158,10 +159,6 @@ def _prepare_session_context(
         new_title = auto_name(session.id, msg_text)
         session.title = new_title
         db.commit()
-
-    limit = settings.max_context_turns * 2
-    if len(history) > limit:
-        history = history[-limit:]
 
     uid = session.user_id or user_id
     pending_calendar = json.loads(session.pending_calendar) if session.pending_calendar else None
@@ -287,6 +284,34 @@ def _remember_turn_isolated(user_id: int, user_message: str, assistant_content: 
         db.close()
 
 
+def _refresh_context_isolated(
+    user_id: int,
+    session_id: int,
+    *,
+    citations: list | None = None,
+    document_ids: list[int] | None = None,
+    analysis_summary: dict | None = None,
+    artifact: dict | None = None,
+) -> None:
+    """Refresh session summary + working_state on a worker thread."""
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        refresh_session_context(
+            db,
+            session_id=session_id,
+            user_id=user_id,
+            citations=citations,
+            document_ids=document_ids,
+            analysis_summary=analysis_summary,
+            artifact=artifact,
+        )
+    except Exception:
+        logger.exception("context refresh failed")
+    finally:
+        db.close()
+
+
 @router.post("")
 async def chat(
     req: ChatRequest,
@@ -387,7 +412,7 @@ async def chat(
 
     # Always run agent workflow (no fast-path skip). Reload KB flags.
     if is_regenerate:
-        _, _, _, uid, has_kb_docs, tabular, pending_calendar = _prepare_session_context(
+        _, history, _, uid, has_kb_docs, tabular, pending_calendar = _prepare_session_context(
             db,
             req,
             user_id=current_user.id,
@@ -396,9 +421,21 @@ async def chat(
             history_override=history,
         )
     else:
-        _, _, _, uid, has_kb_docs, tabular, pending_calendar = _prepare_session_context(
+        _, history, _, uid, has_kb_docs, tabular, pending_calendar = _prepare_session_context(
             db, req, user_id=current_user.id, load_kb_flags=True
         )
+
+    memory_block = load_memory_prompt(db, uid)
+    ctx_bundle = build_context(
+        session=session,
+        history=history,
+        message=user_message,
+        pending_calendar=pending_calendar,
+        memory_block=memory_block,
+    )
+    ctx_state = ctx_bundle.to_state()
+    ctx_stats = dict(ctx_bundle.stats or {})
+    workflow_history = list(ctx_bundle.answer_history)
 
     async def agent_event_gen():
         acc: list[str] = []
@@ -407,6 +444,7 @@ async def chat(
         wf_task: asyncio.Task | None = None
         extra_artifact: dict | None = None
         artifact_stored: dict | None = None
+        stream_usage: dict = {}
         try:
             yield _sse({"type": "ack", "path": "agent"})
             if new_title:
@@ -416,13 +454,14 @@ async def chat(
             wf_task = asyncio.create_task(
                 _run_workflow_with_heartbeat(
                     message=user_message,
-                    history=history,
+                    history=workflow_history,
                     use_kb=req.use_kb,
                     has_kb_docs=has_kb_docs,
                     has_tabular_docs=tabular,
                     document_ids=req.document_ids or None,
                     user_id=uid,
                     pending_calendar=pending_calendar,
+                    context=ctx_state,
                 )
             )
             while not wf_task.done():
@@ -437,6 +476,11 @@ async def chat(
                 if not done:
                     yield ": ping\n\n"
             wf = await wf_task
+
+            if isinstance(wf.get("context_stats"), dict):
+                for k in ("compose_level", "compose_dropped_turns", "compose_tokens"):
+                    if k in wf["context_stats"]:
+                        ctx_stats[k] = wf["context_stats"][k]
 
             intent = wf["intent"]
             forced = wf["forced"]
@@ -466,9 +510,16 @@ async def chat(
                 if not ttft_logged:
                     ttft_ms = int((time.perf_counter() - t0) * 1000)
                     logger.info(
-                        "chat_ttft path=agent_direct ttft_ms=%d intent=%s regenerate=%s",
+                        "chat_ttft path=agent_direct ttft_ms=%d intent=%s "
+                        "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
+                        "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
                         ttft_ms,
                         intent,
+                        int(ctx_stats.get("tokens") or 0),
+                        ctx_stats.get("level") or "safe",
+                        int(ctx_stats.get("dropped_turns") or 0),
+                        ctx_stats.get("compose_level") or "-",
+                        int(ctx_stats.get("compose_dropped_turns") or 0),
                         is_regenerate,
                     )
                     yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
@@ -476,14 +527,23 @@ async def chat(
                 acc.append(direct_answer)
                 yield _sse({"type": "token", "content": direct_answer})
             else:
-                async for delta in redact_token_stream(stream_chat(llm_messages)):
+                async for delta in redact_token_stream(
+                    stream_chat(llm_messages, usage_out=stream_usage)
+                ):
                     if not ttft_logged:
                         ttft_ms = int((time.perf_counter() - t0) * 1000)
                         logger.info(
-                            "chat_ttft path=agent_stream ttft_ms=%d intent=%s history_len=%d regenerate=%s",
+                            "chat_ttft path=agent_stream ttft_ms=%d intent=%s history_len=%d "
+                            "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
+                            "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
                             ttft_ms,
                             intent,
-                            len(history),
+                            len(workflow_history),
+                            int(ctx_stats.get("tokens") or 0),
+                            ctx_stats.get("level") or "safe",
+                            int(ctx_stats.get("dropped_turns") or 0),
+                            ctx_stats.get("compose_level") or "-",
+                            int(ctx_stats.get("compose_dropped_turns") or 0),
                             is_regenerate,
                         )
                         yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
@@ -553,6 +613,42 @@ async def chat(
                     )
                 except Exception:
                     logger.exception("memory extract thread failed")
+                try:
+                    await asyncio.to_thread(
+                        _refresh_context_isolated,
+                        uid,
+                        session.id,
+                        citations=wf.get("citations") if wf else None,
+                        document_ids=req.document_ids or None,
+                        analysis_summary=wf.get("analysis_summary") if wf else None,
+                        artifact=(
+                            prepare_artifact_for_storage(wf.get("artifact"))
+                            if wf
+                            else extra_artifact
+                        ),
+                    )
+                except Exception:
+                    logger.exception("context refresh thread failed")
+                try:
+                    est = int(ctx_stats.get("tokens") or 0)
+                    actual = stream_usage.get("prompt_tokens")
+                    err_pct = None
+                    if actual is not None and int(actual) > 0:
+                        err_pct = round(abs(est - int(actual)) / float(actual) * 100.0, 2)
+                    logger.info(
+                        "chat_ctx session_id=%s ctx_est_tokens=%d ctx_actual_tokens=%s "
+                        "ctx_err_pct=%s ctx_level=%s ctx_compose_level=%s "
+                        "summary_status=%s",
+                        session.id,
+                        est,
+                        actual if actual is not None else "-",
+                        err_pct if err_pct is not None else "-",
+                        ctx_stats.get("level") or "safe",
+                        ctx_stats.get("compose_level") or "-",
+                        "deferred",
+                    )
+                except Exception:
+                    logger.exception("chat_ctx log failed")
                 if new_title and not is_regenerate:
                     try:
                         llm_title = await asyncio.to_thread(
