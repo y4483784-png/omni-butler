@@ -63,11 +63,13 @@
   → 写操作仍只返回卡片
   → 用户点确认
   → 现有 POST / PATCH / DELETE
-       先用本地行查冲突；冲突仍是 409，不调用 Google
-       已连接：先写 Google，成功后再写本地行
-       Google 失败：这次确认失败，本地行保持原样，不回 200
-  → list / suggest / get：读本地行（见第 7 节）
-  → find_free_slots：忙闲仍是本地行；窗口再交 Google 工作时间
+       已连接：先只读查询主日历忙闲（FreeBusy），再和本地行合并
+       冲突仍是 409，不写入
+       忙闲查询失败：这次确认失败，不写入，不回 200
+       没有冲突：先写 Google，成功后再写本地行
+       Google 写入失败：这次确认失败，本地行保持原样，不回 200
+  → list / get：仍只读本地行（见第 7 节）
+  → suggest / find_free_slots：已连接时，忙闲是本地行并上 FreeBusy；窗口再交 Google 工作时间
   → 「现在」：已连接则用该 Google 账户的时区
 ```
 
@@ -79,9 +81,9 @@
 | --- | --- | --- |
 | 选实现 | 各调用点写死 Local | `calendar_provider_for(db, user_id)`。一个用户最多一条 Google 连接 |
 | 写操作 | 卡片确认后只插/改本地行，`provider='local'`，`external_id=''` | 已连接时先写 Google，再写本地行：`provider='google'`，`external_id` 为 Google 事件 id，`timezone` 为当时的账户时区 |
-| 读操作 | Local 读本地表 | 仍读本地表。不把 Google 全量列表当唯一数据源 |
+| 读操作 | Local 读本地表 | 列表和单条读取仍只读本地表，不把 Google 事件拉进来。已连接时，冲突和空闲额外做一次只读 FreeBusy |
 | 「现在」 | 进程时区；侧栏用浏览器时区 | 已连接：Google 账户时区。未连接：保持今天的进程/浏览器时钟 |
-| 空闲 | 不过滤夜间 | 已连接：先裁工作时间。Google 不提供时，整段窗口都算可用 |
+| 空闲 | 不过滤夜间 | 已连接：忙闲并上主日历的 FreeBusy，再裁工作时间。Google 不提供工作时间时，整段窗口都算可用 |
 | 令牌 | 无 | 单独表，按用户 + provider。不进 `calendar_events` |
 | 取消 | 本地软取消 | 先让 Google 取消或删除成功，再把本地 `status` 改成 `cancelled` |
 
@@ -115,14 +117,15 @@
 
 回调地址只有后端这一条，例如 `https://<主机>/api/calendar/google/callback`。开发机可以用 `http://localhost` 上的同一路径。不要做手机深链。
 
-范围只申请这两条：
+范围只申请这三条：
 
 | 范围 | 用来做什么 |
 | --- | --- |
-| `https://www.googleapis.com/auth/calendar.events` | 在主日历上列出、创建、修改、删除事件 |
+| `https://www.googleapis.com/auth/calendar.events` | 在主日历上创建、修改、删除事件 |
+| `https://www.googleapis.com/auth/calendar.events.freebusy` | 只读主日历忙闲。`freeBusy.query` 接受的范围是 `calendar`、`calendar.readonly`、`calendar.freebusy`、`calendar.events.freebusy`，其中没有 `calendar.events`。只拿事件范围去查忙闲会 403 |
 | `https://www.googleapis.com/auth/calendar.settings.readonly` | 读账户时区。事件范围读不到设置 |
 
-不要申请 `calendar` 全权限，不要申请云端硬盘或其他产品。主日历固定为 `primary`。v1 没有日历选择器。
+`calendar.events.freebusy` 只返回忙闲区间，不返回标题和正文。不要为了忙闲改去申请 `calendar` 或 `calendar.readonly`。不要申请云端硬盘或其他产品。主日历固定为 `primary`。v1 没有日历选择器。
 
 ### 3.2 第一次连接怎么发生
 
@@ -195,7 +198,7 @@ Google 事件与本地 DTO：
 | `create_event` | 见第 6 节。成功后的行带 `provider='google'`、非空 `external_id`、时区快照 |
 | `update_event` | 见第 6 节 |
 | `cancel_event` | 见第 6 节。本地仍是软取消，不物理删行 |
-| `find_free_slots` | 忙闲用本地行，规则与 Local 相同（首尾相接算空闲，每个空隙只给一段所请求的时长）。窗口先按第 8 节裁工作时间 |
+| `find_free_slots` | 已连接：本地忙闲并上第 6.1 节的 FreeBusy，规则仍与 Local 相同（首尾相接算空闲，每个空隙只给一段所请求的时长）。窗口再按第 8 节裁工作时间。未连接：只看本地行 |
 
 同一用户、`provider='google'`、非空 `external_id` 只对应一行。Alembic `0008` 加部分唯一索引：`(user_id, provider, external_id)`，条件是 `external_id <> ''`。本地行的空字符串不受这条约束。SQLite 测试库的表已经存在，`create_all` 不会给旧表补索引，所以 `init_db()` 里再幂等创建一次，和 `0007` 补列的做法一样。插入前先查；若撞上，删掉刚创建的 Google 事件，然后让这次确认失败。
 
@@ -214,17 +217,60 @@ Google 事件与本地 DTO：
 
 ## 6. 创建、修改、取消的顺序
 
-冲突条件不变：同一 `user_id`、`status='active'`、`start_at < 对方 end_at` 且 `end_at > 对方 start_at`。首尾相接不算冲突。更新时排除自己的 id。冲突响应仍是 409，body 为 `{conflicts, suggested_slots}`，不调用 Google，不插入、不修改。
+冲突条件不变：区间重叠才算冲突，`start_at < 对方 end_at` 且 `end_at > 对方 start_at`。首尾相接不算冲突。更新时排除自己这条本地行。冲突响应仍是 409，body 为 `{conflicts, suggested_slots}`，不调用 `events.insert` / `events.patch`，不插入、不修改。
+
+已连接用户在查冲突和找空隙时，还要做第 6.1 节的只读忙闲查询。未连接用户仍只看本地行。
 
 已连接用户的创建：
 
-1. 用本地行查冲突。有冲突则 409。
-2. `events.insert` 到 `primary`。失败则不插本地行，确认接口返回错误（建议 502，正文是给用户看的短句）。不是 200。
-3. 插入本地行，填上 `external_id`、`provider='google'`、`timezone`。墙钟与请求体一致。
-4. 若第 3 步失败：调用 `events.delete` 删掉刚创建的 Google 事件，再返回错误。补偿删除也失败时仍然返回错误，日志只记 Google 事件 id，供人工清理。不能出现「Google 有了、本地没有、接口却 200」。
+1. 按第 6.1 节查主日历忙闲。查询失败则确认失败（建议 502，正文「暂时读不到 Google 日历的忙闲，未写入。」），不写 Google，不插本地行。不是 409，也不是 200。
+2. 把忙闲和本地 `active` 行合并。有重叠则 409，不调用 `events.insert`。
+3. `events.insert` 到 `primary`。失败则不插本地行，确认接口返回错误（建议 502，正文是给用户看的短句）。不是 200。
+4. 插入本地行，填上 `external_id`、`provider='google'`、`timezone`。墙钟与请求体一致。
+5. 若第 4 步失败：调用 `events.delete` 删掉刚创建的 Google 事件，再返回错误。补偿删除也失败时仍然返回错误，日志只记 Google 事件 id，供人工清理。不能出现「Google 有了、本地没有、接口却 200」。
+
+### 6.1 已连接时的忙闲查询（不是同步）
+
+主人在 Google 日历里直接建的安排，本地表里没有。只看本地行会把新日程叠上去。已连接用户的这些路径要补一次只读查询：
+
+- 预览卡片上的冲突和空隙（`calendar_tool` 里今天的 `check_conflict` / `free_slots_for`）。
+- 确认 `POST` / `PATCH` 再查一次。
+- `find_free_slots` 和聊天里的 suggest。
+
+用 `POST https://www.googleapis.com/calendar/v3/freeBusy`，`items` 只有 `{ "id": "primary" }`。这是检查当下窗口的忙闲，不是同步：不调用 `events.list`，不把区间写成 `calendar_events`，不用 webhook，不用同步令牌。查完即弃。
+
+请求和时区：
+
+- 窗口用账户时区的墙钟。`timeMin` / `timeMax` 写成带该时区偏移的 RFC3339，`timeZone` 设为同一个 IANA id。这是在表达「这段墙钟在账户时区里是什么时刻」，不是把库里的 `start_at` / `end_at` 改成 UTC。
+- 响应里的 `busy[].start` / `end` 按这个时区理解，去掉偏移后得到墙钟，再和本地行比较。不要把忙闲存进表。
+- 冲突检测覆盖拟写入的 `[start, end)`。若还要附建议空隙，同一次查询覆盖 `free_slots_for` 的窗口（从拟开始时间起 7 天），不要为同一张卡片打两次。
+- HTTP 不是 200，或 200 但 `calendars.primary.errors` 非空：算查询失败。`busy` 为空数组才是「这段没有 Google 上的安排」。
+
+和本地行合并：
+
+- 本地侧仍是该用户的 `active` 行。更新时用现有的 `exclude_event_id` 排除自己。
+- FreeBusy 的每段只有起止，没有事件 id，也没有标题。
+- 修改一条已经在 Google 上的行（`provider='google'` 且 `external_id` 非空）时，先用这条本地行当前的 `[start_at, end_at)` 去减忙闲：整段被盖住就丢掉；只重叠一部分就切掉重叠，剩下的留下。这样改到原时间不会和自己冲突。创建不减。还没写到 Google 的本地行也不减，否则会把同一时间上别人的安排减掉。
+- 减完后再和本地行合并。两段重叠就并成一段。首尾相接仍然不算冲突。然后沿用 Local 的空隙算法，再按第 8 节裁工作时间。
+
+卡片上怎么显示没有标题的忙闲：
+
+- 本地行冲突保持今天的标题和时间。`ScheduleCard.tsx` 只把 `conflicts` 渲染成「标题 + 时间」。
+- 减完后仍剩下的 FreeBusy 区间，若没有被一条已列出的本地冲突完全盖住，就多一条冲突：标题固定为「Google 日历上已有安排」，带起止，没有本地 id。同一段不要又显示本地标题又显示这句。
+- 这条不放进 `candidates`。点选候选仍然只针对本地行。`ScheduleCandidate.id` 今天是 `number`；实现时让冲突项的 id 可以空着，避免前端把这段当成可修改的日程。
+- 409 的 `conflicts` 可以混用本地卡片和这种无 id 的项。`suggested_slots` 的形状不变。
+
+失败时怎么处理：
+
+- 确认 `POST` / `PATCH`：忙闲查询失败就失败，不写 Google，不改本地。不要当成「没有冲突」继续创建。正文用上面的短句，不用 409 的冲突 JSON。
+- 预览卡片：查询失败仍返回可编辑草稿，不阻断填表。`direct_answer` 写明「没能读到 Google 上的忙闲，确认时会再查；查不到就不会写入。」本地冲突可以照常列出。此时不要附 `suggested_slots`，避免推荐一段还没核对过 Google 的空隙。
+- suggest：查询失败就不返回「可以考虑这些空闲时段」，也不附 `mode=suggest` 的卡片。`direct_answer` 写「暂时读不到 Google 日历的忙闲，不能建议空闲时段。」不写库。
+
+未连接用户不调用 FreeBusy。断开之后的新创建走 Local，冲突也只看本地行。
 
 已连接用户的修改：
 
+- 改时间之前先做第 6.1 节的忙闲查询（含减去自身区间）。查询失败则不 `patch`，本地行不动。有重叠则 409，不 `patch`。
 - 该行已经是 `provider='google'` 且 `external_id` 非空：先 `events.patch` 同一条，成功后再改本地行，并刷新 `timezone` 快照。Google 失败则本地行不动。
 - 该行仍是接入前的本地行（`provider='local'` 或 `external_id` 为空）：确认修改时先 `events.insert`，成功后再把本地行改成 `provider='google'` 并写上 `external_id`。失败则本地行保持原样。这样旧日程会在第一次确认修改时出现在 Google，而不是悄悄只改本地。
 - 只改标题、地点、说明时也走同一顺序。参与人只改本地列。
@@ -245,16 +291,16 @@ Google 事件与本地 DTO：
 
 ## 7. 列表、建议、读取
 
-清单第 7 节：还没有双向同步时，列表和空闲建议读 provider 返回的结果；外部实现读自己写过的本地行，而不是临时把 Google 全量扫出来当唯一数据源。
+清单第 7 节禁止的是把外部事件扫进本地行、当成已经同步。主人在本计划里收窄了冲突和空闲这一支：已连接用户额外做一次只读 FreeBusy，结果不落库。列表和单条读取仍遵守「不把 Google 全量当数据源」。
 
 因此 v1：
 
-- `list_events`、`get_event`、冲突检测、找候选，都读 `calendar_events`。
-- `GET /api/calendar` 和聊天里的 list 仍最多 20 条、默认 7 天、只含 `active`。
-- suggest 仍调用 `find_free_slots`。卡片 `mode=suggest`、`phase=info` 不变。「用这个时段」仍只在前端换成一张 create 草稿，不写库。
-- 不调用 `events.list`，不用同步令牌，不把别人在 Google 里新建的事件拉进本地。
+- `list_events`、`get_event`、找候选，都读 `calendar_events`。不调用 `events.list`，也不为列表调用 FreeBusy。
+- `GET /api/calendar` 和聊天里的 list 仍最多 20 条、默认 7 天、只含 `active`。侧栏近日日程也是这条路径，所以 Google 上新建、改名、改时间的条目不会出现在列表里。
+- 冲突检测和 `find_free_slots` / suggest 按第 6.1 节把主日历忙闲并进来。suggest 卡片仍是 `mode=suggest`、`phase=info`。「用这个时段」仍只在前端换成一张 create 草稿，不写库。
+- 不用 webhook，不用同步令牌，不把别人在 Google 里新建的事件插进本地表。
 
-后果要写进实现说明和界面上的短注：在 Google 日历里直接改时间、删除或新建，Omni-Butler 不会自动跟上。本地可能和 Google 不一致。这不是双向同步。
+列表上的短注仍然要写：这里列出的是 Omni-Butler 保存过的日程，不是 Google 日历的完整副本。冲突和空闲会看到主日历上的忙闲，但看不到那些安排的标题。这不是双向同步。
 
 ## 8. 工作时间
 
@@ -266,7 +312,7 @@ Calendar API v3 的设置列表里有 `timezone`、`weekStart`、`hideWeekends` 
 - 今天的真实响应没有该字段：`find_free_slots` 退回「请求窗口内全部算可用」，空隙算法与 Local 相同。建议文案不要写「已按工作时间过滤」。
 - 不在代码里写死 9:00–18:00，也不做 Omni-Butler 自己的工作时间设置。
 
-有工作时间时的求交：按账户时区把窗口切成一天一天，每天只保留工作时段和窗口的交集，再在这些片段里找空隙。被裁掉的夜间不能当作空隙的起点。相邻事件首尾相接仍然算空闲。
+有工作时间时的求交：按账户时区把窗口切成一天一天，每天只保留工作时段和窗口的交集，再在这些片段里找空隙。忙闲已经是第 6.1 节合并后的结果。被裁掉的夜间不能当作空隙的起点。相邻事件首尾相接仍然算空闲。
 
 ## 9. 配置、密钥、隔离
 
@@ -295,21 +341,22 @@ RLS：Postgres 上 `0004_rls` 用 `app.current_user_id` 保护 `calendar_events`
 2. 一次性连接码：过期、重用、`state` 签名错误都不写令牌。令牌落在 `calendar_connections` 的密文列。`calendar_events` 的列集合不变，行里没有令牌字样。
 3. 一个用户第二行连接被拒绝。`sub` 不同的重连被拒绝。断开后状态接口 `connected=false`。
 4. `get_timezone`：假设置返回 `Asia/Shanghai` 时，「明天三点」相对该时区的现在，而不是进程 UTC。设置缺失时用 `Etc/GMT`，不用进程时区。
-5. 创建：假 Google 返回 500 时本地无新行，接口不是 200。成功时 `provider='google'`、`external_id` 非空、`timezone` 为快照，墙钟数字与提交一致。本地冲突 409 时假客户端未被调用。
+5. 创建：假 Google 写入返回 500 时本地无新行，接口不是 200。成功时 `provider='google'`、`external_id` 非空、`timezone` 为快照，墙钟数字与提交一致。本地冲突或 FreeBusy 重叠时 409，且不调用 `events.insert`。FreeBusy 失败时确认是 502，不插入。
 6. 本地插入失败时，假客户端收到对刚创建 id 的 delete，接口不是 200。
 7. 修改：Google 失败时标题和时间不变。成功时先看到 patch，再看到本地更新。旧的 `provider='local'` 行在已连接时第一次修改会先 insert。
 8. 取消：Google 失败时 `status` 仍是 `active`。成功或 404 之后才是 `cancelled`，行还在。断开后对 Google 行的 PATCH/DELETE 不改行。
 9. 非空 `external_id` 重复时插入失败。跨用户 `get_event` 为 `None`。
-10. `list_events` / `get_event` 不调用 `events.list`。`find_free_slots` 在没有工作时间时与 Local 的空隙相同；注入工作时间后，夜间不被当成空隙。
-11. 日志和审计参数的测试夹具里不出现访问令牌、刷新令牌。
-12. 现有 `tests/test_calendar_card.py`、`test_calendar_provider.py`、`test_isolation.py` 仍绿。工具源码仍不出现 `db.query`。未连接路径不调用 Google。
+10. `list_events` / `get_event` 不调用 `events.list`，也不调用 FreeBusy。已连接的 `find_free_slots` 会调用 FreeBusy。没有工作时间、且 FreeBusy 为空时，空隙与 Local 相同；注入工作时间后，夜间不被当成空隙。注入一段没有本地行的忙闲后，该段不成为空隙，冲突标题为「Google 日历上已有安排」，且 `calendar_events` 不新增行。
+11. 修改一条 `provider='google'` 的行时，减去它当前的本地区间后，原时间不再和自己冲突；相邻的另一段 FreeBusy 仍然冲突。`provider='local'` 的行不减 FreeBusy。响应里的偏移按账户时区折成同一墙钟数字。`calendars.primary.errors` 非空时，确认失败且不写。suggest 在 FreeBusy 失败时没有建议卡片。
+12. 日志和审计参数的测试夹具里不出现访问令牌、刷新令牌。
+13. 现有 `tests/test_calendar_card.py`、`test_calendar_provider.py`、`test_isolation.py` 仍绿。工具源码仍不出现 `db.query`。未连接路径不调用 Google。
 
 不能自动化、要在验收说明里手测的：
 
 - 用电脑浏览器打开一次性链接并完成 Google 同意。华为 LMR-AL00 上不要求出现 Google 登录页。
 - 账户的两步验证若只绑在这台没有 Google 服务的手机上，同意会失败。手测前改用备用码、安全密钥，或一台能打开 accounts.google.com 的电脑上已经登好的会话。
 - 真实账户的设置响应里今天没有工作时间，空闲应与「整段窗口可用」一致。
-- 在 Google 网页上改一条已同步事件的时间，再在 Omni-Butler 里 list：仍显示本地旧时间。用来确认没有把这说成双向同步。
+- 在 Google 网页上改一条已同步事件的时间，再在 Omni-Butler 里 list：仍显示本地旧时间。同一窗口上另建一条只存在于 Google 的安排，再在这里确认创建：卡片出现「Google 日历上已有安排」，本地不新增行。用来确认列表仍是本地的，而冲突已经能看见忙闲。
 - 卡片路径：齐信息也先出表单；确认后 Google 和本地都有；冲突空隙只改表单；下一句作废草稿。实现者按预接入计划第 7.2 节的浏览器步骤再走一遍，并加上「连接入口只有一个」。
 
 建议命令：
@@ -337,6 +384,7 @@ cd backend && python -m pytest \
 - 物理删除本地行。
 - 在对话工具里直接创建事件。未确认仍然不落库。
 - 为了工作时间去读 `workingLocation`，或写死 9:00–18:00。
+- 为了给冲突补标题去调用 `events.list`。没有标题的忙闲就用「Google 日历上已有安排」。
 
 ## 12. PR 切片
 
@@ -347,7 +395,7 @@ cd backend && python -m pytest \
 - `calendar_connections`、`0008` 的表和 RLS、Fernet、四个环境变量。
 - 一次性链接、回调、断开、状态接口。`sub` 不一致则拒绝。
 - 侧栏可以先只显示复制链接；此时确认接口仍全部走 Local。
-- 验收：第 10 节的 2、3、11。`calendar_events` 读写测试不需要改预期。
+- 验收：第 10 节的 2、3、12。`calendar_events` 读写测试不需要改预期。同意范围里要包含 `calendar.events.freebusy`，这一刀可以先只把范围写进授权链接，还不调用 FreeBusy。
 
 ### 第 2 刀：工厂和「现在」
 
@@ -356,26 +404,30 @@ cd backend && python -m pytest \
 - 侧栏在已连接时用状态接口里的时区计算 7 天。
 - 验收：第 10 节的 1、4。现有卡片测试仍是「不写库」。不调用 `events.insert`。
 
-### 第 3 刀：创建
+### 第 3 刀：创建，并带上忙闲查询
 
-- 已连接的 `POST`：冲突仍 409；否则 Google 成功后再插本地。失败不插，本地失败则补偿删除。
-- 部分唯一索引。时区快照。墙钟不换算。
+- 已连接的预览和 `POST`：先 FreeBusy，再和本地行合并。重叠则 409，且不 `insert`。查询失败则确认失败，不写入。预览失败仍出卡片，但不给建议空隙。
+- 没有本地行的忙闲，卡片标题用「Google 日历上已有安排」，不落库。
+- 没有冲突时：Google 成功后再插本地。失败不插，本地失败则补偿删除。
+- 部分唯一索引。时区快照。墙钟不换算。请求 FreeBusy 时用账户时区格式化窗口，不改表里的时间列。
 - 协议补上 `location` / `description`。
-- 验收：第 10 节的 5、6、9。
+- 验收：第 10 节的 5、6、9，以及第 10 节里「无本地行的忙闲不落库」那一句。不把这一刀推迟到第 5 刀，避免创建先上线、却看不见 Google 上已有的安排。
 
 ### 第 4 刀：修改和取消
 
-- Google 行先 patch / delete，成功后再改本地。
+- 修改沿用第 3 刀的 FreeBusy。`provider='google'` 的行先减去自己当前的本地区间，再判断冲突。纯本地行不减。
+- 查询失败或仍有重叠：不 `patch`，本地不动。
+- 通过之后，Google 行先 patch，成功后再改本地。
 - 旧的本地行在已连接时，第一次确认修改会先在 Google 创建。
-- 断开后，带 `external_id` 的修改和取消拒绝写入。
-- 验收：第 10 节的 7、8。取消失败时本地仍是 `active`。
+- 断开后，带 `external_id` 的修改和取消拒绝写入。取消本身不查 FreeBusy。
+- 验收：第 10 节的 7、8、11。取消失败时本地仍是 `active`。
 
 ### 第 5 刀：空闲与只读说明
 
-- `find_free_slots` 交工作时间；没有则整段窗口可用，文案不声称已过滤。
-- list / suggest / get 明确不调用 `events.list`。
-- 在连接状态或空闲回复里用一句话说明：Google 网站上的后续修改不会自动回到这里。
-- 验收：第 10 节的 10、12。
+- suggest / `find_free_slots` 复用第 3 刀的 FreeBusy，再交工作时间。没有工作时间则整段窗口都可用来找空隙，文案不声称已按工作时间过滤。FreeBusy 失败时不给建议时段。
+- list / get 仍不调用 `events.list`，也不调用 FreeBusy。
+- 在连接状态或列表旁用一句话说明：列表不是 Google 日历的完整副本；冲突和空闲能看到忙闲，但看不到那些安排的标题。
+- 验收：第 10 节的 10、13。
 
 ### 第 6 刀：手测记录
 
@@ -388,7 +440,7 @@ cd backend && python -m pytest \
 1. **华为 LMR-AL00 没有 Google 服务。** 不能在这台手机上弹出 Google 登录，也不能依赖 Google 应用的「是我」提示。连接必须用第 3.2 节的一次性链接，在电脑浏览器里完成。若该 Google 账户的两步验证只绑在这台手机上，同意页仍然过不去；要事先准备备用码、安全密钥，或在电脑上使用已经通过验证的登录会话。这是上线前的账户准备，不是再做一个手机 SDK。
 2. **一次性链接等于暂时的授权委托。** 10 分钟内任何人打开都会把当时的 Google 账户绑到这个 Omni-Butler 用户。界面要写明不要转发。码只存哈希，用一次即废。
 3. **测试模式的同意屏幕。** 没把主人加为测试用户时，Google 会拒绝同意。不要用发布应用来绕过，发布会触发敏感范围审核。
-4. **本地会和 Google 不一致。** v1 不拉回对方的修改。在 Google 里改过的时间，这里的 list、冲突和空闲都看不见。后续在这里确认修改，可能覆盖 Google 上的新时间，或因对方 404 以外的错误而整次失败。这一点要让使用者看到，不能写成已经同步。
+4. **列表仍会和 Google 不一致。** v1 不把对方的事件拉回本地。在 Google 里新建、改名或改时间，列表和侧栏仍显示本地旧内容，也没有那些条目的标题。冲突和空闲会通过 FreeBusy 看到主日历的忙闲，因此不会在已有安排上再订一条；查不到忙闲时确认会失败，而不是当成有空。剩下的偏差是：减自身区间用的是本地起止，若这条在 Google 上已被挪走，旧区间里另一条安排可能被减掉而看不见；确认修改仍可能用本地时间覆盖 Google 上的新时间。不要把这写成已经双向同步。
 5. **半写。** Google 成功而本地提交失败时，必须补偿删除并返回错误。补偿也失败则日志里只留事件 id。单测要锁住「不是 200」。
 6. **时区默认值。** 账户没把时区从 Google 默认改掉时，API 可能不返回该项，文档默认是 `Etc/GMT`。已连接用户这时按 `Etc/GMT` 理解「明天」，而不是悄悄改用服务器时区。未连接用户仍是进程时区。两套时钟只按「有没有连接」区分，不增加第三个产品设置。
 7. **工作时间今天读不到。** 空闲在真实账户上会包含夜间，直到 Google 真的在设置接口里返回工作时间。注入测试保证求交代码在，不把 9 点到 18 点写死冒充对方的设置。
