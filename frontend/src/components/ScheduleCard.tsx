@@ -88,7 +88,7 @@ export function ScheduleCard({
   }
 
   function chooseCandidate(candidate: ScheduleCandidate) {
-    if (!candidate) return;
+    if (!candidate || candidate.id == null) return;
     const nextMode = card.action === "cancel" ? "cancel" : "update";
     onChange({
       ...card,

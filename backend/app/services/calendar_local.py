@@ -21,6 +21,38 @@ def _participants_from_row(raw: str | None) -> list[str]:
     return [str(item) for item in parsed]
 
 
+def free_gaps(
+    busy: list[tuple[datetime | None, datetime | None]],
+    start: datetime,
+    end: datetime,
+    duration: timedelta,
+    limit: int,
+) -> list[tuple[datetime, datetime]]:
+    """Up to ``limit`` gaps of exactly ``duration`` inside ``[start, end)``.
+
+    ``busy`` is walked in the order given (local rows are already ordered by
+    start). Overlapping intervals collapse onto the cursor. An event that
+    ends when the next one starts does not consume that boundary. This helper
+    does not clip to working hours.
+    """
+    if duration <= timedelta(0) or limit <= 0 or end <= start:
+        return []
+    slots: list[tuple[datetime, datetime]] = []
+    cursor = start
+    for ev_start, ev_end in busy:
+        ev_start = ev_start or cursor
+        ev_end = ev_end or cursor
+        if ev_start > cursor and ev_start - cursor >= duration:
+            slots.append((cursor, cursor + duration))
+            if len(slots) >= limit:
+                return slots
+        if ev_end > cursor:
+            cursor = ev_end
+    if end - cursor >= duration and len(slots) < limit:
+        slots.append((cursor, cursor + duration))
+    return slots
+
+
 def event_to_dto(event: CalendarEvent) -> CalendarEventDTO:
     return CalendarEventDTO(
         id=event.id,
@@ -80,6 +112,25 @@ class LocalCalendarProvider:
         status: str = "active",
     ) -> list[CalendarEventDTO]:
         return [event_to_dto(row) for row in self.overlap_rows(user_id, start, end, status=status)]
+
+    def rows_for_external_ids(
+        self,
+        user_id: int,
+        external_ids: list[str],
+        *,
+        status: str = "active",
+    ) -> list[CalendarEvent]:
+        """Active rows whose non-empty ``external_id`` is in ``external_ids``."""
+        ids = [item for item in external_ids if item]
+        if not ids:
+            return []
+        query = self.db.query(CalendarEvent).filter(
+            CalendarEvent.user_id == user_id,
+            CalendarEvent.external_id.in_(ids),
+        )
+        if status and status != "all":
+            query = query.filter(CalendarEvent.status == status)
+        return query.all()
 
     def get_event(self, user_id: int, event_id: int) -> CalendarEventDTO | None:
         event = self.db.get(CalendarEvent, event_id)
@@ -169,21 +220,11 @@ class LocalCalendarProvider:
         limit: int = 3,
         exclude_event_id: int | None = None,
     ) -> list[tuple[datetime, datetime]]:
-        # Gaps only. Working hours belong to a future external calendar, not here.
-        if duration <= timedelta(0) or limit <= 0 or end <= start:
-            return []
-        busy = self.overlap_rows(user_id, start, end, exclude_event_id=exclude_event_id)
-        slots: list[tuple[datetime, datetime]] = []
-        cursor = start
-        for event in busy:
-            ev_start = event.start_at or cursor
-            ev_end = event.end_at or cursor
-            if ev_start > cursor and ev_start - cursor >= duration:
-                slots.append((cursor, cursor + duration))
-                if len(slots) >= limit:
-                    return slots
-            if ev_end > cursor:
-                cursor = ev_end
-        if end - cursor >= duration and len(slots) < limit:
-            slots.append((cursor, cursor + duration))
-        return slots
+        # Gaps only. Working hours are not applied here.
+        busy = [
+            (event.start_at, event.end_at)
+            for event in self.overlap_rows(
+                user_id, start, end, exclude_event_id=exclude_event_id
+            )
+        ]
+        return free_gaps(busy, start, end, duration, limit)

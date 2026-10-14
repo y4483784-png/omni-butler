@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 from app.core.llm import complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
-from app.services.calendar_factory import calendar_provider_for
+from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
+from app.services.calendar_google import CalendarRemoteReadError
+from app.services.calendar_secrets import CalendarTokenError
+
+REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError)
 
 # Accept Arabic and Chinese numerals ("3点" / "三点" / "三点半") — real users rarely type digits only.
 _CALENDAR_TIME = re.compile(
@@ -342,7 +346,20 @@ def format_missing_fields(draft: EventDraft) -> str:
 
 
 def check_conflict(db: Session, user_id: int, start_at: datetime, end_at: datetime) -> list[CalendarEvent]:
+    """Local active overlaps only. Connected creates use ``conflicts_for_create``."""
     return calendar_provider_for(db, user_id).overlap_rows(user_id, start_at, end_at)
+
+
+def conflicts_for_create(db: Session, user_id: int, start_at: datetime, end_at: datetime) -> list:
+    """Create-window conflicts. Connected users also read primary ``events.list``.
+
+    Raises ``CalendarRemoteReadError`` or ``CalendarTokenError`` when that read
+    fails. Callers must not treat the failure as an empty calendar.
+    """
+    provider = calendar_provider_for(db, user_id)
+    if calendar_writes_remote(db, user_id):
+        return provider.conflicts_for_create(user_id, start_at, end_at)
+    return provider.overlap_rows(user_id, start_at, end_at)
 
 
 def create_event(

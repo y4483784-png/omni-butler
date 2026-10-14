@@ -54,8 +54,15 @@ class CalendarProvider(Protocol):
         start_at: datetime,
         end_at: datetime,
         participants: list[str],
+        location: str = "",
+        description: str = "",
     ) -> CalendarEventDTO:
-        """Insert an active event and return it."""
+        """Insert an active event and return it.
+
+        ``location`` and ``description`` match the local provider. Participants
+        stay on the local row; an external provider must not turn them into
+        invitations.
+        """
         ...
 
     def update_event(
@@ -67,6 +74,8 @@ class CalendarProvider(Protocol):
         start_at: datetime | None = None,
         end_at: datetime | None = None,
         participants: list[str] | None = None,
+        location: str | None = None,
+        description: str | None = None,
     ) -> CalendarEventDTO | None:
         """Patch an owned event. None when it is missing or owned by someone else."""
         ...

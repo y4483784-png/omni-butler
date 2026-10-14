@@ -21,6 +21,11 @@ def calendar_provider_for(db: Session, user_id: int) -> LocalCalendarProvider | 
     return GoogleCalendarProvider(db, user_id)
 
 
+def calendar_writes_remote(db: Session, user_id: int) -> bool:
+    """True when a confirm must talk to Google before changing the local row."""
+    return isinstance(calendar_provider_for(db, user_id), GoogleCalendarProvider)
+
+
 def account_timezone_name(db: Session, user_id: int) -> str | None:
     """IANA id for a connected account. ``None`` when the user is not connected."""
     provider = calendar_provider_for(db, user_id)

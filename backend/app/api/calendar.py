@@ -25,6 +25,7 @@ from app.services.calendar_secrets import (
     sign_oauth_state,
 )
 from app.services.calendar import (
+    REMOTE_READ_ERRORS,
     calendar_now,
     cancel_event,
     check_conflict,
@@ -33,7 +34,16 @@ from app.services.calendar import (
     serialize_event_card,
     update_event,
 )
-from app.services.calendar_factory import account_timezone_name, calendar_provider_for
+from app.services.calendar_google import (
+    CalendarOverlapError,
+    CalendarRemoteReadError,
+    CalendarRemoteWriteError,
+)
+from app.services.calendar_factory import (
+    account_timezone_name,
+    calendar_provider_for,
+    calendar_writes_remote,
+)
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -53,13 +63,32 @@ def _parse_dt(raw: str | None) -> datetime | None:
     return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
 
 
+_READ_FAILED = "暂时读不到 Google 日历，未写入。"
+
+
 def _conflict_payload(rows, slots) -> dict:
+    conflicts = []
+    for row in rows:
+        item = serialize_event_card(row)
+        if item.get("id") is None:
+            item["readonly"] = True
+            item["title"] = "Google 日历上已有安排"
+        conflicts.append(item)
     return {
-        "conflicts": [serialize_event_card(row) for row in rows],
+        "conflicts": conflicts,
         "suggested_slots": [
             {"start_at": start.isoformat(), "end_at": end.isoformat()} for start, end in slots
         ],
     }
+
+
+def _slots_or_empty(db, user_id, start_at, end_at, *, exclude_event_id=None):
+    try:
+        return free_slots_for(
+            db, user_id, start_at, end_at, exclude_event_id=exclude_event_id
+        )
+    except REMOTE_READ_ERRORS:
+        return []
 
 
 @router.get("")
@@ -98,6 +127,20 @@ def create_calendar_event(
         raise HTTPException(status_code=400, detail="需要标题和开始时间")
     if end_at is None:
         end_at = start_at + timedelta(hours=1)
+    participants = list(body.participants or [])
+    location = body.location or ""
+    description = body.description or ""
+    if calendar_writes_remote(db, current_user.id):
+        return _create_connected_event(
+            db,
+            user_id=current_user.id,
+            title=title,
+            start_at=start_at,
+            end_at=end_at,
+            participants=participants,
+            location=location,
+            description=description,
+        )
     conflicts = check_conflict(db, current_user.id, start_at, end_at)
     if conflicts:
         slots = free_slots_for(db, current_user.id, start_at, end_at)
@@ -108,10 +151,48 @@ def create_calendar_event(
         title=title,
         start_at=start_at,
         end_at=end_at,
-        participants=list(body.participants or []),
-        location=body.location or "",
-        description=body.description or "",
+        participants=participants,
+        location=location,
+        description=description,
     )
+    return serialize_event_card(event)
+
+
+def _create_connected_event(
+    db,
+    *,
+    user_id: int,
+    title: str,
+    start_at: datetime,
+    end_at: datetime,
+    participants: list[str],
+    location: str,
+    description: str,
+):
+    """List primary, then insert on Google, then the local row. List failure writes nothing."""
+    try:
+        event = create_event(
+            db,
+            user_id=user_id,
+            title=title,
+            start_at=start_at,
+            end_at=end_at,
+            participants=participants,
+            location=location,
+            description=description,
+        )
+    except CalendarOverlapError as exc:
+        try:
+            slots = free_slots_for(db, user_id, start_at, end_at)
+        except REMOTE_READ_ERRORS:
+            raise HTTPException(status_code=502, detail=_READ_FAILED) from None
+        raise HTTPException(status_code=409, detail=_conflict_payload(exc.conflicts, slots))
+    except CalendarRemoteReadError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
+    except CalendarRemoteWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    except CalendarTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from None
     return serialize_event_card(event)
 
 
@@ -134,7 +215,7 @@ def patch_event(
             if row.id != event_id
         ]
         if conflicts:
-            slots = free_slots_for(
+            slots = _slots_or_empty(
                 db, current_user.id, start_at, end_at, exclude_event_id=event_id
             )
             raise HTTPException(status_code=409, detail=_conflict_payload(conflicts, slots))
