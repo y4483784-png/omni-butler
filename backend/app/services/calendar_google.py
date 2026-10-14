@@ -1,8 +1,8 @@
 """Google Calendar provider.
 
-``get_timezone`` reads the account IANA zone. Connected creates list the
-primary calendar, then insert on Google before the local row. Update, cancel,
-and list display still use local rows until a later slice.
+``get_timezone`` reads the account IANA zone. Connected creates, updates, and
+cancels talk to the primary calendar before the local row changes. List and
+sidebar display still use local rows until a later slice.
 """
 
 from __future__ import annotations
@@ -34,6 +34,9 @@ _GOOGLE_ONLY_TITLE = "Google 日历上已有安排"
 _READ_FAILED = "暂时读不到 Google 日历，未写入。"
 _WRITE_FAILED = "暂时无法写入 Google 日历，未保存。"
 _LOCAL_SAVE_FAILED = "本地保存失败，未完成创建。"
+_LOCAL_UPDATE_FAILED = "本地保存失败，未完成修改。"
+_CANCEL_FAILED = "暂时无法在 Google 日历上取消，本地日程未改。"
+_RECONNECT_REQUIRED = "需要重新连接 Google 日历后才能修改或取消。"
 
 
 class CalendarRemoteError(Exception):
@@ -60,6 +63,14 @@ class CalendarOverlapError(Exception):
     def __init__(self, conflicts: list) -> None:
         super().__init__("calendar conflict")
         self.conflicts = conflicts
+
+
+class CalendarReconnectRequired(Exception):
+    """Disconnected write to a row that still has a Google event id. The row stays as stored."""
+
+    def __init__(self, message: str = _RECONNECT_REQUIRED) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 @dataclass
@@ -95,7 +106,7 @@ def _http_request(
 
 
 class GoogleCalendarProvider:
-    """Account timezone and connected creates are live. Other writes stay local."""
+    """Account timezone, creates, updates, and cancels are live. List display stays local."""
 
     def __init__(
         self,
@@ -188,20 +199,107 @@ class GoogleCalendarProvider:
         location: str | None = None,
         description: str | None = None,
     ) -> CalendarEventDTO | None:
-        # Google patch / adopt-on-edit is a later slice.
-        return self._local.update_event(
-            user_id,
-            event_id,
+        """Change Google first, then the local row.
+
+        A time change reads the primary calendar and excludes this row by
+        ``external_id`` plus ``event_id``. A linked Google row is patched.
+        A pre-connect local row is inserted, then marked ``provider='google'``.
+        Participants are stored locally and are not sent as attendees.
+        """
+        event = self.db.get(CalendarEvent, event_id)
+        if not event or event.user_id != user_id:
+            return None
+        start_at = _as_naive(start_at) if start_at is not None else None
+        end_at = _as_naive(end_at) if end_at is not None else None
+        changing_time = start_at is not None or end_at is not None
+        google_fields = any(
+            value is not None for value in (title, start_at, end_at, location, description)
+        )
+        external_id = (event.external_id or "").strip()
+        linked = (event.provider or "") == "google" and bool(external_id)
+        if not google_fields and participants is None:
+            return event_to_dto(event)
+        if linked and not google_fields:
+            return self._local.update_event(user_id, event_id, participants=participants)
+
+        zone_name = self.timezone_name()
+        effective_start = start_at if start_at is not None else event.start_at
+        effective_end = end_at if end_at is not None else event.end_at
+        if changing_time and (effective_start is None or effective_end is None):
+            raise CalendarRemoteWriteError()
+        if changing_time:
+            conflicts = self._conflicts_in_window(
+                user_id,
+                effective_start,
+                effective_end,
+                exclude_event_id=event_id,
+                zone_name=zone_name,
+            )
+            if conflicts:
+                raise CalendarOverlapError(conflicts)
+
+        inserted_id = ""
+        sent: dict = {}
+        if linked:
+            sent = _patch_body(
+                title=title,
+                start_at=start_at,
+                end_at=end_at,
+                effective_start=effective_start,
+                effective_end=effective_end,
+                location=location,
+                description=description,
+                zone_name=zone_name,
+            )
+            self._patch_google_event(external_id, sent)
+        else:
+            if effective_start is None or effective_end is None:
+                raise CalendarRemoteWriteError()
+            inserted_id = self._insert_google_event(
+                title=title if title is not None else (event.title or ""),
+                start_at=effective_start,
+                end_at=effective_end,
+                location=location if location is not None else (event.location or ""),
+                description=description if description is not None else (event.description or ""),
+                zone_name=zone_name,
+            )
+            if self._external_id_taken(user_id, inserted_id):
+                self._delete_google_event(inserted_id)
+                raise CalendarRemoteWriteError(_LOCAL_UPDATE_FAILED)
+        self._commit_update(
+            event,
             title=title,
             start_at=start_at,
             end_at=end_at,
             participants=participants,
             location=location,
             description=description,
+            zone_name=zone_name,
+            inserted_id=inserted_id,
+            sent=sent,
+            external_id=external_id,
         )
+        self.db.refresh(event)
+        return event_to_dto(event)
 
     def cancel_event(self, user_id: int, event_id: int) -> CalendarEventDTO | None:
-        # Google delete-on-cancel is a later slice.
+        """Delete a linked Google event first. Soft-cancel the local row only after that.
+
+        A pure local row is soft-cancelled with no Google call. Cancel does not
+        read the primary calendar for conflicts. 404 and 410 count as gone.
+        """
+        event = self.db.get(CalendarEvent, event_id)
+        if not event or event.user_id != user_id:
+            return None
+        external_id = (event.external_id or "").strip()
+        if (event.provider or "") == "google" and external_id:
+            self._delete_google_event_required(external_id)
+            try:
+                return self._local.cancel_event(user_id, event_id)
+            except Exception:
+                self.db.rollback()
+                logger.error("google calendar local cancel failed event_id=%s", external_id)
+                raise CalendarRemoteWriteError(_CANCEL_FAILED) from None
         return self._local.cancel_event(user_id, event_id)
 
     def conflicts_for_create(
@@ -220,6 +318,49 @@ class GoogleCalendarProvider:
         zone = zone_name if zone_name is not None else self.timezone_name()
         _intervals, conflicts = self._read_window(user_id, start, end, zone)
         return conflicts
+
+    def conflicts_for_update(
+        self,
+        user_id: int,
+        start: datetime,
+        end: datetime,
+        *,
+        exclude_event_id: int | None = None,
+    ) -> list:
+        """Busy rows for a time change, excluding this event's Google id and local id."""
+        return self._conflicts_in_window(
+            user_id,
+            _as_naive(start),
+            _as_naive(end),
+            exclude_event_id=exclude_event_id,
+            zone_name=self.timezone_name(),
+        )
+
+    def readonly_titles(self, user_id: int, start: datetime, end: datetime) -> list[str]:
+        """Titles of primary-calendar events that have no local row.
+
+        Cancelled items are skipped. A matching ``external_id`` is not read-only.
+        Empty summaries use the display title 「（无标题）」. Nothing is stored.
+        """
+        items = self._list_primary_events(_as_naive(start), _as_naive(end), self.timezone_name())
+        ids = [str(item.get("id") or "") for item in items if isinstance(item, dict)]
+        linked = {
+            row.external_id
+            for row in self._local.rows_for_external_ids(user_id, ids)
+            if row.external_id
+        }
+        titles: list[str] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("status") or "") == "cancelled":
+                continue
+            gid = str(item.get("id") or "")
+            if gid and gid in linked:
+                continue
+            summary = str(item.get("summary") or "").strip()
+            titles.append(summary or "（无标题）")
+        return titles
 
     def find_free_slots(
         self,
@@ -259,7 +400,12 @@ class GoogleCalendarProvider:
         exclude_event_id: int | None = None,
         status: str = "active",
     ) -> list[CalendarEvent]:
-        # Update conflict checks still use local rows. Create uses ``_read_window``.
+        """Local rows only, so update/cancel lookup cannot select a Google-only item.
+
+        Time-change conflicts use ``conflicts_for_update``. That read excludes the
+        row by ``external_id`` and does not treat a Google row's stored interval
+        as a second busy block.
+        """
         return self._local.overlap_rows(
             user_id,
             start,
@@ -270,6 +416,24 @@ class GoogleCalendarProvider:
 
     def get_row(self, event_id: int) -> CalendarEvent | None:
         return self._local.get_row(event_id)
+
+    def _conflicts_in_window(
+        self,
+        user_id: int,
+        start: datetime,
+        end: datetime,
+        *,
+        exclude_event_id: int | None,
+        zone_name: str,
+    ) -> list:
+        _intervals, conflicts = self._read_window(
+            user_id,
+            start,
+            end,
+            zone_name,
+            exclude_event_id=exclude_event_id,
+        )
+        return conflicts
 
     def _read_window(
         self,
@@ -383,6 +547,71 @@ class GoogleCalendarProvider:
         logger.warning("google calendar events list failed status=truncated")
         raise CalendarRemoteReadError()
 
+    def _commit_update(
+        self,
+        event: CalendarEvent,
+        *,
+        title: str | None,
+        start_at: datetime | None,
+        end_at: datetime | None,
+        participants: list[str] | None,
+        location: str | None,
+        description: str | None,
+        zone_name: str,
+        inserted_id: str,
+        sent: dict,
+        external_id: str,
+    ) -> None:
+        """Apply the confirmed edit after Google has accepted it. One commit."""
+        self.db.refresh(event)
+        restore = _restore_body(event, sent, zone_name=zone_name) if sent else {}
+        if title is not None:
+            event.title = title
+        if start_at is not None:
+            event.start_at = start_at
+        if end_at is not None:
+            event.end_at = end_at
+        if participants is not None:
+            event.participants = json.dumps(list(participants), ensure_ascii=False)
+        if location is not None:
+            event.location = location
+        if description is not None:
+            event.description = description
+        event.timezone = zone_name
+        if inserted_id:
+            event.provider = "google"
+            event.external_id = inserted_id
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            if inserted_id:
+                self._delete_google_event(inserted_id)
+            elif restore and external_id:
+                self._restore_patch(external_id, restore)
+            raise CalendarRemoteWriteError(_LOCAL_UPDATE_FAILED) from None
+
+    def _patch_google_event(self, event_id: str, body: dict) -> None:
+        """PATCH one primary event. No attendees and no sendUpdates."""
+        if not event_id or not body:
+            return
+        url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
+        try:
+            response = self._call("PATCH", url, json=body)
+        except CalendarRemoteReadError:
+            logger.warning("google calendar events patch failed status=network")
+            raise CalendarRemoteWriteError() from None
+        if response.status_code not in (200, 201):
+            logger.warning("google calendar events patch failed status=%s", response.status_code)
+            raise CalendarRemoteWriteError()
+
+    def _restore_patch(self, event_id: str, body: dict) -> None:
+        """Best-effort undo of a patch when the local commit fails. Log only the event id."""
+        try:
+            self._patch_google_event(event_id, body)
+        except CalendarRemoteError:
+            logger.error("google calendar compensate patch failed event_id=%s", event_id)
+
     def _insert_google_event(
         self,
         *,
@@ -465,6 +694,22 @@ class GoogleCalendarProvider:
         return (
             self._local.rows_for_external_ids(user_id, [google_id], status="all") != []
         )
+
+    def _delete_google_event_required(self, event_id: str) -> None:
+        """Delete one primary event. 404 and 410 mean it is already gone.
+
+        Any other failure leaves the caller to keep the local row active.
+        """
+        url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
+        try:
+            response = self._call("DELETE", url)
+        except CalendarRemoteReadError:
+            logger.warning("google calendar events delete failed status=network")
+            raise CalendarRemoteWriteError(_CANCEL_FAILED) from None
+        if response.status_code in (200, 204, 404, 410):
+            return
+        logger.warning("google calendar events delete failed status=%s", response.status_code)
+        raise CalendarRemoteWriteError(_CANCEL_FAILED)
 
     def _delete_google_event(self, event_id: str) -> None:
         """Best-effort compensate. On failure the log keeps only the event id."""
@@ -579,6 +824,47 @@ def _as_naive(value: datetime) -> datetime:
 
 def _wall_clock(value: datetime) -> str:
     return _as_naive(value).isoformat(timespec="seconds")
+
+
+def _patch_body(
+    *,
+    title: str | None,
+    start_at: datetime | None,
+    end_at: datetime | None,
+    effective_start: datetime | None,
+    effective_end: datetime | None,
+    location: str | None,
+    description: str | None,
+    zone_name: str,
+) -> dict:
+    """Fields the user actually sent. Times stay wall-clock. No attendees."""
+    body: dict = {}
+    if title is not None:
+        body["summary"] = title
+    if location is not None:
+        body["location"] = location
+    if description is not None:
+        body["description"] = description
+    if start_at is not None or end_at is not None:
+        body["start"] = {"dateTime": _wall_clock(effective_start), "timeZone": zone_name}
+        body["end"] = {"dateTime": _wall_clock(effective_end), "timeZone": zone_name}
+    return body
+
+
+def _restore_body(event: CalendarEvent, sent: dict, *, zone_name: str) -> dict:
+    """Previous local values for the fields a patch just wrote."""
+    body: dict = {}
+    if "summary" in sent:
+        body["summary"] = event.title or ""
+    if "location" in sent:
+        body["location"] = event.location or ""
+    if "description" in sent:
+        body["description"] = event.description or ""
+    if "start" in sent or "end" in sent:
+        if event.start_at is not None and event.end_at is not None:
+            body["start"] = {"dateTime": _wall_clock(event.start_at), "timeZone": zone_name}
+            body["end"] = {"dateTime": _wall_clock(event.end_at), "timeZone": zone_name}
+    return body
 
 
 def _rfc3339(wall: datetime, zone: ZoneInfo) -> str:

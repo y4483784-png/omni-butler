@@ -84,8 +84,11 @@ class FakeGoogle:
         self.pages_served = 0
         self.insert_status = 200
         self.insert_id = "evt-created"
+        self.patch_status = 200
         self.delete_status = 204
         self.deleted_ids: list[str] = []
+        self.network_on: set[str] = set()
+        self.on_event = None
 
     def __call__(self, method, url, *, data=None, params=None, headers=None, json=None):
         self.calls.append(
@@ -98,6 +101,8 @@ class FakeGoogle:
                 "json": json,
             }
         )
+        if method in self.network_on and "/calendars/primary/events" in (url or ""):
+            raise httpx.ConnectError("down")
         event_response = self._events_response(method, url, json)
         if event_response is not None:
             return event_response
@@ -136,6 +141,8 @@ class FakeGoogle:
         item = "/calendars/primary/events/" in path
         if not collection and not item:
             return None
+        if self.on_event is not None:
+            self.on_event(method, url, body)
         if method == "GET" and collection:
             if self.events_status != 200:
                 return httpx.Response(self.events_status, json={"error": {"message": "list failed"}})
@@ -150,6 +157,14 @@ class FakeGoogle:
             return httpx.Response(
                 self.insert_status, json={"id": self.insert_id, "status": "confirmed"}
             )
+        if method == "PATCH" and item:
+            if self.patch_status not in (200, 201):
+                return httpx.Response(self.patch_status, json={"error": {"message": "patch failed"}})
+            event_id = path.rstrip("/").rsplit("/", 1)[-1]
+            payload = {"id": event_id, "status": "confirmed"}
+            if isinstance(body, dict):
+                payload.update({key: value for key, value in body.items() if key != "id"})
+            return httpx.Response(self.patch_status, json=payload)
         if method == "DELETE" and item:
             self.deleted_ids.append(path.rstrip("/").rsplit("/", 1)[-1])
             if self.delete_status in (200, 204):
@@ -1001,6 +1016,22 @@ def _insert_calls(fake: FakeGoogle) -> list[dict]:
     ]
 
 
+def _patch_calls(fake: FakeGoogle) -> list[dict]:
+    return [call for call in _event_calls(fake) if call["method"] == "PATCH"]
+
+
+def _delete_calls(fake: FakeGoogle) -> list[dict]:
+    return [call for call in _event_calls(fake) if call["method"] == "DELETE"]
+
+
+def _list_calls(fake: FakeGoogle) -> list[dict]:
+    return [
+        call
+        for call in _event_calls(fake)
+        if call["method"] == "GET" and call["url"].rstrip("/").endswith("/calendars/primary/events")
+    ]
+
+
 def _google_item(
     event_id: str,
     start: str,
@@ -1598,6 +1629,50 @@ def test_find_free_slots_unions_google_busy_without_working_hours(
         db.close()
 
 
+def _watch_row(fake: FakeGoogle, event_id: int, methods: set[str]) -> dict:
+    """Read the committed row from another session while a Google write is in flight."""
+    seen: dict = {}
+
+    def on_event(method, _url, _body):
+        if method not in methods:
+            return
+        fresh = SessionLocal()
+        try:
+            row = fresh.get(CalendarEvent, event_id)
+            assert row is not None
+            seen["title"] = row.title
+            seen["start_at"] = row.start_at
+            seen["provider"] = row.provider
+            seen["external_id"] = row.external_id
+            seen["status"] = row.status
+            seen["timezone"] = row.timezone
+        finally:
+            fresh.close()
+
+    fake.on_event = on_event
+    return seen
+
+
+def _google_row(db, user_id: int, *, title: str, start: datetime, external_id: str, **extra) -> CalendarEvent:
+    row = CalendarEvent(
+        user_id=user_id,
+        title=title,
+        start_at=start,
+        end_at=start + timedelta(hours=1),
+        status="active",
+        provider=extra.pop("provider", "google"),
+        external_id=external_id,
+        timezone=extra.pop("timezone", "America/New_York"),
+        participants=extra.pop("participants", "[]"),
+        location=extra.pop("location", ""),
+        description=extra.pop("description", ""),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def test_suggest_list_failure_has_no_slot_card(
     auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
 ):
@@ -1613,6 +1688,619 @@ def test_suggest_list_failure_has_no_slot_card(
         assert result.schedule_card is None
         assert result.direct_answer == "暂时读不到 Google 日历，不能建议空闲时段。"
         assert _insert_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_update_patches_google_before_local_and_failure_keeps_row(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """Item 7: patch is visible before the local row changes. A failed patch writes nothing."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(db, user_id, title="产品评审", start=start, external_id="evt-self", participants='["甲"]')
+        fake_google.calls.clear()
+        participants = auth_client.patch(f"/api/calendar/{row.id}", json={"participants": ["李四"]})
+        assert participants.status_code == 200, participants.text
+        assert participants.json()["participants"] == ["李四"]
+        assert _event_calls(fake_google) == []
+        db.refresh(row)
+        assert row.title == "产品评审"
+        assert row.timezone == "America/New_York"
+        assert row.provider == "google"
+
+        fake_google.calls.clear()
+        seen = _watch_row(fake_google, row.id, {"PATCH"})
+        renamed = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={
+                "title": "改过的评审",
+                "location": "会议室",
+                "description": "只改说明",
+                "participants": ["王五"],
+            },
+        )
+        assert renamed.status_code == 200, renamed.text
+        body = renamed.json()
+        assert seen["title"] == "产品评审"
+        assert seen["timezone"] == "America/New_York"
+        assert body["title"] == "改过的评审"
+        assert body["location"] == "会议室"
+        assert body["description"] == "只改说明"
+        assert body["participants"] == ["王五"]
+        assert body["timezone"] == "Asia/Shanghai"
+        assert body["start_at"].startswith("2026-12-02T15:00:00")
+        db.refresh(row)
+        assert row.timezone == "Asia/Shanghai"
+        assert row.start_at == start
+        patches = _patch_calls(fake_google)
+        assert len(patches) == 1
+        payload = patches[0]["json"]
+        assert payload == {"summary": "改过的评审", "location": "会议室", "description": "只改说明"}
+        assert "start" not in payload
+        assert "attendees" not in payload
+        assert "sendUpdates" not in (patches[0].get("params") or {})
+        assert "sendUpdates" not in patches[0]["url"]
+        assert "王五" not in str(payload)
+        assert "甲" not in str(payload)
+        assert _list_calls(fake_google) == []
+        assert _insert_calls(fake_google) == []
+        assert patches[0]["url"].endswith("/evt-self")
+
+        fake_google.calls.clear()
+        fake_google.patch_status = 500
+        failed = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={
+                "title": "失败标题",
+                "start_at": "2026-12-02T17:00:00",
+                "end_at": "2026-12-02T18:00:00",
+            },
+        )
+        assert failed.status_code == 502
+        assert failed.status_code != 200
+        assert "未保存" in failed.json()["detail"]
+        assert _patch_calls(fake_google)
+        assert _list_calls(fake_google)
+        assert fake_google.calls.index(_list_calls(fake_google)[0]) < fake_google.calls.index(
+            _patch_calls(fake_google)[0]
+        )
+        db.refresh(row)
+        assert row.title == "改过的评审"
+        assert row.start_at == start
+        assert row.end_at == start + timedelta(hours=1)
+        assert row.status == "active"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_local_row_inserts_on_first_confirmed_update(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """Item 7: a pre-connect local row is inserted on Google before the local row changes."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(
+            db,
+            user_id,
+            title="旧本地会",
+            start=start,
+            external_id="",
+            provider="local",
+            timezone="",
+            participants='["甲"]',
+        )
+        taken = _google_row(
+            db,
+            user_id,
+            title="已经占用",
+            start=datetime(2026, 1, 1, 9, 0),
+            external_id="evt-created",
+        )
+        fake_google.events_status = 500
+        unread = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"start_at": "2026-12-02T21:00:00", "end_at": "2026-12-02T22:00:00"},
+        )
+        assert unread.status_code == 502
+        assert unread.json()["detail"] == "暂时读不到 Google 日历，未写入。"
+        assert _insert_calls(fake_google) == []
+        db.refresh(row)
+        assert row.provider == "local"
+        assert row.external_id == ""
+        assert row.start_at == start
+
+        fake_google.events_status = 200
+        fake_google.events_items = [
+            _google_item("evt-other", "2026-12-02T18:00:00+08:00", "2026-12-02T19:00:00+08:00", summary="外面的会")
+        ]
+        fake_google.calls.clear()
+        overlap = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"start_at": "2026-12-02T18:30:00", "end_at": "2026-12-02T19:30:00"},
+        )
+        assert overlap.status_code == 409
+        assert overlap.json()["detail"]["conflicts"][0]["title"] == "Google 日历上已有安排"
+        assert _insert_calls(fake_google) == []
+        db.refresh(row)
+        assert row.start_at == start
+        assert row.provider == "local"
+
+        fake_google.insert_status = 500
+        fake_google.calls.clear()
+        broken = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"title": "不该写上", "start_at": "2026-12-02T19:30:00", "end_at": "2026-12-02T20:30:00"},
+        )
+        assert broken.status_code == 502
+        assert "未保存" in broken.json()["detail"]
+        assert _insert_calls(fake_google)
+        db.refresh(row)
+        assert row.title == "旧本地会"
+        assert row.provider == "local"
+        assert row.external_id == ""
+        assert row.start_at == start
+
+        fake_google.insert_status = 200
+        fake_google.insert_id = "evt-created"
+        fake_google.deleted_ids.clear()
+        fake_google.calls.clear()
+        duplicate = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"start_at": "2026-12-02T19:30:00", "end_at": "2026-12-02T20:30:00"},
+        )
+        assert duplicate.status_code == 502
+        assert duplicate.status_code != 200
+        assert fake_google.deleted_ids == ["evt-created"]
+        db.refresh(row)
+        assert row.provider == "local"
+        assert row.external_id == ""
+        assert row.title == "旧本地会"
+        db.refresh(taken)
+        assert taken.external_id == "evt-created"
+
+        fake_google.insert_id = "evt-migrated"
+        fake_google.calls.clear()
+        seen = _watch_row(fake_google, row.id, {"POST"})
+        moved = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={
+                "title": "迁到 Google",
+                "start_at": "2026-12-02T19:30:00",
+                "end_at": "2026-12-02T20:30:00",
+            },
+        )
+        assert moved.status_code == 200, moved.text
+        assert seen["provider"] == "local"
+        assert seen["external_id"] == ""
+        assert seen["title"] == "旧本地会"
+        assert seen["start_at"] == start
+        body = moved.json()
+        assert body["provider"] == "google"
+        assert body["external_id"] == "evt-migrated"
+        assert body["timezone"] == "Asia/Shanghai"
+        assert body["title"] == "迁到 Google"
+        assert body["start_at"].startswith("2026-12-02T19:30:00")
+        assert body["participants"] == ["甲"]
+        listed = _list_calls(fake_google)
+        inserts = _insert_calls(fake_google)
+        assert listed and inserts
+        assert fake_google.calls.index(listed[0]) < fake_google.calls.index(inserts[0])
+        payload = inserts[0]["json"]
+        assert payload["summary"] == "迁到 Google"
+        assert payload["start"] == {"dateTime": "2026-12-02T19:30:00", "timeZone": "Asia/Shanghai"}
+        assert "attendees" not in payload
+        assert "sendUpdates" not in (inserts[0].get("params") or {})
+        assert "甲" not in str(payload)
+        assert _patch_calls(fake_google) == []
+        db.refresh(row)
+        assert row.provider == "google"
+        assert row.external_id == "evt-migrated"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_cancel_deletes_google_first_and_disconnect_refuses_linked_rows(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """Item 8: soft-cancel only after Google succeeds or is already gone. Disconnect refuses."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(db, user_id, title="要取消的会", start=start, external_id="evt-cancel")
+
+        def _still_active(status_code: int) -> None:
+            failed = auth_client.delete(f"/api/calendar/{row.id}")
+            assert failed.status_code == status_code
+            assert failed.status_code != 200
+            assert "未改" in failed.json()["detail"]
+            assert _list_calls(fake_google) == []
+            db.refresh(row)
+            assert row.status == "active"
+            assert db.get(CalendarEvent, row.id) is not None
+
+        fake_google.calls.clear()
+        fake_google.delete_status = 500
+        _still_active(502)
+        fake_google.calls.clear()
+        fake_google.delete_status = 403
+        _still_active(502)
+        fake_google.calls.clear()
+        fake_google.delete_status = 204
+        fake_google.network_on.add("DELETE")
+        _still_active(502)
+        fake_google.network_on.clear()
+
+        fake_google.calls.clear()
+        fake_google.delete_status = 404
+        missing = auth_client.delete(f"/api/calendar/{row.id}")
+        assert missing.status_code == 200, missing.text
+        assert missing.json()["status"] == "cancelled"
+        assert missing.json()["id"] == row.id
+        assert _list_calls(fake_google) == []
+        assert [call["method"] for call in _event_calls(fake_google)] == ["DELETE"]
+        db.refresh(row)
+        assert row.status == "cancelled"
+
+        row.status = "active"
+        db.commit()
+        fake_google.calls.clear()
+        fake_google.delete_status = 410
+        gone = auth_client.delete(f"/api/calendar/{row.id}")
+        assert gone.status_code == 200, gone.text
+        assert gone.json()["status"] == "cancelled"
+        db.refresh(row)
+        assert row.status == "cancelled"
+        assert _list_calls(fake_google) == []
+
+        other = _google_row(db, user_id, title="成功取消", start=start + timedelta(days=1), external_id="evt-gone")
+        fake_google.calls.clear()
+        fake_google.delete_status = 204
+        removed = auth_client.delete(f"/api/calendar/{other.id}")
+        assert removed.status_code == 200, removed.text
+        assert removed.json()["status"] == "cancelled"
+        assert fake_google.deleted_ids[-1] == "evt-gone"
+        assert [call["method"] for call in _event_calls(fake_google)] == ["DELETE"]
+        db.refresh(other)
+        assert other.status == "cancelled"
+
+        local = _google_row(
+            db,
+            user_id,
+            title="纯本地",
+            start=start + timedelta(days=2),
+            external_id="",
+            provider="local",
+            timezone="",
+        )
+        fake_google.calls.clear()
+        fake_google.deleted_ids.clear()
+        local_cancel = auth_client.delete(f"/api/calendar/{local.id}")
+        assert local_cancel.status_code == 200, local_cancel.text
+        assert local_cancel.json()["status"] == "cancelled"
+        assert local_cancel.json()["provider"] == "local"
+        assert _event_calls(fake_google) == []
+        assert fake_google.deleted_ids == []
+
+        linked = _google_row(db, user_id, title="断开后不能改", start=start + timedelta(days=3), external_id="evt-linked")
+        assert auth_client.delete("/api/calendar/google/connection").status_code == 200
+        fake_google.calls.clear()
+        refused = auth_client.patch(f"/api/calendar/{linked.id}", json={"title": "不该改"})
+        assert refused.status_code == 409
+        assert "重新连接" in refused.json()["detail"]
+        db.refresh(linked)
+        assert linked.title == "断开后不能改"
+        assert linked.status == "active"
+        refused_delete = auth_client.delete(f"/api/calendar/{linked.id}")
+        assert refused_delete.status_code == 409
+        assert "重新连接" in refused_delete.json()["detail"]
+        db.refresh(linked)
+        assert linked.status == "active"
+        assert linked.title == "断开后不能改"
+        assert _event_calls(fake_google) == []
+
+        plain = _google_row(
+            db,
+            user_id,
+            title="断开后的本地",
+            start=start + timedelta(days=4),
+            external_id="",
+            provider="local",
+            timezone="",
+        )
+        renamed = auth_client.patch(f"/api/calendar/{plain.id}", json={"title": "本地仍可改"})
+        assert renamed.status_code == 200, renamed.text
+        assert renamed.json()["provider"] == "local"
+        assert renamed.json()["title"] == "本地仍可改"
+        removed_local = auth_client.delete(f"/api/calendar/{plain.id}")
+        assert removed_local.status_code == 200, removed_local.text
+        assert removed_local.json()["status"] == "cancelled"
+        assert _event_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_update_excludes_self_by_external_id_and_list_failure_writes_nothing(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """Item 11: own Google event is not a conflict. Another event is. A failed list does not patch."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(db, user_id, title="已同步会", start=start, external_id="evt-self")
+        stale = _google_row(db, user_id, title="库里的旧时间", start=start, external_id="evt-stale")
+        fake_google.events_items = [
+            _google_item("evt-self", "2026-12-02T15:00:00+08:00", "2026-12-02T16:00:00+08:00", summary="Google 上的自己"),
+            _google_item("evt-stale", "2026-12-02T20:00:00+08:00", "2026-12-02T21:00:00+08:00", summary="已经挪走"),
+            _google_item("evt-other", "2026-12-02T15:45:00+08:00", "2026-12-02T16:45:00+08:00", summary="外面的会"),
+        ]
+        overlap = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"start_at": "2026-12-02T15:30:00", "end_at": "2026-12-02T16:30:00"},
+        )
+        assert overlap.status_code == 409
+        detail = overlap.json()["detail"]
+        assert len(detail["conflicts"]) == 1
+        conflict = detail["conflicts"][0]
+        assert conflict["id"] is None
+        assert conflict["readonly"] is True
+        assert conflict["title"] == "Google 日历上已有安排"
+        assert conflict["start_at"].startswith("2026-12-02T15:45:00")
+        assert conflict["end_at"].startswith("2026-12-02T16:45:00")
+        assert "07:45" not in conflict["start_at"]
+        assert "Z" not in conflict["start_at"]
+        assert detail["suggested_slots"]
+        assert detail["suggested_slots"][0]["start_at"].startswith("2026-12-02T16:45:00")
+        assert _patch_calls(fake_google) == []
+        listed = _list_calls(fake_google)
+        assert listed
+        assert listed[0]["params"]["timeMin"] == "2026-12-02T15:30:00+08:00"
+        assert listed[0]["params"]["timeMax"] == "2026-12-02T16:30:00+08:00"
+        assert listed[0]["params"]["timeZone"] == "Asia/Shanghai"
+        assert "syncToken" not in listed[0]["params"]
+        db.refresh(row)
+        assert row.start_at == start
+        assert row.title == "已同步会"
+        db.refresh(stale)
+        assert stale.start_at == start
+
+        fake_google.calls.clear()
+        fake_google.events_status = 500
+        unread = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"start_at": "2026-12-02T15:30:00", "end_at": "2026-12-02T16:30:00"},
+        )
+        assert unread.status_code == 502
+        assert unread.status_code != 200
+        assert unread.json()["detail"] == "暂时读不到 Google 日历，未写入。"
+        assert _patch_calls(fake_google) == []
+        db.refresh(row)
+        assert row.start_at == start
+        assert row.title == "已同步会"
+
+        fake_google.events_status = 200
+        fake_google.events_items = [
+            _google_item("evt-self", "2026-12-02T15:00:00+08:00", "2026-12-02T16:00:00+08:00"),
+            _google_item("evt-stale", "2026-12-02T20:00:00+08:00", "2026-12-02T21:00:00+08:00"),
+        ]
+        fake_google.calls.clear()
+        seen = _watch_row(fake_google, row.id, {"PATCH"})
+        moved = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"start_at": "2026-12-02T15:30:00", "end_at": "2026-12-02T16:30:00"},
+        )
+        assert moved.status_code == 200, moved.text
+        assert seen["start_at"] == start
+        assert seen["title"] == "已同步会"
+        assert moved.json()["start_at"].startswith("2026-12-02T15:30:00")
+        assert moved.json()["end_at"].startswith("2026-12-02T16:30:00")
+        assert moved.json()["timezone"] == "Asia/Shanghai"
+        listed = _list_calls(fake_google)
+        patches = _patch_calls(fake_google)
+        assert listed and patches
+        assert fake_google.calls.index(listed[0]) < fake_google.calls.index(patches[0])
+        assert patches[0]["json"]["start"] == {
+            "dateTime": "2026-12-02T15:30:00",
+            "timeZone": "Asia/Shanghai",
+        }
+        assert "attendees" not in patches[0]["json"]
+        db.refresh(row)
+        assert row.start_at == datetime(2026, 12, 2, 15, 30)
+        db.refresh(stale)
+        assert stale.start_at == start
+        assert stale.title == "库里的旧时间"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_update_preview_merges_google_and_survives_list_failure(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(db, user_id, title="已同步会", start=start, external_id="evt-self")
+        stale = _google_row(db, user_id, title="库里的旧时间", start=start, external_id="evt-stale")
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item("evt-self", "2026-12-02T15:00:00+08:00", "2026-12-02T16:00:00+08:00"),
+            _google_item("evt-stale", "2026-12-02T20:00:00+08:00", "2026-12-02T21:00:00+08:00"),
+            _google_item("evt-other", "2026-12-02T15:45:00+08:00", "2026-12-02T16:45:00+08:00", summary="外面的会"),
+        ]
+
+        def _extract(*_args, **_kwargs):
+            return EventDraft(
+                title="已同步会",
+                start_at=datetime(2026, 12, 2, 15, 30),
+                end_at=datetime(2026, 12, 2, 16, 30),
+            )
+
+        def _apply(draft, _message, *, now=None):
+            draft.title = "已同步会"
+            draft.reference_start_at = start
+            draft.start_at = datetime(2026, 12, 2, 15, 30)
+            draft.end_at = datetime(2026, 12, 2, 16, 30)
+            return draft
+
+        monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+        monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _apply)
+        preview = execute_calendar(
+            ToolContext(db=db, message="把已同步会改到三点半", history=[], user_id=user_id)
+        )
+        card = preview.schedule_card
+        assert card["mode"] == "update"
+        assert card["phase"] == "draft"
+        assert card["event_id"] == row.id
+        assert len(card["conflicts"]) == 1
+        assert card["conflicts"][0]["id"] is None
+        assert card["conflicts"][0]["readonly"] is True
+        assert card["conflicts"][0]["title"] == "Google 日历上已有安排"
+        assert card["conflicts"][0]["start_at"].startswith("2026-12-02T15:45:00")
+        assert "07:45" not in card["conflicts"][0]["start_at"]
+        assert card["suggested_slots"][0]["start_at"].startswith("2026-12-02T16:45:00")
+        assert _patch_calls(fake_google) == []
+        assert _insert_calls(fake_google) == []
+        db.refresh(row)
+        assert row.start_at == start
+
+        fake_google.events_status = 500
+        missed = execute_calendar(
+            ToolContext(db=db, message="把已同步会改到三点半", history=[], user_id=user_id)
+        )
+        missed_card = missed.schedule_card
+        assert missed_card["mode"] == "update"
+        assert missed_card["phase"] == "draft"
+        assert missed_card["event_id"] == row.id
+        assert missed_card["suggested_slots"] == []
+        assert any(item["id"] == stale.id for item in missed_card["conflicts"])
+        assert "没读到 Google" in (missed.direct_answer or "")
+        assert "确认时会再查" in (missed.direct_answer or "")
+        assert "不会写入" in (missed.direct_answer or "")
+        assert _patch_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_readonly_google_item_has_no_update_or_cancel_card(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Item 14: a Google-only title match is not an update or cancel card and writes nothing."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    day = datetime(2026, 12, 2, 15, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item("evt-only", "2026-12-02T15:00:00+08:00", "2026-12-02T16:00:00+08:00", summary="外面的会")
+        ]
+
+        def _extract(*_args, **_kwargs):
+            return EventDraft(title="外面的会", start_at=day, end_at=day + timedelta(hours=1))
+
+        def _apply(draft, _message, *, now=None):
+            draft.title = "外面的会"
+            draft.reference_start_at = day
+            return draft
+
+        monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+        monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _apply)
+
+        cancel = execute_calendar(
+            ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
+        )
+        assert cancel.schedule_card is None
+        assert cancel.direct_answer == "这条日程只在 Google 日历里，请在 Google 日历里改。"
+        assert _insert_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        listed = _list_calls(fake_google)
+        assert listed
+        assert listed[-1]["params"]["timeMin"].startswith("2026-12-02T00:00:00")
+        assert listed[-1]["params"]["timeMax"].startswith("2026-12-03T00:00:00")
+        assert listed[-1]["params"]["singleEvents"] == "true"
+        assert "syncToken" not in listed[-1]["params"]
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        update = execute_calendar(
+            ToolContext(db=db, message="把外面的会改到五点", history=[], user_id=user_id)
+        )
+        assert update.schedule_card is None
+        assert update.direct_answer == "这条日程只在 Google 日历里，请在 Google 日历里改。"
+        assert _insert_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        local = _google_row(
+            db,
+            user_id,
+            title="外面的会",
+            start=day,
+            external_id="",
+            provider="local",
+            timezone="",
+        )
+        owned = execute_calendar(
+            ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
+        )
+        assert owned.schedule_card["mode"] == "cancel"
+        assert owned.schedule_card["event_id"] == local.id
+        db.refresh(local)
+        assert local.status == "active"
+        db.delete(local)
+        db.commit()
+
+        linked = _google_row(db, user_id, title="别的会", start=day, external_id="evt-only")
+        missed_title = execute_calendar(
+            ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
+        )
+        assert missed_title.schedule_card is None
+        assert missed_title.direct_answer == "没有找到对应日程。"
+        db.refresh(linked)
+        assert linked.status == "active"
+        db.delete(linked)
+        db.commit()
+
+        fake_google.events_status = 500
+        unread = execute_calendar(
+            ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
+        )
+        assert unread.schedule_card is None
+        assert unread.direct_answer == (
+            "没有找到对应日程。暂时读不到 Google 日历，以下只是这里保存的日程。"
+        )
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+        assert (
+            db.query(CalendarEvent)
+            .filter(CalendarEvent.user_id == user_id, CalendarEvent.status == "cancelled")
+            .count()
+            == 0
+        )
     finally:
         _cleanup(user_id)
         db.close()

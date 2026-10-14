@@ -14,7 +14,7 @@ from app.core.llm import complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
-from app.services.calendar_google import CalendarRemoteReadError
+from app.services.calendar_google import CalendarReconnectRequired, CalendarRemoteReadError
 from app.services.calendar_secrets import CalendarTokenError
 
 REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError)
@@ -389,6 +389,75 @@ def create_event(
     return event
 
 
+def _lookup_window(
+    start_at: datetime | None,
+    title: str,
+    now: datetime,
+) -> tuple[datetime, datetime] | None:
+    """Day window when the user named a day, otherwise from ``now`` through year 2100."""
+    if start_at is not None:
+        day = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        return day, day + timedelta(days=1)
+    if (title or "").strip():
+        return now, datetime(2100, 1, 1)
+    return None
+
+
+def _block_disconnected_remote(db: Session, user_id: int, event: CalendarEvent) -> None:
+    """Refuse edits that would leave Google on the old time after a disconnect."""
+    if (event.external_id or "").strip() and not calendar_writes_remote(db, user_id):
+        raise CalendarReconnectRequired()
+
+
+def conflicts_for_update(
+    db: Session,
+    user_id: int,
+    start_at: datetime,
+    end_at: datetime,
+    *,
+    exclude_event_id: int | None = None,
+) -> list:
+    """Overlaps for a time change. Connected users read the primary calendar.
+
+    The edited row is left out by local id and, when it has one, by external id.
+    A Google row's stored interval is not a second busy block.
+    """
+    provider = calendar_provider_for(db, user_id)
+    if calendar_writes_remote(db, user_id):
+        checker = getattr(provider, "conflicts_for_update", None)
+        if checker is not None:
+            return checker(
+                user_id, start_at, end_at, exclude_event_id=exclude_event_id
+            )
+    return provider.overlap_rows(
+        user_id, start_at, end_at, exclude_event_id=exclude_event_id
+    )
+
+
+def readonly_titles(
+    db: Session,
+    user_id: int,
+    *,
+    title: str,
+    start_at: datetime | None,
+    now: datetime,
+) -> list[str]:
+    """Titles that exist only on the connected primary calendar. Unconnected users get none."""
+    if not (title or "").strip() or not calendar_writes_remote(db, user_id):
+        return []
+    if start_at is not None:
+        window = _lookup_window(start_at, title, start_at)
+    else:
+        window = _lookup_window(None, title, now)
+    if window is None:
+        return []
+    provider = calendar_provider_for(db, user_id)
+    reader = getattr(provider, "readonly_titles", None)
+    if reader is None:
+        return []
+    return reader(user_id, window[0], window[1])
+
+
 def update_event(
     db: Session,
     event_id: int,
@@ -405,6 +474,7 @@ def update_event(
     current = provider.get_row(event_id)
     if current is None or current.user_id != user_id:
         return None
+    _block_disconnected_remote(db, user_id, current)
     updated = provider.update_event(
         user_id,
         event_id,
@@ -425,6 +495,7 @@ def cancel_event(db: Session, event_id: int, *, user_id: int) -> CalendarEvent |
     current = provider.get_row(event_id)
     if current is None or current.user_id != user_id:
         return None
+    _block_disconnected_remote(db, user_id, current)
     cancelled = provider.cancel_event(user_id, event_id)
     if cancelled is None:
         return None
@@ -550,13 +621,15 @@ def find_event_candidates(
     """
     provider = calendar_provider_for(db, user_id)
     if start_at is not None:
-        day = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
-        rows = provider.overlap_rows(user_id, day, day + timedelta(days=1))
+        window = _lookup_window(start_at, title, start_at)
     elif (title or "").strip():
         current = now if now is not None else calendar_now(db, user_id)
-        rows = provider.overlap_rows(user_id, current, datetime(2100, 1, 1))
+        window = _lookup_window(None, title, current)
     else:
         return []
+    if window is None:
+        return []
+    rows = provider.overlap_rows(user_id, window[0], window[1])
     if (title or "").strip():
         rows = [row for row in rows if titles_match(title, row.title or "")]
     return rows[:5]
