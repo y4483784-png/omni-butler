@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.llm import complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
+from app.services.calendar_local import LocalCalendarProvider
 
 # Accept Arabic and Chinese numerals ("3点" / "三点" / "三点半") — real users rarely type digits only.
 _CALENDAR_TIME = re.compile(
@@ -383,34 +384,23 @@ def format_missing_fields(draft: EventDraft) -> str:
 
 
 def check_conflict(db: Session, user_id: int, start_at: datetime, end_at: datetime) -> list[CalendarEvent]:
-    rows = (
-        db.query(CalendarEvent)
-        .filter(
-            CalendarEvent.user_id == user_id,
-            CalendarEvent.status == "active",
-            CalendarEvent.start_at < end_at,
-            CalendarEvent.end_at > start_at,
-        )
-        .order_by(CalendarEvent.start_at.asc())
-        .all()
-    )
-    return rows
+    return LocalCalendarProvider(db).overlap_rows(user_id, start_at, end_at)
 
 
 def create_event(
     db: Session, *, user_id: int, title: str, start_at: datetime, end_at: datetime, participants: list[str]
 ) -> CalendarEvent:
-    event = CalendarEvent(
-        user_id=user_id,
+    provider = LocalCalendarProvider(db)
+    created = provider.create_event(
+        user_id,
         title=title,
         start_at=start_at,
         end_at=end_at,
-        participants=json.dumps(participants, ensure_ascii=False),
-        status="active",
+        participants=participants,
     )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
+    event = provider.get_row(created.id)
+    if event is None:
+        raise RuntimeError("calendar event missing after insert")
     return event
 
 
@@ -423,37 +413,49 @@ def update_event(
     end_at: datetime | None = None,
     participants: list[str] | None = None,
 ) -> CalendarEvent | None:
-    event = db.get(CalendarEvent, event_id)
-    if not event:
+    provider = LocalCalendarProvider(db)
+    current = provider.get_row(event_id)
+    if current is None:
         return None
-    if title is not None:
-        event.title = title
-    if start_at is not None:
-        event.start_at = start_at
-    if end_at is not None:
-        event.end_at = end_at
-    if participants is not None:
-        event.participants = json.dumps(participants, ensure_ascii=False)
-    db.commit()
-    db.refresh(event)
-    return event
+    updated = provider.update_event(
+        current.user_id,
+        event_id,
+        title=title,
+        start_at=start_at,
+        end_at=end_at,
+        participants=participants,
+    )
+    if updated is None:
+        return None
+    return provider.get_row(event_id)
 
 
 def cancel_event(db: Session, event_id: int) -> CalendarEvent | None:
-    event = db.get(CalendarEvent, event_id)
-    if not event:
+    provider = LocalCalendarProvider(db)
+    current = provider.get_row(event_id)
+    if current is None:
         return None
-    event.status = "cancelled"
-    db.commit()
-    db.refresh(event)
-    return event
+    cancelled = provider.cancel_event(current.user_id, event_id)
+    if cancelled is None:
+        return None
+    return provider.get_row(event_id)
+
+
+def _card_text(event: Any, name: str) -> str:
+    value = getattr(event, name, "")
+    return "" if value is None else str(value)
 
 
 def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
-    try:
-        participants = json.loads(event.participants or "[]")
-    except json.JSONDecodeError:
-        participants = []
+    raw = getattr(event, "participants", None)
+    if isinstance(raw, list):
+        participants = [str(item) for item in raw]
+    else:
+        try:
+            parsed = json.loads(raw or "[]")
+        except json.JSONDecodeError:
+            parsed = []
+        participants = parsed if isinstance(parsed, list) else []
     return {
         "id": event.id,
         "title": event.title,
@@ -461,6 +463,11 @@ def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
         "end_at": event.end_at.isoformat() if event.end_at else "",
         "participants": participants,
         "status": event.status,
+        "timezone": _card_text(event, "timezone"),
+        "location": _card_text(event, "location"),
+        "description": _card_text(event, "description"),
+        "external_id": _card_text(event, "external_id"),
+        "provider": _card_text(event, "provider"),
     }
 
 
