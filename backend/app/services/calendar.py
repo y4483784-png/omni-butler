@@ -517,7 +517,7 @@ def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
         except json.JSONDecodeError:
             parsed = []
         participants = parsed if isinstance(parsed, list) else []
-    return {
+    card = {
         "id": event.id,
         "title": event.title,
         "start_at": event.start_at.isoformat() if event.start_at else "",
@@ -530,6 +530,12 @@ def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
         "external_id": _card_text(event, "external_id"),
         "provider": _card_text(event, "provider"),
     }
+    if getattr(event, "all_day", False):
+        card["all_day"] = True
+    if getattr(event, "readonly", False):
+        card["id"] = None
+        card["readonly"] = True
+    return card
 
 
 def draft_expires_at(now: datetime | None = None) -> str:

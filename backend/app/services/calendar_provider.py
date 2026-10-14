@@ -9,7 +9,7 @@ from typing import Protocol
 
 @dataclass
 class CalendarEventDTO:
-    id: int
+    id: int | None
     user_id: int
     title: str
     start_at: datetime | None
@@ -21,6 +21,9 @@ class CalendarEventDTO:
     description: str = ""
     external_id: str = ""
     provider: str = "local"
+    # Google-only list rows set these. Local rows leave them false.
+    readonly: bool = False
+    all_day: bool = False
 
 
 class CalendarProvider(Protocol):
@@ -30,8 +33,8 @@ class CalendarProvider(Protocol):
     zone, matching today's ``datetime.now()``. It is not a product default.
     A later external provider replaces it with the account timezone.
 
-    ``find_free_slots`` does not apply working hours. An external provider
-    may later intersect these gaps with that calendar's own working hours.
+    ``find_free_slots`` on the local calendar does not apply working hours.
+    Google intersects gaps only when settings actually include them.
     """
 
     def get_timezone(self) -> tzinfo:
@@ -97,6 +100,7 @@ class CalendarProvider(Protocol):
 
         Each returned pair is exactly ``duration`` long and starts at the
         beginning of a free gap. Adjacent events (one ends when the next
-        starts) do not consume the boundary. No working-hour filter.
+        starts) do not consume the boundary. Local gaps are not clipped to
+        working hours. Google clips only when that account exposes them.
         """
         ...

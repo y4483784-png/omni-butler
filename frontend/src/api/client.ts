@@ -63,6 +63,13 @@ export interface ScheduleCard {
   conflicts?: ScheduleCandidate[];
   suggested_slots?: ScheduleSlot[];
   candidates?: ScheduleCandidate[];
+  readonly?: boolean;
+  all_day?: boolean;
+}
+
+export interface CalendarEventList {
+  events: ScheduleCard[];
+  notice: string;
 }
 
 export class CalendarConflictError extends Error {
@@ -404,11 +411,15 @@ export async function disconnectGoogleCalendar(): Promise<GoogleCalendarStatus> 
   return r.json();
 }
 
-export async function listCalendarEvents(start: string, end: string): Promise<ScheduleCard[]> {
+export async function listCalendarEvents(start: string, end: string): Promise<CalendarEventList> {
   const query = new URLSearchParams({ start, end, status: "active" });
   const r = await apiFetch(`/api/calendar?${query.toString()}`);
   if (!r.ok) throw new Error("加载日程失败");
-  return r.json();
+  const body = await r.json();
+  if (Array.isArray(body)) return { events: body, notice: "" };
+  const events = Array.isArray(body?.events) ? body.events : [];
+  const notice = typeof body?.notice === "string" ? body.notice : "";
+  return { events, notice };
 }
 
 export function localStampFromDate(date: Date): string {

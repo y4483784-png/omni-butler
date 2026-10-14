@@ -174,6 +174,21 @@ export function ScheduleCard({
     });
   }
 
+  if (card.readonly) {
+    const when = card.all_day
+      ? `${(card.start_at || "").slice(0, 10)} 全天`.trim()
+      : formatWhen(card.start_at, card.end_at);
+    return (
+      <div className="schedule-card is-locked">
+        <div className="schedule-head">
+          <strong>{card.title || "（无标题）"}</strong>
+          <span className="schedule-status">来自 Google</span>
+        </div>
+        <div className="schedule-meta">{when}</div>
+      </div>
+    );
+  }
+
   if (mode === "suggest") {
     return (
       <div className="schedule-card">
