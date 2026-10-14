@@ -115,12 +115,16 @@
 
 回调地址只有后端这一条，例如 `https://<主机>/api/calendar/google/callback`。开发机可以用 `http://localhost` 上的同一路径。
 
-范围只申请这两条：
+日历范围申请这两条，缺一不可：
 
 | 范围 | 用来做什么 |
 | --- | --- |
 | `https://www.googleapis.com/auth/calendar.events` | 在主日历上创建、修改、删除，以及 `events.list`。官方列出的列表范围里已经包含它，不必再加 `calendar.events.readonly` |
 | `https://www.googleapis.com/auth/calendar.settings.readonly` | 读账户时区。事件范围读不到设置 |
+
+另外再申请 OpenID 的 `openid` 和 `email`，只为确认是哪个 Google 账户。授权码换令牌时，带 `openid` 才会返回 `id_token`（里面有稳定的 `sub`）。只申请上面两条日历范围时，access token 的 tokeninfo 经常没有 `sub` / `user_id`，同意成功后连接仍会失败。`email` 在主日历 id 读不到时用来显示账户地址。保存连接时不把这两项当成必须已经授予的范围，但同意屏幕上要加，否则 Google 会拒掉整个授权。
+
+在同意屏幕的范围里添加 `openid`，以及 `https://www.googleapis.com/auth/userinfo.email`（请求里写 `email`，是同一项）。它们是非敏感范围。`calendar.events` 仍是敏感范围；测试模式不用为了这两项去发布应用。
 
 不另申请 `calendar.events.freebusy`。`freeBusy.query` 不接受 `calendar.events`，但第 6.1 节改从 `events.list` 得出忙闲，标题和起止都在，同一条读取也能做列表。不必为了忙闲再加一个范围，也不要改去申请 `calendar` 或 `calendar.readonly`。不要申请云端硬盘或其他产品。主日历固定为 `primary`。v1 没有日历选择器。
 
@@ -133,7 +137,7 @@
 1. 已登录用户点击连接。`GET /api/calendar/google/connect` 要求当前会话。
 2. 服务端签发 `state`（含 `user_id`、过期时间，用现有 `SECRET_KEY` 签名），302 到 Google 同意页。
 3. 同意页参数：`access_type=offline`，`prompt=consent`，`include_granted_scopes=false`。第一次必须拿到刷新令牌。
-4. Google 回到 `GOOGLE_OAUTH_REDIRECT_URI`。回调同时核对 `state` 和当前登录用户；不一致就拒绝，不写令牌。通过后用授权码换令牌，加密写入 `calendar_connections`，再跳回应用。
+4. Google 回到 `GOOGLE_OAUTH_REDIRECT_URI`。回调同时核对 `state` 和当前登录用户；不一致就拒绝，不写令牌。通过后用授权码换令牌，加密写入 `calendar_connections`，再跳回应用。账户 `sub` 优先取交换结果里的 `id_token`；access token 的 tokeninfo 没有 `sub` 时不再因此放弃连接。两边都确认不了账户则不写令牌。
 
 一个用户一行。表上 `user_id` 唯一。再次连接时，Google 的 `sub` 必须和已存的一致，只更新令牌；`sub` 不同则 409，提示先断开。断开只删这一行令牌，不删本地日程，也不批量删除 Google 上的事件。
 
@@ -389,7 +393,7 @@ cd backend && python -m pytest \
 ### 第 1 刀：连接与令牌，不改日程读写
 
 - `calendar_connections`、`0008` 的表和 RLS、Fernet、四个环境变量。
-- 已登录会话里的跳转、回调、断开、状态接口。`sub` 不一致则拒绝。范围只有 `calendar.events` 和 `calendar.settings.readonly`。
+- 已登录会话里的跳转、回调、断开、状态接口。`sub` 不一致则拒绝。日历范围是 `calendar.events` 和 `calendar.settings.readonly`；另加 `openid` 和 `email` 用来确认账户。
 - 侧栏一个连接按钮。此时确认接口仍全部走 Local。
 - 验收：第 10 节的 2、3、12。`calendar_events` 读写测试不需要改预期。这一刀还不调用 `events.list`。
 

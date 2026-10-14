@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import logging
+import time as unix_time
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -39,6 +41,7 @@ from app.services.calendar_google import (
 from app.services.calendar_local import LocalCalendarProvider
 from app.services.calendar_secrets import (
     GOOGLE_CALENDAR_SCOPES,
+    GOOGLE_IDENTITY_SCOPES,
     CalendarTokenError,
     decrypt_token,
     encrypt_token,
@@ -82,6 +85,8 @@ class FakeGoogle:
         self.refresh_token = REFRESH
         self.expires_in = 3600
         self.scope = " ".join(GOOGLE_CALENDAR_SCOPES)
+        self.id_token = ""
+        self.tokeninfo_payload = None
         self.include_refresh = True
         self.timezone_status = 404
         self.timezone_value = ""
@@ -124,15 +129,19 @@ class FakeGoogle:
             }
             if self.include_refresh:
                 body["refresh_token"] = self.refresh_token
+            if self.id_token:
+                body["id_token"] = self.id_token
             grant = (data or {}).get("grant_type")
             if grant == "refresh_token" and self.token_status != 200:
                 return httpx.Response(self.token_status, json={"error": "invalid_grant"})
             return httpx.Response(self.token_status, json=body)
         if url.endswith("/tokeninfo"):
-            return httpx.Response(
-                self.tokeninfo_status,
-                json={"sub": self.sub, "email": self.email, "scope": self.scope},
+            payload = (
+                {"sub": self.sub, "email": self.email, "scope": self.scope}
+                if self.tokeninfo_payload is None
+                else self.tokeninfo_payload
             )
+            return httpx.Response(self.tokeninfo_status, json=payload)
         if url.endswith("/calendars/primary"):
             return httpx.Response(self.primary_status, json={"id": self.email})
         if url.endswith("/users/me/settings/timezone"):
@@ -285,11 +294,159 @@ def test_connect_redirects_with_offline_consent_and_exact_scopes(
     assert query["prompt"] == ["consent"]
     assert query["include_granted_scopes"] == ["false"]
     assert query["response_type"] == ["code"]
-    assert set(query["scope"][0].split()) == set(GOOGLE_CALENDAR_SCOPES)
+    granted = set(query["scope"][0].split())
+    assert granted == set(GOOGLE_CALENDAR_SCOPES) | set(GOOGLE_IDENTITY_SCOPES)
+    assert set(GOOGLE_CALENDAR_SCOPES) < granted
     assert CLIENT_SECRET not in location
     assert "calendar.events.freebusy" not in location
     assert "https://www.googleapis.com/auth/calendar" not in set(query["scope"][0].split())
     assert "https://www.googleapis.com/auth/calendar.readonly" not in set(query["scope"][0].split())
+
+
+def _b64url(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _google_id_token(
+    *,
+    sub: str,
+    email: str,
+    aud: str = "google-client-id",
+    iss: str = "https://accounts.google.com",
+    exp: int | None = None,
+) -> str:
+    if exp is None:
+        exp = int(unix_time.time()) + 3600
+    header = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode("utf-8"))
+    payload = _b64url(
+        json.dumps(
+            {"sub": sub, "email": email, "aud": aud, "iss": iss, "exp": exp},
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    return f"{header}.{payload}.signature"
+
+
+def test_connect_uses_id_token_when_tokeninfo_lacks_sub(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, caplog
+):
+    caplog.set_level(logging.DEBUG)
+    init_db()
+    me = _me(auth_client)
+    fake_google.tokeninfo_payload = {"scope": fake_google.scope, "expires_in": 3599}
+    fake_google.primary_status = 404
+    fake_google.id_token = _google_id_token(sub="sub-from-id-token", email="id-token@example.com")
+    try:
+        response = _callback(auth_client, me["id"])
+        assert response.status_code == 302, response.text
+        assert any(call["url"].endswith("/tokeninfo") for call in fake_google.calls)
+        assert all("access_token=" not in call["url"] for call in fake_google.calls)
+        assert "missing-sub" not in caplog.text
+        assert fake_google.id_token not in caplog.text
+        db = SessionLocal()
+        try:
+            row = db.query(CalendarConnection).filter(CalendarConnection.user_id == me["id"]).one()
+            assert row.google_sub == "sub-from-id-token"
+            assert row.account_email == "id-token@example.com"
+        finally:
+            db.close()
+    finally:
+        _cleanup(me["id"])
+
+
+def test_connect_uses_id_token_when_tokeninfo_errors(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    init_db()
+    me = _me(auth_client)
+    fake_google.tokeninfo_status = 500
+    fake_google.tokeninfo_payload = {"error": "backendError"}
+    fake_google.primary_status = 404
+    fake_google.id_token = _google_id_token(sub="sub-despite-tokeninfo", email="still@example.com")
+    try:
+        response = _callback(auth_client, me["id"])
+        assert response.status_code == 302, response.text
+        db = SessionLocal()
+        try:
+            row = db.query(CalendarConnection).filter(CalendarConnection.user_id == me["id"]).one()
+            assert row.google_sub == "sub-despite-tokeninfo"
+            assert row.account_email == "still@example.com"
+        finally:
+            db.close()
+    finally:
+        _cleanup(me["id"])
+
+
+def test_bad_id_token_falls_back_to_tokeninfo_sub(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, caplog
+):
+    caplog.set_level(logging.DEBUG)
+    init_db()
+    me = _me(auth_client)
+    fake_google.id_token = _google_id_token(
+        sub="sub-other-client", email="other@example.com", aud="other-client"
+    )
+    try:
+        response = _callback(auth_client, me["id"])
+        assert response.status_code == 302, response.text
+        assert "status=bad-aud" in caplog.text
+        assert fake_google.id_token not in caplog.text
+        db = SessionLocal()
+        try:
+            row = db.query(CalendarConnection).filter(CalendarConnection.user_id == me["id"]).one()
+            assert row.google_sub == "google-sub-1"
+            assert row.account_email == "owner@example.com"
+        finally:
+            db.close()
+    finally:
+        _cleanup(me["id"])
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["absent", "malformed", "bad-aud", "expired", "blank-sub"],
+)
+def test_connect_fails_when_identity_cannot_be_established(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, caplog, kind
+):
+    caplog.set_level(logging.DEBUG)
+    init_db()
+    me = _me(auth_client)
+    fake_google.tokeninfo_payload = {
+        "scope": fake_google.scope,
+        "expires_in": 3599,
+        "aud": "google-client-id",
+    }
+    if kind == "malformed":
+        fake_google.id_token = "not-a-jwt"
+    elif kind == "bad-aud":
+        fake_google.id_token = _google_id_token(
+            sub="sub-x", email="a@example.com", aud="other-client"
+        )
+    elif kind == "expired":
+        fake_google.id_token = _google_id_token(
+            sub="sub-x", email="a@example.com", exp=int(unix_time.time()) - 3600
+        )
+    elif kind == "blank-sub":
+        fake_google.id_token = _google_id_token(sub="", email="a@example.com")
+    try:
+        response = _callback(auth_client, me["id"])
+        assert response.status_code == 502
+        assert response.json()["detail"] == "无法确认 Google 账户，未保存连接。"
+        assert "status=missing-sub" in caplog.text
+        if fake_google.id_token:
+            assert fake_google.id_token not in caplog.text
+        assert ACCESS not in caplog.text
+        db = SessionLocal()
+        try:
+            assert (
+                db.query(CalendarConnection).filter(CalendarConnection.user_id == me["id"]).count()
+                == 0
+            )
+        finally:
+            db.close()
+    finally:
+        _cleanup(me["id"])
 
 
 def test_anonymous_callback_and_mismatched_state_write_nothing(

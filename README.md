@@ -88,7 +88,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 容器里没有这份命令时，在已安装依赖的开发机上生成，再贴进 `backend/.env`。配了 `GOOGLE_OAUTH_CLIENT_ID` 却把这项空着：没开强制检查时，点「连接 Google 日历」会失败；`ENFORCE_SECURE_SECRETS=true` 时，进程直接拒绝启动。
 
-范围只用日历事件和读取日历时区。手测步骤见 [docs/plans/calendar-google-manual-acceptance.md](docs/plans/calendar-google-manual-acceptance.md)。
+范围是日历事件、读取日历时区，以及确认账户用的 `openid` 和 `email`。同意屏幕上要加上 `openid` 和 `email`（控制台里的 `userinfo.email`）；只勾日历范围时，授权回来可能确认不了 Google 账户。手测步骤见 [docs/plans/calendar-google-manual-acceptance.md](docs/plans/calendar-google-manual-acceptance.md)。
 
 其余开关在 `.env.example` 里有注释，默认就能跑。含义见 [docs/architecture.md](docs/architecture.md)。
 
