@@ -10,14 +10,14 @@ from app.agents.tools.registry import ToolSpec, register
 from app.services.calendar import (
     EventDraft,
     apply_update_times,
-    calendar_local_now,
+    calendar_now,
     check_conflict,
     draft_expires_at,
     extract_event,
     find_event_candidates,
     free_slots_for,
 )
-from app.services.calendar_local import LocalCalendarProvider
+from app.services.calendar_factory import calendar_provider_for
 
 _UPDATE = re.compile(r"(改到|改成|改为|推迟|提前|换到|挪到|延后)")
 _CANCEL = re.compile(r"(取消|撤销|删掉)")
@@ -154,8 +154,10 @@ def _suggest_window(message: str, now: datetime) -> tuple[datetime, datetime]:
 
 
 def _list_text(ctx: ToolContext) -> str:
-    now = _day_start(calendar_local_now(ctx.db))
-    rows = LocalCalendarProvider(ctx.db).list_events(ctx.user_id, now, now + timedelta(days=7))
+    now = _day_start(calendar_now(ctx.db, ctx.user_id))
+    rows = calendar_provider_for(ctx.db, ctx.user_id).list_events(
+        ctx.user_id, now, now + timedelta(days=7)
+    )
     if not rows:
         return "接下来 7 天没有日程。"
     lines = []
@@ -168,9 +170,9 @@ def _list_text(ctx: ToolContext) -> str:
 
 
 def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
-    now = calendar_local_now(ctx.db)
+    now = calendar_now(ctx.db, ctx.user_id)
     start, end = _suggest_window(ctx.message, now)
-    slots = LocalCalendarProvider(ctx.db).find_free_slots(
+    slots = calendar_provider_for(ctx.db, ctx.user_id).find_free_slots(
         ctx.user_id, start, end, timedelta(hours=1), limit=3
     )
     if not slots:
@@ -210,7 +212,7 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         text, card = _suggest_result(ctx)
         return _cleared(steps, text, card)
 
-    now = calendar_local_now(ctx.db)
+    now = calendar_now(ctx.db, ctx.user_id)
     draft = extract_event(ctx.message, ctx.history, now=now)
     if action == "update":
         apply_update_times(draft, ctx.message, now=now)

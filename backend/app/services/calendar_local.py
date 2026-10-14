@@ -45,8 +45,8 @@ class LocalCalendarProvider:
         self.db = db
 
     def get_timezone(self):
-        # Process-local zone, same clock ``datetime.now()`` already uses.
-        # Slot extraction must keep calling ``datetime.now()`` until a later slice.
+        # Process-local zone. Unconnected users still use this clock.
+        # A connected account uses GoogleCalendarProvider.get_timezone instead.
         current = datetime.now().astimezone()
         assert current.tzinfo is not None
         return current.tzinfo

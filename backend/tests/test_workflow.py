@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from datetime import datetime
 
 from app.agents.harness.verify import web_is_stale
+from app.core.db import SessionLocal, init_db
+from app.models.models import CalendarEvent
 from app.agents.router import classify_intent, plan_needs, plan_tools
 from app.agents.workflow import (
     build_pool_prompt,
@@ -429,21 +431,28 @@ def _calendar_plan():
 
 
 def test_calendar_missing_fields_returns_blank_card():
-    with (
-        patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
-        patch(
-            "app.agents.tools.calendar_tool.extract_event",
-            return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
-        ),
-    ):
-        r = run_agent_workflow(object(), message="帮我约一下", history=[], has_kb_docs=False)  # type: ignore[arg-type]
-    assert r["intent"] == "calendar"
-    assert r["schedule_card"]["mode"] == "create"
-    assert r["schedule_card"]["phase"] == "draft"
-    assert r["schedule_card"]["title"] == ""
-    assert r["schedule_card"]["start_at"] == ""
-    assert r["pending_calendar"] is None
-    assert r["llm_messages"] == []
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
+            patch(
+                "app.agents.tools.calendar_tool.extract_event",
+                return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
+            ),
+        ):
+            r = run_agent_workflow(db, message="帮我约一下", history=[], has_kb_docs=False)
+        assert r["intent"] == "calendar"
+        assert r["schedule_card"]["mode"] == "create"
+        assert r["schedule_card"]["phase"] == "draft"
+        assert r["schedule_card"]["title"] == ""
+        assert r["schedule_card"]["start_at"] == ""
+        assert r["pending_calendar"] is None
+        assert r["llm_messages"] == []
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
 
 
 def test_calendar_complete_request_is_a_draft_until_confirm():
@@ -454,14 +463,21 @@ def test_calendar_complete_request_is_a_draft_until_confirm():
         participants=[],
         missing_fields=[],
     )
-    with (
-        patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
-        patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
-        patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
-        patch("app.services.calendar.create_event") as create_event,
-    ):
-        r = run_agent_workflow(object(), message="明天三点开周会", history=[], has_kb_docs=False)  # type: ignore[arg-type]
-    create_event.assert_not_called()
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
+            patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+            patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
+            patch("app.services.calendar.create_event") as create_event,
+        ):
+            r = run_agent_workflow(db, message="明天三点开周会", history=[], has_kb_docs=False)
+        create_event.assert_not_called()
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
     assert r["schedule_card"]["mode"] == "create"
     assert r["schedule_card"]["phase"] == "draft"
     assert r["schedule_card"]["title"] == "周会"
@@ -475,21 +491,28 @@ def test_calendar_complete_request_is_a_draft_until_confirm():
 def test_pending_calendar_does_not_skip_planner_or_write():
     pending = {"title": "会议", "missing_fields": ["end_at", "participants"], "action": "create"}
     draft = EventDraft(title="会议", start_at=datetime(2026, 8, 6, 15, 0), end_at=datetime(2026, 8, 6, 16, 0))
-    with (
-        patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
-        patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
-        patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
-        patch("app.services.calendar.create_event") as create_event,
-    ):
-        r = run_agent_workflow(
-            object(),  # type: ignore[arg-type]
-            message="到5点，参与人张三、李四",
-            history=[],
-            has_kb_docs=False,
-            pending_calendar=pending,
-        )
-    planner.assert_called()
-    create_event.assert_not_called()
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
+            patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+            patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
+            patch("app.services.calendar.create_event") as create_event,
+        ):
+            r = run_agent_workflow(
+                db,
+                message="到5点，参与人张三、李四",
+                history=[],
+                has_kb_docs=False,
+                pending_calendar=pending,
+            )
+        planner.assert_called()
+        create_event.assert_not_called()
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
     assert r["intent"] == "calendar"
     assert r["schedule_card"]["phase"] == "draft"
     assert r["pending_calendar"] is None
@@ -497,21 +520,28 @@ def test_pending_calendar_does_not_skip_planner_or_write():
 
 def test_legacy_pending_message_is_not_a_slot_fill():
     pending = {"title": "会议", "missing_fields": ["end_at"], "start_at": "2026-08-06T15:00:00"}
-    with (
-        patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
-        patch(
-            "app.agents.tools.calendar_tool.extract_event",
-            return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
-        ),
-    ):
-        r = run_agent_workflow(
-            object(),  # type: ignore[arg-type]
-            message="参与人张三",
-            history=[],
-            has_kb_docs=False,
-            pending_calendar=pending,
-        )
-    planner.assert_called()
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
+            patch(
+                "app.agents.tools.calendar_tool.extract_event",
+                return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
+            ),
+        ):
+            r = run_agent_workflow(
+                db,
+                message="参与人张三",
+                history=[],
+                has_kb_docs=False,
+                pending_calendar=pending,
+            )
+        planner.assert_called()
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
     assert r["pending_calendar"] is None
     assert r["schedule_card"]["title"] == ""
     assert "补全" in r["direct_answer"]

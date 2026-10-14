@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.llm import complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
-from app.services.calendar_local import LocalCalendarProvider
+from app.services.calendar_factory import calendar_provider_for
 
 # Accept Arabic and Chinese numerals ("3点" / "三点" / "三点半") — real users rarely type digits only.
 _CALENDAR_TIME = re.compile(
@@ -342,7 +342,7 @@ def format_missing_fields(draft: EventDraft) -> str:
 
 
 def check_conflict(db: Session, user_id: int, start_at: datetime, end_at: datetime) -> list[CalendarEvent]:
-    return LocalCalendarProvider(db).overlap_rows(user_id, start_at, end_at)
+    return calendar_provider_for(db, user_id).overlap_rows(user_id, start_at, end_at)
 
 
 def create_event(
@@ -356,7 +356,7 @@ def create_event(
     location: str = "",
     description: str = "",
 ) -> CalendarEvent:
-    provider = LocalCalendarProvider(db)
+    provider = calendar_provider_for(db, user_id)
     created = provider.create_event(
         user_id,
         title=title,
@@ -376,6 +376,7 @@ def update_event(
     db: Session,
     event_id: int,
     *,
+    user_id: int,
     title: str | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
@@ -383,12 +384,12 @@ def update_event(
     location: str | None = None,
     description: str | None = None,
 ) -> CalendarEvent | None:
-    provider = LocalCalendarProvider(db)
+    provider = calendar_provider_for(db, user_id)
     current = provider.get_row(event_id)
-    if current is None:
+    if current is None or current.user_id != user_id:
         return None
     updated = provider.update_event(
-        current.user_id,
+        user_id,
         event_id,
         title=title,
         start_at=start_at,
@@ -402,12 +403,12 @@ def update_event(
     return provider.get_row(event_id)
 
 
-def cancel_event(db: Session, event_id: int) -> CalendarEvent | None:
-    provider = LocalCalendarProvider(db)
+def cancel_event(db: Session, event_id: int, *, user_id: int) -> CalendarEvent | None:
+    provider = calendar_provider_for(db, user_id)
     current = provider.get_row(event_id)
-    if current is None:
+    if current is None or current.user_id != user_id:
         return None
-    cancelled = provider.cancel_event(current.user_id, event_id)
+    cancelled = provider.cancel_event(user_id, event_id)
     if cancelled is None:
         return None
     return provider.get_row(event_id)
@@ -456,12 +457,21 @@ def titles_match(query: str, title: str) -> bool:
     return needle.casefold() in hay.casefold() or hay.casefold() in needle.casefold()
 
 
-def calendar_local_now(db: Session | None = None) -> datetime:
-    """Naive wall clock in the local provider timezone."""
-    if db is not None:
-        zone = LocalCalendarProvider(db).get_timezone()
-        return datetime.now(zone).replace(tzinfo=None, microsecond=0)
-    return datetime.now().replace(microsecond=0)
+def calendar_now(db: Session | None = None, user_id: int | None = None) -> datetime:
+    """Naive wall clock for ``user_id``.
+
+    Connected accounts use that Google account's IANA zone. Everyone else
+    keeps the process-local clock used before a calendar was connected.
+    """
+    if db is None or user_id is None:
+        return datetime.now().replace(microsecond=0)
+    zone = calendar_provider_for(db, user_id).get_timezone()
+    return datetime.now(zone).replace(tzinfo=None, microsecond=0)
+
+
+def calendar_local_now(db: Session | None = None, user_id: int | None = None) -> datetime:
+    """Thin wrapper. Prefer ``calendar_now(db, user_id)``."""
+    return calendar_now(db, user_id)
 
 
 def _weekday_base(now: datetime, marker: str) -> datetime:
@@ -518,15 +528,15 @@ def find_event_candidates(
     """Active events for update/cancel.
 
     ``start_at`` is the named day of the existing event, including a past day
-    the user actually said. With only a title, keep events that end after the
-    calendar-local now so last year's rows are not candidates.
+    the user actually said. With only a title, keep events that end after
+    ``calendar_now`` so last year's rows are not candidates.
     """
-    provider = LocalCalendarProvider(db)
+    provider = calendar_provider_for(db, user_id)
     if start_at is not None:
         day = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         rows = provider.overlap_rows(user_id, day, day + timedelta(days=1))
     elif (title or "").strip():
-        current = now or calendar_local_now(db)
+        current = now if now is not None else calendar_now(db, user_id)
         rows = provider.overlap_rows(user_id, current, datetime(2100, 1, 1))
     else:
         return []
@@ -547,7 +557,7 @@ def free_slots_for(
     duration = end_at - start_at if end_at and end_at > start_at else timedelta(hours=1)
     if duration <= timedelta(0):
         duration = timedelta(hours=1)
-    return LocalCalendarProvider(db).find_free_slots(
+    return calendar_provider_for(db, user_id).find_free_slots(
         user_id,
         start_at,
         start_at + timedelta(days=7),

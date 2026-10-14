@@ -1,4 +1,4 @@
-"""Google Calendar slice 1: connection and token storage. No live Google calls."""
+"""Google Calendar connection, tokens, factory, and account timezone. No live Google calls."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -17,6 +18,12 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarConnection, CalendarEvent, ToolAuditLog, User
+from app.agents.harness.types import ToolContext
+from app.agents.tools.calendar_tool import execute_calendar
+from app.services.calendar import calendar_now, create_event, extract_event, find_event_candidates
+from app.services.calendar_factory import calendar_provider_for
+from app.services.calendar_google import GoogleCalendarProvider
+from app.services.calendar_local import LocalCalendarProvider
 from app.services.calendar_secrets import (
     GOOGLE_CALENDAR_SCOPES,
     CalendarTokenError,
@@ -63,6 +70,8 @@ class FakeGoogle:
         self.expires_in = 3600
         self.scope = " ".join(GOOGLE_CALENDAR_SCOPES)
         self.include_refresh = True
+        self.timezone_status = 404
+        self.timezone_value = ""
 
     def __call__(self, method, url, *, data=None, params=None, headers=None):
         self.calls.append(
@@ -88,6 +97,13 @@ class FakeGoogle:
             )
         if url.endswith("/calendars/primary"):
             return httpx.Response(self.primary_status, json={"id": self.email})
+        if url.endswith("/users/me/settings/timezone"):
+            if self.timezone_status == 404:
+                return httpx.Response(404, json={"error": {"message": "not found"}})
+            return httpx.Response(
+                self.timezone_status,
+                json={"id": "timezone", "value": self.timezone_value},
+            )
         return httpx.Response(404, json={"error": "not-found"})
 
 
@@ -143,17 +159,23 @@ def _assert_secrets_absent(blob: str) -> None:
         assert secret not in blob
 
 
-def test_event_apis_still_use_local_provider():
+def test_only_factory_chooses_calendar_provider():
     root = Path(__file__).resolve().parents[1] / "app"
+    factory = (root / "services/calendar_factory.py").read_text(encoding="utf-8")
+    google = (root / "services/calendar_google.py").read_text(encoding="utf-8")
     api = (root / "api/calendar.py").read_text(encoding="utf-8")
     service = (root / "services/calendar.py").read_text(encoding="utf-8")
     tool = (root / "agents/tools/calendar_tool.py").read_text(encoding="utf-8")
+    assert "return LocalCalendarProvider" in factory
+    assert "return GoogleCalendarProvider" in factory
     for src in (api, service, tool):
-        assert "LocalCalendarProvider" in src
-        assert "GoogleCalendarProvider" not in src
-        assert "calendar_provider_for" not in src
-    assert "events.list" not in api
+        assert "calendar_provider_for" in src
+        assert "LocalCalendarProvider" not in src
+        assert "GoogleCalendarProvider(" not in src
+    assert "GoogleCalendarProvider(" not in google
+    assert "/events" not in google
     assert "events.insert" not in service
+    assert "events.list" not in api
 
 
 def test_missing_client_id_returns_clear_error(auth_client: TestClient, monkeypatch):
@@ -350,8 +372,10 @@ def test_second_row_and_different_sub_rejected_disconnect_clears_status(
         assert status.json() == {
             "connected": True,
             "account_email": "owner@example.com",
-            "timezone": "",
+            "timezone": "Etc/GMT",
         }
+        assert any(call["url"].endswith("/users/me/settings/timezone") for call in fake_google.calls)
+        assert all("/events" not in call["url"] for call in fake_google.calls)
         gone = auth_client.delete("/api/calendar/google/connection")
         assert gone.status_code == 200
         assert gone.json()["connected"] is False
@@ -642,3 +666,257 @@ def test_httpx_log_filter_redacts_tokens():
     rendered = record.getMessage()
     assert ACCESS not in rendered
     assert "access_token=[redacted]" in rendered
+
+
+_FIXED_UTC = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
+
+
+class _FrozenDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return _FIXED_UTC.astimezone().replace(tzinfo=None)
+        return _FIXED_UTC.astimezone(tz)
+
+
+def _freeze_calendar_clock(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.calendar.datetime", _FrozenDateTime)
+
+
+def _ensure_user(db, user_id: int, name: str) -> None:
+    if db.get(User, user_id) is None:
+        db.add(User(id=user_id, external_id=name, name=name, is_active=1))
+        db.commit()
+
+
+def _store_connection(db, user_id: int) -> None:
+    expiry = datetime.now(timezone.utc) + timedelta(hours=2)
+    row = db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).one_or_none()
+    fields = dict(
+        provider="google",
+        google_sub=f"sub-{user_id}",
+        account_email="owner@example.com",
+        access_token=encrypt_token(ACCESS),
+        refresh_token=encrypt_token(REFRESH),
+        token_expiry=expiry,
+        scopes=" ".join(GOOGLE_CALENDAR_SCOPES),
+    )
+    if row is None:
+        db.add(CalendarConnection(user_id=user_id, **fields))
+    else:
+        for key, value in fields.items():
+            setattr(row, key, value)
+    db.commit()
+
+
+def _empty_slots(*_args, **_kwargs):
+    return {
+        "title": "会",
+        "start_at": "",
+        "end_at": "",
+        "participants": [],
+        "missing_fields": [],
+    }
+
+
+def _refuse_process_zone(self):
+    raise AssertionError("process timezone")
+
+
+def test_unconnected_provider_matches_local_and_skips_google(oauth_ready, fake_google: FakeGoogle):
+    init_db()
+    user_id = 77111
+    db = SessionLocal()
+    try:
+        _ensure_user(db, user_id, "unconnected-cal")
+        before = len(fake_google.calls)
+        provider = calendar_provider_for(db, user_id)
+        local = LocalCalendarProvider(db)
+        assert type(provider) is LocalCalendarProvider
+        start = datetime(2026, 8, 6, 15, 0)
+        end = start + timedelta(hours=1)
+        created = provider.create_event(
+            user_id,
+            title="本地会",
+            start_at=start,
+            end_at=end,
+            participants=["甲"],
+            location="会议室",
+            description="说明",
+        )
+        assert created.provider == "local"
+        assert created.external_id == ""
+        assert created.timezone == ""
+        assert local.get_event(user_id, created.id) == created
+        listed = provider.list_events(user_id, start - timedelta(minutes=1), end + timedelta(minutes=1))
+        assert [row.id for row in listed] == [created.id]
+        assert provider.get_event(user_id, created.id).title == "本地会"
+        renamed = provider.update_event(user_id, created.id, title="改名")
+        assert renamed is not None
+        assert renamed.title == "改名"
+        assert renamed.provider == "local"
+        assert renamed.external_id == ""
+        slots = provider.find_free_slots(user_id, start, start + timedelta(days=1), timedelta(hours=1))
+        assert slots == local.find_free_slots(user_id, start, start + timedelta(days=1), timedelta(hours=1))
+        cancelled = provider.cancel_event(user_id, created.id)
+        assert cancelled is not None
+        assert cancelled.status == "cancelled"
+        assert cancelled.provider == "local"
+        assert provider.list_events(user_id, start, end + timedelta(hours=1)) == []
+        process = datetime.now().astimezone()
+        assert provider.get_timezone().utcoffset(process) == process.tzinfo.utcoffset(process)
+        stored = create_event(
+            db,
+            user_id=user_id,
+            title="服务仍本地",
+            start_at=start,
+            end_at=end,
+            participants=[],
+        )
+        assert stored.provider == "local"
+        assert stored.external_id == ""
+        assert len(fake_google.calls) == before
+        assert calendar_now(db, user_id).tzinfo is None
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_account_timezone_drives_now_window_and_open_search(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Settings Asia/Shanghai: tomorrow 3:00, the default list, and title search use that zone."""
+    _freeze_calendar_clock(monkeypatch)
+    monkeypatch.setattr(LocalCalendarProvider, "get_timezone", _refuse_process_zone)
+    monkeypatch.setattr("app.services.calendar.complete_json", _empty_slots)
+    fake_google.timezone_status = 200
+    fake_google.timezone_value = "Asia/Shanghai"
+    init_db()
+    me = _me(auth_client)
+    user_id = me["id"]
+    db = SessionLocal()
+    try:
+        _store_connection(db, user_id)
+        before_events = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        provider = calendar_provider_for(db, user_id)
+        assert type(provider) is GoogleCalendarProvider
+        assert provider.timezone_name() == "Asia/Shanghai"
+        zone = provider.get_timezone()
+        assert isinstance(zone, ZoneInfo)
+        assert zone.key == "Asia/Shanghai"
+
+        now = calendar_now(db, user_id)
+        assert now == datetime(2026, 6, 2, 4, 0)
+        assert now != datetime(2026, 6, 1, 20, 0)
+        draft = extract_event("明天三点开会", now=now)
+        assert draft.start_at == datetime(2026, 6, 3, 3, 0)
+        assert draft.start_at != datetime(2026, 6, 2, 3, 0)
+
+        drafted = execute_calendar(
+            ToolContext(db=db, message="明天三点开会", history=[], user_id=user_id)
+        )
+        assert drafted.schedule_card["start_at"].startswith("2026-06-03T03:00:00")
+        assert drafted.schedule_card["phase"] == "draft"
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before_events
+
+        night = CalendarEvent(
+            user_id=user_id,
+            title="账户时区昨夜",
+            start_at=datetime(2026, 6, 1, 21, 0),
+            end_at=datetime(2026, 6, 1, 22, 0),
+            status="active",
+            provider="local",
+            external_id="",
+        )
+        day = CalendarEvent(
+            user_id=user_id,
+            title="账户时区白天",
+            start_at=datetime(2026, 6, 3, 10, 0),
+            end_at=datetime(2026, 6, 3, 11, 0),
+            status="active",
+            provider="local",
+            external_id="",
+        )
+        db.add(night)
+        db.add(day)
+        db.commit()
+        found = find_event_candidates(db, user_id, title="账户时区", start_at=None)
+        assert [row.id for row in found] == [day.id]
+
+        listed = auth_client.get("/api/calendar")
+        assert listed.status_code == 200, listed.text
+        titles = {row["title"] for row in listed.json()}
+        assert "账户时区白天" in titles
+        assert "账户时区昨夜" not in titles
+
+        calls_before_write = len(fake_google.calls)
+        saved = create_event(
+            db,
+            user_id=user_id,
+            title="连接后仍写本地",
+            start_at=datetime(2026, 6, 4, 9, 0),
+            end_at=datetime(2026, 6, 4, 10, 0),
+            participants=[],
+        )
+        assert saved.provider == "local"
+        assert saved.external_id == ""
+        assert saved.timezone == ""
+        assert len(fake_google.calls) == calls_before_write
+
+        status = auth_client.get("/api/calendar/google/status")
+        assert status.status_code == 200, status.text
+        assert status.json()["connected"] is True
+        assert status.json()["timezone"] == "Asia/Shanghai"
+        zone_calls = [call for call in fake_google.calls if call["url"].endswith("/settings/timezone")]
+        assert zone_calls
+        assert all(call["method"] == "GET" for call in zone_calls)
+        assert all("/events" not in call["url"] for call in fake_google.calls)
+        assert all(ACCESS not in call["url"] for call in zone_calls)
+        assert all(not (call.get("params") or {}) for call in zone_calls)
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_missing_timezone_is_etc_gmt_not_process_zone(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    _freeze_calendar_clock(monkeypatch)
+    monkeypatch.setattr(LocalCalendarProvider, "get_timezone", _refuse_process_zone)
+    init_db()
+    me = _me(auth_client)
+    user_id = me["id"]
+    db = SessionLocal()
+    try:
+        _store_connection(db, user_id)
+        cases = (
+            (404, "", "missing"),
+            (200, "", "empty"),
+            (200, "   ", "blank"),
+            (200, "Not/AZone", "invalid"),
+        )
+        for status_code, value, _label in cases:
+            fake_google.timezone_status = status_code
+            fake_google.timezone_value = value
+            provider = calendar_provider_for(db, user_id)
+            assert provider.timezone_name() == "Etc/GMT"
+            zone = provider.get_timezone()
+            assert isinstance(zone, ZoneInfo)
+            assert zone.key == "Etc/GMT"
+            assert calendar_now(db, user_id) == datetime(2026, 6, 1, 20, 0)
+            body = auth_client.get("/api/calendar/google/status").json()
+            assert body["connected"] is True
+            assert body["timezone"] == "Etc/GMT"
+
+        fake_google.timezone_status = 500
+        fake_google.timezone_value = "Asia/Shanghai"
+        with pytest.raises(CalendarTokenError):
+            calendar_now(db, user_id)
+        failed = auth_client.get("/api/calendar/google/status")
+        assert failed.status_code == 200
+        assert failed.json()["connected"] is True
+        assert failed.json()["timezone"] == ""
+        assert all("/events" not in call["url"] for call in fake_google.calls)
+    finally:
+        _cleanup(user_id)
+        db.close()

@@ -90,18 +90,25 @@ def test_create_phrase_returns_draft_and_writes_nothing():
 
 
 def test_blank_draft_when_title_and_start_are_missing():
-    with (
-        patch("app.agents.workflow.plan_tools", return_value=_plan()),
-        patch(
-            "app.agents.tools.calendar_tool.extract_event",
-            return_value=EventDraft(title="", participants=[]),
-        ),
-    ):
-        result = run_agent_workflow(object(), message="帮我约一下", history=[], user_id=1)  # type: ignore[arg-type]
-    card = result["schedule_card"]
-    assert card["title"] == ""
-    assert card["start_at"] == ""
-    assert result["pending_calendar"] is None
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_plan()),
+            patch(
+                "app.agents.tools.calendar_tool.extract_event",
+                return_value=EventDraft(title="", participants=[]),
+            ),
+        ):
+            result = run_agent_workflow(db, message="帮我约一下", history=[], user_id=1)
+        card = result["schedule_card"]
+        assert card["title"] == ""
+        assert card["start_at"] == ""
+        assert result["pending_calendar"] is None
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
 
 
 def test_conflict_preview_offers_slots_without_insert():
@@ -221,16 +228,23 @@ def test_legacy_pending_still_routes_and_does_not_create(monkeypatch):
         lambda *_a, **_k: EventDraft(title="周会", start_at=datetime(2026, 8, 7, 15, 0), end_at=datetime(2026, 8, 7, 16, 0)),
     )
     monkeypatch.setattr("app.agents.tools.calendar_tool.check_conflict", lambda *_a, **_k: [])
-    result = run_agent_workflow(
-        object(),  # type: ignore[arg-type]
-        message="明天三点开周会",
-        history=[],
-        user_id=1,
-        pending_calendar={"title": "旧草稿", "missing_fields": ["end_at", "participants"]},
-    )
-    assert called["n"] == 1
-    assert result["pending_calendar"] is None
-    assert result["schedule_card"]["phase"] == "draft"
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        result = run_agent_workflow(
+            db,
+            message="明天三点开周会",
+            history=[],
+            user_id=1,
+            pending_calendar={"title": "旧草稿", "missing_fields": ["end_at", "participants"]},
+        )
+        assert called["n"] == 1
+        assert result["pending_calendar"] is None
+        assert result["schedule_card"]["phase"] == "draft"
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
 
 
 def test_confirm_api_creates_conflicts_and_clears_participants(auth_client: TestClient):
@@ -328,7 +342,7 @@ def test_cross_user_delete_is_404(auth_client: TestClient):
 def test_update_finds_event_on_reference_day_not_target_day(monkeypatch):
     """把周三的周会改到周四三点 searches Wednesday and proposes Thursday."""
     frozen = datetime(2026, 10, 14, 9, 0)  # Wednesday
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: frozen)
     monkeypatch.setattr(
         "app.services.calendar.complete_json",
         lambda *_a, **_k: {
@@ -370,7 +384,7 @@ def test_update_finds_event_on_reference_day_not_target_day(monkeypatch):
 
 def test_title_only_update_skips_events_that_already_ended(monkeypatch):
     frozen = datetime(2026, 10, 14, 9, 0)
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: frozen)
     monkeypatch.setattr(
         "app.services.calendar.complete_json",
         lambda *_a, **_k: {
@@ -519,7 +533,7 @@ def test_next_message_voids_draft_card():
 
 def test_list_is_read_only_text(monkeypatch):
     frozen = datetime(2026, 10, 14, 9, 0)
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: frozen)
     init_db()
     db = SessionLocal()
     created: list[int] = []
@@ -548,7 +562,7 @@ def test_list_is_read_only_text(monkeypatch):
 
 def test_suggest_returns_slot_card_without_writing(monkeypatch):
     frozen = datetime(2026, 10, 14, 9, 0)
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: frozen)
     init_db()
     db = SessionLocal()
     try:
@@ -567,7 +581,7 @@ def test_suggest_returns_slot_card_without_writing(monkeypatch):
 
 def test_unconfirmed_create_then_reschedule_does_not_move_the_event(monkeypatch):
     frozen = datetime(2026, 10, 14, 9, 0)
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: frozen)
     monkeypatch.setattr(
         "app.services.calendar.complete_json",
         lambda *_a, **_k: {
@@ -638,7 +652,7 @@ def test_unconfirmed_create_then_reschedule_does_not_move_the_event(monkeypatch)
 
 def test_confirmed_event_shows_up_in_list(auth_client: TestClient, monkeypatch):
     frozen = datetime(2026, 10, 14, 9, 0)
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: frozen)
     me = auth_client.get("/api/auth/me")
     owner_id = me.json()["id"]
     init_db()

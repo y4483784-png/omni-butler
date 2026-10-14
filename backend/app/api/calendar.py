@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired
@@ -13,6 +14,7 @@ from app.core.ownership import require_owned_event
 from app.models.models import User
 from app.services.calendar_secrets import (
     CalendarOAuthError,
+    CalendarTokenError,
     app_home_url,
     build_authorize_url,
     connect_google_account,
@@ -23,7 +25,7 @@ from app.services.calendar_secrets import (
     sign_oauth_state,
 )
 from app.services.calendar import (
-    calendar_local_now,
+    calendar_now,
     cancel_event,
     check_conflict,
     create_event,
@@ -31,7 +33,7 @@ from app.services.calendar import (
     serialize_event_card,
     update_event,
 )
-from app.services.calendar_local import LocalCalendarProvider
+from app.services.calendar_factory import account_timezone_name, calendar_provider_for
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -69,7 +71,7 @@ def list_calendar_events(
     current_user: User = Depends(get_current_user),
 ):
     """Events overlapping [start, end) for the signed-in user. Default is the next 7 days."""
-    today = calendar_local_now(db).replace(hour=0, minute=0, second=0, microsecond=0)
+    today = calendar_now(db, current_user.id).replace(hour=0, minute=0, second=0, microsecond=0)
     try:
         start_at = _parse_dt(start) or today
         end_at = _parse_dt(end) or (today + timedelta(days=7))
@@ -77,7 +79,9 @@ def list_calendar_events(
         raise HTTPException(status_code=400, detail="时间格式无效") from exc
     if end_at <= start_at:
         raise HTTPException(status_code=400, detail="结束时间需晚于开始时间")
-    rows = LocalCalendarProvider(db).list_events(current_user.id, start_at, end_at, status=status or "active")
+    rows = calendar_provider_for(db, current_user.id).list_events(
+        current_user.id, start_at, end_at, status=status or "active"
+    )
     return [serialize_event_card(row) for row in rows[:20]]
 
 
@@ -137,6 +141,7 @@ def patch_event(
     event = update_event(
         db,
         event_id,
+        user_id=current_user.id,
         title=body.title,
         start_at=_parse_dt(body.start_at),
         end_at=_parse_dt(body.end_at),
@@ -156,19 +161,28 @@ def delete_event(
     current_user: User = Depends(get_current_user),
 ):
     require_owned_event(db, event_id, current_user.id)
-    event = cancel_event(db, event_id)
+    event = cancel_event(db, event_id, user_id=current_user.id)
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
 
 
-# Connection only. Create, update, cancel, and list above stay on LocalCalendarProvider.
+# Reads and writes still land on local rows. The factory picks the provider.
 @router.get("/google/status")
 def google_calendar_status(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    return connection_status(db, current_user.id)
+    status = connection_status(db, current_user.id)
+    if not status["connected"]:
+        return status
+    try:
+        zone = account_timezone_name(db, current_user.id)
+    except (CalendarTokenError, httpx.HTTPError):
+        zone = ""
+    if zone:
+        status["timezone"] = zone
+    return status
 
 
 @router.get("/google/connect")
