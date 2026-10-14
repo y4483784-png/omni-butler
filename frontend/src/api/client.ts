@@ -385,6 +385,24 @@ function localStamp(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+export interface GoogleCalendarStatus {
+  connected: boolean;
+  account_email: string;
+  timezone?: string;
+}
+
+export async function googleCalendarStatus(): Promise<GoogleCalendarStatus> {
+  const r = await apiFetch("/api/calendar/google/status");
+  if (!r.ok) throw new Error(await parseError(r, "无法读取日历连接状态"));
+  return r.json();
+}
+
+export async function disconnectGoogleCalendar(): Promise<GoogleCalendarStatus> {
+  const r = await apiFetch("/api/calendar/google/connection", { method: "DELETE" });
+  if (!r.ok) throw new Error(await parseError(r, "断开 Google 日历失败"));
+  return r.json();
+}
+
 export async function listCalendarEvents(start: string, end: string): Promise<ScheduleCard[]> {
   const query = new URLSearchParams({ start, end, status: "active" });
   const r = await apiFetch(`/api/calendar?${query.toString()}`);

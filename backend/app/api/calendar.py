@@ -1,13 +1,27 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
+from itsdangerous import BadSignature, SignatureExpired
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
+from app.core.db import set_rls_context
 from app.core.deps import get_db_scoped
 from app.core.ownership import require_owned_event
 from app.models.models import User
+from app.services.calendar_secrets import (
+    CalendarOAuthError,
+    app_home_url,
+    build_authorize_url,
+    connect_google_account,
+    connection_status,
+    disconnect_google,
+    load_oauth_state,
+    oauth_configuration_error,
+    sign_oauth_state,
+)
 from app.services.calendar import (
     calendar_local_now,
     cancel_event,
@@ -146,3 +160,57 @@ def delete_event(
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
+
+
+# Connection only. Create, update, cancel, and list above stay on LocalCalendarProvider.
+@router.get("/google/status")
+def google_calendar_status(
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    return connection_status(db, current_user.id)
+
+
+@router.get("/google/connect")
+def google_calendar_connect(current_user: User = Depends(get_current_user)):
+    message = oauth_configuration_error()
+    if message:
+        raise HTTPException(status_code=400, detail=message)
+    return RedirectResponse(build_authorize_url(sign_oauth_state(current_user.id)), status_code=302)
+
+
+@router.get("/google/callback")
+def google_calendar_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    if error:
+        raise HTTPException(status_code=400, detail="Google 未同意授权，未保存连接。")
+    if not state or not code:
+        raise HTTPException(status_code=400, detail="授权回调缺少参数，未保存连接。")
+    try:
+        state_user_id = load_oauth_state(state)
+    except SignatureExpired:
+        raise HTTPException(status_code=400, detail="授权状态已过期，未保存连接。")
+    except (BadSignature, KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="授权状态无效，未保存连接。")
+    if state_user_id != current_user.id:
+        raise HTTPException(status_code=400, detail="授权状态与当前登录用户不一致，未保存连接。")
+    set_rls_context(db, state_user_id)
+    try:
+        connect_google_account(db, user_id=state_user_id, code=code)
+    except CalendarOAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from None
+    return RedirectResponse(app_home_url(), status_code=302)
+
+
+@router.delete("/google/connection")
+def google_calendar_disconnect(
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    set_rls_context(db, current_user.id)
+    return disconnect_google(db, current_user.id)

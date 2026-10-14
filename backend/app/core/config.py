@@ -173,6 +173,12 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False  # set true behind HTTPS
     admin_username: str = Field(default="admin", validation_alias="ADMIN_USERNAME")
     admin_password: str = Field(default="", validation_alias="ADMIN_PASSWORD")
+    # Google Calendar OAuth. Empty client id keeps calendar writes on the local provider.
+    # CALENDAR_TOKEN_KEY is a Fernet key (urlsafe base64 of 32 bytes), not derived from SECRET_KEY.
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = ""
+    calendar_token_key: str = ""
 
     # CORS
     cors_origins: str = "http://localhost:5173"
