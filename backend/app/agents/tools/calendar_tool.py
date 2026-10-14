@@ -14,15 +14,21 @@ from app.services.calendar import (
     calendar_now,
     check_conflict,
     conflicts_for_create,
+    conflicts_for_update,
     draft_expires_at,
     extract_event,
     find_event_candidates,
     free_slots_for,
+    readonly_titles,
+    titles_match,
 )
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
 
 _GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不到就不会写入。"
 _SUGGEST_UNAVAILABLE = "暂时读不到 Google 日历，不能建议空闲时段。"
+_NOT_FOUND = "没有找到对应日程。"
+_NOT_FOUND_UNREAD = "没有找到对应日程。暂时读不到 Google 日历，以下只是这里保存的日程。"
+_READONLY_IN_GOOGLE = "这条日程只在 Google 日历里，请在 Google 日历里改。"
 
 _UPDATE = re.compile(r"(改到|改成|改为|推迟|提前|换到|挪到|延后)")
 _CANCEL = re.compile(r"(取消|撤销|删掉)")
@@ -225,6 +231,50 @@ def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     return "可以考虑这些空闲时段：\n" + "\n".join(lines), card
 
 
+def _update_preview_conflicts(
+    ctx: ToolContext, start: datetime, end: datetime, event_id: int
+) -> tuple[list, str]:
+    """Merged busy time for a connected time change. A failed read keeps local conflicts only."""
+    if not calendar_writes_remote(ctx.db, ctx.user_id):
+        rows = [
+            row
+            for row in check_conflict(ctx.db, ctx.user_id, start, end)
+            if getattr(row, "id", None) != event_id
+        ]
+        return rows, ""
+    try:
+        return (
+            conflicts_for_update(
+                ctx.db, ctx.user_id, start, end, exclude_event_id=event_id
+            ),
+            "",
+        )
+    except REMOTE_READ_ERRORS:
+        rows = [
+            row
+            for row in check_conflict(ctx.db, ctx.user_id, start, end)
+            if getattr(row, "id", None) != event_id
+        ]
+        return rows, _GOOGLE_UNCHECKED
+
+
+def _readonly_reply(
+    ctx: ToolContext, draft: EventDraft, search_at: datetime | None, now: datetime
+) -> str | None:
+    """When nothing local matches, a Google-only title is not an editable card."""
+    if not calendar_writes_remote(ctx.db, ctx.user_id) or not (draft.title or "").strip():
+        return None
+    try:
+        titles = readonly_titles(
+            ctx.db, ctx.user_id, title=draft.title, start_at=search_at, now=now
+        )
+    except REMOTE_READ_ERRORS:
+        return _NOT_FOUND_UNREAD
+    if any(titles_match(draft.title, item) for item in titles):
+        return _READONLY_IN_GOOGLE
+    return None
+
+
 def _create_conflicts(ctx: ToolContext, start: datetime, end: datetime) -> tuple[list, str]:
     """Local conflicts, plus primary-calendar busy time when Google is connected.
 
@@ -307,7 +357,10 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     )
     if not matches:
         steps.append("没有定位到已有日程")
-        return _cleared(steps, "没有找到对应日程。")
+        readonly = _readonly_reply(ctx, draft, search_at, now)
+        if readonly is not None:
+            return _cleared(steps, readonly)
+        return _cleared(steps, _NOT_FOUND)
     if len(matches) > 1:
         card = _base_card(mode="choose", action=action, draft=draft)
         card["candidates"] = [_candidate_payload(row) for row in matches]
@@ -326,25 +379,24 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     )
     card = _base_card(mode=action, action=action, draft=chosen, event_id=event.id)
     card["status"] = event.status or "active"
+    remote_note = ""
     if action == "update" and draft.start_at:
         card["start_at"] = _iso(draft.start_at)
         card["end_at"] = _iso(draft.end_at or event.end_at)
         start = draft.start_at
         end = draft.end_at or event.end_at
         if start and end:
-            conflicts = [
-                row
-                for row in check_conflict(ctx.db, ctx.user_id, start, end)
-                if row.id != event.id
-            ]
+            conflicts, remote_note = _update_preview_conflicts(ctx, start, end, event.id)
             if conflicts:
                 card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
-                slots, _slot_note = _preview_slots(
-                    ctx, start, end, exclude_event_id=event.id
-                )
-                card["suggested_slots"] = _slot_payload(slots)
+                if remote_note:
+                    card["suggested_slots"] = []
+                else:
+                    slots, slot_note = _preview_slots(ctx, start, end, exclude_event_id=event.id)
+                    remote_note = remote_note or slot_note
+                    card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
     steps.append("已生成待确认卡片，尚未写入")
-    return _cleared(steps, _confirm_text(card, full=bool(card.get("conflicts"))), card)
+    return _cleared(steps, _create_answer(card, remote_note), card)
 
 
 register(

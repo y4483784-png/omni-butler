@@ -36,6 +36,7 @@ from app.services.calendar import (
 )
 from app.services.calendar_google import (
     CalendarOverlapError,
+    CalendarReconnectRequired,
     CalendarRemoteReadError,
     CalendarRemoteWriteError,
 )
@@ -80,6 +81,16 @@ def _conflict_payload(rows, slots) -> dict:
             {"start_at": start.isoformat(), "end_at": end.isoformat()} for start, end in slots
         ],
     }
+
+
+def _conflict_http(db, user_id, start_at, end_at, conflicts, *, exclude_event_id=None):
+    try:
+        slots = free_slots_for(
+            db, user_id, start_at, end_at, exclude_event_id=exclude_event_id
+        )
+    except REMOTE_READ_ERRORS:
+        raise HTTPException(status_code=502, detail=_READ_FAILED) from None
+    raise HTTPException(status_code=409, detail=_conflict_payload(conflicts, slots))
 
 
 def _slots_or_empty(db, user_id, start_at, end_at, *, exclude_event_id=None):
@@ -182,11 +193,7 @@ def _create_connected_event(
             description=description,
         )
     except CalendarOverlapError as exc:
-        try:
-            slots = free_slots_for(db, user_id, start_at, end_at)
-        except REMOTE_READ_ERRORS:
-            raise HTTPException(status_code=502, detail=_READ_FAILED) from None
-        raise HTTPException(status_code=409, detail=_conflict_payload(exc.conflicts, slots))
+        _conflict_http(db, user_id, start_at, end_at, exc.conflicts)
     except CalendarRemoteReadError as exc:
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarRemoteWriteError as exc:
@@ -206,9 +213,13 @@ def patch_event(
     current = require_owned_event(db, event_id, current_user.id)
     start_at = _parse_dt(body.start_at) if body.start_at is not None else current.start_at
     end_at = _parse_dt(body.end_at) if body.end_at is not None else current.end_at
-    if body.start_at is not None or body.end_at is not None:
-        if start_at is None or end_at is None:
-            raise HTTPException(status_code=400, detail="需要开始和结束时间")
+    changing_time = body.start_at is not None or body.end_at is not None
+    if changing_time and (start_at is None or end_at is None):
+        raise HTTPException(status_code=400, detail="需要开始和结束时间")
+    # Unconnected time changes still use local rows only. A connected change
+    # reads the primary calendar inside the provider and must not treat a
+    # Google row's stored interval as the busy block.
+    if changing_time and not calendar_writes_remote(db, current_user.id):
         conflicts = [
             row
             for row in check_conflict(db, current_user.id, start_at, end_at)
@@ -219,17 +230,30 @@ def patch_event(
                 db, current_user.id, start_at, end_at, exclude_event_id=event_id
             )
             raise HTTPException(status_code=409, detail=_conflict_payload(conflicts, slots))
-    event = update_event(
-        db,
-        event_id,
-        user_id=current_user.id,
-        title=body.title,
-        start_at=_parse_dt(body.start_at),
-        end_at=_parse_dt(body.end_at),
-        participants=body.participants,
-        location=body.location,
-        description=body.description,
-    )
+    try:
+        event = update_event(
+            db,
+            event_id,
+            user_id=current_user.id,
+            title=body.title,
+            start_at=_parse_dt(body.start_at),
+            end_at=_parse_dt(body.end_at),
+            participants=body.participants,
+            location=body.location,
+            description=body.description,
+        )
+    except CalendarReconnectRequired as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from None
+    except CalendarOverlapError as exc:
+        _conflict_http(
+            db, current_user.id, start_at, end_at, exc.conflicts, exclude_event_id=event_id
+        )
+    except CalendarRemoteReadError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
+    except CalendarRemoteWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    except CalendarTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
@@ -242,13 +266,22 @@ def delete_event(
     current_user: User = Depends(get_current_user),
 ):
     require_owned_event(db, event_id, current_user.id)
-    event = cancel_event(db, event_id, user_id=current_user.id)
+    try:
+        event = cancel_event(db, event_id, user_id=current_user.id)
+    except CalendarReconnectRequired as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from None
+    except CalendarRemoteWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    except CalendarRemoteReadError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
+    except CalendarTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
 
 
-# Reads and writes still land on local rows. The factory picks the provider.
+# List display stays on local rows. Connected update and cancel go to Google first.
 @router.get("/google/status")
 def google_calendar_status(
     db: Session = Depends(get_db_scoped),
