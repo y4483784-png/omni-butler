@@ -434,8 +434,11 @@ def _http_request(
     data: dict | None = None,
     params: dict | None = None,
     headers: dict | None = None,
+    json: dict | None = None,
 ) -> httpx.Response:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         raise RuntimeError("Google HTTP is disabled during tests")
     with httpx.Client(timeout=20.0) as client:
-        return client.request(method, url, data=data, params=params, headers=headers)
+        return client.request(
+            method, url, data=data, params=params, headers=headers, json=json
+        )

@@ -8,16 +8,21 @@ from datetime import datetime, timedelta
 from app.agents.harness.types import ToolContext, ToolResult
 from app.agents.tools.registry import ToolSpec, register
 from app.services.calendar import (
+    REMOTE_READ_ERRORS,
     EventDraft,
     apply_update_times,
     calendar_now,
     check_conflict,
+    conflicts_for_create,
     draft_expires_at,
     extract_event,
     find_event_candidates,
     free_slots_for,
 )
-from app.services.calendar_factory import calendar_provider_for
+from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
+
+_GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不到就不会写入。"
+_SUGGEST_UNAVAILABLE = "暂时读不到 Google 日历，不能建议空闲时段。"
 
 _UPDATE = re.compile(r"(改到|改成|改为|推迟|提前|换到|挪到|延后)")
 _CANCEL = re.compile(r"(取消|撤销|删掉)")
@@ -62,6 +67,22 @@ def _candidate_payload(row) -> dict:
         "start_at": _iso(row.start_at),
         "end_at": _iso(row.end_at),
     }
+
+
+def _conflict_payload(row) -> dict:
+    event_id = getattr(row, "id", None)
+    title = getattr(row, "title", "") or ""
+    if event_id is None:
+        title = "Google 日历上已有安排"
+    payload = {
+        "id": event_id,
+        "title": title,
+        "start_at": _iso(getattr(row, "start_at", None)),
+        "end_at": _iso(getattr(row, "end_at", None)),
+    }
+    if event_id is None:
+        payload["readonly"] = True
+    return payload
 
 
 def _slot_payload(slots: list[tuple[datetime, datetime]]) -> list[dict]:
@@ -172,9 +193,12 @@ def _list_text(ctx: ToolContext) -> str:
 def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     now = calendar_now(ctx.db, ctx.user_id)
     start, end = _suggest_window(ctx.message, now)
-    slots = calendar_provider_for(ctx.db, ctx.user_id).find_free_slots(
-        ctx.user_id, start, end, timedelta(hours=1), limit=3
-    )
+    try:
+        slots = calendar_provider_for(ctx.db, ctx.user_id).find_free_slots(
+            ctx.user_id, start, end, timedelta(hours=1), limit=3
+        )
+    except REMOTE_READ_ERRORS:
+        return _SUGGEST_UNAVAILABLE, None
     if not slots:
         return "这段时间没有足够的空闲时段。", None
     lines = [f"{begin:%Y-%m-%d %H:%M}–{end_at:%H:%M}" for begin, end_at in slots]
@@ -201,6 +225,47 @@ def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     return "可以考虑这些空闲时段：\n" + "\n".join(lines), card
 
 
+def _create_conflicts(ctx: ToolContext, start: datetime, end: datetime) -> tuple[list, str]:
+    """Local conflicts, plus primary-calendar busy time when Google is connected.
+
+    A failed read still returns local conflicts and a note. It does not recommend slots.
+    """
+    if not calendar_writes_remote(ctx.db, ctx.user_id):
+        return check_conflict(ctx.db, ctx.user_id, start, end), ""
+    try:
+        return conflicts_for_create(ctx.db, ctx.user_id, start, end), ""
+    except REMOTE_READ_ERRORS:
+        return check_conflict(ctx.db, ctx.user_id, start, end), _GOOGLE_UNCHECKED
+
+
+def _preview_slots(
+    ctx: ToolContext,
+    start: datetime,
+    end: datetime,
+    *,
+    exclude_event_id: int | None = None,
+) -> tuple[list[tuple[datetime, datetime]], str]:
+    try:
+        return (
+            free_slots_for(ctx.db, ctx.user_id, start, end, exclude_event_id=exclude_event_id),
+            "",
+        )
+    except REMOTE_READ_ERRORS:
+        return [], _GOOGLE_UNCHECKED
+
+
+def _create_answer(card: dict, remote_note: str) -> str:
+    if not remote_note:
+        return _confirm_text(card, full=bool(card.get("conflicts")))
+    if card.get("conflicts"):
+        return (
+            "暂时没读到 Google 日历。这里已有的日程仍然列在卡片上。"
+            "确认时会再查；查不到就不会写入。"
+        )
+    confirm = _confirm_text(card, full=False)
+    return f"{remote_note}{confirm}"
+
+
 def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     steps = [f"第 {ctx.iteration} 轮：解析日程并生成确认卡片"]
     action = resolve_action(ctx.message, args or {})
@@ -218,17 +283,21 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         apply_update_times(draft, ctx.message, now=now)
     if action == "create":
         card = _base_card(mode="create", action="create", draft=draft)
+        remote_note = ""
         if draft.start_at and draft.end_at:
-            conflicts = check_conflict(ctx.db, ctx.user_id, draft.start_at, draft.end_at)
+            conflicts, remote_note = _create_conflicts(ctx, draft.start_at, draft.end_at)
             if conflicts:
-                card["conflicts"] = [_candidate_payload(row) for row in conflicts[:5]]
-                card["suggested_slots"] = _slot_payload(
-                    free_slots_for(ctx.db, ctx.user_id, draft.start_at, draft.end_at)
-                )
-                if not card["suggested_slots"]:
+                card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
+                if remote_note:
+                    card["suggested_slots"] = []
+                else:
+                    slots, slot_note = _preview_slots(ctx, draft.start_at, draft.end_at)
+                    remote_note = remote_note or slot_note
+                    card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
+                if not card["suggested_slots"] and not remote_note:
                     steps.append("该时段已满")
         steps.append("已生成待确认卡片，尚未写入")
-        return _cleared(steps, _confirm_text(card, full=bool(card["conflicts"])), card)
+        return _cleared(steps, _create_answer(card, remote_note), card)
 
     # Update searches the named original day, not the new slot. No original day
     # means title-only among events that have not already ended.
@@ -269,10 +338,11 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
                 if row.id != event.id
             ]
             if conflicts:
-                card["conflicts"] = [_candidate_payload(row) for row in conflicts[:5]]
-                card["suggested_slots"] = _slot_payload(
-                    free_slots_for(ctx.db, ctx.user_id, start, end, exclude_event_id=event.id)
+                card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
+                slots, _slot_note = _preview_slots(
+                    ctx, start, end, exclude_event_id=event.id
                 )
+                card["suggested_slots"] = _slot_payload(slots)
     steps.append("已生成待确认卡片，尚未写入")
     return _cleared(steps, _confirm_text(card, full=bool(card.get("conflicts"))), card)
 

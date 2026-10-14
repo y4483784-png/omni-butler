@@ -36,10 +36,11 @@ export interface ScheduleSlot {
 }
 
 export interface ScheduleCandidate {
-  id: number;
+  id: number | null;
   title: string;
   start_at: string;
   end_at: string;
+  readonly?: boolean;
 }
 
 export interface ScheduleCard {
