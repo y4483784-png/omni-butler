@@ -45,8 +45,16 @@ function patchSession(sessionId: number, patch: Partial<SessionChatState>) {
   useStore.getState().patchSessionChat(sessionId, patch);
 }
 
+function voidOpenDrafts(messages: SessionChatState["messages"]) {
+  return messages.map((message) => {
+    const card = message.scheduleCard;
+    if (!card || card.phase !== "draft" || card.mode === "suggest") return message;
+    return { ...message, scheduleCard: { ...card, phase: "cancelled" } };
+  });
+}
+
 function appendAssistantPlaceholder(sessionId: number, userText: string) {
-  const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];
+  const prev = voidOpenDrafts(useStore.getState().sessionChats[sessionId]?.messages ?? []);
   patchSession(sessionId, {
     messages: [
       ...prev,

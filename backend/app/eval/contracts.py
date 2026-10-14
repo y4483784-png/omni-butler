@@ -84,7 +84,7 @@ class AgentContext(StrictModel):
     has_tabular_docs: bool
     # Fixture keys, resolved to document ids after ingest; empty = no scoping.
     document_keys: list[AgentDocKey] = Field(default_factory=list)
-    # Mirrors ``workflow.plan_node``: an open calendar slot short-circuits routing.
+    # Legacy field. Production no longer short-circuits routing on this value.
     pending_calendar: dict[str, Any] | None = None
 
 
@@ -344,7 +344,8 @@ def _routing_check(rows: list[dict[str, Any]], errors: list[str]) -> None:
     pending = sum(1 for row in rows if row["context"].get("pending_calendar"))
     _ratio(errors, "routing.multi_tool", multi, len(rows), 0.10, 0.15)
     _ratio(errors, "routing.multiturn", history, len(rows), 0.20, 0.35)
-    _ratio(errors, "routing.pending_calendar", pending, len(rows), 0.05, 0.12)
+    if pending != 0:
+        errors.append(f"routing.pending_calendar: {pending} rows still carry a draft; expected 0")
     # Real multi-turn: histories must be distinct, not one placeholder reused 50 times.
     hist_keys = Counter(
         json.dumps(row["history"], ensure_ascii=False, sort_keys=True) for row in rows if row["history"]
@@ -414,8 +415,6 @@ def _agent_check(rows: list[dict[str, Any]], errors: list[str]) -> None:
             errors.append(f"{row['id']}: sandbox gold but has_tabular_docs=false")
         if not ctx["has_kb_docs"] and "kb" in tools:
             errors.append(f"{row['id']}: kb gold but has_kb_docs=false")
-        if "slot_fill" in row["tags"] and not ctx["pending_calendar"]:
-            errors.append(f"{row['id']}: slot_fill requires pending_calendar")
         if "doc_scope" in row["tags"] and not ctx["document_keys"]:
             errors.append(f"{row['id']}: doc_scope requires document_keys")
         if ctx["document_keys"] and tools != ["kb"]:
@@ -428,7 +427,7 @@ def _agent_check(rows: list[dict[str, Any]], errors: list[str]) -> None:
                 errors.append(f"{row['id']}: no_tool must not carry gold_doc_keys")
             if not row["answer_spec"]:
                 errors.append(f"{row['id']}: no_tool requires answer_spec")
-    for tag, low in (("availability_gate", 6), ("slot_fill", 4), ("doc_scope", 4)):
+    for tag, low in (("availability_gate", 6), ("doc_scope", 4)):
         have = sum(1 for row in rows if tag in row["tags"])
         if have < low:
             errors.append(f"agent: only {have} {tag} tasks, expected >= {low}")
@@ -667,6 +666,7 @@ TAG_VOCAB: dict[str, frozenset[str]] = {
             "attendance", "calendar", "chat", "finance", "forced_ui", "hr",
             "it", "kb", "legal", "meeting", "multi_tool", "multiturn",
             "office", "procurement", "product", "retention", "sales",
+            "calendar_cancel", "calendar_list", "calendar_suggest", "calendar_update",
             "sandbox", "security", "single_tool", "slot_fill", "tabular",
             "travel", "web",
         }
