@@ -439,7 +439,7 @@ def build_cases() -> list[dict]:
         add(query=q, task_type="refuse", route_gold=no_tool_gold,
             context=dict(no_kb), tags=["refuse", "kb", "availability_gate"])
 
-    # --- pending calendar slot fill: production short-circuits the router ---
+    # Calendar follow-ups are ordinary router cases. Confirmation happens on the card.
     for slot_q, title in [
         ("时间改成明天下午两点。", "需求评审"),
         ("参会人再加上法务部。", "合同评审"),
@@ -454,9 +454,9 @@ def build_cases() -> list[dict]:
                 "has_kb_docs": True,
                 "has_tabular_docs": True,
                 "document_keys": [],
-                "pending_calendar": {"title": title, "action": "create"},
+                "pending_calendar": None,
             },
-            tags=["calendar", "multiturn", "slot_fill"])
+            tags=["calendar", "multiturn"])
 
     # --- document scoping: production forces the kb tool and filters by id ---
     for q, keys, spec in [

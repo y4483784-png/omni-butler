@@ -42,16 +42,15 @@ def test_agent_dataset_declares_availability_switches():
             assert key in row["context"], f"{row.get('id')}: context.{key} missing"
     by_tag = {}
     for row in rows:
-        for tag in ("availability_gate", "slot_fill", "doc_scope"):
+        for tag in ("availability_gate", "doc_scope"):
             if tag in row["tags"]:
                 by_tag[tag] = by_tag.get(tag, 0) + 1
     assert by_tag.get("availability_gate", 0) >= 6
-    assert by_tag.get("slot_fill", 0) >= 4
     assert by_tag.get("doc_scope", 0) >= 4
     # The new scenarios only matter if they actually differ from the defaults.
     assert any(row["context"]["has_tabular_docs"] is False for row in rows)
     assert any(row["context"]["document_keys"] for row in rows)
-    assert any(row["context"]["pending_calendar"] for row in rows)
+    assert all(not row["context"].get("pending_calendar") for row in rows)
 
 
 def test_normalize_text_catches_punctuation_only_duplicates():

@@ -90,6 +90,8 @@ class LocalCalendarProvider:
         start_at: datetime,
         end_at: datetime,
         participants: list[str],
+        location: str = "",
+        description: str = "",
     ) -> CalendarEventDTO:
         event = CalendarEvent(
             user_id=user_id,
@@ -99,8 +101,8 @@ class LocalCalendarProvider:
             participants=json.dumps(participants, ensure_ascii=False),
             status="active",
             timezone="",
-            location="",
-            description="",
+            location=location or "",
+            description=description or "",
             external_id="",
             provider="local",
         )
@@ -118,6 +120,8 @@ class LocalCalendarProvider:
         start_at: datetime | None = None,
         end_at: datetime | None = None,
         participants: list[str] | None = None,
+        location: str | None = None,
+        description: str | None = None,
     ) -> CalendarEventDTO | None:
         event = self.db.get(CalendarEvent, event_id)
         if not event or event.user_id != user_id:
@@ -130,6 +134,10 @@ class LocalCalendarProvider:
             event.end_at = end_at
         if participants is not None:
             event.participants = json.dumps(participants, ensure_ascii=False)
+        if location is not None:
+            event.location = location
+        if description is not None:
+            event.description = description
         self.db.commit()
         self.db.refresh(event)
         return event_to_dto(event)

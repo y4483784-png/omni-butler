@@ -244,21 +244,11 @@ def predict_case(
 
     error: str | None = None
     confidence: str | None = None
-    # Mirror workflow.plan_node: an open calendar slot-fill short-circuits the LLM router.
+    # Pending calendar drafts no longer skip the router. A leftover value is
+    # only a context hint; routing is scored from plan_tools like every other case.
     pending_cal = ctx.get("pending_calendar")
     try:
-        if pending_cal:
-            decision_dict = {
-                "needs_kb": False,
-                "needs_web": False,
-                "needs_calendar": True,
-                "needs_sandbox": False,
-                "confidence": "high",
-            }
-            # Short circuit, not a cache lookup: counting it as a hit inflated the
-            # replay diagnostics by 24 rows.
-            cache_used = False
-        elif isinstance(cached, dict) and "needs_kb" in cached:
+        if isinstance(cached, dict) and "needs_kb" in cached:
             decision_dict = cached
             cache_used = True
         else:
