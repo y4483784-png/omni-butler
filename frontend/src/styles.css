@@ -675,10 +675,20 @@ a.cite-link:hover {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 10px 12px; border-top: 1px solid #eef0f2; font-size: 12px;
 }
-.sidebar-user { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #5f6368; }
+.sidebar-user {
+  flex: 1 1 4rem; min-width: 4rem; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: #5f6368;
+}
 .sidebar-link {
   border: none; background: transparent; color: #185fa5;
   cursor: pointer; font-size: 12px; padding: 0;
+}
+.sidebar-calendar {
+  flex: 1 0 100%; display: flex; align-items: center; gap: 8px; min-width: 0;
+}
+.sidebar-calendar-email {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #5f6368;
 }
 .admin-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.35);

@@ -1,6 +1,16 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 
 from app.core.db import Base
 
@@ -84,6 +94,17 @@ class CalendarEvent(Base):
     """Local calendar event for Phase 3 calendar actions."""
 
     __tablename__ = "calendar_events"
+    __table_args__ = (
+        Index(
+            "uq_calendar_events_external",
+            "user_id",
+            "provider",
+            "external_id",
+            unique=True,
+            sqlite_where=text("external_id <> ''"),
+            postgresql_where=text("external_id <> ''"),
+        ),
+    )
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, default=1)
     title = Column(String, default="")
@@ -98,6 +119,27 @@ class CalendarEvent(Base):
     external_id = Column(String, default="")
     provider = Column(String, default="local")
     created_at = Column(DateTime, default=_utcnow)
+
+
+class CalendarConnection(Base):
+    """One Google account per user. Access and refresh tokens are Fernet ciphertext."""
+
+    __tablename__ = "calendar_connections"
+    __table_args__ = (
+        CheckConstraint("provider = 'google'", name="ck_calendar_connections_provider"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    provider = Column(String, nullable=False, default="google")
+    google_sub = Column(String, nullable=False, default="")
+    account_email = Column(String, nullable=False, default="")
+    access_token = Column(Text, nullable=False, default="")
+    refresh_token = Column(Text, nullable=False, default="")
+    token_expiry = Column(DateTime, nullable=True)
+    scopes = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 class ToolAuditLog(Base):

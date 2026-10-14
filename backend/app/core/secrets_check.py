@@ -27,6 +27,10 @@ def insecure_secret_findings() -> list[str]:
     url = (settings.database_url or "").lower()
     if "://omni:omni@" in url or "://omni_app:omni@" in url:
         hits.append("Postgres default password")
+    client_id = (settings.google_oauth_client_id or "").strip()
+    token_key = (settings.calendar_token_key or "").strip()
+    if client_id and not token_key:
+        hits.append("CALENDAR_TOKEN_KEY")
     return hits
 
 
