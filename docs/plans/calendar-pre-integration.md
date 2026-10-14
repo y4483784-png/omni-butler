@@ -4,6 +4,8 @@
 
 本文件是计划，不是实现。对应 PR 只应包含本文。
 
+评审已确认三件事：草稿有效期 30 分钟，并且下一句用户消息会更早作废；确认 API 不绑定草稿票据；评测种子与契约改动并进第 2 刀，与去掉 `pending_calendar` 短路同一提交，这样路由评测可以和改完后的生产路径对照。
+
 ## 1. 现状与目标
 
 ### 1.1 调用链
@@ -233,8 +235,9 @@ create、update、cancel 每次只抽当前这句话，返回一张卡片。就�
 3. `chat.py` 在准备上下文时，若 `session.pending_calendar` 非空，把它写成 `""` 再继续。不解释里面的 JSON，不据此创建事件。这样库里的旧草稿只会在下一次开口时被清掉。
 4. 保留列、`ToolContext.pending_calendar` 和 `format_working_block` 的读法。生产路径不再传入。`test_build_context_views` 这类直接传入 dict 的单测可以继续通过。不要在这一刀把 `calendar.py` 收成包，也不要改 context 评测里那些「还缺地点和参会人」的记忆题；它们测的是回忆，不是工具状态机。
 5. `fill_pending_calendar` 在没有调用方、并且 `test_workflow.py` 的两个 pending 用例已改写之后再删。
+6. 同一刀改评测种子和契约，不要留到后面。否则短路已经去掉，金标却还在给旧路径加分，路由分数无法和这一刀之后的实现对照。范围是 `routing_utterances.jsonl` 里的 24 条 `slot_fill`、`gen_office_eval.py` 的 `pending == 24`、`contracts.py`、`gen_agent_eval.py`、`test_eval_datasets_contract.py`，以及新增的查日程 / 改期 / 取消 / 有空吗样本。细则见第 7.4 和 7.5 节。
 
-`test_pending_calendar_skips_planner_and_fills_multiple_fields` 与 `test_pending_calendar_partial_fill_keeps_calendar_flow` 断言的是旧状态机。它们留在第 1 步全绿，在卡片那一刀改成：传入遗留 pending 时仍然会调用 `plan_tools`，且工具不会 `create_event`。
+`test_pending_calendar_skips_planner_and_fills_multiple_fields` 与 `test_pending_calendar_partial_fill_keeps_calendar_flow` 断言的是旧状态机。它们留在第 1 步全绿，在第 2 刀改成：传入遗留 pending 时仍然会调用 `plan_tools`，且工具不会 `create_event`。
 
 ## 6. 抽槽与时区（只为预填，不追问）
 
@@ -298,7 +301,7 @@ cd backend && python -m pytest \
 
 现有 `office_tool_routing.jsonl` 里的日历句大多是「安排一下今天 X 点的周会」这种创建改写，外加 24 条靠 pending 短路的 `slot_fill`。查日程、改期、取消、有空没有成组的金标，所以新能力测不到。
 
-在卡片流程落地、短路已从 `tool_routing.py` 去掉的那一刀里，改种子而不是手改生成结果：
+这些样本放进第 2 刀，与去掉 `tool_routing.py` 短路同一提交。改种子而不是手改生成结果：
 
 - 文件：`backend/data/eval/seeds/routing_utterances.jsonl`（现为 400 条）和 `routing_multiturn_extra.jsonl`（现为 20 条）。`gen_office_eval.py` 写死了这两个长度，以及 `pending == 24`。用新句子替换掉一批重复的创建改写，使两个长度不变。
 - 每类至少 4 条，标签分别是 `calendar_list`、`calendar_update`、`calendar_cancel`、`calendar_suggest`。金标都是 `intent=calendar`、`tools=["calendar"]`，`context` 里不要带 `pending_calendar`。
@@ -322,7 +325,7 @@ cd backend && python -m pytest \
 - `gen_agent_eval.py` 的 6 条 `slot_fill` 同样去掉 pending。`contracts.py` 里「`slot_fill` 至少 4 条」和「有 `slot_fill` 就必须有 pending」一并删除，避免契约还在要求一条已退役的路径。`test_eval_datasets_contract.py` 里对 `slot_fill` 和「至少一行 pending」的断言一起改。
 - context 记忆集（`gen_context_eval.py` / `context_recall.jsonl`）不动。
 
-第 1 步不要改这些种子。契约和生成器必须与短路代码同一刀落地，否则评测要么仍在给旧短路加分，要么数据集校验先红。
+第 1 步不要改这些种子。契约、生成器和短路代码都在第 2 刀落地，不单列后面的评测刀。拆开的话，中间会有一轮分数既不能和 `release` 比，也不能和卡片实现比。
 
 ## 8. 本阶段不做
 
@@ -342,24 +345,25 @@ cd backend && python -m pytest \
 
 ## 9. PR 切片
 
-每一刀单独可回滚。本文所在 PR 不在这五刀之内。第 1 刀保持今天的对话行为；从第 2 刀起才换成确认卡片。
+每一刀单独可回滚。本文所在 PR 不在这四刀之内。第 1 刀保持今天的对话行为；从第 2 刀起才换成确认卡片。
 
 ### 第 1 刀：Provider + Local，行为等价
 
-- 新增 provider 协议和 Local 实现。`calendar.py` 的 CRUD 与 `check_conflict` 转调 Local，签名不变。
+- 新增 provider 协议和 Local 实现。`calendar.py` 的 CRUD 与 `check_conflict` 转调 Local，参数签名不变。
 - Alembic `0007` 只加第 3 节的五列。不建 `calendar_sources`。
 - `get_timezone()` 返回进程本地时区，抽槽不调用它。
 - 工具、API、前端、路由短路、抽取提示词、评测种子都不动。
 - 验收：第 7.1 节全绿，加上 provider 单测。
 
-### 第 2 刀：确认卡片（核心）
+### 第 2 刀：确认卡片，并同时对齐路由评测
 
 - 工具的 create / update / cancel 返回第 4 节的卡片，不写库。
 - 预填规则用第 6 节。冲突空隙和多条候选在卡片上。
-- `POST` 创建；PATCH/DELETE 仍是确认动作。409 把空隙交回卡片。
+- `POST` 创建；PATCH/DELETE 仍是确认动作。409 把空隙交回卡片。草稿 30 分钟有效，下一句用户消息更早作废。确认 API 不校验草稿票据。
 - `ScheduleCard.tsx` 改为表单，去掉 `window.prompt`。下一句和 `expires_at` 把 `draft` 标为作废，并写回 `messages.schedule_card`。
-- 按第 5 节去掉生产短路、清空遗留 pending、改写两个 workflow pending 测试。这一刀先不改 24 条评测种子；路由评测会因此变化，所以评测种子放在第 4 刀，紧跟着做，不要把第 2 刀单独当成评测已对齐。
-- 验收：第 7.2 节，外加浏览器里走通确认、冲突空隙、候选和「下一句作废」。
+- 按第 5 节去掉生产短路、清空遗留 pending、改写两个 workflow pending 测试。
+- 同一刀按第 7.4 和 7.5 节改种子、`gen_office_eval.py`、`contracts.py`、`gen_agent_eval.py`、`test_eval_datasets_contract.py`，并重新生成 `office_tool_routing.jsonl` 与 `agent_tasks.jsonl`。新增查日程 / 改期 / 取消 / 有空吗样本。不要把评测留到后续刀，否则这一刀的路由分数无法对照。
+- 验收：第 7.2 节；浏览器里走通确认、冲突空隙、候选和「下一句作废」；`pytest tests/test_eval_datasets_contract.py` 全绿；四类新标签各自至少 4 条；生成器里的 pending 计数为 0。
 
 ### 第 3 刀：list、suggest、路由 few-shot
 
@@ -368,22 +372,21 @@ cd backend && python -m pytest \
 - `prompts.py` 增加 few-shot：查本周日程、把明天的周会改到四点、取消明天的面试、明天下午有空吗，均为 `needs_calendar=true`。反例「什么是日历」不进日历。不改 `plan_tools` 的结构。
 - 验收：第 7.3 节；`test_no_regex_fallback_branch_in_plan_tools` 仍绿。
 
-### 第 4 刀：路由评测样本
-
-- 按第 7.4 和 7.5 节改种子、生成器、`contracts.py`、`gen_agent_eval.py`，并重新生成 `office_tool_routing.jsonl` 与 `agent_tasks.jsonl`。
-- 验收：`pytest tests/test_eval_datasets_contract.py` 全绿。四类新标签各自至少 4 条。生成器里的 pending 计数为 0。
-
-### 第 5 刀：回归与接入清单（清单仅为文档）
+### 第 4 刀：回归与接入清单（清单仅为文档）
 
 - 把第 7.3 节没收进第 3 刀的用例补进 `backend/tests/test_calendar_card.py`。
 - 新增 `docs/plans/calendar-integration-checklist.md`。清单包括：实现 provider 的七个方法；OAuth 与令牌不进业务列；`external_id` + `provider` 如何对上本地行；`get_timezone()` 改为外部账户时区，事件上的 `timezone` 列只做写入快照；`find_free_slots` 改为交叠该日历的工作时间，本地实现保持不过滤；取消与外部取消的映射；未做双向同步时，确认 API 仍只写本地行。
 - 再跑第 7.1 节里仍然适用的测试。第 1 步那些「pending 跳过路由」「缺字段则追问」的断言以第 2 刀改写后的版本为准。
 
-## 10. 风险与需要人决定的问题
+## 10. 风险与尚未收口的点
 
-1. **草稿有效期用多久。** 计划按 30 分钟，并且任意下一句用户消息会更早作废。若只想要「下一句作废」、不要时钟，可以说一声。
-2. **确认 API 不校验卡片是否过期。** 过期只禁用界面上的按钮。知道接口的客户端仍可以稍后 POST 同样的内容，那就是一次正常的创建。若确认必须绑定某张未过期卡片，需要另加草稿票据，本计划故意不加。
-3. **去掉短路后，旧的 24 条补槽金标会第一次走真路由器。** 改会议室、加提醒、改成双周重复这些句子，即使用户仍这么说，也不再代表本阶段的日历能力。第 4 刀会把它们改成 chat 或换成查 / 改 / 取消 / 有空。需要接受：在那一刀之前，路由评测数字不能拿来和 `release` 直接比。
+已决定，不再改：
+
+1. **草稿有效期 30 分钟**，任意下一句用户消息会更早作废。
+2. **确认 API 不校验卡片是否过期，也不发草稿票据。** 过期只禁用界面上的按钮。知道接口的客户端仍可以稍后 POST 同样的内容，那就是一次正常的创建。
+3. **评测种子与去掉短路在第 2 刀一起改。** 旧的 24 条补槽金标里，改会议室、加提醒、改成双周重复的句子会改成 chat，或换成查 / 改 / 取消 / 有空。第 2 刀之后的路由分数对的是新金标，不要拿第 2 刀中间态和 `release` 比。
+
+仍需实现时注意：
 4. **进程本地时区只是占位。** 部署在 UTC 上时，「明天三点」会按 UTC 理解，直到外部日历提供账户时区。本阶段不再做配置表或环境变量种子来掩盖这件事。
 5. **墙钟存储。** `_parse_dt` 丢弃偏移、不换算。第 1 刀不要把它改成 UTC，否则已有时间和卡片会平移。
 6. **「用这个时段」换出的 create 卡片只活在前端，直到点确认。** 中途刷新会回到 suggest 卡片，而不是那张填了一半的创建表单。这是为了不把草稿放进会话状态。
