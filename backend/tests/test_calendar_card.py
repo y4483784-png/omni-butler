@@ -628,6 +628,7 @@ def test_unconfirmed_create_then_reschedule_does_not_move_the_event(monkeypatch)
         assert moved["schedule_card"]["event_id"] == event.id
         db.refresh(event)
         assert event.start_at == datetime(2026, 10, 16, 10, 0)
+        db.query(Message).filter(Message.session_id == session.id).delete()
         db.delete(session)
         db.commit()
     finally:
