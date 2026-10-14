@@ -91,6 +91,12 @@ class CalendarEvent(Base):
     end_at = Column(DateTime, index=True)
     participants = Column(Text, default="[]")  # JSON string list
     status = Column(String, default="active")  # active | cancelled
+    # Reserved for an external calendar. Local rows keep these at the defaults.
+    timezone = Column(String, default="")
+    location = Column(String, default="")
+    description = Column(Text, default="")
+    external_id = Column(String, default="")
+    provider = Column(String, default="local")
     created_at = Column(DateTime, default=_utcnow)
 
 
