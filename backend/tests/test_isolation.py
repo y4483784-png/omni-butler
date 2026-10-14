@@ -124,6 +124,60 @@ def test_cross_user_calendar_patch_404(auth_client: TestClient):
     assert r.status_code == 404
 
 
+def test_cross_user_calendar_list_hides_other_user(auth_client: TestClient):
+    from datetime import datetime
+
+    init_db()
+    me = auth_client.get("/api/auth/me")
+    assert me.status_code == 200
+    owner_id = me.json()["id"]
+    db = SessionLocal()
+    own_id = other_id = None
+    try:
+        alice = _ensure_user(db, username="alice4", password="alice-pass", user_id=9401)
+        own = CalendarEvent(
+            user_id=owner_id,
+            title="mine-only",
+            start_at=datetime(2026, 12, 1, 10, 0),
+            end_at=datetime(2026, 12, 1, 11, 0),
+            status="active",
+        )
+        other = CalendarEvent(
+            user_id=alice.id,
+            title="alice-only",
+            start_at=datetime(2026, 12, 1, 12, 0),
+            end_at=datetime(2026, 12, 1, 13, 0),
+            status="active",
+        )
+        db.add(own)
+        db.add(other)
+        db.commit()
+        db.refresh(own)
+        db.refresh(other)
+        own_id, other_id = own.id, other.id
+    finally:
+        db.close()
+
+    listed = auth_client.get(
+        "/api/calendar",
+        params={"start": "2026-12-01T00:00:00", "end": "2026-12-02T00:00:00"},
+    )
+    assert listed.status_code == 200, listed.text
+    titles = [row["title"] for row in listed.json()]
+    assert "mine-only" in titles
+    assert "alice-only" not in titles
+
+    db = SessionLocal()
+    try:
+        for event_id in (own_id, other_id):
+            row = db.get(CalendarEvent, event_id)
+            if row is not None:
+                db.delete(row)
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_kb_list_scoped_to_current_user(auth_client: TestClient):
     init_db()
     db = SessionLocal()

@@ -13,6 +13,11 @@ from sqlalchemy.orm import Session
 from app.core.llm import complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
+from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
+from app.services.calendar_google import CalendarReconnectRequired, CalendarRemoteReadError
+from app.services.calendar_secrets import CalendarTokenError
+
+REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError)
 
 # Accept Arabic and Chinese numerals ("3点" / "三点" / "三点半") — real users rarely type digits only.
 _CALENDAR_TIME = re.compile(
@@ -27,6 +32,8 @@ _CALENDAR_HINTS = re.compile(
 )
 _PARTICIPANTS_PAT = re.compile(r"(参与人|参会人|和)([:：]?\s*)(.+)")
 _CANCEL_PAT = re.compile(r"(取消|算了|放弃|不安排了|先不安排)", re.I)
+_UPDATE_SPLIT = re.compile(r"(改到|改成|改为|挪到|换到|推迟到|提前到)")
+_WEEKDAY = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
 
 _CN_DIGIT = {
     "零": 0,
@@ -73,6 +80,8 @@ class EventDraft:
     participants: list[str] = field(default_factory=list)
     missing_fields: list[str] = field(default_factory=list)
     original_request: str = ""
+    # Update only: the existing event's time. start_at/end_at are the new slot.
+    reference_start_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,6 +91,7 @@ class EventDraft:
             "participants": list(self.participants),
             "missing_fields": list(self.missing_fields),
             "original_request": self.original_request,
+            "reference_start_at": self.reference_start_at.isoformat() if self.reference_start_at else "",
         }
 
     @classmethod
@@ -93,6 +103,7 @@ class EventDraft:
             participants=[str(x).strip() for x in (data.get("participants") or []) if str(x).strip()],
             missing_fields=[str(x).strip() for x in (data.get("missing_fields") or []) if str(x).strip()],
             original_request=str(data.get("original_request") or ""),
+            reference_start_at=_parse_dt(str(data.get("reference_start_at") or "")),
         )
 
 
@@ -108,7 +119,12 @@ def is_calendar_cancel(message: str) -> bool:
     return bool(_CANCEL_PAT.search(message or ""))
 
 
-def extract_event(message: str, history: list[dict] | None = None) -> EventDraft:
+def extract_event(
+    message: str,
+    history: list[dict] | None = None,
+    *,
+    now: datetime | None = None,
+) -> EventDraft:
     parsed = complete_json(
         [
             {
@@ -116,8 +132,9 @@ def extract_event(message: str, history: list[dict] | None = None) -> EventDraft
                 "content": (
                     "你是日程信息提取器。只输出 JSON："
                     '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}。'
-                    ' start_at/end_at 用 ISO 8601；缺失则输出空字符串。'
-                    ' 若用户未说结束时间，missing_fields 至少包含 "end_at"。'
+                    " start_at/end_at 用无偏移的 ISO 8601；缺失则输出空字符串。"
+                    " 参与人可以省略，不要因为没有参与人写入 missing_fields。"
+                    " 用户没说结束时间时 end_at 留空，不要把 end_at 放进 missing_fields。"
                 ),
             },
             {
@@ -131,15 +148,8 @@ def extract_event(message: str, history: list[dict] | None = None) -> EventDraft
     )
     if not isinstance(parsed, dict):
         draft = EventDraft(original_request=message)
-        _supplement_draft_from_message(draft, message, allow_end=False)
-        draft.missing_fields = _normalize_missing_fields(
-            title=draft.title,
-            start_at=draft.start_at,
-            end_at=draft.end_at,
-            participants=draft.participants,
-            existing=[],
-        )
-        return draft
+        _supplement_draft_from_message(draft, message, allow_end=True, now=now)
+        return _finalize_prefill(draft)
 
     start_at = _parse_dt(str(parsed.get("start_at") or ""))
     end_at = _parse_dt(str(parsed.get("end_at") or ""))
@@ -150,20 +160,24 @@ def extract_event(message: str, history: list[dict] | None = None) -> EventDraft
     if not end_at:
         missing.append("end_at")
     draft = EventDraft(
-        title=str(parsed.get("title") or "").strip() or "未命名日程",
+        title=str(parsed.get("title") or "").strip(),
         start_at=start_at,
         end_at=end_at,
         participants=participants,
-        missing_fields=_normalize_missing_fields(
-            title=str(parsed.get("title") or "").strip() or "未命名日程",
-            start_at=start_at,
-            end_at=end_at,
-            participants=participants,
-            existing=list(dict.fromkeys(missing)),
-        ),
+        missing_fields=list(dict.fromkeys(missing)),
         original_request=message,
     )
-    _supplement_draft_from_message(draft, message, allow_end=False)
+    _supplement_draft_from_message(draft, message, allow_end=True, now=now)
+    return _finalize_prefill(draft)
+
+
+DRAFT_TTL = timedelta(minutes=30)
+
+
+def _finalize_prefill(draft: EventDraft) -> EventDraft:
+    """Optional participants. A missing end becomes start + 1 hour when start is known."""
+    if draft.start_at is not None and draft.end_at is None:
+        draft.end_at = draft.start_at + timedelta(hours=1)
     draft.missing_fields = _normalize_missing_fields(
         title=draft.title,
         start_at=draft.start_at,
@@ -172,59 +186,6 @@ def extract_event(message: str, history: list[dict] | None = None) -> EventDraft
         existing=draft.missing_fields,
     )
     return draft
-
-
-def fill_pending_calendar(pending: EventDraft, message: str, history: list[dict] | None = None) -> EventDraft:
-    parsed = complete_json(
-        [
-            {
-                "role": "system",
-                "content": (
-                    "你是日程补槽器。已有一个未完成日程草稿，请只补充缺失字段。"
-                    " 允许用户一条消息同时补多个字段。只输出 JSON："
-                    '{"title":str,"start_at":str,"end_at":str,"participants":[str],"filled_fields":[str]}。'
-                    " 未补到的字段输出空字符串或空数组；不要重写已确认字段。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"已有草稿：{json.dumps(pending.to_dict(), ensure_ascii=False)}\n"
-                    f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
-                    f"当前补充：{message}"
-                ),
-            },
-        ]
-    )
-    next_draft = EventDraft.from_dict(pending.to_dict())
-    next_draft.original_request = pending.original_request or message
-    if next_draft.original_request:
-        _supplement_draft_from_message(next_draft, next_draft.original_request, allow_end=False)
-
-    if isinstance(parsed, dict):
-        title = str(parsed.get("title") or "").strip()
-        start_at = _parse_dt(str(parsed.get("start_at") or ""))
-        end_at = _parse_dt(str(parsed.get("end_at") or ""))
-        participants = [str(x).strip() for x in (parsed.get("participants") or []) if str(x).strip()]
-        if title and ("title" in pending.missing_fields or title != pending.title):
-            next_draft.title = title
-        if start_at is not None:
-            next_draft.start_at = start_at
-        if end_at is not None:
-            next_draft.end_at = end_at
-        if participants:
-            next_draft.participants = participants
-
-    _supplement_draft_from_message(next_draft, message)
-    _merge_from_message(next_draft, message)
-    next_draft.missing_fields = _normalize_missing_fields(
-        title=next_draft.title,
-        start_at=next_draft.start_at,
-        end_at=next_draft.end_at,
-        participants=next_draft.participants,
-        existing=[],
-    )
-    return next_draft
 
 
 def _parse_dt(raw: str) -> datetime | None:
@@ -245,15 +206,11 @@ def _normalize_missing_fields(
     participants: list[str],
     existing: list[str],
 ) -> list[str]:
-    missing = list(existing)
+    missing = [item for item in existing if item not in {"end_at", "participants"}]
     if not title:
         missing.append("title")
     if not start_at:
         missing.append("start_at")
-    if not end_at:
-        missing.append("end_at")
-    if not participants:
-        missing.append("participants")
     return list(dict.fromkeys(missing))
 
 
@@ -284,13 +241,19 @@ def _parse_participants(message: str) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
-def _supplement_draft_from_message(draft: EventDraft, message: str, *, allow_end: bool = True) -> None:
+def _supplement_draft_from_message(
+    draft: EventDraft,
+    message: str,
+    *,
+    allow_end: bool = True,
+    now: datetime | None = None,
+) -> None:
     if not draft.title:
         title = _infer_title(message)
         if title:
             draft.title = title
     if draft.start_at is None:
-        draft.start_at = _parse_time_from_message(message)
+        draft.start_at = _parse_time_from_message(message, now=now)
     if allow_end and draft.end_at is None and draft.start_at is not None:
         if re.search(r"(到|至|结束)", message or ""):
             draft.end_at = _parse_relative_time(message, base=draft.start_at)
@@ -309,11 +272,11 @@ def _infer_title(message: str) -> str:
     return ""
 
 
-def _parse_time_from_message(message: str) -> datetime | None:
+def _parse_time_from_message(message: str, *, now: datetime | None = None) -> datetime | None:
     m = _CALENDAR_TIME.search(message or "")
     if not m:
         return None
-    now = datetime.now()
+    now = now or datetime.now()
     prefix = (m.group(1) or "").strip()
     hour = _parse_cn_int(m.group(2) or "")
     minute = _parse_cn_int(m.group(4) or "") or 0
@@ -383,85 +346,350 @@ def format_missing_fields(draft: EventDraft) -> str:
 
 
 def check_conflict(db: Session, user_id: int, start_at: datetime, end_at: datetime) -> list[CalendarEvent]:
-    rows = (
-        db.query(CalendarEvent)
-        .filter(
-            CalendarEvent.user_id == user_id,
-            CalendarEvent.status == "active",
-            CalendarEvent.start_at < end_at,
-            CalendarEvent.end_at > start_at,
-        )
-        .order_by(CalendarEvent.start_at.asc())
-        .all()
-    )
-    return rows
+    """Local active overlaps only. Connected creates use ``conflicts_for_create``."""
+    return calendar_provider_for(db, user_id).overlap_rows(user_id, start_at, end_at)
+
+
+def conflicts_for_create(db: Session, user_id: int, start_at: datetime, end_at: datetime) -> list:
+    """Create-window conflicts. Connected users also read primary ``events.list``.
+
+    Raises ``CalendarRemoteReadError`` or ``CalendarTokenError`` when that read
+    fails. Callers must not treat the failure as an empty calendar.
+    """
+    provider = calendar_provider_for(db, user_id)
+    if calendar_writes_remote(db, user_id):
+        return provider.conflicts_for_create(user_id, start_at, end_at)
+    return provider.overlap_rows(user_id, start_at, end_at)
 
 
 def create_event(
-    db: Session, *, user_id: int, title: str, start_at: datetime, end_at: datetime, participants: list[str]
+    db: Session,
+    *,
+    user_id: int,
+    title: str,
+    start_at: datetime,
+    end_at: datetime,
+    participants: list[str],
+    location: str = "",
+    description: str = "",
 ) -> CalendarEvent:
-    event = CalendarEvent(
-        user_id=user_id,
+    provider = calendar_provider_for(db, user_id)
+    created = provider.create_event(
+        user_id,
         title=title,
         start_at=start_at,
         end_at=end_at,
-        participants=json.dumps(participants, ensure_ascii=False),
-        status="active",
+        participants=participants,
+        location=location,
+        description=description,
     )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
+    event = provider.get_row(created.id)
+    if event is None:
+        raise RuntimeError("calendar event missing after insert")
     return event
+
+
+def _lookup_window(
+    start_at: datetime | None,
+    title: str,
+    now: datetime,
+) -> tuple[datetime, datetime] | None:
+    """Day window when the user named a day, otherwise from ``now`` through year 2100."""
+    if start_at is not None:
+        day = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        return day, day + timedelta(days=1)
+    if (title or "").strip():
+        return now, datetime(2100, 1, 1)
+    return None
+
+
+def _block_disconnected_remote(db: Session, user_id: int, event: CalendarEvent) -> None:
+    """Refuse edits that would leave Google on the old time after a disconnect."""
+    if (event.external_id or "").strip() and not calendar_writes_remote(db, user_id):
+        raise CalendarReconnectRequired()
+
+
+def conflicts_for_update(
+    db: Session,
+    user_id: int,
+    start_at: datetime,
+    end_at: datetime,
+    *,
+    exclude_event_id: int | None = None,
+) -> list:
+    """Overlaps for a time change. Connected users read the primary calendar.
+
+    The edited row is left out by local id and, when it has one, by external id.
+    A Google row's stored interval is not a second busy block.
+    """
+    provider = calendar_provider_for(db, user_id)
+    if calendar_writes_remote(db, user_id):
+        checker = getattr(provider, "conflicts_for_update", None)
+        if checker is not None:
+            return checker(
+                user_id, start_at, end_at, exclude_event_id=exclude_event_id
+            )
+    return provider.overlap_rows(
+        user_id, start_at, end_at, exclude_event_id=exclude_event_id
+    )
+
+
+def readonly_titles(
+    db: Session,
+    user_id: int,
+    *,
+    title: str,
+    start_at: datetime | None,
+    now: datetime,
+) -> list[str]:
+    """Titles that exist only on the connected primary calendar. Unconnected users get none."""
+    if not (title or "").strip() or not calendar_writes_remote(db, user_id):
+        return []
+    if start_at is not None:
+        window = _lookup_window(start_at, title, start_at)
+    else:
+        window = _lookup_window(None, title, now)
+    if window is None:
+        return []
+    provider = calendar_provider_for(db, user_id)
+    reader = getattr(provider, "readonly_titles", None)
+    if reader is None:
+        return []
+    return reader(user_id, window[0], window[1])
 
 
 def update_event(
     db: Session,
     event_id: int,
     *,
+    user_id: int,
     title: str | None = None,
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     participants: list[str] | None = None,
+    location: str | None = None,
+    description: str | None = None,
 ) -> CalendarEvent | None:
-    event = db.get(CalendarEvent, event_id)
-    if not event:
+    provider = calendar_provider_for(db, user_id)
+    current = provider.get_row(event_id)
+    if current is None or current.user_id != user_id:
         return None
-    if title is not None:
-        event.title = title
-    if start_at is not None:
-        event.start_at = start_at
-    if end_at is not None:
-        event.end_at = end_at
-    if participants is not None:
-        event.participants = json.dumps(participants, ensure_ascii=False)
-    db.commit()
-    db.refresh(event)
-    return event
+    _block_disconnected_remote(db, user_id, current)
+    updated = provider.update_event(
+        user_id,
+        event_id,
+        title=title,
+        start_at=start_at,
+        end_at=end_at,
+        participants=participants,
+        location=location,
+        description=description,
+    )
+    if updated is None:
+        return None
+    return provider.get_row(event_id)
 
 
-def cancel_event(db: Session, event_id: int) -> CalendarEvent | None:
-    event = db.get(CalendarEvent, event_id)
-    if not event:
+def cancel_event(db: Session, event_id: int, *, user_id: int) -> CalendarEvent | None:
+    provider = calendar_provider_for(db, user_id)
+    current = provider.get_row(event_id)
+    if current is None or current.user_id != user_id:
         return None
-    event.status = "cancelled"
-    db.commit()
-    db.refresh(event)
-    return event
+    _block_disconnected_remote(db, user_id, current)
+    cancelled = provider.cancel_event(user_id, event_id)
+    if cancelled is None:
+        return None
+    return provider.get_row(event_id)
+
+
+def _card_text(event: Any, name: str) -> str:
+    value = getattr(event, name, "")
+    return "" if value is None else str(value)
 
 
 def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
-    try:
-        participants = json.loads(event.participants or "[]")
-    except json.JSONDecodeError:
-        participants = []
-    return {
+    raw = getattr(event, "participants", None)
+    if isinstance(raw, list):
+        participants = [str(item) for item in raw]
+    else:
+        try:
+            parsed = json.loads(raw or "[]")
+        except json.JSONDecodeError:
+            parsed = []
+        participants = parsed if isinstance(parsed, list) else []
+    card = {
         "id": event.id,
         "title": event.title,
         "start_at": event.start_at.isoformat() if event.start_at else "",
         "end_at": event.end_at.isoformat() if event.end_at else "",
         "participants": participants,
         "status": event.status,
+        "timezone": _card_text(event, "timezone"),
+        "location": _card_text(event, "location"),
+        "description": _card_text(event, "description"),
+        "external_id": _card_text(event, "external_id"),
+        "provider": _card_text(event, "provider"),
     }
+    if getattr(event, "all_day", False):
+        card["all_day"] = True
+    if getattr(event, "readonly", False):
+        card["id"] = None
+        card["readonly"] = True
+    return card
+
+
+def draft_expires_at(now: datetime | None = None) -> str:
+    base = (now or datetime.now()).replace(microsecond=0)
+    return (base + DRAFT_TTL).isoformat()
+
+
+def titles_match(query: str, title: str) -> bool:
+    needle = (query or "").strip()
+    hay = (title or "").strip()
+    if not needle or not hay:
+        return False
+    return needle.casefold() in hay.casefold() or hay.casefold() in needle.casefold()
+
+
+def calendar_now(db: Session | None = None, user_id: int | None = None) -> datetime:
+    """Naive wall clock for ``user_id``.
+
+    Connected accounts use that Google account's IANA zone. Everyone else
+    keeps the process-local clock used before a calendar was connected.
+    """
+    if db is None or user_id is None:
+        return datetime.now().replace(microsecond=0)
+    zone = calendar_provider_for(db, user_id).get_timezone()
+    return datetime.now(zone).replace(tzinfo=None, microsecond=0)
+
+
+def calendar_local_now(db: Session | None = None, user_id: int | None = None) -> datetime:
+    """Thin wrapper. Prefer ``calendar_now(db, user_id)``."""
+    return calendar_now(db, user_id)
+
+
+def _weekday_base(now: datetime, marker: str) -> datetime:
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    return monday + timedelta(days=_WEEKDAY[marker])
+
+
+def _parse_clause_time(text: str, *, now: datetime) -> datetime | None:
+    """One clause's clock, weekday, or both. Weekday names the day even without 点."""
+    weekday = re.search(r"周([一二三四五六日天])", text or "")
+    day = _weekday_base(now, weekday.group(1)) if weekday else None
+    clock_text = re.sub(r"周[一二三四五六日天]", " ", text or "")
+    clock = _parse_time_from_message(clock_text, now=now)
+    if day is not None and clock is not None:
+        return day.replace(hour=clock.hour, minute=clock.minute)
+    if clock is not None:
+        return clock
+    return day
+
+
+def apply_update_times(draft: EventDraft, message: str, *, now: datetime | None = None) -> EventDraft:
+    """Split '把周三的周会改到周四三点' into the event's day and the new slot.
+
+    ``reference_start_at`` is only the day used to find the existing event.
+    ``start_at`` / ``end_at`` are the new slot. A message with only a new time
+    leaves the reference empty so lookup is by title.
+    """
+    now = now or datetime.now()
+    parts = _UPDATE_SPLIT.split(message or "", maxsplit=1)
+    if len(parts) < 3:
+        draft.reference_start_at = None
+        return draft
+    reference_clause, _pivot, target_clause = parts[0], parts[1], parts[2]
+    reference = _parse_clause_time(reference_clause, now=now)
+    target = _parse_clause_time(target_clause, now=now)
+    draft.reference_start_at = reference
+    title = _infer_title(reference_clause)
+    if title:
+        draft.title = title
+    if target is not None:
+        draft.start_at = target
+        draft.end_at = target + timedelta(hours=1)
+    return draft
+
+
+def find_event_candidates(
+    db: Session,
+    user_id: int,
+    *,
+    title: str,
+    start_at: datetime | None,
+    now: datetime | None = None,
+) -> list[CalendarEvent]:
+    """Active events for update/cancel.
+
+    ``start_at`` is the named day of the existing event, including a past day
+    the user actually said. With only a title, keep events that end after
+    ``calendar_now`` so last year's rows are not candidates.
+    """
+    provider = calendar_provider_for(db, user_id)
+    if start_at is not None:
+        window = _lookup_window(start_at, title, start_at)
+    elif (title or "").strip():
+        current = now if now is not None else calendar_now(db, user_id)
+        window = _lookup_window(None, title, current)
+    else:
+        return []
+    if window is None:
+        return []
+    rows = provider.overlap_rows(user_id, window[0], window[1])
+    if (title or "").strip():
+        rows = [row for row in rows if titles_match(title, row.title or "")]
+    return rows[:5]
+
+
+def free_slots_for(
+    db: Session,
+    user_id: int,
+    start_at: datetime,
+    end_at: datetime | None,
+    *,
+    exclude_event_id: int | None = None,
+    limit: int = 3,
+) -> list[tuple[datetime, datetime]]:
+    duration = end_at - start_at if end_at and end_at > start_at else timedelta(hours=1)
+    if duration <= timedelta(0):
+        duration = timedelta(hours=1)
+    return calendar_provider_for(db, user_id).find_free_slots(
+        user_id,
+        start_at,
+        start_at + timedelta(days=7),
+        duration,
+        limit=limit,
+        exclude_event_id=exclude_event_id,
+    )
+
+
+def void_draft_schedule_cards(db: Session, session_id: int) -> int:
+    """Mark unconfirmed write cards cancelled. Suggest/info cards are left alone."""
+    from app.models.models import Message
+
+    changed = 0
+    rows = (
+        db.query(Message)
+        .filter(Message.session_id == session_id, Message.role == "assistant")
+        .all()
+    )
+    for row in rows:
+        raw = row.schedule_card or ""
+        if not raw:
+            continue
+        try:
+            card = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(card, dict):
+            continue
+        if card.get("phase") == "draft" and card.get("mode") != "suggest":
+            card["phase"] = "cancelled"
+            row.schedule_card = json.dumps(card, ensure_ascii=False)
+            changed += 1
+    if changed:
+        db.commit()
+    return changed
 
 
 def suggest_next_slot(start_at: datetime, end_at: datetime) -> tuple[datetime, datetime]:

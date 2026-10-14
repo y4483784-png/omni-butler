@@ -14,7 +14,15 @@ def test_serialize_event_card_reads_participants():
 
     card = serialize_event_card(E())
     assert card["id"] == 7
+    assert card["title"] == "周会"
     assert card["participants"] == ["张三", "李四"]
+    assert card["status"] == "active"
+    # Objects from before the reserved columns still serialize; missing fields stay blank.
+    assert card["timezone"] == ""
+    assert card["location"] == ""
+    assert card["description"] == ""
+    assert card["external_id"] == ""
+    assert card["provider"] == ""
 
 
 def test_suggest_next_slot_keeps_duration():

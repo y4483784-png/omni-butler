@@ -59,11 +59,18 @@ def build_cases() -> list[dict]:
         multi += int(len(parsed["gold"]["tools"]) > 1)
         history += int(bool(parsed["history"]))
         pending += int(bool(parsed["context"].get("pending_calendar")))
-    if multi != 50 or history < 80 or pending != 24:
+    if multi != 50 or history < 80 or pending != 0:
         raise ValueError(
             f"routing coverage multi={multi}, history={history}, pending={pending}; "
-            "expected 50, >=80, 24"
+            "expected 50, >=80, 0"
         )
+    tag_counts: Counter[str] = Counter()
+    for row in rows:
+        for tag in row.get("tags") or []:
+            tag_counts[tag] += 1
+    for tag in ("calendar_list", "calendar_update", "calendar_cancel", "calendar_suggest"):
+        if tag_counts[tag] < 4:
+            raise ValueError(f"{tag} has {tag_counts[tag]} rows, expected >= 4")
     print(f"intent distribution: {dict(intents)}")
     return rows
 

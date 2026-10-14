@@ -161,7 +161,15 @@ def _prepare_session_context(
         db.commit()
 
     uid = session.user_id or user_id
-    pending_calendar = json.loads(session.pending_calendar) if session.pending_calendar else None
+    # Legacy slot-fill state is not a workflow input anymore. Clear it on the next turn.
+    if session.pending_calendar:
+        session.pending_calendar = ""
+        db.commit()
+    if history_override is None:
+        from app.services.calendar import void_draft_schedule_cards
+
+        void_draft_schedule_cards(db, session.id)
+    pending_calendar = None
 
     has_kb_docs = False
     tabular = False

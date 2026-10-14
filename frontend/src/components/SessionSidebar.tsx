@@ -6,7 +6,10 @@ import {
   deleteSession,
   renameSession,
   logout,
+  googleCalendarStatus,
+  disconnectGoogleCalendar,
   type AuthUser,
+  type GoogleCalendarStatus,
 } from "../api/client";
 import { isSessionBusy } from "../services/chatStream";
 import { UserAdminPanel } from "./UserAdminPanel";
@@ -35,7 +38,22 @@ export function SessionSidebar({ user, onLogout }: Props) {
   const [adminOpen, setAdminOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [calendarStatus, setCalendarStatus] = useState<GoogleCalendarStatus | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    googleCalendarStatus()
+      .then((status) => {
+        if (!cancelled) setCalendarStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setCalendarStatus({ connected: false, account_email: "" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (editingId != null) inputRef.current?.focus();
@@ -83,6 +101,18 @@ export function SessionSidebar({ user, onLogout }: Props) {
     } catch {
       window.alert("重命名失败");
       await refresh();
+    }
+  }
+
+  function onConnectCalendar() {
+    window.location.assign("/api/calendar/google/connect");
+  }
+
+  async function onDisconnectCalendar() {
+    try {
+      setCalendarStatus(await disconnectGoogleCalendar());
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "断开失败");
     }
   }
 
@@ -180,6 +210,24 @@ export function SessionSidebar({ user, onLogout }: Props) {
         <button type="button" className="sidebar-link" onClick={handleLogout}>
           退出
         </button>
+        {calendarStatus ? (
+          <span className="sidebar-calendar">
+            {calendarStatus.connected ? (
+              <>
+                <span className="sidebar-calendar-email" title={calendarStatus.account_email}>
+                  {calendarStatus.account_email}
+                </span>
+                <button type="button" className="sidebar-link" onClick={() => void onDisconnectCalendar()}>
+                  断开
+                </button>
+              </>
+            ) : (
+              <button type="button" className="sidebar-link" onClick={onConnectCalendar}>
+                连接 Google 日历
+              </button>
+            )}
+          </span>
+        ) : null}
       </div>
       {adminOpen ? <UserAdminPanel onClose={() => setAdminOpen(false)} /> : null}
       {passwordOpen ? <ChangePasswordPanel onClose={() => setPasswordOpen(false)} /> : null}

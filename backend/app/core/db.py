@@ -121,6 +121,28 @@ def _postgres_add_column_if_missing(table: str, column: str, coltype: str) -> No
         conn.commit()
 
 
+def _ensure_calendar_external_unique_index() -> None:
+    """One non-empty external id per user and provider. Empty local ids stay unrestricted."""
+    bind = engine if _IS_SQLITE else ddl_engine
+    statement = (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_calendar_events_external "
+        "ON calendar_events (user_id, provider, external_id) "
+        "WHERE external_id <> ''"
+    )
+    with bind.connect() as conn:
+        if _IS_SQLITE:
+            found = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'calendar_events'"
+                )
+            ).scalar()
+            if not found:
+                return
+        conn.execute(text(statement))
+        conn.commit()
+
+
 def ensure_app_role() -> None:
     """Create a non-superuser login so FORCE RLS actually applies (Postgres docs).
 
@@ -230,3 +252,16 @@ def init_db():
     _postgres_add_column_if_missing("sessions", "context_summary", "TEXT")
     _postgres_add_column_if_missing("sessions", "context_summary_upto_message_id", "INTEGER")
     _postgres_add_column_if_missing("sessions", "working_state", "TEXT")
+    # Calendar provider fields (belt if alembic 0007 not applied)
+    _sqlite_add_column_if_missing("calendar_events", "timezone", "TEXT DEFAULT ''")
+    _sqlite_add_column_if_missing("calendar_events", "location", "TEXT DEFAULT ''")
+    _sqlite_add_column_if_missing("calendar_events", "description", "TEXT DEFAULT ''")
+    _sqlite_add_column_if_missing("calendar_events", "external_id", "TEXT DEFAULT ''")
+    _sqlite_add_column_if_missing("calendar_events", "provider", "TEXT DEFAULT 'local'")
+    _postgres_add_column_if_missing("calendar_events", "timezone", "VARCHAR")
+    _postgres_add_column_if_missing("calendar_events", "location", "VARCHAR")
+    _postgres_add_column_if_missing("calendar_events", "description", "TEXT")
+    _postgres_add_column_if_missing("calendar_events", "external_id", "VARCHAR")
+    _postgres_add_column_if_missing("calendar_events", "provider", "VARCHAR DEFAULT 'local'")
+    # Partial unique index from alembic 0008. create_all does not alter an existing table.
+    _ensure_calendar_external_unique_index()

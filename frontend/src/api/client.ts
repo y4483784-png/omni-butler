@@ -30,13 +30,57 @@ export interface ChatMsg {
   feedback?: "up" | "down" | null;
 }
 
+export interface ScheduleSlot {
+  start_at: string;
+  end_at: string;
+}
+
+export interface ScheduleCandidate {
+  id: number | null;
+  title: string;
+  start_at: string;
+  end_at: string;
+  readonly?: boolean;
+}
+
 export interface ScheduleCard {
-  id: number;
+  id?: number | null;
   title: string;
   start_at: string;
   end_at: string;
   participants: string[];
-  status: "active" | "cancelled" | string;
+  status?: "active" | "cancelled" | string;
+  mode?: "create" | "update" | "cancel" | "choose" | "suggest" | string;
+  phase?: "draft" | "confirmed" | "cancelled" | "expired" | "info" | string;
+  action?: "create" | "update" | "cancel" | string;
+  expires_at?: string;
+  event_id?: number | null;
+  location?: string;
+  description?: string;
+  timezone?: string;
+  provider?: string;
+  external_id?: string;
+  conflicts?: ScheduleCandidate[];
+  suggested_slots?: ScheduleSlot[];
+  candidates?: ScheduleCandidate[];
+  readonly?: boolean;
+  all_day?: boolean;
+}
+
+export interface CalendarEventList {
+  events: ScheduleCard[];
+  notice: string;
+}
+
+export class CalendarConflictError extends Error {
+  conflicts: ScheduleCandidate[];
+  suggestedSlots: ScheduleSlot[];
+
+  constructor(conflicts: ScheduleCandidate[], suggestedSlots: ScheduleSlot[]) {
+    super("该时段与已有日程冲突");
+    this.conflicts = conflicts;
+    this.suggestedSlots = suggestedSlots;
+  }
 }
 
 export interface KbDocument {
@@ -328,22 +372,93 @@ export async function reingestDocument(id: number): Promise<KbDocument> {
   return r.json();
 }
 
+async function readCalendarError(r: Response, fallback: string): Promise<never> {
+  let detail: unknown = null;
+  try {
+    const body = await r.json();
+    detail = body?.detail ?? body;
+  } catch {
+    detail = null;
+  }
+  if (r.status === 409 && detail && typeof detail === "object") {
+    const payload = detail as { conflicts?: ScheduleCandidate[]; suggested_slots?: ScheduleSlot[] };
+    throw new CalendarConflictError(payload.conflicts ?? [], payload.suggested_slots ?? []);
+  }
+  const message = typeof detail === "string" ? detail : fallback;
+  throw new Error(message);
+}
+
+function localStamp(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export interface GoogleCalendarStatus {
+  connected: boolean;
+  account_email: string;
+  timezone?: string;
+}
+
+export async function googleCalendarStatus(): Promise<GoogleCalendarStatus> {
+  const r = await apiFetch("/api/calendar/google/status");
+  if (!r.ok) throw new Error(await parseError(r, "无法读取日历连接状态"));
+  return r.json();
+}
+
+export async function disconnectGoogleCalendar(): Promise<GoogleCalendarStatus> {
+  const r = await apiFetch("/api/calendar/google/connection", { method: "DELETE" });
+  if (!r.ok) throw new Error(await parseError(r, "断开 Google 日历失败"));
+  return r.json();
+}
+
+export async function listCalendarEvents(start: string, end: string): Promise<CalendarEventList> {
+  const query = new URLSearchParams({ start, end, status: "active" });
+  const r = await apiFetch(`/api/calendar?${query.toString()}`);
+  if (!r.ok) throw new Error("加载日程失败");
+  const body = await r.json();
+  if (Array.isArray(body)) return { events: body, notice: "" };
+  const events = Array.isArray(body?.events) ? body.events : [];
+  const notice = typeof body?.notice === "string" ? body.notice : "";
+  return { events, notice };
+}
+
+export function localStampFromDate(date: Date): string {
+  return localStamp(date);
+}
+
+export async function createCalendarEvent(payload: {
+  title: string;
+  start_at: string;
+  end_at: string;
+  participants: string[];
+  location?: string;
+  description?: string;
+}): Promise<ScheduleCard> {
+  const r = await apiFetch("/api/calendar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) await readCalendarError(r, "创建日程失败");
+  return r.json();
+}
+
 export async function cancelCalendarEvent(id: number): Promise<ScheduleCard> {
   const r = await apiFetch(`/api/calendar/${id}`, { method: "DELETE" });
-  if (!r.ok) throw new Error("撤销日程失败");
+  if (!r.ok) await readCalendarError(r, "撤销日程失败");
   return r.json();
 }
 
 export async function updateCalendarEvent(
   id: number,
-  payload: Partial<Pick<ScheduleCard, "title" | "start_at" | "end_at" | "participants">>
+  payload: Partial<Pick<ScheduleCard, "title" | "start_at" | "end_at" | "participants" | "location" | "description">>
 ): Promise<ScheduleCard> {
   const r = await apiFetch(`/api/calendar/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!r.ok) throw new Error("修改日程失败");
+  if (!r.ok) await readCalendarError(r, "修改日程失败");
   return r.json();
 }
 

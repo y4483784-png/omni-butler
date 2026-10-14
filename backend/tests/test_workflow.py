@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from datetime import datetime
 
 from app.agents.harness.verify import web_is_stale
+from app.core.db import SessionLocal, init_db
+from app.models.models import CalendarEvent
 from app.agents.router import classify_intent, plan_needs, plan_tools
 from app.agents.workflow import (
     build_pool_prompt,
@@ -418,150 +420,131 @@ def test_mock_stream_evidence_pool():
     assert "总结" in text
 
 
-def test_calendar_missing_fields_clarifies():
-    with (
-        patch(
-            "app.agents.workflow.plan_tools",
-            return_value={
-                "pending_tools": ["calendar"],
-                "needs_freshness": False,
-                "needs_kb": False,
-                "needs_web": False,
-                "needs_calendar": True,
-            },
-        ),
-        patch(
-            "app.agents.tools.calendar_tool.extract_event",
-            return_value=EventDraft(title="周会", missing_fields=["end_at", "participants"]),
-        ),
-    ):
-        r = run_agent_workflow(object(), message="帮我定明天十点周会", history=[], has_kb_docs=False)  # type: ignore[arg-type]
-    assert r["intent"] == "calendar"
-    assert r["schedule_card"] is None
-    assert "结束时间" in r["direct_answer"]
-    assert "参与人" in r["direct_answer"]
-    assert r["pending_calendar"]["missing_fields"] == ["end_at", "participants"]
-    assert r["llm_messages"] == []
+def _calendar_plan():
+    return {
+        "pending_tools": ["calendar"],
+        "needs_freshness": False,
+        "needs_kb": False,
+        "needs_web": False,
+        "needs_calendar": True,
+    }
 
 
-def test_calendar_success_creates_card():
+def test_calendar_missing_fields_returns_blank_card():
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
+            patch(
+                "app.agents.tools.calendar_tool.extract_event",
+                return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
+            ),
+        ):
+            r = run_agent_workflow(db, message="帮我约一下", history=[], has_kb_docs=False)
+        assert r["intent"] == "calendar"
+        assert r["schedule_card"]["mode"] == "create"
+        assert r["schedule_card"]["phase"] == "draft"
+        assert r["schedule_card"]["title"] == ""
+        assert r["schedule_card"]["start_at"] == ""
+        assert r["pending_calendar"] is None
+        assert r["llm_messages"] == []
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
+
+
+def test_calendar_complete_request_is_a_draft_until_confirm():
     draft = EventDraft(
         title="周会",
-        start_at=datetime(2026, 8, 6, 10, 0),
-        end_at=datetime(2026, 8, 6, 11, 0),
-        participants=["张三"],
-        missing_fields=[],
-    )
-
-    class E:
-        id = 11
-        title = "周会"
-        start_at = datetime(2026, 8, 6, 10, 0)
-        end_at = datetime(2026, 8, 6, 11, 0)
-        participants = '["张三"]'
-        status = "active"
-
-    with (
-        patch(
-            "app.agents.workflow.plan_tools",
-            return_value={
-                "pending_tools": ["calendar"],
-                "needs_freshness": False,
-                "needs_kb": False,
-                "needs_web": False,
-                "needs_calendar": True,
-            },
-        ),
-        patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
-        patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
-        patch("app.agents.tools.calendar_tool.create_event", return_value=E()),
-    ):
-        r = run_agent_workflow(object(), message="帮我定明天十点到十一点周会", history=[], has_kb_docs=False)  # type: ignore[arg-type]
-    assert r["intent"] == "calendar"
-    assert r["schedule_card"]["id"] == 11
-    assert any("日程创建成功" in s for s in r["thinking_steps"])
-    assert "已为你安排" in r["direct_answer"]
-
-
-def test_pending_calendar_skips_planner_and_fills_multiple_fields():
-    pending = EventDraft(
-        title="会议",
-        start_at=datetime(2026, 8, 6, 3, 0),
-        end_at=None,
+        start_at=datetime(2026, 8, 6, 15, 0),
+        end_at=datetime(2026, 8, 6, 16, 0),
         participants=[],
-        missing_fields=["end_at", "participants"],
-        original_request="帮我定明天早上3点的会议",
-    )
-    filled = EventDraft(
-        title="会议",
-        start_at=datetime(2026, 8, 6, 3, 0),
-        end_at=datetime(2026, 8, 6, 5, 0),
-        participants=["张三", "李四"],
         missing_fields=[],
-        original_request="帮我定明天早上3点的会议",
     )
-
-    class E:
-        id = 12
-        title = "会议"
-        start_at = datetime(2026, 8, 6, 3, 0)
-        end_at = datetime(2026, 8, 6, 5, 0)
-        participants = '["张三","李四"]'
-        status = "active"
-
-    with (
-        patch("app.agents.workflow.plan_tools") as planner,
-        patch("app.agents.tools.calendar_tool.fill_pending_calendar", return_value=filled),
-        patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
-        patch("app.agents.tools.calendar_tool.create_event", return_value=E()),
-    ):
-        r = run_agent_workflow(
-            object(),  # type: ignore[arg-type]
-            message="到5点，参与人张三、李四",
-            history=[{"role": "assistant", "content": "还缺结束时间、参与人。"}],
-            has_kb_docs=False,
-            pending_calendar=pending.to_dict(),
-        )
-    planner.assert_not_called()
-    assert r["intent"] == "calendar"
-    assert r["schedule_card"]["id"] == 12
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
+            patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+            patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
+            patch("app.services.calendar.create_event") as create_event,
+        ):
+            r = run_agent_workflow(db, message="明天三点开周会", history=[], has_kb_docs=False)
+        create_event.assert_not_called()
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
+    assert r["schedule_card"]["mode"] == "create"
+    assert r["schedule_card"]["phase"] == "draft"
+    assert r["schedule_card"]["title"] == "周会"
+    assert r["schedule_card"]["event_id"] is None
+    assert "请确认" in r["direct_answer"]
+    assert "15:00" in r["direct_answer"]
     assert r["pending_calendar"] is None
     assert r["llm_messages"] == []
 
 
-def test_pending_calendar_partial_fill_keeps_calendar_flow():
-    pending = EventDraft(
-        title="会议",
-        start_at=datetime(2026, 8, 6, 3, 0),
-        end_at=None,
-        participants=[],
-        missing_fields=["end_at", "participants"],
-        original_request="帮我定明天早上3点的会议",
-    )
-    partial = EventDraft(
-        title="会议",
-        start_at=datetime(2026, 8, 6, 3, 0),
-        end_at=None,
-        participants=["张三"],
-        missing_fields=["end_at"],
-        original_request="帮我定明天早上3点的会议",
-    )
-    with (
-        patch("app.agents.workflow.plan_tools") as planner,
-        patch("app.agents.tools.calendar_tool.fill_pending_calendar", return_value=partial),
-    ):
-        r = run_agent_workflow(
-            object(),  # type: ignore[arg-type]
-            message="参与人张三",
-            history=[],
-            has_kb_docs=False,
-            pending_calendar=pending.to_dict(),
-        )
-    planner.assert_not_called()
+def test_pending_calendar_does_not_skip_planner_or_write():
+    pending = {"title": "会议", "missing_fields": ["end_at", "participants"], "action": "create"}
+    draft = EventDraft(title="会议", start_at=datetime(2026, 8, 6, 15, 0), end_at=datetime(2026, 8, 6, 16, 0))
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
+            patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+            patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
+            patch("app.services.calendar.create_event") as create_event,
+        ):
+            r = run_agent_workflow(
+                db,
+                message="到5点，参与人张三、李四",
+                history=[],
+                has_kb_docs=False,
+                pending_calendar=pending,
+            )
+        planner.assert_called()
+        create_event.assert_not_called()
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
     assert r["intent"] == "calendar"
-    assert r["schedule_card"] is None
-    assert r["pending_calendar"]["missing_fields"] == ["end_at"]
-    assert "结束时间" in r["direct_answer"]
+    assert r["schedule_card"]["phase"] == "draft"
+    assert r["pending_calendar"] is None
+
+
+def test_legacy_pending_message_is_not_a_slot_fill():
+    pending = {"title": "会议", "missing_fields": ["end_at"], "start_at": "2026-08-06T15:00:00"}
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
+            patch(
+                "app.agents.tools.calendar_tool.extract_event",
+                return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
+            ),
+        ):
+            r = run_agent_workflow(
+                db,
+                message="参与人张三",
+                history=[],
+                has_kb_docs=False,
+                pending_calendar=pending,
+            )
+        planner.assert_called()
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
+    assert r["pending_calendar"] is None
+    assert r["schedule_card"]["title"] == ""
+    assert "补全" in r["direct_answer"]
 
 
 def test_sandbox_tool_produces_artifact():
@@ -713,9 +696,9 @@ if __name__ == "__main__":
     test_web_only_one_tool_round()
     test_kb_then_web_separate_rounds()
     test_mock_stream_evidence_pool()
-    test_calendar_missing_fields_clarifies()
-    test_calendar_success_creates_card()
-    test_pending_calendar_skips_planner_and_fills_multiple_fields()
-    test_pending_calendar_partial_fill_keeps_calendar_flow()
+    test_calendar_missing_fields_returns_blank_card()
+    test_calendar_complete_request_is_a_draft_until_confirm()
+    test_pending_calendar_does_not_skip_planner_or_write()
+    test_legacy_pending_message_is_not_a_slot_fill()
     test_sandbox_tool_produces_artifact()
     print("ok")

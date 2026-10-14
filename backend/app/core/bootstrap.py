@@ -18,7 +18,7 @@ def _reassign_user_rows(db: Session, *, src_id: int, dst_id: int) -> None:
     """Move leftover rows from a duplicate bootstrap admin onto the legacy user."""
     if src_id == dst_id:
         return
-    for table in ("sessions", "documents", "calendar_events", "memories"):
+    for table in ("sessions", "documents", "calendar_events", "memories", "calendar_connections"):
         db.execute(
             text(f"UPDATE {table} SET user_id = :dst WHERE user_id = :src"),
             {"dst": dst_id, "src": src_id},

@@ -232,29 +232,6 @@ def run_agent_workflow(
     )
 
     def plan_node(state: WorkflowState) -> dict[str, Any]:
-        if state.get("pending_calendar"):
-            return {
-                "forced": False,
-                "needs_freshness": False,
-                "needs_kb": False,
-                "needs_web": False,
-                "needs_calendar": True,
-                "needs_sandbox": False,
-                "pending_tools": [],
-                "next_tool": "calendar",
-                "iteration": 1,
-                "evidence": [],
-                "thinking_steps": [],
-                "citations": [],
-                "need_more": False,
-                "kb_retried": False,
-                "web_retried": False,
-                "schedule_card": None,
-                "calendar_reply": None,
-                "direct_answer": None,
-                "artifact": None,
-                "intent": "calendar",
-            }
         ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
         router_hist = list(ctx.get("router_history") or state.get("history") or [])
         planned = plan_tools(
