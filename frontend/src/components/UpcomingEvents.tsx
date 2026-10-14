@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { listCalendarEvents, localStampFromDate, type ScheduleCard } from "../api/client";
+import { googleCalendarStatus, listCalendarEvents, localStampFromDate, type ScheduleCard } from "../api/client";
+import { sevenDayWindowInTimeZone } from "../utils/calendarWindow";
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -14,22 +15,37 @@ function formatWhen(startAt: string, endAt: string): string {
   return `${day}–${pad(end.getHours())}:${pad(end.getMinutes())}`;
 }
 
+function browserSevenDayWindow(): { start: string; end: string } {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  return { start: localStampFromDate(start), end: localStampFromDate(end) };
+}
+
 export function UpcomingEvents() {
   const [events, setEvents] = useState<ScheduleCard[] | null>(null);
 
   useEffect(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
     let cancelled = false;
-    listCalendarEvents(localStampFromDate(start), localStampFromDate(end))
-      .then((rows) => {
+    (async () => {
+      let range = browserSevenDayWindow();
+      try {
+        const status = await googleCalendarStatus();
+        if (status.connected && status.timezone) {
+          range = sevenDayWindowInTimeZone(status.timezone) ?? range;
+        }
+      } catch {
+        range = browserSevenDayWindow();
+      }
+      if (cancelled) return;
+      try {
+        const rows = await listCalendarEvents(range.start, range.end);
         if (!cancelled) setEvents(rows);
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setEvents([]);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };

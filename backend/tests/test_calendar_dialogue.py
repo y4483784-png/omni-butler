@@ -67,7 +67,7 @@ def _say(db, user_id: int, message: str) -> dict:
 
 
 def test_dialogue_create_list_move_conflict_and_cancel(auth_client: TestClient, monkeypatch):
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: _FROZEN)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: _FROZEN)
     monkeypatch.setattr("app.services.calendar.complete_json", _fake_extract)
     me = auth_client.get("/api/auth/me")
     assert me.status_code == 200
@@ -151,7 +151,7 @@ def test_dialogue_create_list_move_conflict_and_cancel(auth_client: TestClient, 
 
 
 def test_dialogue_duplicate_titles_and_void_on_next_message(monkeypatch):
-    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: _FROZEN)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_now", lambda *_args, **_kwargs: _FROZEN)
     monkeypatch.setattr("app.services.calendar.complete_json", _fake_extract)
     init_db()
     db = SessionLocal()
