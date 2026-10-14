@@ -325,6 +325,167 @@ def test_cross_user_delete_is_404(auth_client: TestClient):
         db.close()
 
 
+def test_update_finds_event_on_reference_day_not_target_day(monkeypatch):
+    """把周三的周会改到周四三点 searches Wednesday and proposes Thursday."""
+    frozen = datetime(2026, 10, 14, 9, 0)  # Wednesday
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        lambda *_a, **_k: {
+            "title": "周会",
+            "start_at": "2026-10-15T03:00:00",
+            "end_at": "",
+            "participants": [],
+            "missing_fields": [],
+        },
+    )
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        from app.services.calendar import create_event
+
+        wednesday = create_event(
+            db,
+            user_id=1,
+            title="周会",
+            start_at=datetime(2026, 10, 14, 10, 0),
+            end_at=datetime(2026, 10, 14, 11, 0),
+            participants=[],
+        )
+        created.append(wednesday.id)
+        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
+            result = run_agent_workflow(db, message="把周三的周会改到周四三点", history=[], user_id=1)
+        card = result["schedule_card"]
+        assert card["mode"] == "update"
+        assert card["event_id"] == wednesday.id
+        assert card["start_at"].startswith("2026-10-15T03:00:00")
+        assert card["end_at"].startswith("2026-10-15T04:00:00")
+        db.refresh(wednesday)
+        assert wednesday.start_at == datetime(2026, 10, 14, 10, 0)
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_title_only_update_skips_events_that_already_ended(monkeypatch):
+    frozen = datetime(2026, 10, 14, 9, 0)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        lambda *_a, **_k: {
+            "title": "周会",
+            "start_at": "",
+            "end_at": "",
+            "participants": [],
+            "missing_fields": [],
+        },
+    )
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        from app.services.calendar import create_event
+
+        past = create_event(
+            db,
+            user_id=1,
+            title="周会",
+            start_at=datetime(2026, 10, 13, 10, 0),
+            end_at=datetime(2026, 10, 13, 11, 0),
+            participants=[],
+        )
+        upcoming = create_event(
+            db,
+            user_id=1,
+            title="周会",
+            start_at=datetime(2026, 10, 15, 10, 0),
+            end_at=datetime(2026, 10, 15, 11, 0),
+            participants=[],
+        )
+        created.extend([past.id, upcoming.id])
+        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
+            result = run_agent_workflow(db, message="把周会改到四点", history=[], user_id=1)
+        card = result["schedule_card"]
+        assert card["mode"] == "update"
+        assert card["event_id"] == upcoming.id
+        assert card["start_at"].startswith("2026-10-14T04:00:00")
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_draft_confirm_conflict_patch_and_delete(auth_client: TestClient):
+    me = auth_client.get("/api/auth/me")
+    assert me.status_code == 200
+    owner_id = me.json()["id"]
+    draft = EventDraft(
+        title="往返会",
+        start_at=datetime(2026, 11, 4, 10, 0),
+        end_at=datetime(2026, 11, 4, 11, 0),
+        participants=["张三"],
+    )
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_plan()),
+            patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+        ):
+            prepared = run_agent_workflow(
+                db, message="11月4日上午十点开往返会", history=[], user_id=owner_id
+            )
+        card = prepared["schedule_card"]
+        assert card["phase"] == "draft"
+        assert card["mode"] == "create"
+        assert db.query(CalendarEvent).filter(CalendarEvent.title == "往返会").count() == 0
+
+        saved = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": card["title"],
+                "start_at": card["start_at"],
+                "end_at": card["end_at"],
+                "participants": card["participants"],
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        event_id = saved.json()["id"]
+        created.append(event_id)
+        assert saved.json()["status"] == "active"
+
+        conflict = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "往返会撞车",
+                "start_at": "2026-11-04T10:30:00",
+                "end_at": "2026-11-04T11:30:00",
+                "participants": [],
+            },
+        )
+        assert conflict.status_code == 409
+        detail = conflict.json()["detail"]
+        assert detail["conflicts"]
+        assert detail["suggested_slots"]
+        assert db.query(CalendarEvent).filter(CalendarEvent.title == "往返会撞车").count() == 0
+
+        patched = auth_client.patch(
+            f"/api/calendar/{event_id}",
+            json={"title": "往返会改期", "start_at": "2026-11-04T14:00:00", "end_at": "2026-11-04T15:00:00"},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["title"] == "往返会改期"
+        assert patched.json()["participants"] == ["张三"]
+
+        removed = auth_client.delete(f"/api/calendar/{event_id}")
+        assert removed.status_code == 200, removed.text
+        assert removed.json()["status"] == "cancelled"
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
 def test_next_message_voids_draft_card():
     init_db()
     db = SessionLocal()

@@ -9,6 +9,8 @@ from app.agents.harness.types import ToolContext, ToolResult
 from app.agents.tools.registry import ToolSpec, register
 from app.services.calendar import (
     EventDraft,
+    apply_update_times,
+    calendar_local_now,
     check_conflict,
     draft_expires_at,
     extract_event,
@@ -165,7 +167,10 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         steps.append("只读空闲建议，不写入")
         return _cleared(steps, _suggest_text(ctx))
 
-    draft = extract_event(ctx.message, ctx.history)
+    now = calendar_local_now(ctx.db)
+    draft = extract_event(ctx.message, ctx.history, now=now)
+    if action == "update":
+        apply_update_times(draft, ctx.message, now=now)
     if action == "create":
         card = _base_card(mode="create", action="create", draft=draft)
         if draft.start_at and draft.end_at:
@@ -180,7 +185,12 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         steps.append("已生成待确认卡片，尚未写入")
         return _cleared(steps, _confirm_text(card, full=bool(card["conflicts"])), card)
 
-    matches = find_event_candidates(ctx.db, ctx.user_id, title=draft.title, start_at=draft.start_at)
+    # Update searches the named original day, not the new slot. No original day
+    # means title-only among events that have not already ended.
+    search_at = draft.reference_start_at if action == "update" else draft.start_at
+    matches = find_event_candidates(
+        ctx.db, ctx.user_id, title=draft.title, start_at=search_at, now=now
+    )
     if not matches:
         steps.append("没有定位到已有日程")
         return _cleared(steps, "没有找到对应日程。")

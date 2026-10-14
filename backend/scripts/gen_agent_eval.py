@@ -439,24 +439,31 @@ def build_cases() -> list[dict]:
         add(query=q, task_type="refuse", route_gold=no_tool_gold,
             context=dict(no_kb), tags=["refuse", "kb", "availability_gate"])
 
-    # Calendar follow-ups are ordinary router cases. Confirmation happens on the card.
-    for slot_q, title in [
-        ("时间改成明天下午两点。", "需求评审"),
-        ("参会人再加上法务部。", "合同评审"),
-        ("会议室换成海棠厅。", "部门周会"),
-        ("标题改成季度经营复盘。", "复盘会"),
-        ("时长从一小时改成四十五分钟。", "站会"),
-        ("提醒时间设为提前一小时。", "培训"),
+    # Follow-ups after a confirm card. Supported edits stay on the calendar tool.
+    # Rooms, reminders, and a bare duration change are chat, matching routing seeds.
+    confirm = "请确认日程「{title}」，时间 2026-08-07 15:00–16:00。未确认不会写入。"
+    card_ctx = {
+        "has_kb_docs": True,
+        "has_tabular_docs": True,
+        "document_keys": [],
+        "pending_calendar": None,
+    }
+    for slot_q, title, supported in [
+        ("时间改成明天下午两点。", "需求评审", True),
+        ("参会人再加上法务部。", "合同评审", True),
+        ("会议室换成海棠厅。", "部门周会", False),
+        ("标题改成季度经营复盘。", "复盘会", True),
+        ("时长从一小时改成四十五分钟。", "站会", False),
+        ("提醒时间设为提前一小时。", "培训", False),
     ]:
-        add(query=slot_q, history=turns(f"帮我安排{title}。", "还需要补充或确认会议信息。"),
-            task_type="calendar", route_gold={"intent": "calendar", "tools": ["calendar"]},
-            context={
-                "has_kb_docs": True,
-                "has_tabular_docs": True,
-                "document_keys": [],
-                "pending_calendar": None,
-            },
-            tags=["calendar", "multiturn"])
+        if supported:
+            add(query=slot_q, history=turns(f"帮我安排{title}。", confirm.format(title=title)),
+                task_type="calendar", route_gold={"intent": "calendar", "tools": ["calendar"]},
+                context=dict(card_ctx), tags=["calendar", "multiturn"])
+        else:
+            add(query=slot_q, history=turns(f"帮我安排{title}。", confirm.format(title=title)),
+                task_type="chat", route_gold={"intent": "chat", "tools": []},
+                context=dict(card_ctx), tags=["chat", "multiturn"])
 
     # --- document scoping: production forces the kb tool and filters by id ---
     for q, keys, spec in [

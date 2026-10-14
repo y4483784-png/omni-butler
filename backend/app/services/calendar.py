@@ -28,6 +28,8 @@ _CALENDAR_HINTS = re.compile(
 )
 _PARTICIPANTS_PAT = re.compile(r"(参与人|参会人|和)([:：]?\s*)(.+)")
 _CANCEL_PAT = re.compile(r"(取消|算了|放弃|不安排了|先不安排)", re.I)
+_UPDATE_SPLIT = re.compile(r"(改到|改成|改为|挪到|换到|推迟到|提前到)")
+_WEEKDAY = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
 
 _CN_DIGIT = {
     "零": 0,
@@ -74,6 +76,8 @@ class EventDraft:
     participants: list[str] = field(default_factory=list)
     missing_fields: list[str] = field(default_factory=list)
     original_request: str = ""
+    # Update only: the existing event's time. start_at/end_at are the new slot.
+    reference_start_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +87,7 @@ class EventDraft:
             "participants": list(self.participants),
             "missing_fields": list(self.missing_fields),
             "original_request": self.original_request,
+            "reference_start_at": self.reference_start_at.isoformat() if self.reference_start_at else "",
         }
 
     @classmethod
@@ -94,6 +99,7 @@ class EventDraft:
             participants=[str(x).strip() for x in (data.get("participants") or []) if str(x).strip()],
             missing_fields=[str(x).strip() for x in (data.get("missing_fields") or []) if str(x).strip()],
             original_request=str(data.get("original_request") or ""),
+            reference_start_at=_parse_dt(str(data.get("reference_start_at") or "")),
         )
 
 
@@ -450,20 +456,78 @@ def titles_match(query: str, title: str) -> bool:
     return needle.casefold() in hay.casefold() or hay.casefold() in needle.casefold()
 
 
+def calendar_local_now(db: Session | None = None) -> datetime:
+    """Naive wall clock in the local provider timezone."""
+    if db is not None:
+        zone = LocalCalendarProvider(db).get_timezone()
+        return datetime.now(zone).replace(tzinfo=None, microsecond=0)
+    return datetime.now().replace(microsecond=0)
+
+
+def _weekday_base(now: datetime, marker: str) -> datetime:
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    return monday + timedelta(days=_WEEKDAY[marker])
+
+
+def _parse_clause_time(text: str, *, now: datetime) -> datetime | None:
+    """One clause's clock, weekday, or both. Weekday names the day even without 点."""
+    weekday = re.search(r"周([一二三四五六日天])", text or "")
+    day = _weekday_base(now, weekday.group(1)) if weekday else None
+    clock_text = re.sub(r"周[一二三四五六日天]", " ", text or "")
+    clock = _parse_time_from_message(clock_text, now=now)
+    if day is not None and clock is not None:
+        return day.replace(hour=clock.hour, minute=clock.minute)
+    if clock is not None:
+        return clock
+    return day
+
+
+def apply_update_times(draft: EventDraft, message: str, *, now: datetime | None = None) -> EventDraft:
+    """Split '把周三的周会改到周四三点' into the event's day and the new slot.
+
+    ``reference_start_at`` is only the day used to find the existing event.
+    ``start_at`` / ``end_at`` are the new slot. A message with only a new time
+    leaves the reference empty so lookup is by title.
+    """
+    now = now or datetime.now()
+    parts = _UPDATE_SPLIT.split(message or "", maxsplit=1)
+    if len(parts) < 3:
+        draft.reference_start_at = None
+        return draft
+    reference_clause, _pivot, target_clause = parts[0], parts[1], parts[2]
+    reference = _parse_clause_time(reference_clause, now=now)
+    target = _parse_clause_time(target_clause, now=now)
+    draft.reference_start_at = reference
+    title = _infer_title(reference_clause)
+    if title:
+        draft.title = title
+    if target is not None:
+        draft.start_at = target
+        draft.end_at = target + timedelta(hours=1)
+    return draft
+
+
 def find_event_candidates(
     db: Session,
     user_id: int,
     *,
     title: str,
     start_at: datetime | None,
+    now: datetime | None = None,
 ) -> list[CalendarEvent]:
-    """Active events for update/cancel. No title and no time means no guess."""
+    """Active events for update/cancel.
+
+    ``start_at`` is the named day of the existing event, including a past day
+    the user actually said. With only a title, keep events that end after the
+    calendar-local now so last year's rows are not candidates.
+    """
     provider = LocalCalendarProvider(db)
     if start_at is not None:
         day = start_at.replace(hour=0, minute=0, second=0, microsecond=0)
         rows = provider.overlap_rows(user_id, day, day + timedelta(days=1))
     elif (title or "").strip():
-        rows = provider.overlap_rows(user_id, datetime(2000, 1, 1), datetime(2100, 1, 1))
+        current = now or calendar_local_now(db)
+        rows = provider.overlap_rows(user_id, current, datetime(2100, 1, 1))
     else:
         return []
     if (title or "").strip():
