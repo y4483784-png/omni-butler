@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
+import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
@@ -19,6 +21,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarConnection, CalendarEvent, ToolAuditLog, User
 from app.agents.harness.types import ToolContext
+from app.agents.tools import calendar_tool
 from app.agents.tools.calendar_tool import execute_calendar
 from app.services.calendar import (
     EventDraft,
@@ -28,7 +31,11 @@ from app.services.calendar import (
     find_event_candidates,
 )
 from app.services.calendar_factory import calendar_provider_for
-from app.services.calendar_google import GoogleCalendarProvider
+from app.services.calendar_google import (
+    GoogleCalendarProvider,
+    WorkingHoursWindow,
+    parse_working_hours,
+)
 from app.services.calendar_local import LocalCalendarProvider
 from app.services.calendar_secrets import (
     GOOGLE_CALENDAR_SCOPES,
@@ -89,6 +96,8 @@ class FakeGoogle:
         self.deleted_ids: list[str] = []
         self.network_on: set[str] = set()
         self.on_event = None
+        self.settings_items: list[dict] | None = None
+        self.settings_status = 200
 
     def __call__(self, method, url, *, data=None, params=None, headers=None, json=None):
         self.calls.append(
@@ -133,6 +142,12 @@ class FakeGoogle:
                 self.timezone_status,
                 json={"id": "timezone", "value": self.timezone_value},
             )
+        if url.rstrip("/").endswith("/users/me/settings"):
+            if self.settings_items is None:
+                return httpx.Response(404, json={"error": {"message": "not found"}})
+            if self.settings_status != 200:
+                return httpx.Response(self.settings_status, json={"error": {"message": "settings failed"}})
+            return httpx.Response(200, json={"items": list(self.settings_items)})
         return httpx.Response(404, json={"error": "not-found"})
 
     def _events_response(self, method, url, body):
@@ -2301,6 +2316,486 @@ def test_readonly_google_item_has_no_update_or_cancel_card(
             .count()
             == 0
         )
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_list_overlays_google_without_writing(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Item 10: dedupe by external_id, show Google times, leave the stored row alone."""
+    _freeze_calendar_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        matched = CalendarEvent(
+            user_id=user_id,
+            title="旧标题",
+            start_at=datetime(2026, 6, 3, 10, 0),
+            end_at=datetime(2026, 6, 3, 11, 0),
+            participants='["甲"]',
+            status="active",
+            provider="google",
+            external_id="evt-live",
+            timezone="Asia/Shanghai",
+            location="旧地点",
+        )
+        local_only = CalendarEvent(
+            user_id=user_id,
+            title="本地会",
+            start_at=datetime(2026, 6, 3, 9, 0),
+            end_at=datetime(2026, 6, 3, 9, 30),
+            status="active",
+            provider="local",
+            external_id="",
+        )
+        hidden = CalendarEvent(
+            user_id=user_id,
+            title="已取消的同步",
+            start_at=datetime(2026, 6, 3, 8, 0),
+            end_at=datetime(2026, 6, 3, 8, 30),
+            status="active",
+            provider="google",
+            external_id="evt-cancelled",
+            timezone="Asia/Shanghai",
+        )
+        db.add(matched)
+        db.add(local_only)
+        db.add(hidden)
+        db.commit()
+        db.refresh(matched)
+        db.refresh(local_only)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item(
+                "evt-live",
+                "2026-06-03T14:00:00+08:00",
+                "2026-06-03T15:30:00+08:00",
+                summary="新标题",
+            ),
+            _google_item(
+                "evt-only",
+                "2026-06-03T18:00:00+08:00",
+                "2026-06-03T19:00:00+08:00",
+                summary="外面的会",
+            ),
+            _google_item("evt-day", "2026-06-04", "2026-06-05", all_day=True, summary="休息"),
+            _google_item(
+                "evt-blank",
+                "2026-06-03T12:00:00+08:00",
+                "2026-06-03T12:30:00+08:00",
+                summary="",
+            ),
+            _google_item(
+                "evt-clear",
+                "2026-06-03T13:00:00+08:00",
+                "2026-06-03T13:30:00+08:00",
+                summary="透明安排",
+                transparency="transparent",
+            ),
+            _google_item(
+                "evt-cancelled",
+                "2026-06-03T08:00:00+08:00",
+                "2026-06-03T08:30:00+08:00",
+                summary="已取消的同步",
+                status="cancelled",
+            ),
+            _google_item(
+                "evt-gone",
+                "2026-06-03T07:00:00+08:00",
+                "2026-06-03T07:30:00+08:00",
+                summary="不该出现",
+                status="cancelled",
+            ),
+            _google_item(
+                "evt-office",
+                "2026-06-03T09:00:00+08:00",
+                "2026-06-03T18:00:00+08:00",
+                summary="在办公室",
+                event_type="workingLocation",
+            ),
+            _google_item(
+                "evt-declined",
+                "2026-06-03T16:00:00+08:00",
+                "2026-06-03T17:00:00+08:00",
+                summary="已拒绝",
+                declined=True,
+            ),
+        ]
+        listed = auth_client.get(
+            "/api/calendar",
+            params={"start": "2026-06-02T00:00:00", "end": "2026-06-09T00:00:00"},
+        )
+        assert listed.status_code == 200, listed.text
+        body = listed.json()
+        assert isinstance(body, list)
+        assert [row["title"] for row in body] == [
+            "本地会",
+            "（无标题）",
+            "透明安排",
+            "新标题",
+            "外面的会",
+            "休息",
+        ]
+        by_title = {row["title"]: row for row in body}
+        assert by_title["本地会"]["id"] == local_only.id
+        assert by_title["本地会"].get("readonly") is not True
+        live = by_title["新标题"]
+        assert live["id"] == matched.id
+        assert live.get("readonly") is not True
+        assert live["start_at"].startswith("2026-06-03T14:00:00")
+        assert live["end_at"].startswith("2026-06-03T15:30:00")
+        assert live["participants"] == ["甲"]
+        assert live["location"] == "旧地点"
+        assert "10:00" not in live["start_at"]
+        google_only = by_title["外面的会"]
+        assert google_only["id"] is None
+        assert google_only["readonly"] is True
+        assert google_only["provider"] == "google"
+        untitled = by_title["（无标题）"]
+        assert untitled["id"] is None
+        assert untitled["readonly"] is True
+        rest = by_title["休息"]
+        assert rest["id"] is None
+        assert rest["readonly"] is True
+        assert rest["all_day"] is True
+        assert by_title["透明安排"]["readonly"] is True
+
+        for call in _list_calls(fake_google):
+            params = call["params"] or {}
+            assert params.get("singleEvents") == "true"
+            assert params.get("orderBy") == "startTime"
+            assert params.get("showDeleted") == "false"
+            assert "syncToken" not in params
+
+        db.refresh(matched)
+        db.refresh(hidden)
+        assert matched.title == "旧标题"
+        assert matched.start_at == datetime(2026, 6, 3, 10, 0)
+        assert matched.end_at == datetime(2026, 6, 3, 11, 0)
+        assert hidden.status == "active"
+        assert hidden.title == "已取消的同步"
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+        assert _insert_calls(fake_google) == []
+
+        provider = calendar_provider_for(db, user_id)
+        stored = provider.get_event(user_id, matched.id)
+        assert stored is not None
+        assert stored.title == "旧标题"
+        assert stored.start_at == datetime(2026, 6, 3, 10, 0)
+        assert stored.readonly is False
+        assert provider.get_event(user_id, 10**9) is None
+        lists_before = len(_list_calls(fake_google))
+        found = find_event_candidates(
+            db, user_id, title="旧标题", start_at=datetime(2026, 6, 3, 10, 0)
+        )
+        assert [row.id for row in found] == [matched.id]
+        assert found[0].title == "旧标题"
+        assert found[0].start_at == datetime(2026, 6, 3, 10, 0)
+        assert (
+            find_event_candidates(
+                db, user_id, title="外面的会", start_at=datetime(2026, 6, 3, 18, 0)
+            )
+            == []
+        )
+        assert (
+            find_event_candidates(
+                db, user_id, title="新标题", start_at=datetime(2026, 6, 3, 14, 0)
+            )
+            == []
+        )
+        assert len(_list_calls(fake_google)) == lists_before
+
+        chat = execute_calendar(
+            ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
+        )
+        assert chat.schedule_card is None
+        assert chat.direct_answer == (
+            "接下来 7 天的日程：\n"
+            "2026-06-03 09:00 本地会\n"
+            "2026-06-03 12:00 （无标题）（来自 Google）\n"
+            "2026-06-03 13:00 透明安排（来自 Google）\n"
+            "2026-06-03 14:00 新标题\n"
+            "2026-06-03 18:00 外面的会（来自 Google）\n"
+            "2026-06-04 全天 休息（来自 Google）"
+        )
+        assert "00:00" not in (chat.direct_answer or "")
+        assert "旧标题" not in (chat.direct_answer or "")
+        assert "不该出现" not in (chat.direct_answer or "")
+        assert "在办公室" not in (chat.direct_answer or "")
+        assert "已拒绝" not in (chat.direct_answer or "")
+        assert "已取消的同步" not in (chat.direct_answer or "")
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_list_read_failure_keeps_local_rows_and_says_so(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    _freeze_calendar_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        local_only = CalendarEvent(
+            user_id=user_id,
+            title="本地会",
+            start_at=datetime(2026, 6, 3, 9, 0),
+            end_at=datetime(2026, 6, 3, 9, 30),
+            status="active",
+            provider="local",
+            external_id="",
+        )
+        db.add(local_only)
+        db.commit()
+        db.refresh(local_only)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_status = 500
+        listed = auth_client.get(
+            "/api/calendar",
+            params={"start": "2026-06-02T00:00:00", "end": "2026-06-09T00:00:00"},
+        )
+        assert listed.status_code == 200, listed.text
+        assert listed.status_code != 500
+        body = listed.json()
+        assert body["notice"] == "暂时读不到 Google 日历，以下只是这里保存的日程。"
+        assert len(body["events"]) == 1
+        assert body["events"][0]["id"] == local_only.id
+        assert body["events"][0]["title"] == "本地会"
+        assert body["events"][0]["start_at"].startswith("2026-06-03T09:00:00")
+
+        chat = execute_calendar(
+            ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
+        )
+        assert chat.schedule_card is None
+        assert chat.direct_answer == (
+            "暂时读不到 Google 日历，以下只是这里保存的日程。\n"
+            "接下来 7 天的日程：\n"
+            "2026-06-03 09:00 本地会"
+        )
+        db.refresh(local_only)
+        assert local_only.title == "本地会"
+        assert local_only.start_at == datetime(2026, 6, 3, 9, 0)
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+        assert _insert_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_list_truncated_google_page_still_returns_rows(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    _freeze_calendar_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        local_only = CalendarEvent(
+            user_id=user_id,
+            title="本地会",
+            start_at=datetime(2026, 6, 3, 9, 0),
+            end_at=datetime(2026, 6, 3, 9, 30),
+            status="active",
+            provider="local",
+            external_id="",
+        )
+        db.add(local_only)
+        db.commit()
+        fake_google.always_next_page = True
+        fake_google.events_items = [
+            _google_item(
+                "evt-only",
+                "2026-06-03T18:00:00+08:00",
+                "2026-06-03T19:00:00+08:00",
+                summary="外面的会",
+            )
+        ]
+        listed = auth_client.get(
+            "/api/calendar",
+            params={"start": "2026-06-02T00:00:00", "end": "2026-06-09T00:00:00"},
+        )
+        assert listed.status_code == 200, listed.text
+        body = listed.json()
+        assert body["notice"] == "这次没有列完。"
+        titles = [row["title"] for row in body["events"]]
+        assert titles.count("外面的会") == 1
+        assert "本地会" in titles
+        assert fake_google.pages_served == 5
+        assert _insert_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_parse_working_hours_ignores_a_payload_without_the_field():
+    assert parse_working_hours(
+        [
+            {"id": "timezone", "value": "Asia/Shanghai"},
+            {"id": "weekStart", "value": "0"},
+            {"id": "workingLocation", "value": "office"},
+        ]
+    ) == []
+    parsed = parse_working_hours(
+        [
+            {"id": "timezone", "value": "Asia/Shanghai"},
+            {
+                "id": "workingHours",
+                "value": json.dumps([{"weekday": 3, "start": "10:00", "end": "16:00"}]),
+            },
+        ]
+    )
+    assert parsed == [WorkingHoursWindow(weekday=3, start=time(10, 0), end=time(16, 0))]
+
+
+def test_find_free_slots_clips_injected_hours_and_leaves_nights_closed(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """No working hours matches Local. Injected hours do not treat night as free."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        day = datetime(2026, 8, 6, 8, 0)
+        window_end = datetime(2026, 8, 6, 20, 0)
+        night = datetime(2026, 8, 6, 20, 0)
+        night_end = datetime(2026, 8, 6, 23, 0)
+        duration = timedelta(hours=1)
+        local = LocalCalendarProvider(db)
+        open_provider = calendar_provider_for(db, user_id)
+        fake_google.events_items = []
+        assert open_provider.find_free_slots(user_id, night, night_end, duration) == (
+            local.find_free_slots(user_id, night, night_end, duration)
+        )
+        assert open_provider.find_free_slots(user_id, day, window_end, duration)[0] == (
+            day,
+            day + duration,
+        )
+
+        fake_google.events_items = [
+            _google_item(
+                "office",
+                "2026-08-06T10:00:00+08:00",
+                "2026-08-06T16:00:00+08:00",
+                summary="在办公室",
+                event_type="workingLocation",
+            )
+        ]
+        assert open_provider.find_free_slots(user_id, night, night_end, duration) == [
+            (night, night + duration)
+        ]
+        assert open_provider.find_free_slots(user_id, day, window_end, duration)[0] == (
+            day,
+            day + duration,
+        )
+
+        hours = [
+            WorkingHoursWindow(weekday=day.weekday(), start=time(10, 0), end=time(16, 0))
+        ]
+        clipped = GoogleCalendarProvider(db, user_id, working_hours=hours)
+        fake_google.events_items = []
+        assert clipped.find_free_slots(user_id, night, night_end, duration) == []
+        daytime = clipped.find_free_slots(user_id, day, window_end, duration)
+        assert daytime[0] == (datetime(2026, 8, 6, 10, 0), datetime(2026, 8, 6, 11, 0))
+        assert daytime[0][0].hour != 9
+
+        fake_google.events_items = [
+            _google_item("a", "2026-08-06T10:00:00+08:00", "2026-08-06T11:00:00+08:00"),
+            _google_item("b", "2026-08-06T11:00:00+08:00", "2026-08-06T12:00:00+08:00"),
+            _google_item(
+                "clear",
+                "2026-08-06T12:00:00+08:00",
+                "2026-08-06T13:00:00+08:00",
+                transparency="transparent",
+            ),
+        ]
+        adjacent = clipped.find_free_slots(user_id, day, window_end, duration)
+        assert adjacent[0] == (datetime(2026, 8, 6, 12, 0), datetime(2026, 8, 6, 13, 0))
+
+        fake_google.events_items = []
+        fake_google.settings_items = [
+            {"id": "timezone", "value": "Asia/Shanghai"},
+            {"id": "weekStart", "value": "0"},
+        ]
+        from_settings = calendar_provider_for(db, user_id)
+        assert from_settings.working_hours is None
+        assert from_settings.find_free_slots(user_id, night, night_end, duration) == [
+            (night, night + duration)
+        ]
+        fake_google.settings_items = [
+            {"id": "timezone", "value": "Asia/Shanghai"},
+            {
+                "id": "workingHours",
+                "value": json.dumps(
+                    [{"weekday": day.weekday(), "start": "10:00", "end": "16:00"}]
+                ),
+            },
+        ]
+        parsed = calendar_provider_for(db, user_id)
+        assert parsed.find_free_slots(user_id, day, window_end, duration)[0] == (
+            datetime(2026, 8, 6, 10, 0),
+            datetime(2026, 8, 6, 11, 0),
+        )
+        assert parsed.find_free_slots(user_id, night, night_end, duration) == []
+
+        fake_google.events_items = []
+        fake_google.settings_items = []
+        fake_google.settings_status = 500
+        suggested = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
+        )
+        assert suggested.schedule_card is not None
+        assert suggested.schedule_card["mode"] == "suggest"
+        assert suggested.schedule_card["phase"] == "info"
+        assert "工作时间" not in (suggested.direct_answer or "")
+        assert "可以考虑这些空闲时段" in (suggested.direct_answer or "")
+        assert _insert_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_unconnected_list_skips_google_and_tool_does_not_query(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """Item 13: tool source has no db.query, and an unconnected list does not call Google."""
+    src = inspect.getsource(calendar_tool)
+    assert "db.query" not in src
+    assert "CalendarEvent" not in src
+    init_db()
+    user_id = _me(auth_client)["id"]
+    db = SessionLocal()
+    try:
+        before = len(fake_google.calls)
+        listed = execute_calendar(
+            ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
+        )
+        assert listed.schedule_card is None
+        assert listed.direct_answer == "接下来 7 天没有日程。"
+        suggested = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
+        )
+        assert suggested.schedule_card is not None
+        assert suggested.schedule_card["mode"] == "suggest"
+        assert "工作时间" not in (suggested.direct_answer or "")
+        provider = calendar_provider_for(db, user_id)
+        assert type(provider) is LocalCalendarProvider
+        assert provider.list_events(user_id, datetime(2026, 6, 2), datetime(2026, 6, 9)) == []
+        assert len(fake_google.calls) == before
+        http_listed = auth_client.get(
+            "/api/calendar",
+            params={"start": "2026-06-02T00:00:00", "end": "2026-06-09T00:00:00"},
+        )
+        assert http_listed.status_code == 200
+        assert http_listed.json() == []
+        assert len(fake_google.calls) == before
     finally:
         _cleanup(user_id)
         db.close()

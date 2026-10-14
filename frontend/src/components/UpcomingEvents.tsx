@@ -15,6 +15,22 @@ function formatWhen(startAt: string, endAt: string): string {
   return `${day}–${pad(end.getHours())}:${pad(end.getMinutes())}`;
 }
 
+function formatAllDay(startAt: string, endAt: string): string {
+  const startDay = (startAt || "").slice(0, 10);
+  const endDay = (endAt || "").slice(0, 10);
+  if (!startDay) return "全天";
+  if (!endDay || endDay <= startDay) return `${startDay} 全天`;
+  const end = new Date(`${endDay}T00:00:00`);
+  end.setDate(end.getDate() - 1);
+  const last = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`;
+  if (!last || last === startDay) return `${startDay} 全天`;
+  return `${startDay}–${last} 全天`;
+}
+
+function fromGoogle(event: ScheduleCard): boolean {
+  return event.readonly === true || event.id == null;
+}
+
 function browserSevenDayWindow(): { start: string; end: string } {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -25,6 +41,7 @@ function browserSevenDayWindow(): { start: string; end: string } {
 
 export function UpcomingEvents() {
   const [events, setEvents] = useState<ScheduleCard[] | null>(null);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -40,10 +57,16 @@ export function UpcomingEvents() {
       }
       if (cancelled) return;
       try {
-        const rows = await listCalendarEvents(range.start, range.end);
-        if (!cancelled) setEvents(rows);
+        const listed = await listCalendarEvents(range.start, range.end);
+        if (!cancelled) {
+          setEvents(listed.events);
+          setNotice(listed.notice);
+        }
       } catch {
-        if (!cancelled) setEvents([]);
+        if (!cancelled) {
+          setEvents([]);
+          setNotice("");
+        }
       }
     })();
     return () => {
@@ -51,17 +74,27 @@ export function UpcomingEvents() {
     };
   }, []);
 
-  if (!events || events.length === 0) return null;
+  if (!events || (events.length === 0 && !notice)) return null;
   return (
     <aside className="upcoming-events" aria-label="近日日程">
       <div className="upcoming-title">近日日程</div>
+      {notice ? <p className="upcoming-notice">{notice}</p> : null}
       <ul>
-        {events.map((event) => (
-          <li key={event.id ?? `${event.title}-${event.start_at}`}>
-            <span>{event.title || "未命名日程"}</span>
-            <span>{formatWhen(event.start_at, event.end_at)}</span>
-          </li>
-        ))}
+        {events.map((event) => {
+          const googleOnly = fromGoogle(event);
+          const when = event.all_day
+            ? formatAllDay(event.start_at, event.end_at)
+            : formatWhen(event.start_at, event.end_at);
+          return (
+            <li key={event.id ?? `${event.external_id || event.title}-${event.start_at}`}>
+              <span>
+                {event.title || "（无标题）"}
+                {googleOnly ? <em className="upcoming-source">来自 Google</em> : null}
+              </span>
+              <span>{when}</span>
+            </li>
+          );
+        })}
       </ul>
     </aside>
   );

@@ -119,10 +119,17 @@ def list_calendar_events(
         raise HTTPException(status_code=400, detail="时间格式无效") from exc
     if end_at <= start_at:
         raise HTTPException(status_code=400, detail="结束时间需晚于开始时间")
-    rows = calendar_provider_for(db, current_user.id).list_events(
+    provider = calendar_provider_for(db, current_user.id)
+    rows = provider.list_events(
         current_user.id, start_at, end_at, status=status or "active"
     )
-    return [serialize_event_card(row) for row in rows[:20]]
+    body = [serialize_event_card(row) for row in rows[:20]]
+    notice = str(getattr(provider, "list_notice", "") or "")
+    # Unconnected and successful reads stay a JSON array. A Google read
+    # problem still returns the local rows, plus the sentence, and is not a 500.
+    if notice:
+        return {"events": body, "notice": notice}
+    return body
 
 
 @router.post("")
@@ -281,7 +288,7 @@ def delete_event(
     return serialize_event_card(event)
 
 
-# List display stays on local rows. Connected update and cancel go to Google first.
+# Connected update and cancel go to Google first. List merges a read-only overlay.
 @router.get("/google/status")
 def google_calendar_status(
     db: Session = Depends(get_db_scoped),

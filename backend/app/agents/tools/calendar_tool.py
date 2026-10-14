@@ -180,20 +180,43 @@ def _suggest_window(message: str, now: datetime) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=7)
 
 
+def _list_line(row) -> str:
+    title = row.title or "（无标题）"
+    suffix = "（来自 Google）" if getattr(row, "readonly", False) else ""
+    if getattr(row, "all_day", False):
+        return f"{_all_day_label(row.start_at, row.end_at)} {title}{suffix}".strip()
+    if row.start_at is None:
+        return f"{title}{suffix}"
+    return f"{row.start_at:%Y-%m-%d %H:%M} {title}{suffix}"
+
+
+def _all_day_label(start: datetime | None, end: datetime | None) -> str:
+    """All-day display. ``end.date`` is exclusive, and the clock is not 00:00."""
+    if start is None:
+        return "全天"
+    start_day = start.date()
+    if end is None:
+        return f"{start_day.isoformat()} 全天"
+    end_day = end.date()
+    last = end_day - timedelta(days=1) if end_day > start_day else start_day
+    if last == start_day:
+        return f"{start_day.isoformat()} 全天"
+    return f"{start_day.isoformat()}–{last.isoformat()} 全天"
+
+
 def _list_text(ctx: ToolContext) -> str:
     now = _day_start(calendar_now(ctx.db, ctx.user_id))
-    rows = calendar_provider_for(ctx.db, ctx.user_id).list_events(
-        ctx.user_id, now, now + timedelta(days=7)
-    )
+    provider = calendar_provider_for(ctx.db, ctx.user_id)
+    rows = provider.list_events(ctx.user_id, now, now + timedelta(days=7))
+    notice = str(getattr(provider, "list_notice", "") or "")
     if not rows:
-        return "接下来 7 天没有日程。"
-    lines = []
-    for row in rows[:20]:
-        if row.start_at is None:
-            lines.append(row.title)
-        else:
-            lines.append(f"{row.start_at:%Y-%m-%d %H:%M} {row.title}")
-    return "接下来 7 天的日程：\n" + "\n".join(lines)
+        body = "" if notice else "接下来 7 天没有日程。"
+    else:
+        lines = [_list_line(row) for row in rows[:20]]
+        body = "接下来 7 天的日程：\n" + "\n".join(lines)
+    if notice and body:
+        return f"{notice}\n{body}"
+    return notice or body
 
 
 def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
