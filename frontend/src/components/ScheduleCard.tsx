@@ -150,6 +150,53 @@ export function ScheduleCard({
     }
   }
 
+  function useSlot(slot: ScheduleSlot) {
+    const expires = new Date();
+    expires.setMinutes(expires.getMinutes() + 30);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const expiresAt = `${expires.getFullYear()}-${pad(expires.getMonth() + 1)}-${pad(expires.getDate())}T${pad(expires.getHours())}:${pad(expires.getMinutes())}:00`;
+    onChange({
+      mode: "create",
+      phase: "draft",
+      action: "create",
+      title: "",
+      start_at: slot.start_at,
+      end_at: slot.end_at,
+      participants: [],
+      location: "",
+      description: "",
+      status: "",
+      expires_at: expiresAt,
+      event_id: null,
+      conflicts: [],
+      suggested_slots: [],
+      candidates: [],
+    });
+  }
+
+  if (mode === "suggest") {
+    return (
+      <div className="schedule-card">
+        <div className="schedule-head">
+          <strong>空闲时段</strong>
+          <span className="schedule-status">仅供选择</span>
+        </div>
+        <div className="schedule-slots">
+          {slots.map((slot) => (
+            <button
+              key={`${slot.start_at}-${slot.end_at}`}
+              type="button"
+              className="ghost-btn"
+              onClick={() => useSlot(slot)}
+            >
+              用这个时段 {formatWhen(slot.start_at, slot.end_at)}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const confirmLabel = mode === "cancel" ? "确认撤销" : mode === "update" || legacy ? "确认修改" : "确认创建";
   const showForm = mode !== "choose";
 

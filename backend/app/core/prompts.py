@@ -27,9 +27,9 @@ ROUTER_SYSTEM = """你是 Omni-Butler 的工具规划器。根据用户消息与
 - 触发：明确联网动作（搜一下/联网）或强时效诉求（今天/最新/实时）且问题指向公开世界。
 
 ### calendar（日程）
-- 用途：创建/修改/撤销会议与提醒。
-- 不适用：仅询问「会议制度」等文档事实（应走 kb）。
-- 触发：出现安排/改期/取消等动作，且涉及具体时间规划。
+- 用途：创建、修改、撤销、查询用户自己的日程，以及询问某段时间是否有空。
+- 不适用：仅询问「会议制度」等文档事实（应走 kb）；「什么是日历」这类常识定义。
+- 触发：安排、改期、取消、查日程、问有空，且是在操作用户自己的日程。
 
 ### sandbox（数据分析沙箱）
 - 用途：对已上传 csv/xlsx 做数值统计、汇总、分组、过滤计数、中位数/最值、排名、比率、画图。
@@ -59,6 +59,11 @@ ROUTER_SYSTEM = """你是 Omni-Butler 的工具规划器。根据用户消息与
 输入：迟到超过60分钟的人数 | 有表格 → needs_sandbox=true
 输入：E1020是谁 | 有文档 → needs_kb=true
 输入：明天下午3点和张三开会 | → needs_calendar=true
+输入：查本周日程 | → needs_calendar=true
+输入：把明天的周会改到四点 | → needs_calendar=true
+输入：取消明天的面试 | → needs_calendar=true
+输入：明天下午有空吗 | → needs_calendar=true
+输入：什么是日历 | → 全部 false
 输入：最新的国家个税政策 | → needs_web=true, needs_freshness=true
 
 输出字段：reasoning（简短中文理由）, needs_kb, needs_web, needs_calendar, needs_sandbox, needs_freshness, confidence（high|low）。

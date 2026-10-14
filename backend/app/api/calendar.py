@@ -9,6 +9,7 @@ from app.core.deps import get_db_scoped
 from app.core.ownership import require_owned_event
 from app.models.models import User
 from app.services.calendar import (
+    calendar_local_now,
     cancel_event,
     check_conflict,
     create_event,
@@ -16,6 +17,7 @@ from app.services.calendar import (
     serialize_event_card,
     update_event,
 )
+from app.services.calendar_local import LocalCalendarProvider
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -42,6 +44,27 @@ def _conflict_payload(rows, slots) -> dict:
             {"start_at": start.isoformat(), "end_at": end.isoformat()} for start, end in slots
         ],
     }
+
+
+@router.get("")
+def list_calendar_events(
+    start: str | None = None,
+    end: str | None = None,
+    status: str = "active",
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    """Events overlapping [start, end) for the signed-in user. Default is the next 7 days."""
+    today = calendar_local_now(db).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        start_at = _parse_dt(start) or today
+        end_at = _parse_dt(end) or (today + timedelta(days=7))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="时间格式无效") from exc
+    if end_at <= start_at:
+        raise HTTPException(status_code=400, detail="结束时间需晚于开始时间")
+    rows = LocalCalendarProvider(db).list_events(current_user.id, start_at, end_at, status=status or "active")
+    return [serialize_event_card(row) for row in rows[:20]]
 
 
 @router.post("")

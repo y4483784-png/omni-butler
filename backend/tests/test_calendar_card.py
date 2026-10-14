@@ -515,3 +515,150 @@ def test_next_message_voids_draft_card():
         db.commit()
     finally:
         db.close()
+
+
+def test_list_is_read_only_text(monkeypatch):
+    frozen = datetime(2026, 10, 14, 9, 0)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        from app.services.calendar import create_event
+
+        event = create_event(
+            db,
+            user_id=1,
+            title="周会",
+            start_at=datetime(2026, 10, 15, 10, 0),
+            end_at=datetime(2026, 10, 15, 11, 0),
+            participants=[],
+        )
+        created.append(event.id)
+        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
+            result = run_agent_workflow(db, message="这周有哪些会", history=[], user_id=1)
+        assert "周会" in result["direct_answer"]
+        assert "2026-10-15 10:00" in result["direct_answer"]
+        assert result["schedule_card"] is None
+        assert result["pending_calendar"] is None
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_suggest_returns_slot_card_without_writing(monkeypatch):
+    frozen = datetime(2026, 10, 14, 9, 0)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
+            result = run_agent_workflow(db, message="明天下午有空吗", history=[], user_id=1)
+        card = result["schedule_card"]
+        assert card["mode"] == "suggest"
+        assert card["phase"] == "info"
+        assert card["suggested_slots"]
+        assert "2026-10-15" in result["direct_answer"]
+        assert db.query(CalendarEvent).count() == before
+    finally:
+        db.close()
+
+
+def test_unconfirmed_create_then_reschedule_does_not_move_the_event(monkeypatch):
+    frozen = datetime(2026, 10, 14, 9, 0)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        lambda *_a, **_k: {
+            "title": "周会",
+            "start_at": "",
+            "end_at": "",
+            "participants": [],
+            "missing_fields": [],
+        },
+    )
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        from app.services.calendar import create_event
+
+        event = create_event(
+            db,
+            user_id=1,
+            title="周会",
+            start_at=datetime(2026, 10, 16, 10, 0),
+            end_at=datetime(2026, 10, 16, 11, 0),
+            participants=[],
+        )
+        created.append(event.id)
+        with (
+            patch("app.agents.workflow.plan_tools", return_value=_plan()),
+            patch(
+                "app.agents.tools.calendar_tool.extract_event",
+                return_value=EventDraft(
+                    title="新会",
+                    start_at=datetime(2026, 10, 16, 15, 0),
+                    end_at=datetime(2026, 10, 16, 16, 0),
+                ),
+            ),
+        ):
+            drafted = run_agent_workflow(db, message="明天下午三点开新会", history=[], user_id=1)
+        assert drafted["schedule_card"]["phase"] == "draft"
+        session = ChatSession(user_id=1, title="改期")
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        import json
+
+        db.add(
+            Message(
+                session_id=session.id,
+                role="assistant",
+                content=drafted["direct_answer"],
+                schedule_card=json.dumps(drafted["schedule_card"], ensure_ascii=False),
+            )
+        )
+        db.commit()
+        assert void_draft_schedule_cards(db, session.id) == 1
+        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
+            moved = run_agent_workflow(db, message="把周会改到四点", history=[], user_id=1)
+        assert moved["schedule_card"]["mode"] == "update"
+        assert moved["schedule_card"]["event_id"] == event.id
+        db.refresh(event)
+        assert event.start_at == datetime(2026, 10, 16, 10, 0)
+        db.delete(session)
+        db.commit()
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_confirmed_event_shows_up_in_list(auth_client: TestClient, monkeypatch):
+    frozen = datetime(2026, 10, 14, 9, 0)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.calendar_local_now", lambda _db=None: frozen)
+    me = auth_client.get("/api/auth/me")
+    owner_id = me.json()["id"]
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        saved = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "已确认周会",
+                "start_at": "2026-10-15T10:00:00",
+                "end_at": "2026-10-15T11:00:00",
+                "participants": [],
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        created.append(saved.json()["id"])
+        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
+            listed = run_agent_workflow(db, message="这周有哪些会", history=[], user_id=owner_id)
+        assert "已确认周会" in listed["direct_answer"]
+        assert "10:00" in listed["direct_answer"]
+    finally:
+        _cleanup(db, created)
+        db.close()

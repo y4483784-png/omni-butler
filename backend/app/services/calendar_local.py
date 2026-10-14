@@ -58,19 +58,28 @@ class LocalCalendarProvider:
         end: datetime,
         *,
         exclude_event_id: int | None = None,
+        status: str = "active",
     ) -> list[CalendarEvent]:
         query = self.db.query(CalendarEvent).filter(
             CalendarEvent.user_id == user_id,
-            CalendarEvent.status == "active",
             CalendarEvent.start_at < end,
             CalendarEvent.end_at > start,
         )
+        if status and status != "all":
+            query = query.filter(CalendarEvent.status == status)
         if exclude_event_id is not None:
             query = query.filter(CalendarEvent.id != exclude_event_id)
         return query.order_by(CalendarEvent.start_at.asc()).all()
 
-    def list_events(self, user_id: int, start: datetime, end: datetime) -> list[CalendarEventDTO]:
-        return [event_to_dto(row) for row in self.overlap_rows(user_id, start, end)]
+    def list_events(
+        self,
+        user_id: int,
+        start: datetime,
+        end: datetime,
+        *,
+        status: str = "active",
+    ) -> list[CalendarEventDTO]:
+        return [event_to_dto(row) for row in self.overlap_rows(user_id, start, end, status=status)]
 
     def get_event(self, user_id: int, event_id: int) -> CalendarEventDTO | None:
         event = self.db.get(CalendarEvent, event_id)

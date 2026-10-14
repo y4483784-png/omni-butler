@@ -520,6 +520,30 @@ a.cite-link:hover {
   padding-left: 8px;
   margin-bottom: 4px;
 }
+.upcoming-events {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.upcoming-title {
+  font-size: 12px;
+  color: #5b6573;
+  margin-bottom: 4px;
+}
+.upcoming-events ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.upcoming-events li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .schedule-card {
   margin-top: 10px;
   border: 1px solid #dbe3ef;
