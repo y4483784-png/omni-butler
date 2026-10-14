@@ -132,8 +132,29 @@ def _cleared(steps: list[str], answer: str, card: dict | None = None) -> ToolRes
     )
 
 
+def _day_start(value: datetime) -> datetime:
+    return value.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _suggest_window(message: str, now: datetime) -> tuple[datetime, datetime]:
+    """Named day uses that local day. Otherwise search from now through 7 days."""
+    if "后天" in (message or ""):
+        day = _day_start(now + timedelta(days=2))
+        return day, day + timedelta(days=1)
+    if "明天" in (message or ""):
+        day = _day_start(now + timedelta(days=1))
+        start = day.replace(hour=12) if "下午" in message else day
+        return start, day + timedelta(days=1)
+    if "今天" in (message or ""):
+        day = _day_start(now)
+        start = day.replace(hour=12) if "下午" in message else max(now, day)
+        return start, day + timedelta(days=1)
+    start = now.replace(second=0, microsecond=0)
+    return start, start + timedelta(days=7)
+
+
 def _list_text(ctx: ToolContext) -> str:
-    now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = _day_start(calendar_local_now(ctx.db))
     rows = LocalCalendarProvider(ctx.db).list_events(ctx.user_id, now, now + timedelta(days=7))
     if not rows:
         return "接下来 7 天没有日程。"
@@ -146,15 +167,36 @@ def _list_text(ctx: ToolContext) -> str:
     return "接下来 7 天的日程：\n" + "\n".join(lines)
 
 
-def _suggest_text(ctx: ToolContext) -> str:
-    start = datetime.now().replace(second=0, microsecond=0)
+def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
+    now = calendar_local_now(ctx.db)
+    start, end = _suggest_window(ctx.message, now)
     slots = LocalCalendarProvider(ctx.db).find_free_slots(
-        ctx.user_id, start, start + timedelta(days=7), timedelta(hours=1), limit=3
+        ctx.user_id, start, end, timedelta(hours=1), limit=3
     )
     if not slots:
-        return "接下来 7 天没有足够的空闲时段。"
-    lines = [f"{begin:%Y-%m-%d %H:%M}–{end:%H:%M}" for begin, end in slots]
-    return "接下来可以考虑这些空闲时段：\n" + "\n".join(lines)
+        return "这段时间没有足够的空闲时段。", None
+    lines = [f"{begin:%Y-%m-%d %H:%M}–{end_at:%H:%M}" for begin, end_at in slots]
+    card = {
+        "mode": "suggest",
+        "phase": "info",
+        "action": "suggest",
+        "expires_at": "",
+        "event_id": None,
+        "title": "",
+        "start_at": "",
+        "end_at": "",
+        "participants": [],
+        "location": "",
+        "description": "",
+        "timezone": "",
+        "provider": "local",
+        "external_id": "",
+        "status": "",
+        "conflicts": [],
+        "suggested_slots": _slot_payload(slots),
+        "candidates": [],
+    }
+    return "可以考虑这些空闲时段：\n" + "\n".join(lines), card
 
 
 def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
@@ -165,7 +207,8 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         return _cleared(steps, _list_text(ctx))
     if action == "suggest":
         steps.append("只读空闲建议，不写入")
-        return _cleared(steps, _suggest_text(ctx))
+        text, card = _suggest_result(ctx)
+        return _cleared(steps, text, card)
 
     now = calendar_local_now(ctx.db)
     draft = extract_event(ctx.message, ctx.history, now=now)

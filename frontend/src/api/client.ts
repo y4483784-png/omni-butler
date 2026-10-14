@@ -380,6 +380,22 @@ async function readCalendarError(r: Response, fallback: string): Promise<never> 
   throw new Error(message);
 }
 
+function localStamp(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export async function listCalendarEvents(start: string, end: string): Promise<ScheduleCard[]> {
+  const query = new URLSearchParams({ start, end, status: "active" });
+  const r = await apiFetch(`/api/calendar?${query.toString()}`);
+  if (!r.ok) throw new Error("加载日程失败");
+  return r.json();
+}
+
+export function localStampFromDate(date: Date): string {
+  return localStamp(date);
+}
+
 export async function createCalendarEvent(payload: {
   title: string;
   start_at: string;

@@ -4,6 +4,7 @@ import { hydrateSessionMessages, startChatStream, stopChatStream } from "../serv
 import type { ChatMsg } from "../api/client";
 import { Markdown } from "./Markdown";
 import { ScheduleCard } from "./ScheduleCard";
+import { UpcomingEvents } from "./UpcomingEvents";
 import { MessageActions } from "./MessageActions";
 import { artifactButtonLabel, artifactFromPayload } from "../utils/artifact";
 
@@ -69,6 +70,7 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
         {routeHint ? <span className="route-hint">{routeHint}</span> : null}
         {phaseHint ? <span className="route-hint phase-hint">{phaseHint}</span> : null}
       </div>
+      <UpcomingEvents />
       <div className="messages">
         {messages.map((m, i) => (
           <MessageRow
