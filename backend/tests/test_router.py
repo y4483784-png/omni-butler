@@ -23,6 +23,15 @@ from app.core.llm import (
 )
 
 
+def test_router_prompt_names_personal_block_and_planning():
+    from app.core.prompts import router_system
+
+    text = router_system(has_kb_docs=False)
+    assert "输入：明天下午留两小时写报告 | → needs_calendar=true" in text
+    assert "输入：帮我看看明天怎么安排 | → needs_calendar=true" in text
+    assert "输入：什么是时间规划 | → 全部 false" in text
+
+
 def test_tier1_certain_chat_exact():
     d = route("你好", [], has_kb_docs=True)
     assert d.needs_kb is False
