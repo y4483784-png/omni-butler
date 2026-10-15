@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -31,6 +31,23 @@ def _cleanup(db, event_ids: list[int]) -> None:
         if row is not None:
             db.delete(row)
     db.commit()
+
+
+def test_draft_expires_at_emits_utc_offset_for_naive_now():
+    """Naive now is the container clock. The stamp must still carry +00:00."""
+    from app.services.calendar import draft_expires_at
+
+    naive = datetime(2026, 10, 15, 6, 12, 45, 123456)
+    assert draft_expires_at(naive) == "2026-10-15T06:42:45+00:00"
+
+    shanghai = timezone(timedelta(hours=8))
+    aware = datetime(2026, 10, 15, 14, 12, 45, tzinfo=shanghai)
+    assert draft_expires_at(aware) == "2026-10-15T06:42:45+00:00"
+
+    stamped = datetime.fromisoformat(draft_expires_at())
+    assert stamped.utcoffset() == timedelta(0)
+    remaining = stamped - datetime.now(timezone.utc)
+    assert timedelta(minutes=29) < remaining < timedelta(minutes=31)
 
 
 def test_parse_tomorrow_afternoon_uses_injected_now():
@@ -82,7 +99,10 @@ def test_create_phrase_returns_draft_and_writes_nothing():
         assert card["start_at"].startswith("2026-08-07T15:00:00")
         assert card["end_at"].startswith("2026-08-07T16:00:00")
         assert card["participants"] == []
-        assert card["expires_at"]
+        expires = datetime.fromisoformat(card["expires_at"])
+        assert expires.utcoffset() == timedelta(0)
+        remaining = expires - datetime.now(timezone.utc)
+        assert timedelta(minutes=29) < remaining < timedelta(minutes=31)
         assert db.query(CalendarEvent).count() == before
         assert "create_event" not in calendar_tool.execute_calendar.__code__.co_names
     finally:
