@@ -87,6 +87,9 @@ class EventDraft:
     original_request: str = ""
     # Update only: the existing event's time. start_at/end_at are the new slot.
     reference_start_at: datetime | None = None
+    # Create fallthrough only: "list" switches to the read-only list reply.
+    requested_action: str = ""
+    list_day: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +100,8 @@ class EventDraft:
             "missing_fields": list(self.missing_fields),
             "original_request": self.original_request,
             "reference_start_at": self.reference_start_at.isoformat() if self.reference_start_at else "",
+            "requested_action": self.requested_action,
+            "list_day": self.list_day,
         }
 
     @classmethod
@@ -109,6 +114,8 @@ class EventDraft:
             missing_fields=[str(x).strip() for x in (data.get("missing_fields") or []) if str(x).strip()],
             original_request=str(data.get("original_request") or ""),
             reference_start_at=_parse_dt(str(data.get("reference_start_at") or "")),
+            requested_action=str(data.get("requested_action") or ""),
+            list_day=_civil_day(str(data.get("list_day") or "")),
         )
 
 
@@ -151,16 +158,59 @@ def _extract_system_prompt(
         existing = (
             " 修改或撤销时，title 是已有日程的名称，不要把参与人昵称或其他词拼进标题。"
         )
+        fields = '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}'
+        scheduling = ""
+    else:
+        fields = (
+            '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
+            '"missing_fields":[str],"action":str,"day":str}'
+        )
+        scheduling = (
+            " 用户说了时长就写 end_at，用开始之后的那段无偏移时间。"
+            " 个人时间块参与人可空，不要把参与人放进 missing_fields。"
+            " 若用户是在查已有日程，或问某一天怎么安排，action 输出 list，并填写 day。"
+            " 若用户是要创建日程或留下一段时间，action 输出 create。"
+            " 点名了某一天时 day 输出 YYYY-MM-DD；说本周、这几天或没点名，day 输出空字符串。"
+        )
     return (
         "你是日程信息提取器。只输出 JSON："
-        '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}。'
+        f"{fields}。"
         " start_at/end_at 用无偏移的 ISO 8601；缺失则输出空字符串。"
         " 参与人可以省略，不要因为没有参与人写入 missing_fields。"
         " 用户没说结束时间时 end_at 留空，不要把 end_at 放进 missing_fields。"
         f" {today}"
         "「明天」「后天」相对这一天。"
         " start_at/end_at 仍输出无偏移的 ISO 8601。"
+        f"{scheduling}"
         f"{existing}"
+    )
+
+
+def _civil_day(raw: str) -> str:
+    """A model-named civil day, or empty when the 7-day list window should be used."""
+    text = (raw or "").strip()
+    if len(text) != 10:
+        return ""
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return text
+
+
+def _list_day_prompt(now: datetime | None, timezone_name: str | None) -> str:
+    clock = now or datetime.now()
+    day = clock.date().isoformat()
+    zone = (timezone_name or "").strip()
+    if zone:
+        today = f"今天是 {day}，账户时区是 {zone}。"
+    else:
+        today = f"今天是 {day}。"
+    return (
+        '你只输出 JSON：{"day":str}。'
+        f" {today}"
+        " 用户点名了某一天（含明天、后天或具体日期）时，day 填那一天的 YYYY-MM-DD。"
+        " 用户说本周、这几天，或没有点名某一天时，day 输出空字符串。"
     )
 
 
@@ -210,8 +260,36 @@ def extract_event(
         missing_fields=list(dict.fromkeys(missing)),
         original_request=message,
     )
+    if not existing_event:
+        draft.requested_action = "list" if str(parsed.get("action") or "").strip().lower() == "list" else ""
+        draft.list_day = _civil_day(str(parsed.get("day") or ""))
     _supplement_draft_from_message(draft, message, allow_end=True, now=now)
     return _finalize_prefill(draft)
+
+
+def extract_list_day(
+    message: str,
+    history: list[dict] | None = None,
+    *,
+    now: datetime | None = None,
+    timezone_name: str | None = None,
+) -> str:
+    """Civil day for a list that regex already selected. Empty keeps the 7-day window."""
+    parsed = complete_json(
+        [
+            {"role": "system", "content": _list_day_prompt(now, timezone_name)},
+            {
+                "role": "user",
+                "content": (
+                    f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
+                    f"当前消息：{message}"
+                ),
+            },
+        ]
+    )
+    if not isinstance(parsed, dict):
+        return ""
+    return _civil_day(str(parsed.get("day") or ""))
 
 
 DRAFT_TTL = timedelta(minutes=30)

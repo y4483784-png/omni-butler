@@ -2682,6 +2682,15 @@ def test_connected_list_overlays_google_without_writing(
         )
         assert len(_list_calls(fake_google)) == lists_before
 
+        advice = "会有点密，中间留一点缓冲。"
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.complete_text",
+            lambda *_args, **_kwargs: advice,
+        )
+        monkeypatch.setattr(
+            "app.services.calendar.complete_json",
+            lambda *_args, **_kwargs: {"day": ""},
+        )
         chat = execute_calendar(
             ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
         )
@@ -2694,6 +2703,7 @@ def test_connected_list_overlays_google_without_writing(
             "2026-06-03 14:00 新标题\n"
             "2026-06-03 18:00 外面的会（来自 Google）\n"
             "2026-06-04 全天 休息（来自 Google）"
+            "\n\n" + advice
         )
         assert "00:00" not in (chat.direct_answer or "")
         assert "旧标题" not in (chat.direct_answer or "")
@@ -2742,6 +2752,15 @@ def test_list_read_failure_keeps_local_rows_and_says_so(
         assert body["events"][0]["title"] == "本地会"
         assert body["events"][0]["start_at"].startswith("2026-06-03T09:00:00")
 
+        monkeypatch.setattr(
+            "app.services.calendar.complete_json",
+            lambda *_args, **_kwargs: {"day": ""},
+        )
+
+        def _no_advice(*_args, **_kwargs):
+            raise AssertionError("read failure must not ask for advice")
+
+        monkeypatch.setattr("app.agents.tools.calendar_tool.complete_text", _no_advice)
         chat = execute_calendar(
             ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
         )
@@ -2936,7 +2955,7 @@ def test_find_free_slots_clips_injected_hours_and_leaves_nights_closed(
 
 
 def test_unconnected_list_skips_google_and_tool_does_not_query(
-    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
 ):
     """Item 13: tool source has no db.query, and an unconnected list does not call Google."""
     src = inspect.getsource(calendar_tool)
@@ -2947,11 +2966,20 @@ def test_unconnected_list_skips_google_and_tool_does_not_query(
     db = SessionLocal()
     try:
         before = len(fake_google.calls)
+        advice = "还有整段空闲，适合放需要专注的事。"
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.complete_text",
+            lambda *_args, **_kwargs: advice,
+        )
+        monkeypatch.setattr(
+            "app.services.calendar.complete_json",
+            lambda *_args, **_kwargs: {"day": ""},
+        )
         listed = execute_calendar(
             ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
         )
         assert listed.schedule_card is None
-        assert listed.direct_answer == "接下来 7 天没有日程。"
+        assert listed.direct_answer == "接下来 7 天没有日程。\n\n" + advice
         suggested = execute_calendar(
             ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
         )

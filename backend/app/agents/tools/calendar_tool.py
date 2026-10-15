@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 
 from app.agents.harness.types import ToolContext, ToolResult
 from app.agents.tools.registry import ToolSpec, register
+from app.core.llm import complete_text
 from app.services.calendar import (
     REMOTE_READ_ERRORS,
     EventDraft,
+    _civil_day,
     apply_update_times,
     calendar_now,
     check_conflict,
@@ -17,6 +19,7 @@ from app.services.calendar import (
     conflicts_for_update,
     draft_expires_at,
     extract_event,
+    extract_list_day,
     find_event_candidates,
     free_slots_for,
     readonly_titles,
@@ -28,10 +31,12 @@ from app.services.calendar_factory import (
     calendar_provider_for,
     calendar_writes_remote,
 )
-from app.services.calendar_google import _LIST_LOCAL_ONLY
+from app.services.calendar_google import _LIST_LOCAL_ONLY, _LIST_TRUNCATED
 from app.services.calendar_secrets import CalendarTransientError
 
 _GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不到就不会写入。"
+_ADVICE_UNAVAILABLE = "暂时给不出建议"
+_SKIP_ADVICE = frozenset({_LIST_LOCAL_ONLY, _LIST_TRUNCATED})
 _SUGGEST_UNAVAILABLE = "暂时读不到 Google 日历，不能建议空闲时段。"
 _NOT_FOUND = "没有找到对应日程。"
 _NOT_FOUND_UNREAD = "没有找到对应日程。暂时读不到 Google 日历，以下只是这里保存的日程。"
@@ -229,22 +234,85 @@ def _saved_rows_when_clock_fails(ctx: ToolContext) -> str:
     return f"{_LIST_LOCAL_ONLY}\n" + "\n".join(lines)
 
 
-def _list_text(ctx: ToolContext) -> str:
+def _advice_prompt(now: datetime, zone_name: str) -> str:
+    day = now.date().isoformat()
+    if zone_name:
+        today = f"今天是 {day}，账户时区是 {zone_name}。"
+    else:
+        today = f"今天是 {day}。"
+    return (
+        "你在帮用户看已经列出的日程。只写几句中文建议。"
+        f" {today}"
+        " 列出的时间是账户墙钟。"
+        " 看密度、缓冲、整段空闲是否适合专注、是否过载该挪走某件。"
+        " 不要逐段填空，不要把每个空档都填上，不要创建日程，不要输出卡片。"
+    )
+
+
+def _planning_advice(now: datetime, zone_name: str, listed: str) -> str:
+    """Model notes on the list already shown. A failed call does not invent a schedule."""
     try:
-        now = _day_start(calendar_now(ctx.db, ctx.user_id))
-    except CalendarTransientError:
-        return _saved_rows_when_clock_fails(ctx)
+        text = complete_text(
+            [
+                {"role": "system", "content": _advice_prompt(now, zone_name)},
+                {"role": "user", "content": listed},
+            ],
+            raise_on_error=True,
+        )
+    except Exception:
+        return _ADVICE_UNAVAILABLE
+    cleaned = (text or "").strip()
+    return cleaned or _ADVICE_UNAVAILABLE
+
+
+def _zone_name(ctx: ToolContext) -> str:
+    if ctx.db is None or ctx.user_id is None:
+        return ""
+    try:
+        return account_timezone_name(ctx.db, ctx.user_id) or ""
+    except REMOTE_READ_ERRORS:
+        return ""
+
+
+def _list_text(
+    ctx: ToolContext,
+    *,
+    day: str = "",
+    now: datetime | None = None,
+    zone_name: str | None = None,
+) -> str:
+    if now is None:
+        try:
+            now = calendar_now(ctx.db, ctx.user_id)
+        except CalendarTransientError:
+            return _saved_rows_when_clock_fails(ctx)
+    zone = zone_name if zone_name is not None else _zone_name(ctx)
+    named = _civil_day(day)
+    if named:
+        start = datetime.fromisoformat(named)
+        end = start + timedelta(days=1)
+        empty = "这一天没有日程。"
+        header = f"{named} 的日程："
+    else:
+        start = _day_start(now)
+        end = start + timedelta(days=7)
+        empty = "接下来 7 天没有日程。"
+        header = "接下来 7 天的日程："
     provider = calendar_provider_for(ctx.db, ctx.user_id)
-    rows = provider.list_events(ctx.user_id, now, now + timedelta(days=7))
+    rows = provider.list_events(ctx.user_id, start, end)
     notice = str(getattr(provider, "list_notice", "") or "")
     if not rows:
-        body = "" if notice else "接下来 7 天没有日程。"
+        body = "" if notice else empty
     else:
         lines = [_list_line(row) for row in rows[:20]]
-        body = "接下来 7 天的日程：\n" + "\n".join(lines)
+        body = header + "\n" + "\n".join(lines)
     if notice and body:
-        return f"{notice}\n{body}"
-    return notice or body
+        text = f"{notice}\n{body}"
+    else:
+        text = notice or body
+    if notice in _SKIP_ADVICE:
+        return text
+    return f"{text}\n\n{_planning_advice(now, zone, text)}"
 
 
 def _named_clock(message: str, now: datetime) -> datetime | None:
@@ -528,7 +596,13 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     action = resolve_action(ctx.message, args or {})
     if action == "list":
         steps.append("只读查询，不写入")
-        return _cleared(steps, _list_text(ctx))
+        try:
+            now = calendar_now(ctx.db, ctx.user_id)
+        except CalendarTransientError:
+            return _cleared(steps, _saved_rows_when_clock_fails(ctx))
+        zone_name = _zone_name(ctx)
+        day = extract_list_day(ctx.message, ctx.history, now=now, timezone_name=zone_name or None)
+        return _cleared(steps, _list_text(ctx, day=day, now=now, zone_name=zone_name))
     if action == "suggest":
         steps.append("只读空闲建议，不写入")
         text, card = _suggest_result(ctx)
@@ -549,6 +623,12 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         timezone_name=zone_name,
         existing_event=action in {"update", "cancel"},
     )
+    if action == "create" and draft.requested_action == "list":
+        steps.append("只读查询，不写入")
+        return _cleared(
+            steps,
+            _list_text(ctx, day=draft.list_day, now=now, zone_name=zone_name or ""),
+        )
     remote = _writes_remote(ctx)
     if action == "update" and not remote:
         apply_update_times(draft, ctx.message, now=now)
