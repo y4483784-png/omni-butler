@@ -1225,6 +1225,9 @@ def _google_item(
     status: str = "confirmed",
     declined: bool = False,
     all_day: bool = False,
+    location: str = "",
+    description: str = "",
+    attendees: list | None = None,
 ) -> dict:
     if all_day:
         start_body = {"date": start}
@@ -1243,6 +1246,12 @@ def _google_item(
         item["transparency"] = transparency
     if event_type:
         item["eventType"] = event_type
+    if location:
+        item["location"] = location
+    if description:
+        item["description"] = description
+    if attendees:
+        item["attendees"] = attendees
     if declined:
         item["attendees"] = [{"email": "owner@example.com", "self": True, "responseStatus": "declined"}]
     return item
@@ -3452,7 +3461,7 @@ def test_connected_prefill_soft_aligns_one_live_title(
 def test_connected_prefill_leaves_an_exact_title(
     auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
 ):
-    """One exact summary match is not rewritten, including cancel times."""
+    """One exact summary keeps that title and takes the event's wall times."""
     init_db()
     db = SessionLocal()
     user_id = 0
@@ -3484,8 +3493,8 @@ def test_connected_prefill_leaves_an_exact_title(
         )
         card = cancel.schedule_card
         assert card["title"] == "测试会议"
-        assert card["start_at"] == "2026-10-18T09:00:00"
-        assert card["end_at"] == "2026-10-18T10:00:00"
+        assert card["start_at"] == "2026-10-16T15:00:00"
+        assert card["end_at"] == "2026-10-16T16:00:00"
         assert card["timezone"] == "Asia/Singapore"
         _assert_offset_free(card)
         assert _delete_calls(fake_google) == []
@@ -3734,6 +3743,204 @@ def test_cancel_confirm_does_not_change_description(
         db.refresh(row)
         assert row.description == "原说明"
         assert row.status == "cancelled"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_update_prefills_live_event_fields(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Exact title match copies the live event. The model only moves the start unless it says otherwise."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _forbid_local_lookup(monkeypatch)
+
+    def _json(messages, *_args, **_kwargs):
+        blob = messages[-1]["content"] if messages else ""
+        if "取消" in blob:
+            return {
+                "title": "测试会议",
+                "start_at": "2026-10-18T09:00:00",
+                "end_at": "2026-10-18T10:00:00",
+                "participants": [],
+                "kind": "block",
+                "description": "不要用这句",
+            }
+        if "简短" in blob:
+            return {
+                "title": "测试会议",
+                "start_at": "2026-10-17T16:00:00",
+                "end_at": "2026-10-17T16:30:00",
+                "participants": ["无关的人"],
+                "kind": "block",
+                "description": "改成简短",
+            }
+        if "专注" in blob:
+            return {
+                "title": "专注",
+                "start_at": "2026-10-17T16:00:00",
+                "end_at": "",
+                "participants": ["小李"],
+                "kind": "meeting",
+                "description": "",
+            }
+        return {
+            "title": "测试会议",
+            "start_at": "2026-10-17T16:00:00",
+            "end_at": "",
+            "participants": ["无关的人"],
+            "kind": "block",
+            "description": "",
+        }
+
+    monkeypatch.setattr("app.services.calendar.complete_json", _json)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item(
+                "evt-real",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T17:00:00+08:00",
+                summary="测试会议",
+                location="会议室",
+                description="带上大纲",
+                attendees=[{"email": "li@example.com", "displayName": "小李", "responseStatus": "accepted"}],
+            )
+        ]
+        kept = execute_calendar(
+            ToolContext(db=db, message="把测试会议改到后天", history=[], user_id=user_id)
+        )
+        card = kept.schedule_card
+        assert card["mode"] == "update"
+        assert card["phase"] == "draft"
+        assert card["title"] == "测试会议"
+        assert card["kind"] == "meeting"
+        assert card["participants"] == ["小李"]
+        assert card["location"] == "会议室"
+        assert card["description"] == "带上大纲"
+        assert card["start_at"] == "2026-10-17T16:00:00"
+        assert card["end_at"] == "2026-10-17T18:00:00"
+        assert card["timezone"] == "Asia/Singapore"
+        assert card["event_id"] is None
+        _assert_offset_free(card)
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        shortened = execute_calendar(
+            ToolContext(
+                db=db,
+                message="把测试会议改到后天，备注改成简短",
+                history=[],
+                user_id=user_id,
+            )
+        )
+        moved = shortened.schedule_card
+        assert moved["kind"] == "meeting"
+        assert moved["participants"] == ["小李"]
+        assert moved["location"] == "会议室"
+        assert moved["description"] == "改成简短"
+        assert moved["start_at"] == "2026-10-17T16:00:00"
+        assert moved["end_at"] == "2026-10-17T16:30:00"
+        assert _patch_calls(fake_google) == []
+
+        cancelled = execute_calendar(
+            ToolContext(db=db, message="取消测试会议", history=[], user_id=user_id)
+        )
+        cancel_card = cancelled.schedule_card
+        assert cancel_card["mode"] == "cancel"
+        assert cancel_card["kind"] == ""
+        assert cancel_card["start_at"] == "2026-10-16T15:00:00"
+        assert cancel_card["end_at"] == "2026-10-16T17:00:00"
+        assert cancel_card["description"] == "带上大纲"
+        assert cancel_card["participants"] == ["小李"]
+        assert cancel_card["location"] == "会议室"
+        _assert_offset_free(cancel_card)
+        assert _delete_calls(fake_google) == []
+
+        fake_google.events_items = [
+            _google_item(
+                "evt-block",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T17:00:00+08:00",
+                summary="专注",
+                description="只留给自己",
+            )
+        ]
+        blocked = execute_calendar(
+            ToolContext(db=db, message="把专注改到后天", history=[], user_id=user_id)
+        )
+        block_card = blocked.schedule_card
+        assert block_card["mode"] == "update"
+        assert block_card["kind"] == "block"
+        assert block_card["participants"] == []
+        assert block_card["location"] == ""
+        assert block_card["description"] == "只留给自己"
+        assert block_card["start_at"] == "2026-10-17T16:00:00"
+        assert block_card["end_at"] == "2026-10-17T18:00:00"
+        assert _patch_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_prefill_uses_local_participants_when_google_has_none(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Participants stay on the local row, so a linked event still prefills them."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _forbid_local_lookup(monkeypatch)
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        lambda *_a, **_k: {
+            "title": "周会",
+            "start_at": "2026-10-17T16:00:00",
+            "end_at": "",
+            "participants": [],
+            "kind": "block",
+            "description": "",
+        },
+    )
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        _google_row(
+            db,
+            user_id,
+            title="周会",
+            start=datetime(2026, 10, 16, 15, 0),
+            external_id="evt-local-people",
+            participants='["小王"]',
+            location="",
+            description="",
+        )
+        fake_google.events_items = [
+            _google_item(
+                "evt-local-people",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T17:00:00+08:00",
+                summary="周会",
+                description="议程",
+            )
+        ]
+        result = execute_calendar(
+            ToolContext(db=db, message="把周会改到后天", history=[], user_id=user_id)
+        )
+        card = result.schedule_card
+        assert card["mode"] == "update"
+        assert card["kind"] == "meeting"
+        assert card["participants"] == ["小王"]
+        assert card["location"] == ""
+        assert card["description"] == "议程"
+        assert card["start_at"] == "2026-10-17T16:00:00"
+        assert card["end_at"] == "2026-10-17T18:00:00"
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
     finally:
         _cleanup(user_id)
         db.close()

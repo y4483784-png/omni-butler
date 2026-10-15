@@ -868,6 +868,8 @@ def test_update_and_cancel_prompt_asks_for_the_existing_title(monkeypatch):
     for prompt in (cancel_prompt, update_prompt):
         assert "已有日程的名称" in prompt
         assert "不要把参与人昵称或其他词拼进标题" in prompt
+        assert "结束时间或时长" in prompt
+        assert "改备注" in prompt
         assert "/" not in prompt.replace("start_at/end_at", "")
 
 
@@ -1633,7 +1635,8 @@ def test_create_kind_splits_meeting_and_block(monkeypatch):
         db.close()
 
 
-def test_update_kind_changes_the_form_and_cancel_does_not(monkeypatch):
+def test_update_kind_follows_the_matched_event_and_cancel_does_not(monkeypatch):
+    """A matched event decides the form. The model's kind does not override it."""
     _freeze_planning_clock(monkeypatch)
     init_db()
     db = SessionLocal()
@@ -1665,8 +1668,8 @@ def test_update_kind_changes_the_form_and_cancel_does_not(monkeypatch):
             ToolContext(db=db, message="把写报告改到后天下午", history=[], user_id=owner_id)
         )
         assert updated.schedule_card["mode"] == "update"
-        assert updated.schedule_card["kind"] == "block"
-        assert updated.schedule_card["participants"] == []
+        assert updated.schedule_card["kind"] == "meeting"
+        assert updated.schedule_card["participants"] == ["小李"]
         db.refresh(event)
         assert event.start_at == datetime(2026, 10, 16, 15, 0)
 
@@ -1689,8 +1692,8 @@ def test_update_kind_changes_the_form_and_cancel_does_not(monkeypatch):
             "app.services.calendar.complete_json",
             lambda *_a, **_k: {
                 "title": "写报告",
-                "start_at": "2026-10-16T15:00:00",
-                "end_at": "2026-10-16T17:00:00",
+                "start_at": "2026-10-16T09:00:00",
+                "end_at": "2026-10-16T10:00:00",
                 "participants": [],
                 "kind": "block",
             },
@@ -1700,6 +1703,8 @@ def test_update_kind_changes_the_form_and_cancel_does_not(monkeypatch):
         )
         assert cancelled.schedule_card["mode"] == "cancel"
         assert cancelled.schedule_card["kind"] == ""
+        assert cancelled.schedule_card["start_at"] == "2026-10-16T15:00:00"
+        assert cancelled.schedule_card["end_at"] == "2026-10-16T17:00:00"
         db.refresh(event)
         assert event.status == "active"
     finally:
@@ -1739,5 +1744,254 @@ def test_notes_prefill_description_and_stay_optional(monkeypatch):
         assert draft.description == "带上大纲"
         assert "description" not in draft.missing_fields
         assert "kind" not in draft.missing_fields
+    finally:
+        db.close()
+
+
+def test_update_keeps_matched_duration_and_notes_unless_asked(monkeypatch):
+    """The model supplies the new start. Duration and notes stay unless it asked to change them."""
+    _freeze_planning_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        from app.services.calendar import create_event
+
+        owner_id = _planning_owner(db)
+        block = create_event(
+            db,
+            user_id=owner_id,
+            title="写报告",
+            start_at=datetime(2026, 10, 16, 15, 0),
+            end_at=datetime(2026, 10, 16, 17, 0),
+            participants=[],
+            location="",
+            description="带上大纲",
+        )
+        meeting = create_event(
+            db,
+            user_id=owner_id,
+            title="评审",
+            start_at=datetime(2026, 10, 16, 15, 0),
+            end_at=datetime(2026, 10, 16, 17, 0),
+            participants=["小李"],
+            location="会议室",
+            description="旧备注",
+        )
+        created.extend([block.id, meeting.id])
+
+        def _json(messages, *_args, **_kwargs):
+            blob = messages[-1]["content"] if messages else ""
+            if "新备注" in blob:
+                return {
+                    "title": "评审",
+                    "start_at": "2026-10-17T16:00:00",
+                    "end_at": "2026-10-17T16:30:00",
+                    "participants": ["别人"],
+                    "kind": "block",
+                    "description": "新备注",
+                }
+            return {
+                "title": "写报告",
+                "start_at": "2026-10-17T16:00:00",
+                "end_at": "",
+                "participants": ["别人"],
+                "kind": "meeting",
+                "description": "",
+            }
+
+        monkeypatch.setattr("app.services.calendar.complete_json", _json)
+        kept = execute_calendar(
+            ToolContext(db=db, message="把写报告改到后天", history=[], user_id=owner_id)
+        )
+        card = kept.schedule_card
+        assert card["mode"] == "update"
+        assert card["phase"] == "draft"
+        assert card["event_id"] == block.id
+        assert card["kind"] == "block"
+        assert card["title"] == "写报告"
+        assert card["start_at"] == "2026-10-17T16:00:00"
+        assert card["end_at"] == "2026-10-17T18:00:00"
+        assert card["participants"] == []
+        assert card["location"] == ""
+        assert card["description"] == "带上大纲"
+        assert "+" not in card["start_at"] and "Z" not in card["start_at"]
+        assert "+" not in card["end_at"] and "Z" not in card["end_at"]
+        db.refresh(block)
+        assert block.start_at == datetime(2026, 10, 16, 15, 0)
+        assert block.description == "带上大纲"
+
+        changed = execute_calendar(
+            ToolContext(
+                db=db,
+                message="把评审改到后天，备注改成新备注",
+                history=[],
+                user_id=owner_id,
+            )
+        )
+        moved = changed.schedule_card
+        assert moved["mode"] == "update"
+        assert moved["phase"] == "draft"
+        assert moved["event_id"] == meeting.id
+        assert moved["kind"] == "meeting"
+        assert moved["participants"] == ["小李"]
+        assert moved["location"] == "会议室"
+        assert moved["description"] == "新备注"
+        assert moved["start_at"] == "2026-10-17T16:00:00"
+        assert moved["end_at"] == "2026-10-17T16:30:00"
+        db.refresh(meeting)
+        assert meeting.start_at == datetime(2026, 10, 16, 15, 0)
+        assert meeting.description == "旧备注"
+        assert meeting.location == "会议室"
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_cancel_card_uses_the_matched_event_times(monkeypatch):
+    """A title match replaces the model's guessed cancel times with the real span."""
+    _freeze_planning_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        from app.services.calendar import create_event
+
+        owner_id = _planning_owner(db)
+        event = create_event(
+            db,
+            user_id=owner_id,
+            title="写报告",
+            start_at=datetime(2026, 10, 16, 15, 0),
+            end_at=datetime(2026, 10, 16, 17, 0),
+            participants=["小李"],
+            location="会议室",
+            description="带上大纲",
+        )
+        created.append(event.id)
+        monkeypatch.setattr(
+            "app.services.calendar.complete_json",
+            lambda *_a, **_k: {
+                "title": "写报告",
+                "start_at": "2026-10-16T09:00:00",
+                "end_at": "2026-10-16T10:00:00",
+                "participants": [],
+                "kind": "block",
+                "description": "不要用这句",
+            },
+        )
+        cancelled = execute_calendar(
+            ToolContext(db=db, message="取消写报告", history=[], user_id=owner_id)
+        )
+        card = cancelled.schedule_card
+        assert card["mode"] == "cancel"
+        assert card["phase"] == "draft"
+        assert card["kind"] == ""
+        assert card["event_id"] == event.id
+        assert card["start_at"] == "2026-10-16T15:00:00"
+        assert card["end_at"] == "2026-10-16T17:00:00"
+        assert card["participants"] == ["小李"]
+        assert card["location"] == "会议室"
+        assert card["description"] == "带上大纲"
+        assert "+" not in card["start_at"] and "Z" not in card["end_at"]
+        db.refresh(event)
+        assert event.status == "active"
+        assert event.start_at == datetime(2026, 10, 16, 15, 0)
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_free_slot_drops_overlapping_slots_but_not_by_hour(monkeypatch):
+    """Busy overlap is dropped. A midnight slot that misses the event stays."""
+    from types import SimpleNamespace
+
+    row = SimpleNamespace(
+        title="周会",
+        start_at=datetime(2026, 10, 16, 10, 0),
+        end_at=datetime(2026, 10, 16, 11, 0),
+        all_day=False,
+        readonly=False,
+    )
+    provider = _Listed([row])
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        _json_day_then_slots(
+            "2026-10-16",
+            [
+                {"start_at": "2026-10-16T00:00:00", "end_at": "2026-10-16T01:00:00"},
+                {"start_at": "2026-10-16T10:30:00", "end_at": "2026-10-16T11:30:00"},
+                {"start_at": "2026-10-16T11:00:00", "end_at": "2026-10-16T12:00:00"},
+                {"start_at": "2026-10-16T15:00:00", "end_at": "2026-10-16T16:00:00"},
+            ],
+            "午夜不和周会重叠。",
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_provider_for",
+        lambda *_a, **_k: provider,
+    )
+    _freeze_planning_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    try:
+        result = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=1)
+        )
+        card = result.schedule_card
+        assert card["mode"] == "list"
+        assert card["phase"] == "info"
+        assert card["items"][0]["title"] == "周会"
+        assert card["suggested_slots"] == [
+            {"start_at": "2026-10-16T00:00:00", "end_at": "2026-10-16T01:00:00"},
+            {"start_at": "2026-10-16T11:00:00", "end_at": "2026-10-16T12:00:00"},
+            {"start_at": "2026-10-16T15:00:00", "end_at": "2026-10-16T16:00:00"},
+        ]
+        assert result.direct_answer == "午夜不和周会重叠。"
+    finally:
+        db.close()
+
+
+def test_free_slot_empty_when_every_slot_overlaps(monkeypatch):
+    """Every suggested slot hits a listed event, so the list card keeps the note and no slots."""
+    from types import SimpleNamespace
+
+    row = SimpleNamespace(
+        title="周会",
+        start_at=datetime(2026, 10, 16, 10, 0),
+        end_at=datetime(2026, 10, 16, 11, 0),
+        all_day=False,
+        readonly=False,
+    )
+    provider = _Listed([row])
+    note = "这些时段都和周会重叠。"
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        _json_day_then_slots(
+            "2026-10-16",
+            [
+                {"start_at": "2026-10-16T09:30:00", "end_at": "2026-10-16T10:30:00"},
+                {"start_at": "2026-10-16T10:15:00", "end_at": "2026-10-16T10:45:00"},
+            ],
+            note,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_provider_for",
+        lambda *_a, **_k: provider,
+    )
+    _freeze_planning_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    try:
+        result = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=1)
+        )
+        card = result.schedule_card
+        assert card["mode"] == "list"
+        assert card["phase"] == "info"
+        assert card["items"][0]["title"] == "周会"
+        assert card["suggested_slots"] == []
+        assert result.direct_answer == note
     finally:
         db.close()

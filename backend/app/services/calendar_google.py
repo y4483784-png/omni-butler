@@ -21,7 +21,12 @@ from sqlalchemy.orm import Session
 
 from app.models.models import CalendarConnection, CalendarEvent
 from app.services import calendar_secrets
-from app.services.calendar_local import LocalCalendarProvider, event_to_dto, free_gaps
+from app.services.calendar_local import (
+    LocalCalendarProvider,
+    _participants_from_row,
+    event_to_dto,
+    free_gaps,
+)
 from app.services.calendar_provider import CalendarEventDTO
 from app.services.calendar_secrets import (
     CalendarTokenError,
@@ -507,22 +512,50 @@ class GoogleCalendarProvider:
 
         ``summary`` is the stripped Google summary. ``start_at`` and ``end_at``
         are naive wall times, or None when the item has no usable span.
+        ``location``, ``description``, and ``participants`` come from the live
+        item. Attendees are not how this app stores participants, so a linked
+        local row fills those three fields when the Google item left them empty.
         Hidden rows are skipped. Nothing is stored. Confirm does not call this
         and still requires ``summary.strip() == title``.
         """
         items = self._list_primary_events(_as_naive(start), _as_naive(end), zone_name)
+        visible = [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and not _hidden_on_list(item)
+            and str(item.get("id") or "").strip()
+        ]
+        local_by_id = {
+            row.external_id: row
+            for row in self._local.rows_for_external_ids(
+                self.user_id, [str(item.get("id") or "") for item in visible]
+            )
+            if row.external_id
+        }
         found: list[dict] = []
-        for item in items:
-            if not isinstance(item, dict) or _hidden_on_list(item):
-                continue
-            if not str(item.get("id") or "").strip():
-                continue
+        for item in visible:
+            gid = str(item.get("id") or "").strip()
             view = _event_view(item)
+            participants = _participant_names(item)
+            location = str(item.get("location") or "").strip()
+            description = str(item.get("description") or "").strip()
+            local = local_by_id.get(gid)
+            if local is not None:
+                if not participants:
+                    participants = _participants_from_row(local.participants)
+                if not location:
+                    location = (local.location or "").strip()
+                if not description:
+                    description = (local.description or "").strip()
             found.append(
                 {
                     "summary": str(item.get("summary") or "").strip(),
                     "start_at": None if view is None else view.start,
                     "end_at": None if view is None else view.end,
+                    "participants": participants,
+                    "location": location,
+                    "description": description,
                 }
             )
         return found
@@ -1430,6 +1463,23 @@ def _slots_in_windows(
             break
         slots.extend(free_gaps(busy, begin, finish, duration, limit - len(slots)))
     return slots
+
+
+def _participant_names(item: dict) -> list[str]:
+    """Other people on a Google event. The calendar owner is not a participant."""
+    attendees = item.get("attendees")
+    if not isinstance(attendees, list):
+        return []
+    names: list[str] = []
+    for person in attendees:
+        if not isinstance(person, dict) or person.get("self"):
+            continue
+        if str(person.get("responseStatus") or "") == "declined":
+            continue
+        name = str(person.get("displayName") or person.get("email") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 def _self_declined(item: dict) -> bool:
