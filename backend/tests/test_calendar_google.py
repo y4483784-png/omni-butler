@@ -2694,23 +2694,17 @@ def test_connected_list_overlays_google_without_writing(
         chat = execute_calendar(
             ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
         )
-        assert chat.schedule_card is None
-        assert chat.direct_answer == (
-            "接下来 7 天的日程：\n"
-            "2026-06-03 09:00 本地会\n"
-            "2026-06-03 12:00 （无标题）（来自 Google）\n"
-            "2026-06-03 13:00 透明安排（来自 Google）\n"
-            "2026-06-03 14:00 新标题\n"
-            "2026-06-03 18:00 外面的会（来自 Google）\n"
-            "2026-06-04 全天 休息（来自 Google）"
-            "\n\n" + advice
-        )
+        assert chat.direct_answer == advice
+        assert chat.schedule_card["mode"] == "list"
+        assert chat.schedule_card["phase"] == "info"
+        titles = [item["title"] for item in chat.schedule_card["items"]]
+        assert titles == ["本地会", "（无标题）", "透明安排", "新标题", "外面的会", "休息"]
+        rest = next(item for item in chat.schedule_card["items"] if item["title"] == "休息")
+        assert rest["all_day"] is True
         assert "00:00" not in (chat.direct_answer or "")
-        assert "旧标题" not in (chat.direct_answer or "")
-        assert "不该出现" not in (chat.direct_answer or "")
-        assert "在办公室" not in (chat.direct_answer or "")
-        assert "已拒绝" not in (chat.direct_answer or "")
-        assert "已取消的同步" not in (chat.direct_answer or "")
+        for hidden in ("旧标题", "不该出现", "在办公室", "已拒绝", "已取消的同步"):
+            assert hidden not in titles
+            assert hidden not in (chat.direct_answer or "")
     finally:
         _cleanup(user_id)
         db.close()
@@ -2764,12 +2758,9 @@ def test_list_read_failure_keeps_local_rows_and_says_so(
         chat = execute_calendar(
             ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
         )
-        assert chat.schedule_card is None
-        assert chat.direct_answer == (
-            "暂时读不到 Google 日历，以下只是这里保存的日程。\n"
-            "接下来 7 天的日程：\n"
-            "2026-06-03 09:00 本地会"
-        )
+        assert chat.schedule_card["mode"] == "list"
+        assert chat.schedule_card["items"][0]["title"] == "本地会"
+        assert chat.direct_answer == "暂时读不到 Google 日历，以下只是这里保存的日程。"
         db.refresh(local_only)
         assert local_only.title == "本地会"
         assert local_only.start_at == datetime(2026, 6, 3, 9, 0)
@@ -2943,11 +2934,10 @@ def test_find_free_slots_clips_injected_hours_and_leaves_nights_closed(
         suggested = execute_calendar(
             ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
         )
-        assert suggested.schedule_card is not None
-        assert suggested.schedule_card["mode"] == "suggest"
-        assert suggested.schedule_card["phase"] == "info"
         assert "工作时间" not in (suggested.direct_answer or "")
-        assert "这段时间都有空" in (suggested.direct_answer or "")
+        assert "00:00–01:00" not in (suggested.direct_answer or "")
+        slots = (suggested.schedule_card or {}).get("suggested_slots") or []
+        assert slots == []
         assert _insert_calls(fake_google) == []
     finally:
         _cleanup(user_id)
@@ -2983,9 +2973,9 @@ def test_unconnected_list_skips_google_and_tool_does_not_query(
         suggested = execute_calendar(
             ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
         )
-        assert suggested.schedule_card is not None
-        assert suggested.schedule_card["mode"] == "suggest"
+        assert suggested.schedule_card is None
         assert "工作时间" not in (suggested.direct_answer or "")
+        assert "00:00" not in (suggested.direct_answer or "")
         provider = calendar_provider_for(db, user_id)
         assert type(provider) is LocalCalendarProvider
         assert provider.list_events(user_id, datetime(2026, 6, 2), datetime(2026, 6, 9)) == []
@@ -3174,9 +3164,10 @@ def test_chat_timezone_outage_is_transient_not_a_governance_denial(
         listed = execute_calendar(
             ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
         )
-        assert listed.schedule_card is None
+        assert listed.schedule_card["mode"] == "list"
+        assert any(item["title"] == "本地保留" for item in listed.schedule_card["items"])
         assert "暂时读不到 Google 日历" in (listed.direct_answer or "")
-        assert "本地保留" in (listed.direct_answer or "")
+        assert "本地保留" not in (listed.direct_answer or "")
 
         suggested = execute_calendar(
             ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
@@ -3603,6 +3594,146 @@ def test_connected_prefill_keeps_extraction_when_list_fails(
         assert card["start_at"] == "2026-10-18T09:00:00"
         assert card["timezone"] == "Asia/Singapore"
         assert _delete_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_create_notes_are_written_to_google_description(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Both create cards carry optional notes, and confirm writes Google description."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    payloads = [
+        {
+            "title": "周会",
+            "start_at": "2026-10-16T10:00:00",
+            "end_at": "2026-10-16T11:00:00",
+            "participants": ["小李"],
+            "kind": "meeting",
+            "description": "带上大纲",
+            "action": "create",
+        },
+        {
+            "title": "写报告",
+            "start_at": "2026-10-16T15:00:00",
+            "end_at": "2026-10-16T17:00:00",
+            "participants": [],
+            "kind": "block",
+            "description": "带上大纲",
+            "action": "create",
+        },
+    ]
+
+    def _json(*_args, **_kwargs):
+        return payloads[_json.n]
+
+    _json.n = 0
+    monkeypatch.setattr("app.services.calendar.complete_json", _json)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        for expected_kind in ("meeting", "block"):
+            drafted = execute_calendar(
+                ToolContext(db=db, message="带上大纲", history=[], user_id=user_id)
+            )
+            card = drafted.schedule_card
+            assert card["kind"] == expected_kind
+            assert card["description"] == "带上大纲"
+            assert "+" not in card["start_at"] and "Z" not in card["start_at"]
+            _json.n += 1
+            fake_google.insert_id = f"evt-{expected_kind}"
+            created = auth_client.post(
+                "/api/calendar",
+                json={
+                    "title": card["title"],
+                    "start_at": card["start_at"],
+                    "end_at": card["end_at"],
+                    "participants": card["participants"],
+                    "description": card["description"],
+                },
+            )
+            assert created.status_code == 200, created.text
+            assert created.json()["description"] == "带上大纲"
+            row = db.get(CalendarEvent, created.json()["id"])
+            assert row is not None
+            assert row.description == "带上大纲"
+            payload = _insert_calls(fake_google)[-1]["json"]
+            assert payload["description"] == "带上大纲"
+            assert payload["start"]["dateTime"] == card["start_at"]
+            assert "Z" not in payload["start"]["dateTime"]
+            assert "+" not in payload["start"]["dateTime"]
+
+        _json.n = 0
+        payloads[0]["description"] = ""
+        payloads[0]["title"] = "空备注会"
+        payloads[0]["start_at"] = "2026-10-18T10:00:00"
+        payloads[0]["end_at"] = "2026-10-18T11:00:00"
+        empty = execute_calendar(
+            ToolContext(db=db, message="明早开会", history=[], user_id=user_id)
+        )
+        assert empty.schedule_card["description"] == ""
+        fake_google.insert_id = "evt-empty"
+        created = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": empty.schedule_card["title"],
+                "start_at": empty.schedule_card["start_at"],
+                "end_at": empty.schedule_card["end_at"],
+                "participants": empty.schedule_card["participants"],
+                "description": "",
+            },
+        )
+        assert created.status_code == 200, created.text
+        assert _insert_calls(fake_google)[-1]["json"]["description"] == ""
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_cancel_confirm_does_not_change_description(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        row = _google_row(
+            db,
+            user_id,
+            title="周会",
+            start=datetime(2026, 10, 16, 10, 0),
+            external_id="evt-note",
+            description="原说明",
+            timezone="Asia/Singapore",
+        )
+        fake_google.events_items = [
+            _google_item(
+                "evt-note",
+                "2026-10-16T10:00:00+08:00",
+                "2026-10-16T11:00:00+08:00",
+                summary="周会",
+            )
+        ]
+        confirmed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={
+                "action": "cancel",
+                "title": "周会",
+                "start_at": "2026-10-16T10:00:00",
+                "end_at": "2026-10-16T11:00:00",
+                "description": "不要改说明",
+            },
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google)
+        assert _delete_calls(fake_google)[0].get("json") in (None, {})
+        db.refresh(row)
+        assert row.description == "原说明"
+        assert row.status == "cancelled"
     finally:
         _cleanup(user_id)
         db.close()

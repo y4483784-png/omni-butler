@@ -99,9 +99,10 @@ def test_dialogue_create_list_move_conflict_and_cancel(auth_client: TestClient, 
         created.append(event_id)
 
         listed = _say(db, owner_id, "这周有哪些会")
-        assert listed["schedule_card"] is None
-        assert "对话评审" in listed["direct_answer"]
-        assert "2026-10-15 15:00" in listed["direct_answer"]
+        assert listed["schedule_card"]["mode"] == "list"
+        listed_row = listed["schedule_card"]["items"][0]
+        assert listed_row["title"] == "对话评审"
+        assert listed_row["start_at"].startswith("2026-10-15T15:00:00")
 
         moved = _say(db, owner_id, "把周四的对话评审改到周五三点")
         move_card = moved["schedule_card"]
