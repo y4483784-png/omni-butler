@@ -603,6 +603,17 @@ a.cite-link:hover {
   border-radius: 8px;
   background: #fff;
 }
+.schedule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.schedule-list li {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
 .schedule-slots {
   display: flex;
   flex-wrap: wrap;

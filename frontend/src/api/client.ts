@@ -43,6 +43,13 @@ export interface ScheduleCandidate {
   readonly?: boolean;
 }
 
+export interface ScheduleListItem {
+  title: string;
+  start_at: string;
+  end_at: string;
+  all_day?: boolean;
+}
+
 export interface ScheduleCard {
   id?: number | null;
   title: string;
@@ -50,7 +57,9 @@ export interface ScheduleCard {
   end_at: string;
   participants: string[];
   status?: "active" | "cancelled" | string;
-  mode?: "create" | "update" | "cancel" | "choose" | "suggest" | string;
+  mode?: "create" | "update" | "cancel" | "choose" | "suggest" | "list" | string;
+  kind?: "meeting" | "block" | "" | string;
+  items?: ScheduleListItem[];
   phase?: "draft" | "confirmed" | "cancelled" | "expired" | "info" | string;
   action?: "create" | "update" | "cancel" | string;
   expires_at?: string;
@@ -448,7 +457,7 @@ export async function confirmGoogleCalendarChange(payload: {
   title: string;
   start_at: string;
   end_at: string;
-  participants: string[];
+  participants?: string[];
   location?: string;
   description?: string;
 }): Promise<ScheduleCard> {

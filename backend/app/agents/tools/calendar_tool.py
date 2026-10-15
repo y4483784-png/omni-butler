@@ -19,12 +19,12 @@ from app.services.calendar import (
     conflicts_for_update,
     draft_expires_at,
     extract_event,
+    extract_free_slots,
     extract_list_day,
     find_event_candidates,
     free_slots_for,
     readonly_titles,
     titles_match,
-    _parse_cn_int,
 )
 from app.services.calendar_factory import (
     account_timezone_name,
@@ -46,13 +46,6 @@ _UPDATE = re.compile(r"(改到|改成|改为|推迟|提前|换到|挪到|延后)
 _CANCEL = re.compile(r"(取消|撤销|删掉)")
 _LIST = re.compile(r"(有哪些|有什么安排|有什么会|查一下日程|查日程|我的日程|哪些日程)")
 _SUGGEST = re.compile(r"(有空|空闲|什么时候方便)")
-_SUGGEST_CLOCK = re.compile(
-    r"(今天|明天|后天|今晚|明早)?"
-    r"\s*(上午|下午|中午|晚上)?"
-    r"\s*(\d{1,2}|[一二两三四五六七八九十]{1,3})"
-    r"\s*(?:点|:|：)\s*"
-    r"(半|\d{1,2}|[一二三四五六七八九十]{1,3})?"
-)
 
 
 def resolve_action(message: str, args: dict | None) -> str:
@@ -114,19 +107,35 @@ def _slot_payload(slots: list[tuple[datetime, datetime]]) -> list[dict]:
     return [{"start_at": _iso(start), "end_at": _iso(end)} for start, end in slots]
 
 
-def _base_card(*, mode: str, action: str, draft: EventDraft, event_id: int | None = None) -> dict:
+def _write_kind(action: str, draft: EventDraft) -> str:
+    """Create and update pick meeting or block. Cancel and choose stay blank."""
+    if action not in {"create", "update"}:
+        return ""
+    return "block" if (draft.kind or "").strip().lower() == "block" else "meeting"
+
+
+def _base_card(
+    *,
+    mode: str,
+    action: str,
+    draft: EventDraft,
+    event_id: int | None = None,
+    kind: str = "",
+) -> dict:
+    participants = [] if kind == "block" else list(draft.participants)
     return {
         "mode": mode,
         "phase": "draft",
         "action": action,
+        "kind": kind,
         "expires_at": draft_expires_at(),
         "event_id": event_id,
         "title": draft.title or "",
         "start_at": _iso(draft.start_at),
         "end_at": _iso(draft.end_at),
-        "participants": list(draft.participants),
+        "participants": participants,
         "location": "",
-        "description": "",
+        "description": draft.description or "",
         "timezone": "",
         "provider": "local",
         "external_id": "",
@@ -134,6 +143,7 @@ def _base_card(*, mode: str, action: str, draft: EventDraft, event_id: int | Non
         "conflicts": [],
         "suggested_slots": [],
         "candidates": [],
+        "items": [],
     }
 
 
@@ -182,21 +192,53 @@ def _day_start(value: datetime) -> datetime:
     return value.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def _suggest_window(message: str, now: datetime) -> tuple[datetime, datetime]:
-    """Named day uses that local day. Otherwise search from now through 7 days."""
-    if "后天" in (message or ""):
-        day = _day_start(now + timedelta(days=2))
-        return day, day + timedelta(days=1)
-    if "明天" in (message or ""):
-        day = _day_start(now + timedelta(days=1))
-        start = day.replace(hour=12) if "下午" in message else day
-        return start, day + timedelta(days=1)
-    if "今天" in (message or ""):
-        day = _day_start(now)
-        start = day.replace(hour=12) if "下午" in message else max(now, day)
-        return start, day + timedelta(days=1)
-    start = now.replace(second=0, microsecond=0)
-    return start, start + timedelta(days=7)
+def _list_span(day: str, now: datetime) -> tuple[datetime, datetime, str, str]:
+    """Model-named civil day, or the same 7-day window a blank list day uses."""
+    named = _civil_day(day)
+    if named:
+        start = datetime.fromisoformat(named)
+        return start, start + timedelta(days=1), f"{named} 的日程：", "这一天没有日程。"
+    start = _day_start(now)
+    return start, start + timedelta(days=7), "接下来 7 天的日程：", "接下来 7 天没有日程。"
+
+
+def _item_payload(row) -> dict:
+    return {
+        "title": row.title or "（无标题）",
+        "start_at": _iso(getattr(row, "start_at", None)),
+        "end_at": _iso(getattr(row, "end_at", None)),
+        "all_day": bool(getattr(row, "all_day", False)),
+    }
+
+
+def _list_card(rows, slots: list[tuple[datetime, datetime]] | None = None) -> dict | None:
+    """Read-only rows. No rows and no slots means no card."""
+    items = [_item_payload(row) for row in rows[:20]]
+    suggested = _slot_payload(slots or [])
+    if not items and not suggested:
+        return None
+    return {
+        "mode": "list",
+        "phase": "info",
+        "action": "list",
+        "kind": "",
+        "expires_at": "",
+        "event_id": None,
+        "title": "",
+        "start_at": "",
+        "end_at": "",
+        "participants": [],
+        "location": "",
+        "description": "",
+        "timezone": "",
+        "provider": "local",
+        "external_id": "",
+        "status": "",
+        "conflicts": [],
+        "suggested_slots": suggested,
+        "candidates": [],
+        "items": items,
+    }
 
 
 def _list_line(row) -> str:
@@ -223,15 +265,12 @@ def _all_day_label(start: datetime | None, end: datetime | None) -> str:
     return f"{start_day.isoformat()}–{last.isoformat()} 全天"
 
 
-def _saved_rows_when_clock_fails(ctx: ToolContext) -> str:
+def _saved_rows_when_clock_fails(ctx: ToolContext) -> tuple[str, dict | None]:
     """Local rows only. A failed account clock is not replaced with the process zone."""
     provider = calendar_provider_for(ctx.db, ctx.user_id)
     local = getattr(provider, "_local", provider)
     rows = local.list_events(ctx.user_id, datetime(2000, 1, 1), datetime(2100, 1, 1))
-    if not rows:
-        return _LIST_LOCAL_ONLY
-    lines = [_list_line(row) for row in rows[:20]]
-    return f"{_LIST_LOCAL_ONLY}\n" + "\n".join(lines)
+    return _LIST_LOCAL_ONLY, _list_card(rows)
 
 
 def _advice_prompt(now: datetime, zone_name: str) -> str:
@@ -274,138 +313,76 @@ def _zone_name(ctx: ToolContext) -> str:
         return ""
 
 
+def _listed_text(rows, header: str, empty: str) -> str:
+    if not rows:
+        return empty
+    lines = [_list_line(row) for row in rows[:20]]
+    return header + "\n" + "\n".join(lines)
+
+
 def _list_text(
     ctx: ToolContext,
     *,
     day: str = "",
     now: datetime | None = None,
     zone_name: str | None = None,
-) -> str:
+) -> tuple[str, dict | None]:
     if now is None:
         try:
             now = calendar_now(ctx.db, ctx.user_id)
         except CalendarTransientError:
             return _saved_rows_when_clock_fails(ctx)
     zone = zone_name if zone_name is not None else _zone_name(ctx)
-    named = _civil_day(day)
-    if named:
-        start = datetime.fromisoformat(named)
-        end = start + timedelta(days=1)
-        empty = "这一天没有日程。"
-        header = f"{named} 的日程："
-    else:
-        start = _day_start(now)
-        end = start + timedelta(days=7)
-        empty = "接下来 7 天没有日程。"
-        header = "接下来 7 天的日程："
+    start, end, header, empty = _list_span(day, now)
     provider = calendar_provider_for(ctx.db, ctx.user_id)
     rows = provider.list_events(ctx.user_id, start, end)
     notice = str(getattr(provider, "list_notice", "") or "")
-    if not rows:
-        body = "" if notice else empty
-    else:
-        lines = [_list_line(row) for row in rows[:20]]
-        body = header + "\n" + "\n".join(lines)
-    if notice and body:
-        text = f"{notice}\n{body}"
-    else:
-        text = notice or body
+    shown = list(rows[:20])
+    card = _list_card(shown)
+    listed = _listed_text(shown, header, empty)
     if notice in _SKIP_ADVICE:
-        return text
-    return f"{text}\n\n{_planning_advice(now, zone, text)}"
-
-
-def _named_clock(message: str, now: datetime) -> datetime | None:
-    """The hour the sentence names, on the account wall clock. No clock means None."""
-    match = _SUGGEST_CLOCK.search(message or "")
-    if not match:
-        return None
-    day_word = match.group(1) or ""
-    meridiem = match.group(2) or ""
-    hour = _parse_cn_int(match.group(3) or "")
-    if hour is None:
-        return None
-    minute_raw = match.group(4) or ""
-    minute = 30 if minute_raw == "半" else (_parse_cn_int(minute_raw) or 0)
-    days = {"明天": 1, "明早": 1, "后天": 2}.get(day_word, 0)
-    if day_word == "今晚":
-        meridiem = meridiem or "晚上"
-    base = (now + timedelta(days=days)).replace(second=0, microsecond=0)
-    final_hour = hour
-    if meridiem in {"下午", "晚上"} and hour < 12:
-        final_hour = hour + 12
-    elif meridiem == "中午" and hour < 11:
-        final_hour = hour + 12
-    return base.replace(hour=final_hour % 24, minute=minute)
-
-
-def _suggest_card(slots: list[tuple[datetime, datetime]]) -> dict:
-    return {
-        "mode": "suggest",
-        "phase": "info",
-        "action": "suggest",
-        "expires_at": "",
-        "event_id": None,
-        "title": "",
-        "start_at": "",
-        "end_at": "",
-        "participants": [],
-        "location": "",
-        "description": "",
-        "timezone": "",
-        "provider": "local",
-        "external_id": "",
-        "status": "",
-        "conflicts": [],
-        "suggested_slots": _slot_payload(slots),
-        "candidates": [],
-    }
-
-
-def _slot_lines(slots: list[tuple[datetime, datetime]]) -> list[str]:
-    return [f"{begin:%Y-%m-%d %H:%M}–{end_at:%H:%M}" for begin, end_at in slots]
+        return notice, card
+    advice = _planning_advice(now, zone, listed)
+    if not shown:
+        return f"{empty}\n\n{advice}", None
+    return advice, card
 
 
 def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
+    """List the named day, then let the model pick slots. No gap algorithm."""
     try:
         now = calendar_now(ctx.db, ctx.user_id)
     except CalendarTransientError:
         return _SUGGEST_UNAVAILABLE, None
-    start, end = _suggest_window(ctx.message, now)
+    zone = _zone_name(ctx)
+    day = extract_list_day(ctx.message, ctx.history, now=now, timezone_name=zone or None)
+    start, end, header, empty = _list_span(day, now)
     provider = calendar_provider_for(ctx.db, ctx.user_id)
-    named = _named_clock(ctx.message, now)
     try:
-        if named is not None:
-            hour_end = named + timedelta(hours=1)
-            named_free = provider.find_free_slots(
-                ctx.user_id, named, hour_end, timedelta(hours=1), limit=1
-            )
-            if named_free and named_free[0] == (named, hour_end):
-                slots = [(named, hour_end)]
-                return f"这个时间可以：{_slot_lines(slots)[0]}", _suggest_card(slots)
-            others = provider.find_free_slots(
-                ctx.user_id, start, end, timedelta(hours=1), limit=3
-            )
-            others = [slot for slot in others if not (slot[0] < hour_end and slot[1] > named)]
-            if not others:
-                return "这个时间已有安排，这段时间没有足够的空闲时段。", None
-            lines = _slot_lines(others)
-            return "这个时间已有安排。可以考虑这些空闲时段：\n" + "\n".join(lines), _suggest_card(others)
-        span = end - start
-        if span > timedelta(0):
-            whole = provider.find_free_slots(ctx.user_id, start, end, span, limit=1)
-            if whole == [(start, end)]:
-                text = f"这段时间都有空：{start:%Y-%m-%d %H:%M}–{end:%Y-%m-%d %H:%M}"
-                return text, _suggest_card([(start, end)])
-        slots = provider.find_free_slots(
-            ctx.user_id, start, end, timedelta(hours=1), limit=3
-        )
+        rows = provider.list_events(ctx.user_id, start, end)
     except REMOTE_READ_ERRORS:
         return _SUGGEST_UNAVAILABLE, None
-    if not slots:
-        return "这段时间没有足够的空闲时段。", None
-    lines = _slot_lines(slots)
-    return "可以考虑这些空闲时段：\n" + "\n".join(lines), _suggest_card(slots)
+    notice = str(getattr(provider, "list_notice", "") or "")
+    if notice in _SKIP_ADVICE:
+        return _SUGGEST_UNAVAILABLE, None
+    shown = list(rows[:20])
+    listed = _listed_text(shown, header, empty)
+    picked = extract_free_slots(
+        ctx.message,
+        ctx.history,
+        now=now,
+        timezone_name=zone or None,
+        listed=listed,
+    )
+    if picked is None:
+        return _ADVICE_UNAVAILABLE, _list_card(shown)
+    slots, note = picked
+    card = _list_card(shown, slots)
+    if note:
+        return note, card
+    if slots:
+        return "可以考虑下面这些时段。", card
+    return _ADVICE_UNAVAILABLE, card
 
 
 def _writes_remote(ctx: ToolContext) -> bool:
@@ -485,7 +462,7 @@ def _remote_change_preview(
     zone_name: str | None,
 ) -> ToolResult:
     """Connected update/cancel. Prefill may align one soft title. Confirm writes."""
-    card = _base_card(mode=action, action=action, draft=draft)
+    card = _base_card(mode=action, action=action, draft=draft, kind=_write_kind(action, draft))
     if zone_name:
         card["timezone"] = zone_name
     remote_note = ""
@@ -599,10 +576,12 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         try:
             now = calendar_now(ctx.db, ctx.user_id)
         except CalendarTransientError:
-            return _cleared(steps, _saved_rows_when_clock_fails(ctx))
+            text, card = _saved_rows_when_clock_fails(ctx)
+            return _cleared(steps, text, card)
         zone_name = _zone_name(ctx)
         day = extract_list_day(ctx.message, ctx.history, now=now, timezone_name=zone_name or None)
-        return _cleared(steps, _list_text(ctx, day=day, now=now, zone_name=zone_name))
+        text, card = _list_text(ctx, day=day, now=now, zone_name=zone_name)
+        return _cleared(steps, text, card)
     if action == "suggest":
         steps.append("只读空闲建议，不写入")
         text, card = _suggest_result(ctx)
@@ -625,15 +604,15 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     )
     if action == "create" and draft.requested_action == "list":
         steps.append("只读查询，不写入")
-        return _cleared(
-            steps,
-            _list_text(ctx, day=draft.list_day, now=now, zone_name=zone_name or ""),
-        )
+        text, card = _list_text(ctx, day=draft.list_day, now=now, zone_name=zone_name or "")
+        return _cleared(steps, text, card)
     remote = _writes_remote(ctx)
     if action == "update" and not remote:
         apply_update_times(draft, ctx.message, now=now)
     if action == "create":
-        card = _base_card(mode="create", action="create", draft=draft)
+        card = _base_card(
+            mode="create", action="create", draft=draft, kind=_write_kind("create", draft)
+        )
         remote_note = ""
         if draft.start_at and draft.end_at:
             conflicts, remote_note = _create_conflicts(ctx, draft.start_at, draft.end_at)
@@ -683,8 +662,16 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         start_at=event.start_at,
         end_at=event.end_at,
         participants=draft.participants,
+        kind=draft.kind,
+        description=draft.description,
     )
-    card = _base_card(mode=action, action=action, draft=chosen, event_id=event.id)
+    card = _base_card(
+        mode=action,
+        action=action,
+        draft=chosen,
+        event_id=event.id,
+        kind=_write_kind(action, chosen),
+    )
     card["status"] = event.status or "active"
     remote_note = ""
     if action == "update" and draft.start_at:

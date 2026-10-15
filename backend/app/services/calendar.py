@@ -90,6 +90,9 @@ class EventDraft:
     # Create fallthrough only: "list" switches to the read-only list reply.
     requested_action: str = ""
     list_day: str = ""
+    # Model classification. Empty means the card layer treats a write as a meeting.
+    kind: str = ""
+    description: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -102,6 +105,8 @@ class EventDraft:
             "reference_start_at": self.reference_start_at.isoformat() if self.reference_start_at else "",
             "requested_action": self.requested_action,
             "list_day": self.list_day,
+            "kind": self.kind,
+            "description": self.description,
         }
 
     @classmethod
@@ -116,6 +121,8 @@ class EventDraft:
             reference_start_at=_parse_dt(str(data.get("reference_start_at") or "")),
             requested_action=str(data.get("requested_action") or ""),
             list_day=_civil_day(str(data.get("list_day") or "")),
+            kind=str(data.get("kind") or ""),
+            description=str(data.get("description") or ""),
         )
 
 
@@ -158,16 +165,26 @@ def _extract_system_prompt(
         existing = (
             " 修改或撤销时，title 是已有日程的名称，不要把参与人昵称或其他词拼进标题。"
         )
-        fields = '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}'
+        fields = (
+            '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
+            '"missing_fields":[str],"kind":str}'
+        )
         scheduling = ""
+        existing += (
+            " 修改时 kind 为 meeting 或 block。"
+            " 留给自己的一段时间是 block，拿不准就 meeting。"
+        )
     else:
         fields = (
             '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
-            '"missing_fields":[str],"action":str,"day":str}'
+            '"missing_fields":[str],"action":str,"day":str,"kind":str,"description":str}'
         )
         scheduling = (
             " 用户说了时长就写 end_at，用开始之后的那段无偏移时间。"
             " 个人时间块参与人可空，不要把参与人放进 missing_fields。"
+            " kind 为 meeting 或 block。开会或有别人参加是 meeting；"
+            " 留给自己的一段时间是 block；拿不准就 meeting。"
+            " description 是用户说的备注，没说就输出空字符串，不要放进 missing_fields。"
             " 若用户是在查已有日程，或问某一天怎么安排，action 输出 list，并填写 day。"
             " 若用户是要创建日程或留下一段时间，action 输出 create。"
             " 点名了某一天时 day 输出 YYYY-MM-DD；说本周、这几天或没点名，day 输出空字符串。"
@@ -260,9 +277,12 @@ def extract_event(
         missing_fields=list(dict.fromkeys(missing)),
         original_request=message,
     )
+    raw_kind = str(parsed.get("kind") or "").strip().lower()
+    draft.kind = raw_kind if raw_kind in {"meeting", "block"} else ""
     if not existing_event:
         draft.requested_action = "list" if str(parsed.get("action") or "").strip().lower() == "list" else ""
         draft.list_day = _civil_day(str(parsed.get("day") or ""))
+        draft.description = str(parsed.get("description") or "").strip()
     _supplement_draft_from_message(draft, message, allow_end=True, now=now)
     return _finalize_prefill(draft)
 
@@ -290,6 +310,72 @@ def extract_list_day(
     if not isinstance(parsed, dict):
         return ""
     return _civil_day(str(parsed.get("day") or ""))
+
+
+def _free_slot_prompt(now: datetime | None, timezone_name: str | None) -> str:
+    clock = now or datetime.now()
+    day = clock.date().isoformat()
+    zone = (timezone_name or "").strip()
+    if zone:
+        today = f"今天是 {day}，账户时区是 {zone}。"
+    else:
+        today = f"今天是 {day}。"
+    return (
+        "你在帮用户从已经列出的日程里挑少量合适的空闲时段。"
+        f" {today}"
+        " 列出的时间是账户墙钟。"
+        " 按列出的这一天挑合适时段。"
+        " 不要推荐半夜到清晨，除非用户明确要夜里，或这一天只剩夜里有空。"
+        " 不要编造日程，不要创建。"
+        ' 只输出 JSON：{"slots":[{"start_at":str,"end_at":str}],"note":str}。'
+        " start_at 和 end_at 用无偏移的 ISO 8601。"
+        " note 用一句中文说明。"
+    )
+
+
+def extract_free_slots(
+    message: str,
+    history: list[dict] | None = None,
+    *,
+    now: datetime | None = None,
+    timezone_name: str | None = None,
+    listed: str = "",
+) -> tuple[list[tuple[datetime, datetime]], str] | None:
+    """Model-picked slots. None means the call failed. An empty list is a real answer.
+
+    Clock values are kept as the model wrote them. Nothing here drops a night slot.
+    """
+    try:
+        parsed = complete_json(
+            [
+                {"role": "system", "content": _free_slot_prompt(now, timezone_name)},
+                {
+                    "role": "user",
+                    "content": (
+                        f"已列出的日程：\n{listed}\n"
+                        f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
+                        f"当前消息：{message}"
+                    ),
+                },
+            ]
+        )
+    except Exception:
+        return None
+    if not isinstance(parsed, dict) or "slots" not in parsed:
+        return None
+    slots: list[tuple[datetime, datetime]] = []
+    raw_slots = parsed.get("slots") or []
+    if not isinstance(raw_slots, list):
+        return None
+    for item in raw_slots:
+        if not isinstance(item, dict):
+            continue
+        start_at = _parse_dt(str(item.get("start_at") or ""))
+        end_at = _parse_dt(str(item.get("end_at") or ""))
+        if start_at is None or end_at is None:
+            continue
+        slots.append((start_at, end_at))
+    return slots, str(parsed.get("note") or "").strip()
 
 
 DRAFT_TTL = timedelta(minutes=30)
@@ -327,7 +413,7 @@ def _normalize_missing_fields(
     participants: list[str],
     existing: list[str],
 ) -> list[str]:
-    missing = [item for item in existing if item not in {"end_at", "participants"}]
+    missing = [item for item in existing if item not in {"end_at", "participants", "description", "kind"}]
     if not title:
         missing.append("title")
     if not start_at:

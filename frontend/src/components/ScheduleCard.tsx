@@ -27,6 +27,45 @@ function fromLocalInput(value: string): string {
   return value.length === 16 ? `${value}:00` : value;
 }
 
+function wallMs(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
+  if (!match) return null;
+  return Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5])
+  );
+}
+
+function fromWallMs(ms: number): string {
+  const date = new Date(ms);
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
+function durationMinutes(startAt: string, endAt: string): number {
+  const start = wallMs(startAt);
+  const end = wallMs(endAt);
+  if (start == null || end == null || end <= start) return 60;
+  return Math.round((end - start) / 60000);
+}
+
+function addMinutes(startAt: string, minutes: number): string {
+  const start = wallMs(startAt);
+  if (start == null) return "";
+  const span = minutes > 0 ? minutes : 60;
+  return fromWallMs(start + span * 60000);
+}
+
+function formatListWhen(item: { start_at: string; end_at: string; all_day?: boolean }): string {
+  if (item.all_day) {
+    const day = (item.start_at || "").slice(0, 10);
+    return day ? `${day} 全天` : "全天";
+  }
+  return formatWhen(item.start_at, item.end_at);
+}
+
 function formatWhen(startAt: string, endAt: string): string {
   if (!startAt && !endAt) return "时间待补充";
   const start = startAt ? new Date(startAt) : null;
@@ -59,13 +98,16 @@ export function ScheduleCard({
   const [participants, setParticipants] = useState((card.participants || []).join("、"));
   const [location, setLocation] = useState(card.location || "");
   const [description, setDescription] = useState(card.description || "");
+  const [durationMin, setDurationMin] = useState(durationMinutes(toLocalInput(card.start_at), toLocalInput(card.end_at)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const mode = card.mode || (legacy ? "update" : "create");
+  const blockForm = card.kind === "block" && (mode === "create" || mode === "update");
   const conflicts = card.conflicts || [];
   const slots = card.suggested_slots || [];
   const candidates = card.candidates || [];
+  const items = card.items || [];
 
   const statusLabel = useMemo(() => {
     if (expired || card.phase === "expired") return "已过期";
@@ -111,8 +153,8 @@ export function ScheduleCard({
       title: title.trim(),
       start_at: fromLocalInput(startAt),
       end_at: fromLocalInput(endAt),
-      participants: people,
-      location: location.trim(),
+      participants: blockForm ? [] : people,
+      location: blockForm ? "" : location.trim(),
       description: description.trim(),
     };
     setBusy(true);
@@ -124,15 +166,25 @@ export function ScheduleCard({
       }
       const id = savedEventId(card);
       if (id == null && (mode === "cancel" || mode === "update")) {
-        const saved = await confirmGoogleCalendarChange({
-          action: mode === "cancel" ? "cancel" : "update",
-          title: payload.title,
-          start_at: payload.start_at,
-          end_at: payload.end_at,
-          participants: payload.participants,
-          location: payload.location,
-          description: payload.description,
-        });
+        const saved = await confirmGoogleCalendarChange(
+          mode === "cancel"
+            ? {
+                action: "cancel",
+                title: payload.title,
+                start_at: payload.start_at,
+                end_at: payload.end_at,
+                participants: [],
+              }
+            : {
+                action: "update",
+                title: payload.title,
+                start_at: payload.start_at,
+                end_at: payload.end_at,
+                participants: payload.participants,
+                location: payload.location,
+                description: payload.description,
+              }
+        );
         onChange({
           ...card,
           ...saved,
@@ -176,11 +228,13 @@ export function ScheduleCard({
       title: "",
       start_at: slot.start_at,
       end_at: slot.end_at,
+      kind: "meeting",
       participants: [],
       location: "",
       description: "",
       status: "",
       expires_at: expiresAt,
+      items: [],
       event_id: null,
       conflicts: [],
       suggested_slots: [],
@@ -199,6 +253,37 @@ export function ScheduleCard({
           <span className="schedule-status">来自 Google</span>
         </div>
         <div className="schedule-meta">{when}</div>
+      </div>
+    );
+  }
+
+  if (mode === "list") {
+    return (
+      <div className="schedule-card">
+        {items.length ? (
+          <ul className="schedule-list">
+            {items.map((item, index) => (
+              <li key={`${item.start_at}-${item.title}-${index}`}>
+                <span>{formatListWhen(item)}</span>
+                <span>{item.title || "（无标题）"}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {slots.length ? (
+          <div className="schedule-slots">
+            {slots.map((slot) => (
+              <button
+                key={`${slot.start_at}-${slot.end_at}`}
+                type="button"
+                className="ghost-btn"
+                onClick={() => useSlot(slot)}
+              >
+                用这个时段 {formatWhen(slot.start_at, slot.end_at)}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -249,20 +334,49 @@ export function ScheduleCard({
           </label>
           <label>
             开始
-            <input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} disabled={locked || mode === "cancel"} />
+            <input
+              type="datetime-local"
+              value={startAt}
+              onChange={(event) => {
+                const next = event.target.value;
+                setStartAt(next);
+                if (blockForm) setEndAt(addMinutes(next, durationMin));
+              }}
+              disabled={locked || mode === "cancel"}
+            />
           </label>
-          <label>
-            结束
-            <input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} disabled={locked || mode === "cancel"} />
-          </label>
-          <label>
-            参与人
-            <input value={participants} onChange={(event) => setParticipants(event.target.value)} placeholder="用顿号分隔，可留空" disabled={locked || mode === "cancel"} />
-          </label>
-          <label>
-            地点
-            <input value={location} onChange={(event) => setLocation(event.target.value)} disabled={locked || mode === "cancel"} />
-          </label>
+          {blockForm ? (
+            <label>
+              时长
+              <input
+                type="number"
+                min={1}
+                value={durationMin}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  const minutes = Number.isFinite(next) && next > 0 ? Math.round(next) : 60;
+                  setDurationMin(minutes);
+                  setEndAt(addMinutes(startAt, minutes));
+                }}
+                disabled={locked}
+              />
+            </label>
+          ) : (
+            <>
+              <label>
+                结束
+                <input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} disabled={locked || mode === "cancel"} />
+              </label>
+              <label>
+                参与人
+                <input value={participants} onChange={(event) => setParticipants(event.target.value)} placeholder="用顿号分隔，可留空" disabled={locked || mode === "cancel"} />
+              </label>
+              <label>
+                地点
+                <input value={location} onChange={(event) => setLocation(event.target.value)} disabled={locked || mode === "cancel"} />
+              </label>
+            </>
+          )}
           <label>
             说明
             <input value={description} onChange={(event) => setDescription(event.target.value)} disabled={locked || mode === "cancel"} />
