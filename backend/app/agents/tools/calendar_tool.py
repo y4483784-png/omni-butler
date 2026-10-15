@@ -22,7 +22,11 @@ from app.services.calendar import (
     readonly_titles,
     titles_match,
 )
-from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
+from app.services.calendar_factory import (
+    account_timezone_name,
+    calendar_provider_for,
+    calendar_writes_remote,
+)
 
 _GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不到就不会写入。"
 _SUGGEST_UNAVAILABLE = "暂时读不到 Google 日历，不能建议空闲时段。"
@@ -351,7 +355,10 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         return _cleared(steps, text, card)
 
     now = calendar_now(ctx.db, ctx.user_id)
-    draft = extract_event(ctx.message, ctx.history, now=now)
+    zone_name = None
+    if ctx.db is not None and ctx.user_id is not None:
+        zone_name = account_timezone_name(ctx.db, ctx.user_id)
+    draft = extract_event(ctx.message, ctx.history, now=now, timezone_name=zone_name)
     if action == "update":
         apply_update_times(draft, ctx.message, now=now)
     if action == "create":

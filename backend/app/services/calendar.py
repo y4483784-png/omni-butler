@@ -119,23 +119,44 @@ def is_calendar_cancel(message: str) -> bool:
     return bool(_CANCEL_PAT.search(message or ""))
 
 
+def _extract_system_prompt(now: datetime | None, timezone_name: str | None) -> str:
+    """Name the calendar day that 「明天」 and 「后天」 are relative to.
+
+    A connected account also gets that account's IANA id. An unconnected
+    prompt names the date only and does not invent a product zone. The model
+    still returns offset-less wall times; nothing here rewrites them.
+    """
+    clock = now or datetime.now()
+    day = clock.date().isoformat()
+    zone = (timezone_name or "").strip()
+    if zone:
+        today = f"今天是 {day}，账户时区是 {zone}。"
+    else:
+        today = f"今天是 {day}。"
+    return (
+        "你是日程信息提取器。只输出 JSON："
+        '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}。'
+        " start_at/end_at 用无偏移的 ISO 8601；缺失则输出空字符串。"
+        " 参与人可以省略，不要因为没有参与人写入 missing_fields。"
+        " 用户没说结束时间时 end_at 留空，不要把 end_at 放进 missing_fields。"
+        f" {today}"
+        "「明天」「后天」相对这一天。"
+        " start_at/end_at 仍输出无偏移的 ISO 8601。"
+    )
+
+
 def extract_event(
     message: str,
     history: list[dict] | None = None,
     *,
     now: datetime | None = None,
+    timezone_name: str | None = None,
 ) -> EventDraft:
     parsed = complete_json(
         [
             {
                 "role": "system",
-                "content": (
-                    "你是日程信息提取器。只输出 JSON："
-                    '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}。'
-                    " start_at/end_at 用无偏移的 ISO 8601；缺失则输出空字符串。"
-                    " 参与人可以省略，不要因为没有参与人写入 missing_fields。"
-                    " 用户没说结束时间时 end_at 留空，不要把 end_at 放进 missing_fields。"
-                ),
+                "content": _extract_system_prompt(now, timezone_name),
             },
             {
                 "role": "user",

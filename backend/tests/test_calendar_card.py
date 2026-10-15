@@ -7,7 +7,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.agents.harness.types import ToolContext
 from app.agents.tools import calendar_tool
+from app.agents.tools.calendar_tool import execute_calendar
 from app.agents.workflow import run_agent_workflow
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarEvent, Message, Session as ChatSession
@@ -697,3 +699,137 @@ def test_confirmed_event_shows_up_in_list(auth_client: TestClient, monkeypatch):
     finally:
         _cleanup(db, created)
         db.close()
+
+
+def _capture_extract(monkeypatch, payload: dict):
+    captured: dict = {}
+
+    def fake_json(messages, model=None):
+        captured["messages"] = messages
+        return payload
+
+    monkeypatch.setattr("app.services.calendar.complete_json", fake_json)
+    return captured
+
+
+def _prompt_text(captured: dict) -> str:
+    return "\n".join(str(item.get("content") or "") for item in captured["messages"])
+
+
+def test_connected_extract_prompt_names_today_and_iana_zone(monkeypatch):
+    """The model sees the account day and IANA zone, and its JSON is the card."""
+    captured = _capture_extract(
+        monkeypatch,
+        {
+            "title": "测试会议",
+            "start_at": "2026-10-16T15:00:00",
+            "end_at": "",
+            "participants": ["Grok测试"],
+            "missing_fields": [],
+        },
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_now",
+        lambda *_args, **_kwargs: datetime(2026, 10, 15, 9, 0),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.account_timezone_name",
+        lambda *_args, **_kwargs: "Asia/Singapore",
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_writes_remote",
+        lambda *_args, **_kwargs: False,
+    )
+    init_db()
+    db = SessionLocal()
+    try:
+        result = execute_calendar(
+            ToolContext(
+                db=db,
+                message="明天下午三点开个测试会议 Grok测试",
+                history=[],
+                user_id=1,
+            )
+        )
+    finally:
+        db.close()
+    prompt = _prompt_text(captured)
+    assert "2026-10-15" in prompt
+    assert "Asia/Singapore" in prompt
+    card = result.schedule_card
+    assert card["title"] == "测试会议"
+    assert card["participants"] == ["Grok测试"]
+    assert card["start_at"] == "2026-10-16T15:00:00"
+    assert card["end_at"] == "2026-10-16T16:00:00"
+    assert "+" not in card["start_at"] and "Z" not in card["start_at"]
+    assert "+" not in card["end_at"] and "Z" not in card["end_at"]
+
+
+def test_unconnected_extract_prompt_has_date_and_no_invented_zone(monkeypatch):
+    captured = _capture_extract(
+        monkeypatch,
+        {
+            "title": "",
+            "start_at": "",
+            "end_at": "",
+            "participants": [],
+            "missing_fields": ["start_at"],
+        },
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_now",
+        lambda *_args, **_kwargs: datetime(2026, 10, 15, 9, 0),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.account_timezone_name",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_writes_remote",
+        lambda *_args, **_kwargs: False,
+    )
+    init_db()
+    db = SessionLocal()
+    try:
+        execute_calendar(
+            ToolContext(
+                db=db,
+                message="明天下午三点开会",
+                history=[],
+                user_id=1,
+            )
+        )
+    finally:
+        db.close()
+    prompt = _prompt_text(captured)
+    assert "2026-10-15" in prompt
+    assert "时区是" not in prompt
+    assert "Asia/Singapore" not in prompt
+    assert "Etc/" not in prompt
+    scrubbed = prompt.replace("start_at/end_at", "")
+    assert "/" not in scrubbed
+
+
+def test_model_far_date_stays_on_the_draft(monkeypatch):
+    """A distant model date is the user's to correct. The code does not replace it."""
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        lambda *_args, **_kwargs: {
+            "title": "测试会议",
+            "start_at": "2023-04-05T15:00:00",
+            "end_at": "",
+            "participants": ["Grok测试"],
+            "missing_fields": [],
+        },
+    )
+    draft = extract_event(
+        "明天下午三点开个测试会议 Grok测试",
+        now=datetime(2026, 10, 15, 9, 0),
+        timezone_name="Asia/Singapore",
+    )
+    assert draft.title == "测试会议"
+    assert draft.participants == ["Grok测试"]
+    assert draft.start_at == datetime(2023, 4, 5, 15, 0)
+    assert draft.end_at == datetime(2023, 4, 5, 16, 0)
+    assert "+" not in draft.start_at.isoformat()
+    assert "Z" not in draft.start_at.isoformat()
