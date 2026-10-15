@@ -67,6 +67,17 @@ class CalendarTokenError(CalendarOAuthError):
         super().__init__(message, status_code=401)
 
 
+class CalendarTransientError(Exception):
+    """Google could not be reached. The stored grant is still valid.
+
+    Not a ``CalendarTokenError``. Callers must not ask the user to reconnect.
+    """
+
+    def __init__(self, message: str = "暂时连不上 Google 日历，请稍后再试。") -> None:
+        super().__init__(message)
+        self.message = message
+
+
 class _RedactSecrets(logging.Filter):
     """Strip credential query values before httpx writes the request URL."""
 
@@ -225,11 +236,13 @@ def refresh_access_token(db: Session, connection: CalendarConnection) -> str:
         )
     except httpx.HTTPError:
         logger.warning("google calendar token refresh failed status=network")
-        raise CalendarTokenError() from None
+        raise CalendarTransientError() from None
     if response.status_code != 200:
         logger.warning(
             "google calendar token refresh failed status=%s", response.status_code
         )
+        if 500 <= response.status_code <= 599:
+            raise CalendarTransientError()
         raise CalendarTokenError()
     payload = _json_object(response)
     access = str(payload.get("access_token") or "").strip()

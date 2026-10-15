@@ -23,7 +23,11 @@ from app.models.models import CalendarConnection, CalendarEvent
 from app.services import calendar_secrets
 from app.services.calendar_local import LocalCalendarProvider, event_to_dto, free_gaps
 from app.services.calendar_provider import CalendarEventDTO
-from app.services.calendar_secrets import CalendarTokenError, refresh_access_token
+from app.services.calendar_secrets import (
+    CalendarTokenError,
+    CalendarTransientError,
+    refresh_access_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,8 @@ _TIMEZONE_URL = "https://www.googleapis.com/calendar/v3/users/me/settings/timezo
 _SETTINGS_URL = "https://www.googleapis.com/calendar/v3/users/me/settings"
 _EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 _MISSING_TIMEZONE = "Etc/GMT"
+# Transport failures and these statuses are retried once. 500 is transient with no retry.
+_TIMEZONE_RETRY_STATUSES = frozenset({502, 503, 504})
 _MAX_EVENT_PAGES = 5
 _LIST_LIMIT = 20
 _GOOGLE_ONLY_TITLE = "Google 日历上已有安排"
@@ -179,7 +185,7 @@ class GoogleCalendarProvider:
             return local_rows
         try:
             items, truncated = self._read_event_pages(start, end, self.timezone_name())
-        except (CalendarRemoteReadError, CalendarTokenError):
+        except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
             self.list_notice = _LIST_LOCAL_ONLY
             return local_rows[:_LIST_LIMIT]
         if truncated:
@@ -679,7 +685,7 @@ class GoogleCalendarProvider:
         """
         try:
             response = self._call("GET", _SETTINGS_URL)
-        except (CalendarRemoteReadError, CalendarTokenError):
+        except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
             logger.warning("google calendar settings list failed status=network")
             return []
         if response.status_code != 200:
@@ -911,27 +917,45 @@ class GoogleCalendarProvider:
         if connection is None:
             return _MISSING_TIMEZONE
         access = refresh_access_token(self.db, connection)
-        request = self._http_request or _http_request
-        try:
-            response = request(
-                "GET",
-                _TIMEZONE_URL,
-                headers={"Authorization": f"Bearer {access}"},
-            )
-        except httpx.HTTPError:
-            logger.warning("google calendar timezone lookup failed status=network")
-            raise CalendarTokenError() from None
+        response = self._timezone_response(access)
         if response.status_code == 404:
             return _MISSING_TIMEZONE
-        if response.status_code != 200:
-            logger.warning(
-                "google calendar timezone lookup failed status=%s", response.status_code
-            )
+        if response.status_code == 200:
+            value = _setting_value(response)
+            if not value:
+                return _MISSING_TIMEZONE
+            return value
+        logger.warning(
+            "google calendar timezone lookup failed status=%s", response.status_code
+        )
+        if response.status_code in (401, 403):
             raise CalendarTokenError()
-        value = _setting_value(response)
-        if not value:
-            return _MISSING_TIMEZONE
-        return value
+        if response.status_code == 500 or response.status_code in _TIMEZONE_RETRY_STATUSES:
+            raise CalendarTransientError()
+        raise CalendarTokenError()
+
+    def _timezone_response(self, access: str) -> httpx.Response:
+        """GET the timezone setting. Transport errors and 502/503/504 retry once."""
+        request = self._http_request or _http_request
+        first = _timezone_once(request, access)
+        if first is None or first.status_code in _TIMEZONE_RETRY_STATUSES:
+            second = _timezone_once(request, access)
+            if second is not None:
+                return second
+            logger.warning("google calendar timezone lookup failed status=network")
+            raise CalendarTransientError()
+        return first
+
+
+def _timezone_once(request, access: str) -> httpx.Response | None:
+    try:
+        return request(
+            "GET",
+            _TIMEZONE_URL,
+            headers={"Authorization": f"Bearer {access}"},
+        )
+    except httpx.HTTPError:
+        return None
 
 
 def _setting_value(response: httpx.Response) -> str:

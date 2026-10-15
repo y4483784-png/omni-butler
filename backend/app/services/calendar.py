@@ -15,9 +15,9 @@ from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
 from app.services.calendar_google import CalendarReconnectRequired, CalendarRemoteReadError
-from app.services.calendar_secrets import CalendarTokenError
+from app.services.calendar_secrets import CalendarTokenError, CalendarTransientError
 
-REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError)
+REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError)
 
 # Accept Arabic and Chinese numerals ("3点" / "三点" / "三点半") — real users rarely type digits only.
 _CALENDAR_TIME = re.compile(

@@ -15,6 +15,7 @@ from app.models.models import User
 from app.services.calendar_secrets import (
     CalendarOAuthError,
     CalendarTokenError,
+    CalendarTransientError,
     app_home_url,
     build_authorize_url,
     connect_google_account,
@@ -39,6 +40,7 @@ from app.services.calendar_google import (
     CalendarReconnectRequired,
     CalendarRemoteReadError,
     CalendarRemoteWriteError,
+    _LIST_LOCAL_ONLY,
 )
 from app.services.calendar_factory import (
     account_timezone_name,
@@ -93,6 +95,15 @@ def _conflict_http(db, user_id, start_at, end_at, conflicts, *, exclude_event_id
     raise HTTPException(status_code=409, detail=_conflict_payload(conflicts, slots))
 
 
+def _local_rows_when_clock_fails(db, user_id: int) -> dict:
+    """Saved rows and the existing read-failure sentence. No stand-in clock."""
+    provider = calendar_provider_for(db, user_id)
+    local = getattr(provider, "_local", provider)
+    rows = local.list_events(user_id, datetime(2000, 1, 1), datetime(2100, 1, 1))
+    body = [serialize_event_card(row) for row in rows[:20]]
+    return {"events": body, "notice": _LIST_LOCAL_ONLY}
+
+
 def _slots_or_empty(db, user_id, start_at, end_at, *, exclude_event_id=None):
     try:
         return free_slots_for(
@@ -111,12 +122,26 @@ def list_calendar_events(
     current_user: User = Depends(get_current_user),
 ):
     """Events overlapping [start, end) for the signed-in user. Default is the next 7 days."""
-    today = calendar_now(db, current_user.id).replace(hour=0, minute=0, second=0, microsecond=0)
     try:
-        start_at = _parse_dt(start) or today
-        end_at = _parse_dt(end) or (today + timedelta(days=7))
+        parsed_start = _parse_dt(start)
+        parsed_end = _parse_dt(end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="时间格式无效") from exc
+    try:
+        today = calendar_now(db, current_user.id).replace(hour=0, minute=0, second=0, microsecond=0)
+    except CalendarTransientError:
+        today = None
+    start_at = parsed_start or today
+    if parsed_end is not None:
+        end_at = parsed_end
+    elif today is not None:
+        end_at = today + timedelta(days=7)
+    elif start_at is not None:
+        end_at = start_at + timedelta(days=7)
+    else:
+        end_at = None
+    if start_at is None or end_at is None:
+        return _local_rows_when_clock_fails(db, current_user.id)
     if end_at <= start_at:
         raise HTTPException(status_code=400, detail="结束时间需晚于开始时间")
     provider = calendar_provider_for(db, current_user.id)
@@ -207,6 +232,8 @@ def _create_connected_event(
         raise HTTPException(status_code=502, detail=str(exc)) from None
     except CalendarTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     return serialize_event_card(event)
 
 
@@ -261,6 +288,8 @@ def patch_event(
         raise HTTPException(status_code=502, detail=str(exc)) from None
     except CalendarTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
@@ -283,6 +312,8 @@ def delete_event(
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
@@ -299,7 +330,7 @@ def google_calendar_status(
         return status
     try:
         zone = account_timezone_name(db, current_user.id)
-    except (CalendarTokenError, httpx.HTTPError):
+    except (CalendarTokenError, CalendarTransientError, httpx.HTTPError):
         zone = ""
     if zone:
         status["timezone"] = zone
