@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta
 
@@ -114,6 +115,85 @@ def _write_kind(action: str, draft: EventDraft) -> str:
     return "block" if (draft.kind or "").strip().lower() == "block" else "meeting"
 
 
+def _people(raw) -> list[str]:
+    if isinstance(raw, list):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    return []
+
+
+def _infer_kind(participants: list[str], location: str) -> str:
+    """A span with nobody and nowhere is a block. Anything else is a meeting."""
+    if not participants and not (location or "").strip():
+        return "block"
+    return "meeting"
+
+
+def _as_clock(value) -> datetime | None:
+    return value if isinstance(value, datetime) else None
+
+
+def _rescheduled_end(
+    draft: EventDraft, old_start: datetime | None, old_end: datetime | None
+) -> datetime | None:
+    """Model end only when that end still belongs to the model's start.
+
+    A local regex may move the start after extraction. That move is a new
+    start, not a request to change the duration, so the matched length wins.
+    """
+    new_start = draft.start_at
+    specified = draft.specified_end
+    if (
+        isinstance(specified, datetime)
+        and isinstance(new_start, datetime)
+        and specified > new_start
+        and new_start == draft.model_start
+    ):
+        return specified
+    if (
+        isinstance(new_start, datetime)
+        and isinstance(old_start, datetime)
+        and isinstance(old_end, datetime)
+        and old_end > old_start
+    ):
+        return new_start + (old_end - old_start)
+    if isinstance(draft.end_at, datetime):
+        return draft.end_at
+    return old_end
+
+
+def _apply_matched_fields(draft: EventDraft, matched: dict, action: str) -> None:
+    """Copy one matched event onto the draft. Update keeps the model's new start."""
+    title = str(matched.get("title") or "").strip()
+    if title:
+        draft.title = title
+    participants = _people(matched.get("participants"))
+    location = str(matched.get("location") or "")
+    description = str(matched.get("description") or "")
+    old_start = _as_clock(matched.get("start_at"))
+    old_end = _as_clock(matched.get("end_at"))
+    draft.participants = participants
+    draft.location = location
+    if action == "cancel":
+        draft.description = description
+        if old_start is not None:
+            draft.start_at = old_start
+        if old_end is not None:
+            draft.end_at = old_end
+        return
+    draft.kind = _infer_kind(participants, location)
+    if not draft.notes_specified:
+        draft.description = description
+    draft.start_at = draft.start_at or old_start
+    draft.end_at = _rescheduled_end(draft, old_start, old_end)
+
+
 def _base_card(
     *,
     mode: str,
@@ -134,7 +214,7 @@ def _base_card(
         "start_at": _iso(draft.start_at),
         "end_at": _iso(draft.end_at),
         "participants": participants,
-        "location": "",
+        "location": "" if kind == "block" else (draft.location or ""),
         "description": draft.description or "",
         "timezone": "",
         "provider": "local",
@@ -348,6 +428,27 @@ def _list_text(
     return advice, card
 
 
+def _overlaps_listed(start: datetime, end: datetime, rows) -> bool:
+    """True when the slot cuts a listed event. Touching endpoints do not."""
+    if end <= start:
+        return False
+    for row in rows:
+        busy_start = getattr(row, "start_at", None)
+        busy_end = getattr(row, "end_at", None)
+        if not isinstance(busy_start, datetime) or not isinstance(busy_end, datetime):
+            continue
+        if busy_end <= busy_start:
+            continue
+        if start < busy_end and end > busy_start:
+            return True
+    return False
+
+
+def _without_busy_overlap(slots, rows):
+    """Drop slots that overlap a listed event. Clock hour is not a reason to drop."""
+    return [pair for pair in slots if not _overlaps_listed(pair[0], pair[1], rows)]
+
+
 def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     """List the named day, then let the model pick slots. No gap algorithm."""
     try:
@@ -377,6 +478,7 @@ def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     if picked is None:
         return _ADVICE_UNAVAILABLE, _list_card(shown)
     slots, note = picked
+    slots = _without_busy_overlap(slots, shown)
     card = _list_card(shown, slots)
     if note:
         return note, card
@@ -398,19 +500,18 @@ def _confirm_horizon(now: datetime) -> tuple[datetime, datetime]:
 
 def _align_connected_title(
     ctx: ToolContext,
-    card: dict,
     draft: EventDraft,
     action: str,
     now: datetime,
     zone_name: str | None,
 ) -> None:
-    """Align a connected card to one live primary event, or leave the extraction.
+    """Copy one live primary event onto a connected update or cancel draft.
 
-    One exact ``summary.strip() == title`` stays as extracted. Otherwise exactly
-    one ``titles_match`` hit copies that summary, and a cancel also copies its
-    wall times. Zero or many soft hits stay on the extraction: connected
-    update/cancel has no choose step. A failed read leaves the extraction.
-    Confirm still exact-matches and does not use this alignment.
+    One exact summary, or else exactly one soft title, supplies kind, times,
+    notes, participants, and location. Update keeps the model's new start, and
+    its end only when the model gave one. Cancel uses the event's wall times.
+    Zero or many soft hits, or a failed read, leave the extraction. Confirm
+    still exact-matches and does not use this alignment.
     """
     title = (draft.title or "").strip()
     if not title or not zone_name or ctx.db is None or ctx.user_id is None:
@@ -432,24 +533,28 @@ def _align_connected_title(
         if isinstance(item, dict) and str(item.get("summary") or "").strip() == title
     ]
     if len(exact) == 1:
-        return
-    soft = [
-        item
-        for item in events
-        if isinstance(item, dict) and titles_match(title, str(item.get("summary") or ""))
-    ]
-    if len(soft) != 1:
-        return
-    match = soft[0]
-    card["title"] = str(match.get("summary") or "").strip()
-    if action != "cancel":
-        return
-    start_at = match.get("start_at")
-    end_at = match.get("end_at")
-    if isinstance(start_at, datetime):
-        card["start_at"] = _iso(start_at)
-    if isinstance(end_at, datetime):
-        card["end_at"] = _iso(end_at)
+        match = exact[0]
+    else:
+        soft = [
+            item
+            for item in events
+            if isinstance(item, dict) and titles_match(title, str(item.get("summary") or ""))
+        ]
+        if len(soft) != 1:
+            return
+        match = soft[0]
+    _apply_matched_fields(
+        draft,
+        {
+            "title": match.get("summary"),
+            "start_at": match.get("start_at"),
+            "end_at": match.get("end_at"),
+            "participants": match.get("participants") or [],
+            "location": match.get("location") or "",
+            "description": match.get("description") or "",
+        },
+        action,
+    )
 
 
 def _remote_change_preview(
@@ -461,7 +566,8 @@ def _remote_change_preview(
     now: datetime,
     zone_name: str | None,
 ) -> ToolResult:
-    """Connected update/cancel. Prefill may align one soft title. Confirm writes."""
+    """Connected update/cancel. Prefill copies one matched event. Confirm writes."""
+    _align_connected_title(ctx, draft, action, now, zone_name)
     card = _base_card(mode=action, action=action, draft=draft, kind=_write_kind(action, draft))
     if zone_name:
         card["timezone"] = zone_name
@@ -478,7 +584,6 @@ def _remote_change_preview(
                 slots, slot_note = _preview_slots(ctx, draft.start_at, draft.end_at)
                 remote_note = remote_note or slot_note
                 card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
-    _align_connected_title(ctx, card, draft, action, now, zone_name)
     steps.append("已生成待确认卡片，尚未写入")
     return _cleared(steps, _create_answer(card, remote_note), card)
 
@@ -657,28 +762,30 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         return _cleared(steps, _confirm_text(card), card)
 
     event = matches[0]
-    chosen = EventDraft(
-        title=event.title or draft.title,
-        start_at=event.start_at,
-        end_at=event.end_at,
-        participants=draft.participants,
-        kind=draft.kind,
-        description=draft.description,
+    _apply_matched_fields(
+        draft,
+        {
+            "title": event.title,
+            "start_at": event.start_at,
+            "end_at": event.end_at,
+            "participants": event.participants,
+            "location": getattr(event, "location", "") or "",
+            "description": getattr(event, "description", "") or "",
+        },
+        action,
     )
     card = _base_card(
         mode=action,
         action=action,
-        draft=chosen,
+        draft=draft,
         event_id=event.id,
-        kind=_write_kind(action, chosen),
+        kind=_write_kind(action, draft),
     )
     card["status"] = event.status or "active"
     remote_note = ""
-    if action == "update" and draft.start_at:
-        card["start_at"] = _iso(draft.start_at)
-        card["end_at"] = _iso(draft.end_at or event.end_at)
+    if action == "update" and draft.start_at and draft.end_at:
         start = draft.start_at
-        end = draft.end_at or event.end_at
+        end = draft.end_at
         if start and end:
             conflicts, remote_note = _update_preview_conflicts(ctx, start, end, event.id)
             if conflicts:

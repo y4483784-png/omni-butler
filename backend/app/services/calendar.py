@@ -93,6 +93,13 @@ class EventDraft:
     # Model classification. Empty means the card layer treats a write as a meeting.
     kind: str = ""
     description: str = ""
+    location: str = ""
+    # The start the model returned, before a local regex fallback moves it.
+    model_start: datetime | None = None
+    # The end the model returned. None means an update keeps the matched duration.
+    specified_end: datetime | None = None
+    # True when the model returned a note the user asked to change.
+    notes_specified: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -107,6 +114,7 @@ class EventDraft:
             "list_day": self.list_day,
             "kind": self.kind,
             "description": self.description,
+            "location": self.location,
         }
 
     @classmethod
@@ -123,6 +131,7 @@ class EventDraft:
             list_day=_civil_day(str(data.get("list_day") or "")),
             kind=str(data.get("kind") or ""),
             description=str(data.get("description") or ""),
+            location=str(data.get("location") or ""),
         )
 
 
@@ -167,12 +176,14 @@ def _extract_system_prompt(
         )
         fields = (
             '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
-            '"missing_fields":[str],"kind":str}'
+            '"missing_fields":[str],"kind":str,"description":str}'
         )
         scheduling = ""
         existing += (
             " 修改时 kind 为 meeting 或 block。"
             " 留给自己的一段时间是 block，拿不准就 meeting。"
+            " end_at 只在用户明确要改结束时间或时长时填写，否则留空。"
+            " description 只在用户明确要改备注时填写，否则留空。"
         )
     else:
         fields = (
@@ -279,10 +290,18 @@ def extract_event(
     )
     raw_kind = str(parsed.get("kind") or "").strip().lower()
     draft.kind = raw_kind if raw_kind in {"meeting", "block"} else ""
+    # Keep the model's own start and end. A later +1 hour fill is not a request
+    # to change the matched event's duration.
+    draft.model_start = start_at
+    draft.specified_end = end_at
     if not existing_event:
         draft.requested_action = "list" if str(parsed.get("action") or "").strip().lower() == "list" else ""
         draft.list_day = _civil_day(str(parsed.get("day") or ""))
         draft.description = str(parsed.get("description") or "").strip()
+    else:
+        notes = str(parsed.get("description") or "").strip()
+        draft.description = notes
+        draft.notes_specified = bool(notes)
     _supplement_draft_from_message(draft, message, allow_end=True, now=now)
     return _finalize_prefill(draft)
 
