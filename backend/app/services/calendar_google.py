@@ -500,6 +500,33 @@ class GoogleCalendarProvider:
             zone_name=self.timezone_name(),
         )
 
+    def primary_events_for_title(
+        self, start: datetime, end: datetime, zone_name: str
+    ) -> list[dict]:
+        """Visible primary events for connected update/cancel prefill.
+
+        ``summary`` is the stripped Google summary. ``start_at`` and ``end_at``
+        are naive wall times, or None when the item has no usable span.
+        Hidden rows are skipped. Nothing is stored. Confirm does not call this
+        and still requires ``summary.strip() == title``.
+        """
+        items = self._list_primary_events(_as_naive(start), _as_naive(end), zone_name)
+        found: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict) or _hidden_on_list(item):
+                continue
+            if not str(item.get("id") or "").strip():
+                continue
+            view = _event_view(item)
+            found.append(
+                {
+                    "summary": str(item.get("summary") or "").strip(),
+                    "start_at": None if view is None else view.start,
+                    "end_at": None if view is None else view.end,
+                }
+            )
+        return found
+
     def readonly_titles(self, user_id: int, start: datetime, end: datetime) -> list[str]:
         """Titles of primary-calendar events that have no local row.
 
