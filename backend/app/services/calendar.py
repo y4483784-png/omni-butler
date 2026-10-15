@@ -124,12 +124,20 @@ def is_calendar_cancel(message: str) -> bool:
     return bool(_CANCEL_PAT.search(message or ""))
 
 
-def _extract_system_prompt(now: datetime | None, timezone_name: str | None) -> str:
+def _extract_system_prompt(
+    now: datetime | None,
+    timezone_name: str | None,
+    *,
+    existing_event: bool = False,
+) -> str:
     """Name the calendar day that 「明天」 and 「后天」 are relative to.
 
     A connected account also gets that account's IANA id. An unconnected
     prompt names the date only and does not invent a product zone. The model
     still returns offset-less wall times; nothing here rewrites them.
+
+    Update and cancel ask for the existing event's name. The model is not
+    told to concatenate participant nicknames into that title.
     """
     clock = now or datetime.now()
     day = clock.date().isoformat()
@@ -138,6 +146,11 @@ def _extract_system_prompt(now: datetime | None, timezone_name: str | None) -> s
         today = f"今天是 {day}，账户时区是 {zone}。"
     else:
         today = f"今天是 {day}。"
+    existing = ""
+    if existing_event:
+        existing = (
+            " 修改或撤销时，title 是已有日程的名称，不要把参与人昵称或其他词拼进标题。"
+        )
     return (
         "你是日程信息提取器。只输出 JSON："
         '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}。'
@@ -147,6 +160,7 @@ def _extract_system_prompt(now: datetime | None, timezone_name: str | None) -> s
         f" {today}"
         "「明天」「后天」相对这一天。"
         " start_at/end_at 仍输出无偏移的 ISO 8601。"
+        f"{existing}"
     )
 
 
@@ -156,12 +170,15 @@ def extract_event(
     *,
     now: datetime | None = None,
     timezone_name: str | None = None,
+    existing_event: bool = False,
 ) -> EventDraft:
     parsed = complete_json(
         [
             {
                 "role": "system",
-                "content": _extract_system_prompt(now, timezone_name),
+                "content": _extract_system_prompt(
+                    now, timezone_name, existing_event=existing_event
+                ),
             },
             {
                 "role": "user",

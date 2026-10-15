@@ -245,7 +245,7 @@ export function ScheduleCard({
         >
           <label>
             标题
-            <input value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked || mode === "cancel"} />
+            <input value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked} />
           </label>
           <label>
             开始

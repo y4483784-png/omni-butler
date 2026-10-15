@@ -346,11 +346,80 @@ def _writes_remote(ctx: ToolContext) -> bool:
     return calendar_writes_remote(ctx.db, ctx.user_id)
 
 
+def _confirm_horizon(now: datetime) -> tuple[datetime, datetime]:
+    """Same window confirm lists: account wall now through year 2100."""
+    return now.replace(microsecond=0), datetime(2100, 1, 1)
+
+
+def _align_connected_title(
+    ctx: ToolContext,
+    card: dict,
+    draft: EventDraft,
+    action: str,
+    now: datetime,
+    zone_name: str | None,
+) -> None:
+    """Align a connected card to one live primary event, or leave the extraction.
+
+    One exact ``summary.strip() == title`` stays as extracted. Otherwise exactly
+    one ``titles_match`` hit copies that summary, and a cancel also copies its
+    wall times. Zero or many soft hits stay on the extraction: connected
+    update/cancel has no choose step. A failed read leaves the extraction.
+    Confirm still exact-matches and does not use this alignment.
+    """
+    title = (draft.title or "").strip()
+    if not title or not zone_name or ctx.db is None or ctx.user_id is None:
+        return
+    provider = calendar_provider_for(ctx.db, ctx.user_id)
+    reader = getattr(provider, "primary_events_for_title", None)
+    if reader is None:
+        return
+    start, end = _confirm_horizon(now)
+    try:
+        events = reader(start, end, zone_name)
+    except REMOTE_READ_ERRORS:
+        return
+    if not isinstance(events, list):
+        return
+    exact = [
+        item
+        for item in events
+        if isinstance(item, dict) and str(item.get("summary") or "").strip() == title
+    ]
+    if len(exact) == 1:
+        return
+    soft = [
+        item
+        for item in events
+        if isinstance(item, dict) and titles_match(title, str(item.get("summary") or ""))
+    ]
+    if len(soft) != 1:
+        return
+    match = soft[0]
+    card["title"] = str(match.get("summary") or "").strip()
+    if action != "cancel":
+        return
+    start_at = match.get("start_at")
+    end_at = match.get("end_at")
+    if isinstance(start_at, datetime):
+        card["start_at"] = _iso(start_at)
+    if isinstance(end_at, datetime):
+        card["end_at"] = _iso(end_at)
+
+
 def _remote_change_preview(
-    ctx: ToolContext, steps: list[str], action: str, draft: EventDraft
+    ctx: ToolContext,
+    steps: list[str],
+    action: str,
+    draft: EventDraft,
+    *,
+    now: datetime,
+    zone_name: str | None,
 ) -> ToolResult:
-    """Connected update/cancel. The card is the extraction. Google is written on confirm."""
+    """Connected update/cancel. Prefill may align one soft title. Confirm writes."""
     card = _base_card(mode=action, action=action, draft=draft)
+    if zone_name:
+        card["timezone"] = zone_name
     remote_note = ""
     if action == "update" and draft.start_at and draft.end_at:
         conflicts, remote_note = _update_preview_conflicts(
@@ -364,6 +433,7 @@ def _remote_change_preview(
                 slots, slot_note = _preview_slots(ctx, draft.start_at, draft.end_at)
                 remote_note = remote_note or slot_note
                 card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
+    _align_connected_title(ctx, card, draft, action, now, zone_name)
     steps.append("已生成待确认卡片，尚未写入")
     return _cleared(steps, _create_answer(card, remote_note), card)
 
@@ -472,7 +542,13 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     except CalendarTransientError as exc:
         steps.append("暂时连不上 Google 日历")
         return _cleared(steps, str(exc))
-    draft = extract_event(ctx.message, ctx.history, now=now, timezone_name=zone_name)
+    draft = extract_event(
+        ctx.message,
+        ctx.history,
+        now=now,
+        timezone_name=zone_name,
+        existing_event=action in {"update", "cancel"},
+    )
     remote = _writes_remote(ctx)
     if action == "update" and not remote:
         apply_update_times(draft, ctx.message, now=now)
@@ -495,7 +571,9 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         return _cleared(steps, _create_answer(card, remote_note), card)
 
     if remote and action in {"update", "cancel"}:
-        return _remote_change_preview(ctx, steps, action, draft)
+        return _remote_change_preview(
+            ctx, steps, action, draft, now=now, zone_name=zone_name
+        )
 
     # Unconnected update/cancel still confirm against a local row.
     # Update searches the named original day, not the new slot. No original day

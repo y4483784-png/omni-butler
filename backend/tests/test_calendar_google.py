@@ -31,6 +31,7 @@ from app.services.calendar import (
     create_event,
     extract_event,
     find_event_candidates,
+    titles_match,
 )
 from app.services.calendar_factory import calendar_provider_for
 from app.services.calendar_google import (
@@ -3308,6 +3309,272 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
         db.refresh(row)
         assert row.start_at == datetime(2026, 10, 17, 16, 0)
         assert row.status == "active"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def _forbid_local_lookup(monkeypatch) -> None:
+    def _forbid(*_args, **_kwargs):
+        raise AssertionError("local candidate lookup")
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.find_event_candidates", _forbid)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _forbid)
+
+
+def _assert_offset_free(card: dict) -> None:
+    for key in ("start_at", "end_at"):
+        stamp = card[key]
+        assert stamp
+        assert "+" not in stamp
+        assert "Z" not in stamp
+
+
+def _event_gets(fake: FakeGoogle) -> list[dict]:
+    return [
+        call
+        for call in fake.calls
+        if call["method"] == "GET"
+        and str(call["url"]).rstrip("/").endswith("/calendars/primary/events")
+    ]
+
+
+def test_connected_prefill_soft_aligns_one_live_title(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Extracted title differs, but one titles_match hit becomes the card title.
+
+    Cancel also takes that event's wall times. Update keeps the new slot.
+    Confirm still rejects any title that is not the exact summary.
+    """
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _forbid_local_lookup(monkeypatch)
+    assert titles_match("Grok测试会议", "测试会议")
+    assert "Grok测试会议" != "测试会议"
+
+    def _extract(message, _history=None, **_kwargs):
+        if "改" in (message or ""):
+            start = datetime(2026, 10, 17, 16, 0)
+        else:
+            start = datetime(2026, 10, 18, 9, 0)
+        return EventDraft(title="Grok测试会议", start_at=start, end_at=start + timedelta(hours=1))
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item(
+                "evt-real",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T16:00:00+08:00",
+                summary="测试会议",
+            )
+        ]
+        cancel = execute_calendar(
+            ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
+        )
+        card = cancel.schedule_card
+        assert card["mode"] == "cancel"
+        assert card["title"] == "测试会议"
+        assert card["start_at"] == "2026-10-16T15:00:00"
+        assert card["end_at"] == "2026-10-16T16:00:00"
+        assert card["timezone"] == "Asia/Singapore"
+        assert card["event_id"] is None
+        assert card["candidates"] == []
+        _assert_offset_free(card)
+        listed = _event_gets(fake_google)
+        assert listed
+        assert str(listed[0]["params"]["timeMax"]).startswith("2100-01-01")
+        assert listed[0]["params"]["timeZone"] == "Asia/Singapore"
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        update = execute_calendar(
+            ToolContext(db=db, message="把Grok测试会议改到后天下午四点", history=[], user_id=user_id)
+        )
+        moved = update.schedule_card
+        assert moved["mode"] == "update"
+        assert moved["title"] == "测试会议"
+        assert moved["start_at"] == "2026-10-17T16:00:00"
+        assert moved["end_at"] == "2026-10-17T17:00:00"
+        assert moved["timezone"] == "Asia/Singapore"
+        _assert_offset_free(moved)
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+
+        missed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "Grok测试会议"},
+        )
+        assert missed.status_code == 409
+        assert missed.json()["detail"] == "没有在 Google 日历上找到同标题的日程，未写入。"
+        assert _delete_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        confirmed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "测试会议"},
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert [call["url"].rstrip("/").rsplit("/", 1)[-1] for call in _delete_calls(fake_google)] == [
+            "evt-real"
+        ]
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_prefill_leaves_an_exact_title(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """One exact summary match is not rewritten, including cancel times."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _forbid_local_lookup(monkeypatch)
+
+    def _extract(_message, _history=None, **_kwargs):
+        start = datetime(2026, 10, 18, 9, 0)
+        return EventDraft(title="测试会议", start_at=start, end_at=start + timedelta(hours=1))
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        fake_google.events_items = [
+            _google_item(
+                "evt-real",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T16:00:00+08:00",
+                summary="测试会议",
+            ),
+            _google_item(
+                "evt-other",
+                "2026-10-16T18:00:00+08:00",
+                "2026-10-16T19:00:00+08:00",
+                summary="牙医",
+            ),
+        ]
+        cancel = execute_calendar(
+            ToolContext(db=db, message="取消测试会议", history=[], user_id=user_id)
+        )
+        card = cancel.schedule_card
+        assert card["title"] == "测试会议"
+        assert card["start_at"] == "2026-10-18T09:00:00"
+        assert card["end_at"] == "2026-10-18T10:00:00"
+        assert card["timezone"] == "Asia/Singapore"
+        _assert_offset_free(card)
+        assert _delete_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_prefill_leaves_zero_or_many_soft_hits(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """No unique soft hit, so the card keeps the extracted title and times."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _forbid_local_lookup(monkeypatch)
+
+    def _extract(_message, _history=None, **_kwargs):
+        start = datetime(2026, 10, 18, 9, 0)
+        return EventDraft(title="Grok测试会议", start_at=start, end_at=start + timedelta(hours=1))
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        fake_google.events_items = [
+            _google_item(
+                "evt-dentist",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T16:00:00+08:00",
+                summary="牙医",
+            )
+        ]
+        none = execute_calendar(
+            ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
+        )
+        assert titles_match("Grok测试会议", "牙医") is False
+        card = none.schedule_card
+        assert card["mode"] == "cancel"
+        assert card["title"] == "Grok测试会议"
+        assert card["start_at"] == "2026-10-18T09:00:00"
+        assert card["end_at"] == "2026-10-18T10:00:00"
+        assert card["candidates"] == []
+
+        assert titles_match("Grok测试会议", "测试会议")
+        assert titles_match("Grok测试会议", "会议")
+        fake_google.events_items = [
+            _google_item(
+                "evt-a",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T16:00:00+08:00",
+                summary="测试会议",
+            ),
+            _google_item(
+                "evt-b",
+                "2026-10-16T18:00:00+08:00",
+                "2026-10-16T19:00:00+08:00",
+                summary="会议",
+            ),
+        ]
+        many = execute_calendar(
+            ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
+        )
+        crowded = many.schedule_card
+        assert crowded["mode"] == "cancel"
+        assert crowded["title"] == "Grok测试会议"
+        assert crowded["start_at"] == "2026-10-18T09:00:00"
+        assert crowded["end_at"] == "2026-10-18T10:00:00"
+        assert crowded["candidates"] == []
+        assert _delete_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_prefill_keeps_extraction_when_list_fails(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _forbid_local_lookup(monkeypatch)
+
+    def _extract(_message, _history=None, **_kwargs):
+        start = datetime(2026, 10, 18, 9, 0)
+        return EventDraft(title="Grok测试会议", start_at=start, end_at=start + timedelta(hours=1))
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        fake_google.events_items = [
+            _google_item(
+                "evt-real",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T16:00:00+08:00",
+                summary="测试会议",
+            )
+        ]
+        fake_google.events_status = 500
+        result = execute_calendar(
+            ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
+        )
+        card = result.schedule_card
+        assert card["mode"] == "cancel"
+        assert card["title"] == "Grok测试会议"
+        assert card["start_at"] == "2026-10-18T09:00:00"
+        assert card["timezone"] == "Asia/Singapore"
+        assert _delete_calls(fake_google) == []
     finally:
         _cleanup(user_id)
         db.close()

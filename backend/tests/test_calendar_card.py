@@ -763,6 +763,7 @@ def test_connected_extract_prompt_names_today_and_iana_zone(monkeypatch):
     assert card["end_at"] == "2026-10-16T16:00:00"
     assert "+" not in card["start_at"] and "Z" not in card["start_at"]
     assert "+" not in card["end_at"] and "Z" not in card["end_at"]
+    assert "已有日程的名称" not in prompt
 
 
 def test_unconnected_extract_prompt_has_date_and_no_invented_zone(monkeypatch):
@@ -808,6 +809,49 @@ def test_unconnected_extract_prompt_has_date_and_no_invented_zone(monkeypatch):
     assert "Etc/" not in prompt
     scrubbed = prompt.replace("start_at/end_at", "")
     assert "/" not in scrubbed
+
+
+def test_update_and_cancel_prompt_asks_for_the_existing_title(monkeypatch):
+    """Update and cancel ask for the event's name. Create does not get that sentence."""
+    captured = _capture_extract(
+        monkeypatch,
+        {
+            "title": "Grok测试会议",
+            "start_at": "2026-10-16T15:00:00",
+            "end_at": "",
+            "participants": ["Grok测试"],
+            "missing_fields": [],
+        },
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_now",
+        lambda *_args, **_kwargs: datetime(2026, 10, 15, 9, 0),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.account_timezone_name",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_writes_remote",
+        lambda *_args, **_kwargs: False,
+    )
+    init_db()
+    db = SessionLocal()
+    try:
+        execute_calendar(
+            ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=1)
+        )
+        cancel_prompt = _prompt_text(captured)
+        execute_calendar(
+            ToolContext(db=db, message="把测试会议改到后天下午四点", history=[], user_id=1)
+        )
+        update_prompt = _prompt_text(captured)
+    finally:
+        db.close()
+    for prompt in (cancel_prompt, update_prompt):
+        assert "已有日程的名称" in prompt
+        assert "不要把参与人昵称或其他词拼进标题" in prompt
+        assert "/" not in prompt.replace("start_at/end_at", "")
 
 
 def test_model_far_date_stays_on_the_draft(monkeypatch):
