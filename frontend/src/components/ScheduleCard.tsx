@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   CalendarConflictError,
   cancelCalendarEvent,
+  confirmGoogleCalendarChange,
   createCalendarEvent,
   updateCalendarEvent,
   type ScheduleCandidate,
@@ -122,6 +123,27 @@ export function ScheduleCard({
         return;
       }
       const id = savedEventId(card);
+      if (id == null && (mode === "cancel" || mode === "update")) {
+        const saved = await confirmGoogleCalendarChange({
+          action: mode === "cancel" ? "cancel" : "update",
+          title: payload.title,
+          start_at: payload.start_at,
+          end_at: payload.end_at,
+          participants: payload.participants,
+          location: payload.location,
+          description: payload.description,
+        });
+        onChange({
+          ...card,
+          ...saved,
+          mode,
+          phase: "confirmed",
+          conflicts: [],
+          suggested_slots: [],
+          candidates: [],
+        });
+        return;
+      }
       if (id == null) {
         setError("还没有选中日程");
         return;

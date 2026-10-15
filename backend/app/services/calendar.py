@@ -14,7 +14,12 @@ from app.core.llm import complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
-from app.services.calendar_google import CalendarReconnectRequired, CalendarRemoteReadError
+from app.services.calendar_google import (
+    CalendarReconnectRequired,
+    CalendarRemoteReadError,
+    CalendarRemoteWriteError,
+    CalendarTitleUnmatched,
+)
 from app.services.calendar_secrets import CalendarTokenError, CalendarTransientError
 
 REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError)
@@ -428,6 +433,37 @@ def _block_disconnected_remote(db: Session, user_id: int, event: CalendarEvent) 
     """Refuse edits that would leave Google on the old time after a disconnect."""
     if (event.external_id or "").strip() and not calendar_writes_remote(db, user_id):
         raise CalendarReconnectRequired()
+
+
+def confirm_titled_change(
+    db: Session,
+    user_id: int,
+    *,
+    action: str,
+    title: str,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    participants: list[str] | None = None,
+    location: str | None = None,
+    description: str | None = None,
+):
+    """Connected confirm. The target id is resolved from a live ``events.list``."""
+    if not calendar_writes_remote(db, user_id):
+        raise CalendarTitleUnmatched()
+    provider = calendar_provider_for(db, user_id)
+    confirmer = getattr(provider, "confirm_titled_change", None)
+    if confirmer is None:
+        raise CalendarRemoteWriteError()
+    return confirmer(
+        user_id,
+        action=action,
+        title=title,
+        start_at=start_at,
+        end_at=end_at,
+        participants=participants,
+        location=location,
+        description=description,
+    )
 
 
 def conflicts_for_update(
