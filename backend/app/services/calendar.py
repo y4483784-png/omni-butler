@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -539,8 +539,18 @@ def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
 
 
 def draft_expires_at(now: datetime | None = None) -> str:
-    base = (now or datetime.now()).replace(microsecond=0)
-    return (base + DRAFT_TTL).isoformat()
+    """UTC expiry for a confirm card, as ISO-8601 with a numeric offset.
+
+    Naive ``now`` is a UTC wall time (the container clock). Aware values are
+    converted to UTC. An offset-less stamp is read as browser-local time, so a
+    UTC+8 client treated a fresh 30-minute draft as already expired.
+    """
+    base = now if now is not None else datetime.now(timezone.utc)
+    if base.tzinfo is None or base.tzinfo.utcoffset(base) is None:
+        base = base.replace(tzinfo=timezone.utc)
+    else:
+        base = base.astimezone(timezone.utc)
+    return (base.replace(microsecond=0) + DRAFT_TTL).isoformat()
 
 
 def titles_match(query: str, title: str) -> bool:

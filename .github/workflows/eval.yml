@@ -48,6 +48,22 @@ jobs:
           ADMIN_PASSWORD: test-admin-pass
         run: python -m pytest tests -q
 
+  schedule-expiry:
+    name: schedule card expiry
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Offset-less expiry is UTC
+        run: TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs
+
   rls:
     name: postgres row-level security
     runs-on: ubuntu-latest

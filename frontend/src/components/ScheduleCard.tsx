@@ -8,6 +8,7 @@ import {
   type ScheduleCard as Card,
   type ScheduleSlot,
 } from "../api/client";
+import { isExpired } from "../utils/scheduleExpiry";
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -33,12 +34,6 @@ function formatWhen(startAt: string, endAt: string): string {
   const day = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())} ${pad(start.getHours())}:${pad(start.getMinutes())}`;
   if (!end || Number.isNaN(end.getTime())) return day;
   return `${day} - ${pad(end.getHours())}:${pad(end.getMinutes())}`;
-}
-
-function isExpired(card: Card): boolean {
-  if (card.phase !== "draft" || !card.expires_at) return false;
-  const expires = new Date(card.expires_at);
-  return !Number.isNaN(expires.getTime()) && expires.getTime() <= Date.now();
 }
 
 function savedEventId(card: Card): number | null {
@@ -151,10 +146,7 @@ export function ScheduleCard({
   }
 
   function useSlot(slot: ScheduleSlot) {
-    const expires = new Date();
-    expires.setMinutes(expires.getMinutes() + 30);
-    const pad = (value: number) => String(value).padStart(2, "0");
-    const expiresAt = `${expires.getFullYear()}-${pad(expires.getMonth() + 1)}-${pad(expires.getDate())}T${pad(expires.getHours())}:${pad(expires.getMinutes())}:00`;
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     onChange({
       mode: "create",
       phase: "draft",
