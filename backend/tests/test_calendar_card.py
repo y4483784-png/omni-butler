@@ -12,7 +12,7 @@ from app.agents.tools import calendar_tool
 from app.agents.tools.calendar_tool import execute_calendar
 from app.agents.workflow import run_agent_workflow
 from app.core.db import SessionLocal, init_db
-from app.models.models import CalendarEvent, Message, Session as ChatSession
+from app.models.models import CalendarEvent, Message, Session as ChatSession, User
 from app.services.calendar import EventDraft, extract_event, void_draft_schedule_cards
 from app.services.calendar import _parse_time_from_message
 
@@ -833,3 +833,111 @@ def test_model_far_date_stays_on_the_draft(monkeypatch):
     assert draft.end_at == datetime(2023, 4, 5, 16, 0)
     assert "+" not in draft.start_at.isoformat()
     assert "Z" not in draft.start_at.isoformat()
+
+
+def _freeze_suggest_now(monkeypatch) -> None:
+    frozen = datetime(2026, 10, 15, 9, 0)
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_now",
+        lambda *_args, **_kwargs: frozen,
+    )
+
+
+def _suggest_owner(db) -> int:
+    user_id = 88041
+    if db.get(User, user_id) is None:
+        db.add(User(id=user_id, external_id="suggest-88041", name="suggest", is_active=1))
+        db.commit()
+    db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).delete()
+    db.commit()
+    return user_id
+
+
+def test_suggest_named_hour_when_tomorrow_is_empty(monkeypatch):
+    _freeze_suggest_now(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    try:
+        owner_id = _suggest_owner(db)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == owner_id).count()
+        result = execute_calendar(
+            ToolContext(db=db, message="明天下午四点有空吗", history=[], user_id=owner_id)
+        )
+        answer = result.direct_answer or ""
+        assert "2026-10-16 16:00" in answer
+        assert "12:00–13:00" not in answer
+        card = result.schedule_card
+        assert card["mode"] == "suggest"
+        assert card["phase"] == "info"
+        assert card["suggested_slots"] == [
+            {"start_at": "2026-10-16T16:00:00", "end_at": "2026-10-16T17:00:00"}
+        ]
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == owner_id).count() == before
+    finally:
+        db.close()
+
+
+def test_suggest_named_hour_offers_another_afternoon_slot_when_busy(monkeypatch):
+    _freeze_suggest_now(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    try:
+        owner_id = _suggest_owner(db)
+        busy = CalendarEvent(
+            user_id=owner_id,
+            title="已占",
+            start_at=datetime(2026, 10, 16, 16, 0),
+            end_at=datetime(2026, 10, 16, 17, 0),
+            status="active",
+            provider="local",
+            external_id="",
+        )
+        db.add(busy)
+        db.commit()
+        db.refresh(busy)
+        created.append(busy.id)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == owner_id).count()
+        result = execute_calendar(
+            ToolContext(db=db, message="明天下午四点有空吗", history=[], user_id=owner_id)
+        )
+        answer = result.direct_answer or ""
+        assert "这个时间可以" not in answer
+        assert "16:00–17:00" not in answer
+        card = result.schedule_card
+        assert card is not None
+        assert card["mode"] == "suggest"
+        assert card["phase"] == "info"
+        assert card["suggested_slots"]
+        assert all(slot["start_at"] != "2026-10-16T16:00:00" for slot in card["suggested_slots"])
+        assert any(
+            "T12:00" in slot["start_at"] or "T17:00" in slot["start_at"]
+            for slot in card["suggested_slots"]
+        )
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == owner_id).count() == before
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_suggest_open_afternoon_is_not_only_the_first_hour(monkeypatch):
+    _freeze_suggest_now(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    try:
+        owner_id = _suggest_owner(db)
+        result = execute_calendar(
+            ToolContext(db=db, message="明天下午有空吗", history=[], user_id=owner_id)
+        )
+        answer = result.direct_answer or ""
+        assert "这段时间都有空" in answer
+        assert "12:00–13:00" not in answer
+        assert "2026-10-16 12:00" in answer
+        card = result.schedule_card
+        assert card["mode"] == "suggest"
+        assert card["phase"] == "info"
+        assert card["suggested_slots"] == [
+            {"start_at": "2026-10-16T12:00:00", "end_at": "2026-10-17T00:00:00"}
+        ]
+    finally:
+        db.close()

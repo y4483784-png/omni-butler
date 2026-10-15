@@ -21,6 +21,7 @@ from app.services.calendar import (
     free_slots_for,
     readonly_titles,
     titles_match,
+    _parse_cn_int,
 )
 from app.services.calendar_factory import (
     account_timezone_name,
@@ -40,6 +41,13 @@ _UPDATE = re.compile(r"(改到|改成|改为|推迟|提前|换到|挪到|延后)
 _CANCEL = re.compile(r"(取消|撤销|删掉)")
 _LIST = re.compile(r"(有哪些|有什么安排|有什么会|查一下日程|查日程|我的日程|哪些日程)")
 _SUGGEST = re.compile(r"(有空|空闲|什么时候方便)")
+_SUGGEST_CLOCK = re.compile(
+    r"(今天|明天|后天|今晚|明早)?"
+    r"\s*(上午|下午|中午|晚上)?"
+    r"\s*(\d{1,2}|[一二两三四五六七八九十]{1,3})"
+    r"\s*(?:点|:|：)\s*"
+    r"(半|\d{1,2}|[一二三四五六七八九十]{1,3})?"
+)
 
 
 def resolve_action(message: str, args: dict | None) -> str:
@@ -239,22 +247,32 @@ def _list_text(ctx: ToolContext) -> str:
     return notice or body
 
 
-def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
-    try:
-        now = calendar_now(ctx.db, ctx.user_id)
-    except CalendarTransientError:
-        return _SUGGEST_UNAVAILABLE, None
-    start, end = _suggest_window(ctx.message, now)
-    try:
-        slots = calendar_provider_for(ctx.db, ctx.user_id).find_free_slots(
-            ctx.user_id, start, end, timedelta(hours=1), limit=3
-        )
-    except REMOTE_READ_ERRORS:
-        return _SUGGEST_UNAVAILABLE, None
-    if not slots:
-        return "这段时间没有足够的空闲时段。", None
-    lines = [f"{begin:%Y-%m-%d %H:%M}–{end_at:%H:%M}" for begin, end_at in slots]
-    card = {
+def _named_clock(message: str, now: datetime) -> datetime | None:
+    """The hour the sentence names, on the account wall clock. No clock means None."""
+    match = _SUGGEST_CLOCK.search(message or "")
+    if not match:
+        return None
+    day_word = match.group(1) or ""
+    meridiem = match.group(2) or ""
+    hour = _parse_cn_int(match.group(3) or "")
+    if hour is None:
+        return None
+    minute_raw = match.group(4) or ""
+    minute = 30 if minute_raw == "半" else (_parse_cn_int(minute_raw) or 0)
+    days = {"明天": 1, "明早": 1, "后天": 2}.get(day_word, 0)
+    if day_word == "今晚":
+        meridiem = meridiem or "晚上"
+    base = (now + timedelta(days=days)).replace(second=0, microsecond=0)
+    final_hour = hour
+    if meridiem in {"下午", "晚上"} and hour < 12:
+        final_hour = hour + 12
+    elif meridiem == "中午" and hour < 11:
+        final_hour = hour + 12
+    return base.replace(hour=final_hour % 24, minute=minute)
+
+
+def _suggest_card(slots: list[tuple[datetime, datetime]]) -> dict:
+    return {
         "mode": "suggest",
         "phase": "info",
         "action": "suggest",
@@ -274,7 +292,52 @@ def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
         "suggested_slots": _slot_payload(slots),
         "candidates": [],
     }
-    return "可以考虑这些空闲时段：\n" + "\n".join(lines), card
+
+
+def _slot_lines(slots: list[tuple[datetime, datetime]]) -> list[str]:
+    return [f"{begin:%Y-%m-%d %H:%M}–{end_at:%H:%M}" for begin, end_at in slots]
+
+
+def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
+    try:
+        now = calendar_now(ctx.db, ctx.user_id)
+    except CalendarTransientError:
+        return _SUGGEST_UNAVAILABLE, None
+    start, end = _suggest_window(ctx.message, now)
+    provider = calendar_provider_for(ctx.db, ctx.user_id)
+    named = _named_clock(ctx.message, now)
+    try:
+        if named is not None:
+            hour_end = named + timedelta(hours=1)
+            named_free = provider.find_free_slots(
+                ctx.user_id, named, hour_end, timedelta(hours=1), limit=1
+            )
+            if named_free and named_free[0] == (named, hour_end):
+                slots = [(named, hour_end)]
+                return f"这个时间可以：{_slot_lines(slots)[0]}", _suggest_card(slots)
+            others = provider.find_free_slots(
+                ctx.user_id, start, end, timedelta(hours=1), limit=3
+            )
+            others = [slot for slot in others if not (slot[0] < hour_end and slot[1] > named)]
+            if not others:
+                return "这个时间已有安排，这段时间没有足够的空闲时段。", None
+            lines = _slot_lines(others)
+            return "这个时间已有安排。可以考虑这些空闲时段：\n" + "\n".join(lines), _suggest_card(others)
+        span = end - start
+        if span > timedelta(0):
+            whole = provider.find_free_slots(ctx.user_id, start, end, span, limit=1)
+            if whole == [(start, end)]:
+                text = f"这段时间都有空：{start:%Y-%m-%d %H:%M}–{end:%Y-%m-%d %H:%M}"
+                return text, _suggest_card([(start, end)])
+        slots = provider.find_free_slots(
+            ctx.user_id, start, end, timedelta(hours=1), limit=3
+        )
+    except REMOTE_READ_ERRORS:
+        return _SUGGEST_UNAVAILABLE, None
+    if not slots:
+        return "这段时间没有足够的空闲时段。", None
+    lines = _slot_lines(slots)
+    return "可以考虑这些空闲时段：\n" + "\n".join(lines), _suggest_card(slots)
 
 
 def _update_preview_conflicts(
