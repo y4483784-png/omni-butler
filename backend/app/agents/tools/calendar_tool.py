@@ -27,6 +27,8 @@ from app.services.calendar_factory import (
     calendar_provider_for,
     calendar_writes_remote,
 )
+from app.services.calendar_google import _LIST_LOCAL_ONLY
+from app.services.calendar_secrets import CalendarTransientError
 
 _GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不到就不会写入。"
 _SUGGEST_UNAVAILABLE = "暂时读不到 Google 日历，不能建议空闲时段。"
@@ -208,8 +210,22 @@ def _all_day_label(start: datetime | None, end: datetime | None) -> str:
     return f"{start_day.isoformat()}–{last.isoformat()} 全天"
 
 
+def _saved_rows_when_clock_fails(ctx: ToolContext) -> str:
+    """Local rows only. A failed account clock is not replaced with the process zone."""
+    provider = calendar_provider_for(ctx.db, ctx.user_id)
+    local = getattr(provider, "_local", provider)
+    rows = local.list_events(ctx.user_id, datetime(2000, 1, 1), datetime(2100, 1, 1))
+    if not rows:
+        return _LIST_LOCAL_ONLY
+    lines = [_list_line(row) for row in rows[:20]]
+    return f"{_LIST_LOCAL_ONLY}\n" + "\n".join(lines)
+
+
 def _list_text(ctx: ToolContext) -> str:
-    now = _day_start(calendar_now(ctx.db, ctx.user_id))
+    try:
+        now = _day_start(calendar_now(ctx.db, ctx.user_id))
+    except CalendarTransientError:
+        return _saved_rows_when_clock_fails(ctx)
     provider = calendar_provider_for(ctx.db, ctx.user_id)
     rows = provider.list_events(ctx.user_id, now, now + timedelta(days=7))
     notice = str(getattr(provider, "list_notice", "") or "")
@@ -224,7 +240,10 @@ def _list_text(ctx: ToolContext) -> str:
 
 
 def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
-    now = calendar_now(ctx.db, ctx.user_id)
+    try:
+        now = calendar_now(ctx.db, ctx.user_id)
+    except CalendarTransientError:
+        return _SUGGEST_UNAVAILABLE, None
     start, end = _suggest_window(ctx.message, now)
     try:
         slots = calendar_provider_for(ctx.db, ctx.user_id).find_free_slots(
@@ -354,10 +373,14 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         text, card = _suggest_result(ctx)
         return _cleared(steps, text, card)
 
-    now = calendar_now(ctx.db, ctx.user_id)
-    zone_name = None
-    if ctx.db is not None and ctx.user_id is not None:
-        zone_name = account_timezone_name(ctx.db, ctx.user_id)
+    try:
+        now = calendar_now(ctx.db, ctx.user_id)
+        zone_name = None
+        if ctx.db is not None and ctx.user_id is not None:
+            zone_name = account_timezone_name(ctx.db, ctx.user_id)
+    except CalendarTransientError as exc:
+        steps.append("暂时连不上 Google 日历")
+        return _cleared(steps, str(exc))
     draft = extract_event(ctx.message, ctx.history, now=now, timezone_name=zone_name)
     if action == "update":
         apply_update_times(draft, ctx.message, now=now)

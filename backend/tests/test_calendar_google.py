@@ -43,6 +43,7 @@ from app.services.calendar_secrets import (
     GOOGLE_CALENDAR_SCOPES,
     GOOGLE_IDENTITY_SCOPES,
     CalendarTokenError,
+    CalendarTransientError,
     decrypt_token,
     encrypt_token,
     install_log_redaction,
@@ -1164,8 +1165,16 @@ def test_missing_timezone_is_etc_gmt_not_process_zone(
 
         fake_google.timezone_status = 500
         fake_google.timezone_value = "Asia/Shanghai"
-        with pytest.raises(CalendarTokenError):
+        zone_calls_before = [
+            call for call in fake_google.calls if call["url"].endswith("/settings/timezone")
+        ]
+        with pytest.raises(CalendarTransientError) as raised:
             calendar_now(db, user_id)
+        assert "重新连接" not in str(raised.value)
+        zone_calls_after = [
+            call for call in fake_google.calls if call["url"].endswith("/settings/timezone")
+        ]
+        assert len(zone_calls_after) == len(zone_calls_before) + 1
         failed = auth_client.get("/api/calendar/google/status")
         assert failed.status_code == 200
         assert failed.json()["connected"] is True
@@ -2953,6 +2962,220 @@ def test_unconnected_list_skips_google_and_tool_does_not_query(
         assert http_listed.status_code == 200
         assert http_listed.json() == []
         assert len(fake_google.calls) == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def _install_http(monkeypatch, fake: FakeGoogle, handler):
+    def wrapped(method, url, *, data=None, params=None, headers=None, json=None):
+        handled = handler(method, url, data=data, params=params, headers=headers, json=json)
+        if handled is not None:
+            return handled
+        return fake(method, url, data=data, params=params, headers=headers, json=json)
+
+    monkeypatch.setattr("app.services.calendar_secrets._http_request", wrapped)
+
+
+def _expire_token(db, user_id: int) -> CalendarConnection:
+    row = db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).one()
+    row.token_expiry = datetime.now(timezone.utc) - timedelta(hours=1)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def test_transient_error_is_not_a_token_error():
+    assert not issubclass(CalendarTransientError, CalendarTokenError)
+    assert "重新连接" not in str(CalendarTransientError())
+
+
+def test_timezone_get_retries_once_then_returns_the_zone(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    seen = {"n": 0}
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Shanghai")
+
+        def handler(method, url, **_kwargs):
+            if str(url).endswith("/users/me/settings/timezone"):
+                seen["n"] += 1
+                if seen["n"] == 1:
+                    raise httpx.ConnectError("down")
+                return httpx.Response(200, json={"id": "timezone", "value": "Asia/Singapore"})
+            return None
+
+        _install_http(monkeypatch, fake_google, handler)
+        provider = calendar_provider_for(db, user_id)
+        assert provider.timezone_name() == "Asia/Singapore"
+        assert seen["n"] == 2
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_timezone_outage_is_transient_and_status_stays_connected(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+
+        def handler(method, url, **_kwargs):
+            if str(url).endswith("/users/me/settings/timezone"):
+                raise httpx.ConnectError("down")
+            return None
+
+        _install_http(monkeypatch, fake_google, handler)
+        provider = calendar_provider_for(db, user_id)
+        with pytest.raises(CalendarTransientError) as raised:
+            provider.timezone_name()
+        assert "重新连接" not in str(raised.value)
+        body = auth_client.get("/api/calendar/google/status").json()
+        assert body["connected"] is True
+        assert body["timezone"] == ""
+
+        fake_google.timezone_status = 401
+        monkeypatch.setattr("app.services.calendar_secrets._http_request", fake_google)
+        with pytest.raises(CalendarTokenError):
+            calendar_provider_for(db, user_id).timezone_name()
+        fake_google.timezone_status = 404
+        assert calendar_provider_for(db, user_id).timezone_name() == "Etc/GMT"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_refresh_network_is_transient_and_keeps_tokens(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _expire_token(db, user_id)
+        access_before = row.access_token
+        refresh_before = row.refresh_token
+
+        def handler(method, url, **_kwargs):
+            if str(url).endswith("/token"):
+                raise httpx.ConnectError("down")
+            return None
+
+        _install_http(monkeypatch, fake_google, handler)
+        with pytest.raises(CalendarTransientError) as raised:
+            calendar_provider_for(db, user_id).timezone_name()
+        assert "重新连接" not in str(raised.value)
+        db.refresh(row)
+        assert row.access_token == access_before
+        assert row.refresh_token == refresh_before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_refresh_400_stays_token_error_and_keeps_tokens(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _expire_token(db, user_id)
+        access_before = row.access_token
+        refresh_before = row.refresh_token
+        fake_google.token_status = 400
+        with pytest.raises(CalendarTokenError):
+            refresh_access_token(db, row)
+        db.refresh(row)
+        assert row.access_token == access_before
+        assert row.refresh_token == refresh_before
+        assert decrypt_token(row.access_token) == ACCESS
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_chat_timezone_outage_is_transient_not_a_governance_denial(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    from app.agents.harness.gateway import invoke
+
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        kept = CalendarEvent(
+            user_id=user_id,
+            title="本地保留",
+            start_at=datetime(2026, 10, 16, 10, 0),
+            end_at=datetime(2026, 10, 16, 11, 0),
+            status="active",
+            provider="local",
+            external_id="",
+        )
+        db.add(kept)
+        db.commit()
+        fake_google.timezone_status = 500
+        result = invoke(
+            "calendar",
+            ToolContext(db=db, message="明天下午三点开个测试会议", history=[], user_id=user_id),
+            {},
+        )
+        assert result.denied is False
+        assert result.schedule_card is None
+        assert result.direct_answer == "暂时连不上 Google 日历，请稍后再试。"
+        assert "工具治理拒绝" not in (result.direct_answer or "")
+        assert "工具治理拒绝" not in (result.deny_reason or "")
+
+        listed = execute_calendar(
+            ToolContext(db=db, message="这周有哪些会", history=[], user_id=user_id)
+        )
+        assert listed.schedule_card is None
+        assert "暂时读不到 Google 日历" in (listed.direct_answer or "")
+        assert "本地保留" in (listed.direct_answer or "")
+
+        suggested = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
+        )
+        assert suggested.schedule_card is None
+        assert suggested.direct_answer == "暂时读不到 Google 日历，不能建议空闲时段。"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_confirm_post_timezone_outage_is_502_and_writes_nothing(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.timezone_status = 500
+        created = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "会",
+                "start_at": "2026-10-16T15:00:00",
+                "end_at": "2026-10-16T16:00:00",
+            },
+        )
+        assert created.status_code == 502
+        assert created.json()["detail"] == "暂时连不上 Google 日历，请稍后再试。"
+        assert "重新连接" not in created.json()["detail"]
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+        assert _insert_calls(fake_google) == []
     finally:
         _cleanup(user_id)
         db.close()
