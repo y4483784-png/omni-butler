@@ -2921,7 +2921,7 @@ def test_find_free_slots_clips_injected_hours_and_leaves_nights_closed(
         assert suggested.schedule_card["mode"] == "suggest"
         assert suggested.schedule_card["phase"] == "info"
         assert "工作时间" not in (suggested.direct_answer or "")
-        assert "可以考虑这些空闲时段" in (suggested.direct_answer or "")
+        assert "这段时间都有空" in (suggested.direct_answer or "")
         assert _insert_calls(fake_google) == []
     finally:
         _cleanup(user_id)
