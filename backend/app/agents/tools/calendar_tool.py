@@ -340,8 +340,36 @@ def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     return "可以考虑这些空闲时段：\n" + "\n".join(lines), _suggest_card(slots)
 
 
+def _writes_remote(ctx: ToolContext) -> bool:
+    if ctx.db is None or ctx.user_id is None:
+        return False
+    return calendar_writes_remote(ctx.db, ctx.user_id)
+
+
+def _remote_change_preview(
+    ctx: ToolContext, steps: list[str], action: str, draft: EventDraft
+) -> ToolResult:
+    """Connected update/cancel. The card is the extraction. Google is written on confirm."""
+    card = _base_card(mode=action, action=action, draft=draft)
+    remote_note = ""
+    if action == "update" and draft.start_at and draft.end_at:
+        conflicts, remote_note = _update_preview_conflicts(
+            ctx, draft.start_at, draft.end_at, None
+        )
+        if conflicts:
+            card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
+            if remote_note:
+                card["suggested_slots"] = []
+            else:
+                slots, slot_note = _preview_slots(ctx, draft.start_at, draft.end_at)
+                remote_note = remote_note or slot_note
+                card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
+    steps.append("已生成待确认卡片，尚未写入")
+    return _cleared(steps, _create_answer(card, remote_note), card)
+
+
 def _update_preview_conflicts(
-    ctx: ToolContext, start: datetime, end: datetime, event_id: int
+    ctx: ToolContext, start: datetime, end: datetime, event_id: int | None
 ) -> tuple[list, str]:
     """Merged busy time for a connected time change. A failed read keeps local conflicts only."""
     if not calendar_writes_remote(ctx.db, ctx.user_id):
@@ -445,7 +473,8 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         steps.append("暂时连不上 Google 日历")
         return _cleared(steps, str(exc))
     draft = extract_event(ctx.message, ctx.history, now=now, timezone_name=zone_name)
-    if action == "update":
+    remote = _writes_remote(ctx)
+    if action == "update" and not remote:
         apply_update_times(draft, ctx.message, now=now)
     if action == "create":
         card = _base_card(mode="create", action="create", draft=draft)
@@ -465,6 +494,10 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         steps.append("已生成待确认卡片，尚未写入")
         return _cleared(steps, _create_answer(card, remote_note), card)
 
+    if remote and action in {"update", "cancel"}:
+        return _remote_change_preview(ctx, steps, action, draft)
+
+    # Unconnected update/cancel still confirm against a local row.
     # Update searches the named original day, not the new slot. No original day
     # means title-only among events that have not already ended.
     search_at = draft.reference_start_at if action == "update" else draft.start_at

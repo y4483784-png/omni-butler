@@ -443,6 +443,24 @@ export async function createCalendarEvent(payload: {
   return r.json();
 }
 
+export async function confirmGoogleCalendarChange(payload: {
+  action: "update" | "cancel";
+  title: string;
+  start_at: string;
+  end_at: string;
+  participants: string[];
+  location?: string;
+  description?: string;
+}): Promise<ScheduleCard> {
+  const r = await apiFetch("/api/calendar/google/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) await readCalendarError(r, payload.action === "cancel" ? "撤销日程失败" : "修改日程失败");
+  return r.json();
+}
+
 export async function cancelCalendarEvent(id: number): Promise<ScheduleCard> {
   const r = await apiFetch(`/api/calendar/${id}`, { method: "DELETE" });
   if (!r.ok) await readCalendarError(r, "撤销日程失败");

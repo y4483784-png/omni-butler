@@ -2353,13 +2353,15 @@ def test_update_preview_merges_google_and_survives_list_failure(
         card = preview.schedule_card
         assert card["mode"] == "update"
         assert card["phase"] == "draft"
-        assert card["event_id"] == row.id
-        assert len(card["conflicts"]) == 1
-        assert card["conflicts"][0]["id"] is None
-        assert card["conflicts"][0]["readonly"] is True
-        assert card["conflicts"][0]["title"] == "Google 日历上已有安排"
-        assert card["conflicts"][0]["start_at"].startswith("2026-12-02T15:45:00")
-        assert "07:45" not in card["conflicts"][0]["start_at"]
+        assert card["event_id"] is None
+        assert card["title"] == "已同步会"
+        assert card["start_at"].startswith("2026-12-02T15:30:00")
+        other = [item for item in card["conflicts"] if str(item["start_at"]).startswith("2026-12-02T15:45:00")]
+        assert len(other) == 1
+        assert other[0]["id"] is None
+        assert other[0]["readonly"] is True
+        assert other[0]["title"] == "Google 日历上已有安排"
+        assert "07:45" not in other[0]["start_at"]
         assert card["suggested_slots"][0]["start_at"].startswith("2026-12-02T16:45:00")
         assert _patch_calls(fake_google) == []
         assert _insert_calls(fake_google) == []
@@ -2373,7 +2375,7 @@ def test_update_preview_merges_google_and_survives_list_failure(
         missed_card = missed.schedule_card
         assert missed_card["mode"] == "update"
         assert missed_card["phase"] == "draft"
-        assert missed_card["event_id"] == row.id
+        assert missed_card["event_id"] is None
         assert missed_card["suggested_slots"] == []
         assert any(item["id"] == stale.id for item in missed_card["conflicts"])
         assert "没读到 Google" in (missed.direct_answer or "")
@@ -2389,7 +2391,7 @@ def test_update_preview_merges_google_and_survives_list_failure(
 def test_readonly_google_item_has_no_update_or_cancel_card(
     auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
 ):
-    """Item 14: a Google-only title match is not an update or cancel card and writes nothing."""
+    """Connected update and cancel prefill a confirm card. Google is written only on confirm."""
     init_db()
     db = SessionLocal()
     user_id = 0
@@ -2415,25 +2417,28 @@ def test_readonly_google_item_has_no_update_or_cancel_card(
         cancel = execute_calendar(
             ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
         )
-        assert cancel.schedule_card is None
-        assert cancel.direct_answer == "这条日程只在 Google 日历里，请在 Google 日历里改。"
+        assert cancel.schedule_card["mode"] == "cancel"
+        assert cancel.schedule_card["phase"] == "draft"
+        assert cancel.schedule_card["title"] == "外面的会"
+        assert cancel.schedule_card["event_id"] is None
+        assert cancel.schedule_card["start_at"].startswith("2026-12-02T15:00:00")
+        assert "请在 Google 日历里改" not in (cancel.direct_answer or "")
+        assert "没有找到对应日程" not in (cancel.direct_answer or "")
         assert _insert_calls(fake_google) == []
         assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
-        listed = _list_calls(fake_google)
-        assert listed
-        assert listed[-1]["params"]["timeMin"].startswith("2026-12-02T00:00:00")
-        assert listed[-1]["params"]["timeMax"].startswith("2026-12-03T00:00:00")
-        assert listed[-1]["params"]["singleEvents"] == "true"
-        assert "syncToken" not in listed[-1]["params"]
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
 
         update = execute_calendar(
             ToolContext(db=db, message="把外面的会改到五点", history=[], user_id=user_id)
         )
-        assert update.schedule_card is None
-        assert update.direct_answer == "这条日程只在 Google 日历里，请在 Google 日历里改。"
+        assert update.schedule_card["mode"] == "update"
+        assert update.schedule_card["title"] == "外面的会"
+        assert update.schedule_card["event_id"] is None
+        assert update.schedule_card["start_at"].startswith("2026-12-02T15:00:00")
+        assert "请在 Google 日历里改" not in (update.direct_answer or "")
         assert _insert_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
 
@@ -2450,7 +2455,8 @@ def test_readonly_google_item_has_no_update_or_cancel_card(
             ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
         )
         assert owned.schedule_card["mode"] == "cancel"
-        assert owned.schedule_card["event_id"] == local.id
+        assert owned.schedule_card["event_id"] is None
+        assert owned.schedule_card["title"] == "外面的会"
         db.refresh(local)
         assert local.status == "active"
         db.delete(local)
@@ -2460,8 +2466,9 @@ def test_readonly_google_item_has_no_update_or_cancel_card(
         missed_title = execute_calendar(
             ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
         )
-        assert missed_title.schedule_card is None
-        assert missed_title.direct_answer == "没有找到对应日程。"
+        assert missed_title.schedule_card["mode"] == "cancel"
+        assert missed_title.schedule_card["title"] == "外面的会"
+        assert "没有找到对应日程" not in (missed_title.direct_answer or "")
         db.refresh(linked)
         assert linked.status == "active"
         db.delete(linked)
@@ -2471,10 +2478,9 @@ def test_readonly_google_item_has_no_update_or_cancel_card(
         unread = execute_calendar(
             ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
         )
-        assert unread.schedule_card is None
-        assert unread.direct_answer == (
-            "没有找到对应日程。暂时读不到 Google 日历，以下只是这里保存的日程。"
-        )
+        assert unread.schedule_card["mode"] == "cancel"
+        assert unread.schedule_card["title"] == "外面的会"
+        assert "没有找到对应日程" not in (unread.direct_answer or "")
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
         assert (
             db.query(CalendarEvent)
@@ -3176,6 +3182,132 @@ def test_confirm_post_timezone_outage_is_502_and_writes_nothing(
         assert "重新连接" not in created.json()["detail"]
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
         assert _insert_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Extraction prefills the card. Confirm patches or deletes the matching live event."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+
+    def _forbid_lookup(*_args, **_kwargs):
+        raise AssertionError("local candidate lookup")
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.find_event_candidates", _forbid_lookup)
+    monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _forbid_lookup)
+
+    def _extract(message, _history=None, **_kwargs):
+        if "取消" in (message or ""):
+            start = datetime(2026, 10, 16, 15, 0)
+        else:
+            start = datetime(2026, 10, 17, 16, 0)
+        return EventDraft(title="测试会议", start_at=start, end_at=start + timedelta(hours=1))
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item(
+                "evt-cancel",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T16:00:00+08:00",
+                summary="测试会议",
+            )
+        ]
+        cancel = execute_calendar(
+            ToolContext(db=db, message="取消测试会议", history=[], user_id=user_id)
+        )
+        assert cancel.schedule_card["mode"] == "cancel"
+        assert cancel.schedule_card["title"] == "测试会议"
+        assert cancel.schedule_card["start_at"].startswith("2026-10-16T15:00:00")
+        assert cancel.schedule_card["end_at"].startswith("2026-10-16T16:00:00")
+        assert "+" not in cancel.schedule_card["start_at"]
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        confirmed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "测试会议"},
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["id"] is None
+        assert [call["url"].rstrip("/").rsplit("/", 1)[-1] for call in _delete_calls(fake_google)] == [
+            "evt-cancel"
+        ]
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        row = _google_row(
+            db, user_id, title="测试会议", start=datetime(2026, 10, 16, 15, 0), external_id="evt-move"
+        )
+        old_start = row.start_at
+        fake_google.calls.clear()
+        fake_google.events_items = [
+            _google_item(
+                "evt-move",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T16:00:00+08:00",
+                summary="测试会议",
+            )
+        ]
+        update = execute_calendar(
+            ToolContext(db=db, message="把测试会议改到后天下午四点", history=[], user_id=user_id)
+        )
+        assert update.schedule_card["mode"] == "update"
+        assert update.schedule_card["title"] == "测试会议"
+        assert update.schedule_card["start_at"].startswith("2026-10-17T16:00:00")
+        assert update.schedule_card["end_at"].startswith("2026-10-17T17:00:00")
+        assert update.schedule_card["event_id"] is None
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        db.refresh(row)
+        assert row.start_at == old_start
+
+        seen = _watch_row(fake_google, row.id, {"PATCH"})
+        moved = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={
+                "action": "update",
+                "title": "测试会议",
+                "start_at": "2026-10-17T16:00:00",
+                "end_at": "2026-10-17T17:00:00",
+            },
+        )
+        assert moved.status_code == 200, moved.text
+        assert seen["start_at"] == old_start
+        assert _patch_calls(fake_google)
+        assert _patch_calls(fake_google)[0]["url"].rstrip("/").endswith("/evt-move")
+        assert _insert_calls(fake_google) == []
+        db.refresh(row)
+        assert row.start_at == datetime(2026, 10, 17, 16, 0)
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before + 1
+
+        fake_google.calls.clear()
+        fake_google.on_event = None
+        fake_google.events_items = [
+            _google_item(
+                "evt-move",
+                "2026-10-17T16:00:00+08:00",
+                "2026-10-17T17:00:00+08:00",
+                summary="另一场",
+            )
+        ]
+        missed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "测试会议"},
+        )
+        assert missed.status_code == 409
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        db.refresh(row)
+        assert row.start_at == datetime(2026, 10, 17, 16, 0)
+        assert row.status == "active"
     finally:
         _cleanup(user_id)
         db.close()

@@ -51,6 +51,7 @@ _LOCAL_SAVE_FAILED = "本地保存失败，未完成创建。"
 _LOCAL_UPDATE_FAILED = "本地保存失败，未完成修改。"
 _CANCEL_FAILED = "暂时无法在 Google 日历上取消，本地日程未改。"
 _RECONNECT_REQUIRED = "需要重新连接 Google 日历后才能修改或取消。"
+_TITLE_UNMATCHED = "没有在 Google 日历上找到同标题的日程，未写入。"
 
 
 class CalendarRemoteError(Exception):
@@ -77,6 +78,14 @@ class CalendarOverlapError(Exception):
     def __init__(self, conflicts: list) -> None:
         super().__init__("calendar conflict")
         self.conflicts = conflicts
+
+
+class CalendarTitleUnmatched(Exception):
+    """Confirm-time title lookup missed. Nothing was written."""
+
+    def __init__(self, message: str = _TITLE_UNMATCHED) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 class CalendarReconnectRequired(Exception):
@@ -352,6 +361,111 @@ class GoogleCalendarProvider:
                 raise CalendarRemoteWriteError(_CANCEL_FAILED) from None
         return self._local.cancel_event(user_id, event_id)
 
+    def confirm_titled_change(
+        self,
+        user_id: int,
+        *,
+        action: str,
+        title: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+        participants: list[str] | None = None,
+        location: str | None = None,
+        description: str | None = None,
+    ) -> CalendarEventDTO:
+        """Patch or delete the one primary event whose summary equals ``title``.
+
+        The id comes from ``events.list`` at confirm time. A local row is
+        updated only when it already has that ``external_id``. No row is inserted.
+        """
+        needle = (title or "").strip()
+        zone_name = self.timezone_name()
+        match = self._event_for_title(needle, zone_name)
+        gid = str(match.get("id") or "").strip()
+        local_rows = self._local.rows_for_external_ids(user_id, [gid])
+        local = local_rows[0] if local_rows else None
+        if action == "cancel":
+            if local is not None:
+                cancelled = self.cancel_event(user_id, local.id)
+                if cancelled is None:
+                    raise CalendarRemoteWriteError(_CANCEL_FAILED)
+                return cancelled
+            self._delete_google_event_required(gid)
+            return _remote_only_dto(
+                user_id,
+                title=needle,
+                start_at=start_at,
+                end_at=end_at,
+                zone_name=zone_name,
+                external_id=gid,
+                status="cancelled",
+            )
+        if start_at is None or end_at is None:
+            raise CalendarRemoteWriteError()
+        if local is not None:
+            updated = self.update_event(
+                user_id,
+                local.id,
+                title=needle,
+                start_at=start_at,
+                end_at=end_at,
+                participants=participants,
+                location=location,
+                description=description,
+            )
+            if updated is None:
+                raise CalendarRemoteWriteError()
+            return updated
+        conflicts = self._conflicts_in_window(
+            user_id,
+            _as_naive(start_at),
+            _as_naive(end_at),
+            exclude_event_id=None,
+            zone_name=zone_name,
+            exclude_external_id=gid,
+        )
+        if conflicts:
+            raise CalendarOverlapError(conflicts)
+        sent = _patch_body(
+            title=needle,
+            start_at=start_at,
+            end_at=end_at,
+            effective_start=start_at,
+            effective_end=end_at,
+            location=location,
+            description=description,
+            zone_name=zone_name,
+        )
+        self._patch_google_event(gid, sent)
+        return _remote_only_dto(
+            user_id,
+            title=needle,
+            start_at=start_at,
+            end_at=end_at,
+            zone_name=zone_name,
+            external_id=gid,
+            location=location or "",
+            description=description or "",
+        )
+
+    def _event_for_title(self, title: str, zone_name: str) -> dict:
+        """One live primary event with this exact summary. Otherwise nothing is writable."""
+        if not title:
+            raise CalendarTitleUnmatched()
+        now = datetime.now(ZoneInfo(zone_name)).replace(tzinfo=None, microsecond=0)
+        items = self._list_primary_events(now, datetime(2100, 1, 1), zone_name)
+        matches = [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and not _hidden_on_list(item)
+            and str(item.get("id") or "").strip()
+            and str(item.get("summary") or "").strip() == title
+        ]
+        if len(matches) != 1:
+            raise CalendarTitleUnmatched()
+        return matches[0]
+
     def conflicts_for_create(
         self,
         user_id: int,
@@ -480,6 +594,7 @@ class GoogleCalendarProvider:
         *,
         exclude_event_id: int | None,
         zone_name: str,
+        exclude_external_id: str = "",
     ) -> list:
         _intervals, conflicts = self._read_window(
             user_id,
@@ -487,6 +602,7 @@ class GoogleCalendarProvider:
             end,
             zone_name,
             exclude_event_id=exclude_event_id,
+            exclude_external_id=exclude_external_id,
         )
         return conflicts
 
@@ -498,10 +614,11 @@ class GoogleCalendarProvider:
         zone_name: str,
         *,
         exclude_event_id: int | None = None,
+        exclude_external_id: str = "",
     ) -> tuple[list[tuple[datetime, datetime]], list]:
         items = self._list_primary_events(start, end, zone_name)
-        excluded_external = ""
-        if exclude_event_id is not None:
+        excluded_external = (exclude_external_id or "").strip()
+        if not excluded_external and exclude_event_id is not None:
             owned = self._local.get_event(user_id, exclude_event_id)
             if owned is not None and owned.external_id:
                 excluded_external = owned.external_id
@@ -956,6 +1073,34 @@ def _timezone_once(request, access: str) -> httpx.Response | None:
         )
     except httpx.HTTPError:
         return None
+
+
+def _remote_only_dto(
+    user_id: int,
+    *,
+    title: str,
+    start_at: datetime | None,
+    end_at: datetime | None,
+    zone_name: str,
+    external_id: str,
+    status: str = "active",
+    location: str = "",
+    description: str = "",
+) -> CalendarEventDTO:
+    """A confirm result with no local id. Nothing is inserted."""
+    return CalendarEventDTO(
+        id=None,
+        user_id=user_id,
+        title=title,
+        start_at=_as_naive(start_at) if start_at is not None else None,
+        end_at=_as_naive(end_at) if end_at is not None else None,
+        status=status,
+        timezone=zone_name,
+        location=location,
+        description=description,
+        external_id=external_id,
+        provider="google",
+    )
 
 
 def _setting_value(response: httpx.Response) -> str:
