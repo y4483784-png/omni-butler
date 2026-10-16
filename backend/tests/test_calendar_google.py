@@ -3411,6 +3411,7 @@ def test_connected_prefill_soft_aligns_one_live_title(
         assert card["end_at"] == "2026-10-16T16:00:00"
         assert card["timezone"] == "Asia/Singapore"
         assert card["event_id"] is None
+        assert card["external_id"] == "evt-real"
         assert card["candidates"] == []
         _assert_offset_free(card)
         listed = _event_gets(fake_google)
@@ -3429,6 +3430,7 @@ def test_connected_prefill_soft_aligns_one_live_title(
         assert moved["title"] == "测试会议"
         assert moved["start_at"] == "2026-10-17T16:00:00"
         assert moved["end_at"] == "2026-10-17T17:00:00"
+        assert moved["external_id"] == "evt-real"
         assert moved["timezone"] == "Asia/Singapore"
         _assert_offset_free(moved)
         assert _patch_calls(fake_google) == []
@@ -3776,6 +3778,8 @@ def test_connected_update_prefills_live_event_fields(
                 "participants": ["无关的人"],
                 "kind": "block",
                 "description": "改成简短",
+                "change_end": True,
+                "change_notes": True,
             }
         if "专注" in blob:
             return {
@@ -3941,6 +3945,181 @@ def test_connected_prefill_uses_local_participants_when_google_has_none(
         assert card["end_at"] == "2026-10-17T18:00:00"
         assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_reschedule_keeps_duration_and_notes_unless_flags(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """A filled 1h end and a shortened note do not overwrite the live event."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    prompts: list[str] = []
+    _forbid_local_lookup(monkeypatch)
+
+    def _json(messages, *_args, **_kwargs):
+        prompts.append("\n".join(str(item.get("content") or "") for item in messages))
+        blob = messages[-1]["content"] if messages else ""
+        if "新备注" in blob:
+            return {
+                "title": "写报告",
+                "start_at": "2026-10-17T16:00:00",
+                "end_at": "2026-10-17T16:30:00",
+                "description": "新备注",
+                "change_end": True,
+                "change_notes": True,
+            }
+        return {
+            "title": "写报告",
+            "start_at": "2026-10-17T16:00:00",
+            "end_at": "2026-10-17T17:00:00",
+            "participants": [],
+            "kind": "block",
+            "description": "大纲",
+            "change_end": False,
+            "change_notes": "",
+        }
+
+    monkeypatch.setattr("app.services.calendar.complete_json", _json)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item(
+                "evt-block",
+                "2026-10-16T15:00:00+08:00",
+                "2026-10-16T17:00:00+08:00",
+                summary="写报告",
+                description="带上大纲",
+            )
+        ]
+        kept = execute_calendar(
+            ToolContext(db=db, message="把写报告改到后天", history=[], user_id=user_id)
+        )
+        card = kept.schedule_card
+        assert card["mode"] == "update"
+        assert card["phase"] == "draft"
+        assert card["title"] == "写报告"
+        assert card["start_at"] == "2026-10-17T16:00:00"
+        assert card["end_at"] == "2026-10-17T18:00:00"
+        assert card["description"] == "带上大纲"
+        assert card["external_id"] == "evt-block"
+        _assert_offset_free(card)
+        assert "change_end" in prompts[0]
+        assert "change_notes" in prompts[0]
+        assert "不改备注" in prompts[0]
+        assert _patch_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        changed = execute_calendar(
+            ToolContext(
+                db=db,
+                message="把写报告改到后天，备注改成新备注",
+                history=[],
+                user_id=user_id,
+            )
+        )
+        moved = changed.schedule_card
+        assert moved["end_at"] == "2026-10-17T16:30:00"
+        assert moved["description"] == "新备注"
+        assert moved["external_id"] == "evt-block"
+        assert _patch_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_confirm_prefers_prefilled_external_id_over_exact_title(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """A unique prefill stores the Google id. Confirm uses it when the title differs."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _forbid_local_lookup(monkeypatch)
+
+    def _extract(message, _history=None, **_kwargs):
+        start = datetime(2026, 10, 17, 16, 0)
+        return EventDraft(title="PR34忙", start_at=start, end_at=start + timedelta(hours=1))
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item(
+                "evt-b2",
+                "2026-10-16T10:00:00+08:00",
+                "2026-10-16T12:00:00+08:00",
+                summary="PR34忙B2-091017",
+            )
+        ]
+        drafted = execute_calendar(
+            ToolContext(db=db, message="取消PR34忙", history=[], user_id=user_id)
+        )
+        card = drafted.schedule_card
+        assert card["mode"] == "cancel"
+        assert card["title"] == "PR34忙B2-091017"
+        assert card["external_id"] == "evt-b2"
+        assert card["start_at"] == "2026-10-16T10:00:00"
+        assert card["end_at"] == "2026-10-16T12:00:00"
+        assert _delete_calls(fake_google) == []
+
+        missed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "PR34忙"},
+        )
+        assert missed.status_code == 409
+        assert missed.json()["detail"] == "没有在 Google 日历上找到同标题的日程，未写入。"
+        assert _delete_calls(fake_google) == []
+
+        unknown = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={
+                "action": "cancel",
+                "title": "PR34忙B2-091017",
+                "external_id": "evt-missing",
+            },
+        )
+        assert unknown.status_code == 409
+        assert _delete_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+
+        moved = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={
+                "action": "update",
+                "title": "PR34忙",
+                "start_at": "2026-10-17T16:00:00",
+                "end_at": "2026-10-17T18:00:00",
+                "external_id": card["external_id"],
+            },
+        )
+        assert moved.status_code == 200, moved.text
+        assert _patch_calls(fake_google)
+        assert _patch_calls(fake_google)[0]["url"].rstrip("/").endswith("/evt-b2")
+        assert _patch_calls(fake_google)[0]["json"]["summary"] == "PR34忙"
+        assert _delete_calls(fake_google) == []
+
+        fake_google.calls.clear()
+        confirmed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={
+                "action": "cancel",
+                "title": "PR34忙",
+                "external_id": "evt-b2",
+            },
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert [call["url"].rstrip("/").rsplit("/", 1)[-1] for call in _delete_calls(fake_google)] == [
+            "evt-b2"
+        ]
+        assert _patch_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
     finally:
         _cleanup(user_id)
         db.close()

@@ -377,15 +377,17 @@ class GoogleCalendarProvider:
         participants: list[str] | None = None,
         location: str | None = None,
         description: str | None = None,
+        external_id: str | None = None,
     ) -> CalendarEventDTO:
-        """Patch or delete the one primary event whose summary equals ``title``.
+        """Patch or delete one primary event.
 
-        The id comes from ``events.list`` at confirm time. A local row is
-        updated only when it already has that ``external_id``. No row is inserted.
+        A non-empty ``external_id`` selects that Google event. Exact summary
+        is the fallback only when the card has no id. A miss writes nothing.
+        A local row is updated only when it already has that id. No row is inserted.
         """
         needle = (title or "").strip()
         zone_name = self.timezone_name()
-        match = self._event_for_title(needle, zone_name)
+        match = self._event_for_confirm(needle, external_id, zone_name)
         gid = str(match.get("id") or "").strip()
         local_rows = self._local.rows_for_external_ids(user_id, [gid])
         local = local_rows[0] if local_rows else None
@@ -455,17 +457,31 @@ class GoogleCalendarProvider:
 
     def _event_for_title(self, title: str, zone_name: str) -> dict:
         """One live primary event with this exact summary. Otherwise nothing is writable."""
-        if not title:
-            raise CalendarTitleUnmatched()
+        return self._event_for_confirm(title, None, zone_name)
+
+    def _event_for_confirm(self, title: str, external_id: str | None, zone_name: str) -> dict:
+        """Prefer one Google id. Exact title is used only when no id was given."""
         now = datetime.now(ZoneInfo(zone_name)).replace(tzinfo=None, microsecond=0)
         items = self._list_primary_events(now, datetime(2100, 1, 1), zone_name)
-        matches = [
+        visible = [
             item
             for item in items
             if isinstance(item, dict)
             and not _hidden_on_list(item)
             and str(item.get("id") or "").strip()
-            and str(item.get("summary") or "").strip() == title
+        ]
+        gid = (external_id or "").strip()
+        if gid:
+            matches = [item for item in visible if str(item.get("id") or "").strip() == gid]
+            if len(matches) != 1:
+                raise CalendarTitleUnmatched()
+            return matches[0]
+        if not title:
+            raise CalendarTitleUnmatched()
+        matches = [
+            item
+            for item in visible
+            if str(item.get("summary") or "").strip() == title
         ]
         if len(matches) != 1:
             raise CalendarTitleUnmatched()
@@ -513,10 +529,11 @@ class GoogleCalendarProvider:
         ``summary`` is the stripped Google summary. ``start_at`` and ``end_at``
         are naive wall times, or None when the item has no usable span.
         ``location``, ``description``, and ``participants`` come from the live
-        item. Attendees are not how this app stores participants, so a linked
-        local row fills those three fields when the Google item left them empty.
-        Hidden rows are skipped. Nothing is stored. Confirm does not call this
-        and still requires ``summary.strip() == title``.
+        item. ``id`` is the Google event id. Attendees are not how this app
+        stores participants, so a linked local row fills those three fields
+        when the Google item left them empty. Hidden rows are skipped. Nothing
+        is stored. Confirm prefers this id and falls back to an exact summary
+        only when the card has no id.
         """
         items = self._list_primary_events(_as_naive(start), _as_naive(end), zone_name)
         visible = [
@@ -550,6 +567,7 @@ class GoogleCalendarProvider:
                     description = (local.description or "").strip()
             found.append(
                 {
+                    "id": gid,
                     "summary": str(item.get("summary") or "").strip(),
                     "start_at": None if view is None else view.start,
                     "end_at": None if view is None else view.end,

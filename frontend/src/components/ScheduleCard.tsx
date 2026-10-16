@@ -174,6 +174,7 @@ export function ScheduleCard({
                 start_at: payload.start_at,
                 end_at: payload.end_at,
                 participants: [],
+                external_id: (card.external_id || "").trim(),
               }
             : {
                 action: "update",
@@ -183,6 +184,7 @@ export function ScheduleCard({
                 participants: payload.participants,
                 location: payload.location,
                 description: payload.description,
+                external_id: (card.external_id || "").trim(),
               }
         );
         onChange({

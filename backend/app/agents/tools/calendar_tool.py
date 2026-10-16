@@ -39,6 +39,9 @@ _GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不
 _ADVICE_UNAVAILABLE = "暂时给不出建议"
 _SKIP_ADVICE = frozenset({_LIST_LOCAL_ONLY, _LIST_TRUNCATED})
 _SUGGEST_UNAVAILABLE = "暂时读不到 Google 日历，不能建议空闲时段。"
+_SAFE_SLOT_NOTE = "请以上面的列表为准，已有安排的时段不是空闲。"
+_FREE_CLAIM = ("有空", "空闲", "方便", "可以")
+_BUSY_ACK = ("重叠", "占用", "已有安排", "不是空", "没空", "忙")
 _NOT_FOUND = "没有找到对应日程。"
 _NOT_FOUND_UNREAD = "没有找到对应日程。暂时读不到 Google 日历，以下只是这里保存的日程。"
 _READONLY_IN_GOOGLE = "这条日程只在 Google 日历里，请在 Google 日历里改。"
@@ -449,6 +452,21 @@ def _without_busy_overlap(slots, rows):
     return [pair for pair in slots if not _overlaps_listed(pair[0], pair[1], rows)]
 
 
+def _replace_unreliable_free_note(note: str, removed: int) -> str:
+    """Replace a note that can still call a filtered-out busy slot free.
+
+    A note that already admits the overlap stays. No clock is parsed from it.
+    """
+    text = (note or "").strip()
+    if removed <= 0 or not text:
+        return text
+    claims_free = any(token in text for token in _FREE_CLAIM)
+    admits_busy = any(token in text for token in _BUSY_ACK)
+    if claims_free and not admits_busy:
+        return _SAFE_SLOT_NOTE
+    return text
+
+
 def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     """List the named day, then let the model pick slots. No gap algorithm."""
     try:
@@ -478,11 +496,12 @@ def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
     if picked is None:
         return _ADVICE_UNAVAILABLE, _list_card(shown)
     slots, note = picked
-    slots = _without_busy_overlap(slots, shown)
-    card = _list_card(shown, slots)
+    kept = _without_busy_overlap(slots, shown)
+    note = _replace_unreliable_free_note(note, len(slots) - len(kept))
+    card = _list_card(shown, kept)
     if note:
         return note, card
-    if slots:
+    if kept:
         return "可以考虑下面这些时段。", card
     return _ADVICE_UNAVAILABLE, card
 
@@ -504,29 +523,30 @@ def _align_connected_title(
     action: str,
     now: datetime,
     zone_name: str | None,
-) -> None:
+) -> str:
     """Copy one live primary event onto a connected update or cancel draft.
 
     One exact summary, or else exactly one soft title, supplies kind, times,
-    notes, participants, and location. Update keeps the model's new start, and
-    its end only when the model gave one. Cancel uses the event's wall times.
-    Zero or many soft hits, or a failed read, leave the extraction. Confirm
-    still exact-matches and does not use this alignment.
+    notes, participants, and location. The return value is that event's Google
+    id, or empty when nothing unique matched. Update keeps the model's new
+    start. Its end and notes change only when extraction says the user asked.
+    Cancel uses the event's wall times. Zero or many soft hits, or a failed
+    read, leave the extraction and return no id.
     """
     title = (draft.title or "").strip()
     if not title or not zone_name or ctx.db is None or ctx.user_id is None:
-        return
+        return ""
     provider = calendar_provider_for(ctx.db, ctx.user_id)
     reader = getattr(provider, "primary_events_for_title", None)
     if reader is None:
-        return
+        return ""
     start, end = _confirm_horizon(now)
     try:
         events = reader(start, end, zone_name)
     except REMOTE_READ_ERRORS:
-        return
+        return ""
     if not isinstance(events, list):
-        return
+        return ""
     exact = [
         item
         for item in events
@@ -541,7 +561,7 @@ def _align_connected_title(
             if isinstance(item, dict) and titles_match(title, str(item.get("summary") or ""))
         ]
         if len(soft) != 1:
-            return
+            return ""
         match = soft[0]
     _apply_matched_fields(
         draft,
@@ -555,6 +575,7 @@ def _align_connected_title(
         },
         action,
     )
+    return str(match.get("id") or "").strip()
 
 
 def _remote_change_preview(
@@ -567,8 +588,10 @@ def _remote_change_preview(
     zone_name: str | None,
 ) -> ToolResult:
     """Connected update/cancel. Prefill copies one matched event. Confirm writes."""
-    _align_connected_title(ctx, draft, action, now, zone_name)
+    matched_id = _align_connected_title(ctx, draft, action, now, zone_name)
     card = _base_card(mode=action, action=action, draft=draft, kind=_write_kind(action, draft))
+    if matched_id:
+        card["external_id"] = matched_id
     if zone_name:
         card["timezone"] = zone_name
     remote_note = ""
