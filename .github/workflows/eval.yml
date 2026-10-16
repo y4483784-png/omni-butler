@@ -62,7 +62,7 @@ jobs:
           node-version: "22"
 
       - name: Offset-less expiry is UTC
-        run: TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs
+        run: TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs tests/scheduleCard.test.mjs
 
   rls:
     name: postgres row-level security

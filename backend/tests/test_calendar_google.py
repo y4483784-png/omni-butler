@@ -3498,6 +3498,8 @@ def test_connected_prefill_leaves_an_exact_title(
         assert card["start_at"] == "2026-10-16T15:00:00"
         assert card["end_at"] == "2026-10-16T16:00:00"
         assert card["timezone"] == "Asia/Singapore"
+        assert card["external_id"] == "evt-real"
+        assert card["event_id"] is None
         _assert_offset_free(card)
         assert _delete_calls(fake_google) == []
     finally:
@@ -3539,6 +3541,9 @@ def test_connected_prefill_leaves_zero_or_many_soft_hits(
         assert card["start_at"] == "2026-10-18T09:00:00"
         assert card["end_at"] == "2026-10-18T10:00:00"
         assert card["candidates"] == []
+        assert card["external_id"] == ""
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
 
         assert titles_match("Grok测试会议", "测试会议")
         assert titles_match("Grok测试会议", "会议")
@@ -3565,6 +3570,7 @@ def test_connected_prefill_leaves_zero_or_many_soft_hits(
         assert crowded["start_at"] == "2026-10-18T09:00:00"
         assert crowded["end_at"] == "2026-10-18T10:00:00"
         assert crowded["candidates"] == []
+        assert crowded["external_id"] == ""
         assert _delete_calls(fake_google) == []
         assert _patch_calls(fake_google) == []
     finally:
@@ -3646,13 +3652,20 @@ def test_create_notes_are_written_to_google_description(
     try:
         user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
         for expected_kind in ("meeting", "block"):
+            before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+            fake_google.calls.clear()
             drafted = execute_calendar(
                 ToolContext(db=db, message="带上大纲", history=[], user_id=user_id)
             )
             card = drafted.schedule_card
             assert card["kind"] == expected_kind
+            assert card["phase"] == "draft"
             assert card["description"] == "带上大纲"
             assert "+" not in card["start_at"] and "Z" not in card["start_at"]
+            assert _insert_calls(fake_google) == []
+            assert _patch_calls(fake_google) == []
+            assert _delete_calls(fake_google) == []
+            assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
             _json.n += 1
             fake_google.insert_id = f"evt-{expected_kind}"
             created = auth_client.post(
@@ -3670,7 +3683,13 @@ def test_create_notes_are_written_to_google_description(
             row = db.get(CalendarEvent, created.json()["id"])
             assert row is not None
             assert row.description == "带上大纲"
+            people = json.loads(row.participants or "[]")
             payload = _insert_calls(fake_google)[-1]["json"]
+            assert "attendees" not in payload
+            if expected_kind == "block":
+                assert people == []
+            else:
+                assert people == ["小李"]
             assert payload["description"] == "带上大纲"
             assert payload["start"]["dateTime"] == card["start_at"]
             assert "Z" not in payload["start"]["dateTime"]
@@ -3681,10 +3700,17 @@ def test_create_notes_are_written_to_google_description(
         payloads[0]["title"] = "空备注会"
         payloads[0]["start_at"] = "2026-10-18T10:00:00"
         payloads[0]["end_at"] = "2026-10-18T11:00:00"
+        before_empty = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.calls.clear()
         empty = execute_calendar(
             ToolContext(db=db, message="明早开会", history=[], user_id=user_id)
         )
         assert empty.schedule_card["description"] == ""
+        assert empty.schedule_card["phase"] == "draft"
+        assert _insert_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before_empty
         fake_google.insert_id = "evt-empty"
         created = auth_client.post(
             "/api/calendar",
@@ -4119,6 +4145,210 @@ def test_confirm_prefers_prefilled_external_id_over_exact_title(
             "evt-b2"
         ]
         assert _patch_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_chat_never_writes_google_before_confirm(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Create, reschedule, cancel, list, and free-slot chat only prepare cards."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+
+    def _json(messages, *_args, **_kwargs):
+        blob = "\n".join(str(item.get("content") or "") for item in messages)
+        if "不要推荐半夜" in blob:
+            return {"slots": [], "note": "看上面的列表。"}
+        if "你只输出 JSON" in blob:
+            return {"day": "2026-10-20"}
+        user = str(messages[-1].get("content") or "") if messages else ""
+        if "取消" in user:
+            start = "2026-10-18T09:00:00"
+            end = "2026-10-18T10:00:00"
+        elif "改到" in user:
+            start = "2026-10-22T16:00:00"
+            end = "2026-10-22T17:00:00"
+        else:
+            start = "2026-10-21T15:00:00"
+            end = "2026-10-21T16:00:00"
+        return {
+            "title": "测试会议",
+            "start_at": start,
+            "end_at": end,
+            "participants": [],
+            "kind": "meeting",
+            "description": "",
+            "action": "create",
+        }
+
+    monkeypatch.setattr("app.services.calendar.complete_json", _json)
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.complete_text",
+        lambda *_args, **_kwargs: "这一天已列出。",
+    )
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.events_items = [
+            _google_item(
+                "evt-chat",
+                "2026-10-20T15:00:00+08:00",
+                "2026-10-20T16:00:00+08:00",
+                summary="测试会议",
+            )
+        ]
+        created = execute_calendar(
+            ToolContext(db=db, message="明天下午三点开个测试会议", history=[], user_id=user_id)
+        )
+        assert created.schedule_card["mode"] == "create"
+        assert created.schedule_card["phase"] == "draft"
+
+        updated = execute_calendar(
+            ToolContext(db=db, message="把测试会议改到后天下午四点", history=[], user_id=user_id)
+        )
+        assert updated.schedule_card["mode"] == "update"
+        assert updated.schedule_card["external_id"] == "evt-chat"
+
+        cancelled = execute_calendar(
+            ToolContext(db=db, message="取消测试会议", history=[], user_id=user_id)
+        )
+        assert cancelled.schedule_card["mode"] == "cancel"
+        assert cancelled.schedule_card["external_id"] == "evt-chat"
+
+        listed = execute_calendar(
+            ToolContext(db=db, message="明天有什么安排", history=[], user_id=user_id)
+        )
+        assert listed.schedule_card["mode"] == "list"
+        assert listed.schedule_card["phase"] == "info"
+        assert listed.schedule_card["phase"] != "draft"
+
+        suggested = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=user_id)
+        )
+        if suggested.schedule_card is not None:
+            assert suggested.schedule_card["mode"] == "list"
+            assert suggested.schedule_card["phase"] != "draft"
+
+        assert _insert_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_confirm_duplicate_title_deletes_only_the_given_id(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """Two live events share a title. Cancel follows the card id, or refuses."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
+        fake_google.events_items = [
+            _google_item(
+                "evt-a",
+                "2026-10-20T15:00:00+08:00",
+                "2026-10-20T16:00:00+08:00",
+                summary="测试会议",
+            ),
+            _google_item(
+                "evt-b",
+                "2026-10-21T15:00:00+08:00",
+                "2026-10-21T16:00:00+08:00",
+                summary="测试会议",
+            ),
+        ]
+        untitled = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "测试会议"},
+        )
+        assert untitled.status_code == 409
+        assert _delete_calls(fake_google) == []
+        assert {item["id"] for item in fake_google.events_items} == {"evt-a", "evt-b"}
+        assert fake_google.deleted_ids == []
+
+        confirmed = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "测试会议", "external_id": "evt-a"},
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        deleted = [call["url"].rstrip("/").rsplit("/", 1)[-1] for call in _delete_calls(fake_google)]
+        assert deleted == ["evt-a"]
+        assert "evt-b" not in deleted
+
+        fake_google.calls.clear()
+        missing = auth_client.post(
+            "/api/calendar/google/confirm",
+            json={"action": "cancel", "title": "测试会议", "external_id": "evt-missing"},
+        )
+        assert missing.status_code == 409
+        assert _delete_calls(fake_google) == []
+        assert "evt-b" not in fake_google.deleted_ids
+        assert {item["id"] for item in fake_google.events_items} == {"evt-a", "evt-b"}
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_confirm_post_auth_failure_is_401_and_writes_nothing(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.timezone_status = 401
+        created = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "会",
+                "start_at": "2026-10-20T15:00:00",
+                "end_at": "2026-10-20T16:00:00",
+            },
+        )
+        assert created.status_code == 401
+        detail = created.json()["detail"]
+        assert "重新连接" in detail
+        assert "暂时连不上" not in detail
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+        assert _insert_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_chat_auth_failure_is_not_called_a_network_outage(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    from app.agents.harness.gateway import invoke
+
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        fake_google.timezone_status = 401
+        result = invoke(
+            "calendar",
+            ToolContext(db=db, message="明天下午三点开个测试会议", history=[], user_id=user_id),
+            {},
+        )
+        text = result.direct_answer or ""
+        assert text != "暂时连不上 Google 日历，请稍后再试。"
+        assert "暂时连不上" not in text
+        assert ("授权已失效" in text) or ("重新连接" in text)
+        assert result.schedule_card is None
+        assert _insert_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
     finally:
         _cleanup(user_id)
