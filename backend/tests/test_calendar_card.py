@@ -1571,6 +1571,7 @@ def test_create_kind_splits_meeting_and_block(monkeypatch):
             "action": "create",
             "kind": "block",
             "description": "",
+            "location": "会议室",
         },
     )
     _freeze_planning_clock(monkeypatch)
@@ -1589,6 +1590,7 @@ def test_create_kind_splits_meeting_and_block(monkeypatch):
         assert card["start_at"] == "2026-10-16T15:00:00"
         assert card["end_at"] == "2026-10-16T17:00:00"
         assert card["participants"] == []
+        assert card["location"] == ""
         assert "+" not in card["start_at"] and "Z" not in card["start_at"]
         assert "+" not in card["end_at"] and "Z" not in card["end_at"]
         assert db.query(CalendarEvent).count() == before
@@ -1607,6 +1609,7 @@ def test_create_kind_splits_meeting_and_block(monkeypatch):
                 "participants": ["小李"],
                 "action": "create",
                 "kind": "meeting",
+                "location": "会议室",
             },
         )
         meeting = execute_calendar(
@@ -1614,6 +1617,7 @@ def test_create_kind_splits_meeting_and_block(monkeypatch):
         )
         assert meeting.schedule_card["kind"] == "meeting"
         assert meeting.schedule_card["participants"] == ["小李"]
+        assert meeting.schedule_card["location"] == "会议室"
 
         monkeypatch.setattr(
             "app.services.calendar.complete_json",
@@ -2088,6 +2092,55 @@ def test_free_slot_note_does_not_call_a_busy_hour_free(monkeypatch):
         assert "有空" not in result.direct_answer
         assert "不能说成有空" in prompts["slot"]
         assert "请用户看列表" in prompts["slot"]
+    finally:
+        db.close()
+
+
+def test_free_slot_all_day_row_is_not_called_free(monkeypatch):
+    """An all-day row covers the civil day, so a slot inside it is not free time."""
+    from types import SimpleNamespace
+
+    row = SimpleNamespace(
+        title="全天安排",
+        start_at=datetime(2026, 10, 16, 0, 0),
+        end_at=datetime(2026, 10, 17, 0, 0),
+        all_day=True,
+        readonly=False,
+    )
+    provider = _Listed([row])
+    monkeypatch.setattr(
+        "app.services.calendar.complete_json",
+        _json_day_then_slots(
+            "2026-10-16",
+            [{"start_at": "2026-10-16T15:00:00", "end_at": "2026-10-16T16:00:00"}],
+            "下午有空",
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_provider_for",
+        lambda *_a, **_k: provider,
+    )
+    _freeze_planning_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    try:
+        before = db.query(CalendarEvent).count()
+        result = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=1)
+        )
+        card = result.schedule_card
+        assert card["mode"] == "list"
+        assert card["items"][0]["title"] == "全天安排"
+        assert card["items"][0]["all_day"] is True
+        assert card["items"][0]["start_at"] == "2026-10-16T00:00:00"
+        assert card["items"][0]["end_at"] == "2026-10-17T00:00:00"
+        assert {"start_at": "2026-10-16T15:00:00", "end_at": "2026-10-16T16:00:00"} not in card[
+            "suggested_slots"
+        ]
+        assert result.direct_answer == "请以上面的列表为准，已有安排的时段不是空闲。"
+        assert result.direct_answer != "下午有空"
+        assert "下午有空" not in (result.direct_answer or "")
+        assert db.query(CalendarEvent).count() == before
     finally:
         db.close()
 

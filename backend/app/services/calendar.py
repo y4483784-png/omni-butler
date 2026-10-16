@@ -316,6 +316,7 @@ def extract_event(
     )
     raw_kind = str(parsed.get("kind") or "").strip().lower()
     draft.kind = raw_kind if raw_kind in {"meeting", "block"} else ""
+    draft.location = str(parsed.get("location") or "").strip()
     # Keep the model's start. End and notes on an existing event count only
     # when change_end / change_notes are explicitly true.
     draft.model_start = start_at
