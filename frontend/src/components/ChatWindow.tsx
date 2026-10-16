@@ -173,13 +173,16 @@ function MessageRow({
                 ))}
               </ul>
             ) : null}
+            {m.scheduleCard?.mode === "list" ? (
+              <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} />
+            ) : null}
             {m.content ? (
               <Markdown content={m.content} citations={m.citations} />
             ) : thinking && isLast ? (
               <span className="thinking">
                 思考中<span className="dot" /><span className="dot" /><span className="dot" />
               </span>
-            ) : (
+            ) : m.scheduleCard ? null : (
               <span className="placeholder">…</span>
             )}
             {m.artifact ? (
@@ -191,7 +194,7 @@ function MessageRow({
                 {artifactButtonLabel(m.artifact)}
               </button>
             ) : null}
-            {m.scheduleCard ? (
+            {m.scheduleCard && m.scheduleCard.mode !== "list" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} />
             ) : null}
             <MessageActions

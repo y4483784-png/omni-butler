@@ -6,6 +6,8 @@ tokens, and the client secret must not appear in log lines or audit args.
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 import re
@@ -28,6 +30,10 @@ GOOGLE_CALENDAR_SCOPES = (
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.settings.readonly",
 )
+# Requested with the calendar scopes, but not required when a grant is saved.
+# openid makes the code exchange return an id_token. Without it, access-token
+# tokeninfo often has no sub, and the connect is dropped after consent.
+GOOGLE_IDENTITY_SCOPES = ("openid", "email")
 OAUTH_STATE_MAX_AGE = 10 * 60
 _STATE_SALT = "omni-calendar-google-oauth"
 _AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -35,6 +41,8 @@ _TOKEN_URL = "https://oauth2.googleapis.com/token"
 _TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
 _PRIMARY_CALENDAR_URL = "https://www.googleapis.com/calendar/v3/calendars/primary"
 _REFRESH_LEEWAY = timedelta(seconds=60)
+_ID_TOKEN_SKEW_SECONDS = 60
+_GOOGLE_ISSUERS = {"https://accounts.google.com", "accounts.google.com"}
 
 _SECRET_QUERY = re.compile(
     r"(?i)(access_token|refresh_token|client_secret|id_token|code)=([^&\s\"']+)"
@@ -57,6 +65,17 @@ class CalendarSubMismatch(CalendarOAuthError):
 class CalendarTokenError(CalendarOAuthError):
     def __init__(self, message: str = "Google 日历授权已失效，请重新连接。") -> None:
         super().__init__(message, status_code=401)
+
+
+class CalendarTransientError(Exception):
+    """Google could not be reached. The stored grant is still valid.
+
+    Not a ``CalendarTokenError``. Callers must not ask the user to reconnect.
+    """
+
+    def __init__(self, message: str = "暂时连不上 Google 日历，请稍后再试。") -> None:
+        super().__init__(message)
+        self.message = message
 
 
 class _RedactSecrets(logging.Filter):
@@ -143,7 +162,7 @@ def build_authorize_url(state: str) -> str:
             "client_id": (settings.google_oauth_client_id or "").strip(),
             "redirect_uri": (settings.google_oauth_redirect_uri or "").strip(),
             "response_type": "code",
-            "scope": " ".join(GOOGLE_CALENDAR_SCOPES),
+            "scope": " ".join(GOOGLE_CALENDAR_SCOPES + GOOGLE_IDENTITY_SCOPES),
             "state": state,
             "access_type": "offline",
             "prompt": "consent",
@@ -180,7 +199,7 @@ def connect_google_account(db: Session, *, user_id: int, code: str) -> CalendarC
         raise CalendarOAuthError("Google 授权失败，未保存连接。", 502)
     scopes = str(payload.get("scope") or " ".join(GOOGLE_CALENDAR_SCOPES)).strip()
     _require_scopes(scopes)
-    sub, email = _identity(access)
+    sub, email = _identity(access, id_token=str(payload.get("id_token") or ""))
     try:
         expires_in = int(payload.get("expires_in") or 3600)
     except (TypeError, ValueError):
@@ -217,11 +236,13 @@ def refresh_access_token(db: Session, connection: CalendarConnection) -> str:
         )
     except httpx.HTTPError:
         logger.warning("google calendar token refresh failed status=network")
-        raise CalendarTokenError() from None
+        raise CalendarTransientError() from None
     if response.status_code != 200:
         logger.warning(
             "google calendar token refresh failed status=%s", response.status_code
         )
+        if 500 <= response.status_code <= 599:
+            raise CalendarTransientError()
         raise CalendarTokenError()
     payload = _json_object(response)
     access = str(payload.get("access_token") or "").strip()
@@ -282,7 +303,26 @@ def _exchange_code(code: str) -> dict:
     return _json_object(response)
 
 
-def _identity(access_token: str) -> tuple[str, str]:
+def _identity(access_token: str, id_token: str = "") -> tuple[str, str]:
+    """Resolve the Google account from the code-exchange id_token, then tokeninfo.
+
+    Access-token tokeninfo omits sub and user_id when the grant never included
+    openid. The id_token from the same exchange carries sub (and email, when
+    that scope was granted). A tokeninfo body without sub is not fatal once
+    the id_token identifies the account.
+    """
+    claims = _id_token_claims(id_token)
+    sub_from_id = _claim_text(claims, "sub")
+    info = _access_tokeninfo(access_token, required=not sub_from_id)
+    sub = sub_from_id or str(info.get("sub") or info.get("user_id") or "").strip()
+    if not sub:
+        logger.warning("google calendar tokeninfo failed status=missing-sub")
+        raise CalendarOAuthError("无法确认 Google 账户，未保存连接。", 502)
+    email_hint = _claim_text(claims, "email") or str(info.get("email") or "").strip()
+    return sub, _account_email(access_token, {"email": email_hint})
+
+
+def _access_tokeninfo(access_token: str, *, required: bool) -> dict:
     try:
         info_response = _http_request(
             "POST",
@@ -293,18 +333,82 @@ def _identity(access_token: str) -> tuple[str, str]:
             },
         )
     except httpx.HTTPError:
+        if not required:
+            return {}
         logger.warning("google calendar tokeninfo failed status=network")
         raise CalendarOAuthError("无法确认 Google 账户，未保存连接。", 502) from None
     if info_response.status_code != 200:
-        logger.warning("google calendar tokeninfo failed status=%s", info_response.status_code)
+        if not required:
+            return {}
+        logger.warning(
+            "google calendar tokeninfo failed status=%s", info_response.status_code
+        )
         raise CalendarOAuthError("无法确认 Google 账户，未保存连接。", 502)
-    info = _json_object(info_response)
-    sub = str(info.get("sub") or info.get("user_id") or "").strip()
-    if not sub:
-        logger.warning("google calendar tokeninfo failed status=missing-sub")
-        raise CalendarOAuthError("无法确认 Google 账户，未保存连接。", 502)
-    email = _account_email(access_token, info)
-    return sub, email
+    return _json_object(info_response)
+
+
+def _id_token_claims(id_token: str) -> dict:
+    """Claims from the token-endpoint id_token, or {} when it cannot be used.
+
+    The exchange uses the client secret over HTTPS, so the body is Google's.
+    Issuer, audience, and expiry are still checked. An unusable id_token is
+    ignored and tokeninfo remains the fallback.
+    """
+    token = id_token.strip()
+    if not token:
+        return {}
+    parts = token.split(".")
+    if len(parts) != 3 or not all(parts):
+        logger.warning("google calendar id_token failed status=malformed")
+        return {}
+    claims = _b64url_json(parts[1])
+    if claims is None:
+        logger.warning("google calendar id_token failed status=malformed")
+        return {}
+    if str(claims.get("iss") or "") not in _GOOGLE_ISSUERS:
+        logger.warning("google calendar id_token failed status=bad-iss")
+        return {}
+    client_id = (settings.google_oauth_client_id or "").strip()
+    if client_id not in _audiences(claims.get("aud")):
+        logger.warning("google calendar id_token failed status=bad-aud")
+        return {}
+    try:
+        exp = int(claims.get("exp"))
+    except (TypeError, ValueError):
+        logger.warning("google calendar id_token failed status=expired")
+        return {}
+    if exp <= int(time.time()) - _ID_TOKEN_SKEW_SECONDS:
+        logger.warning("google calendar id_token failed status=expired")
+        return {}
+    if not _claim_text(claims, "sub"):
+        logger.warning("google calendar id_token failed status=missing-sub")
+        return {}
+    return claims
+
+
+def _audiences(audience: object) -> set[str]:
+    if isinstance(audience, str):
+        return {audience}
+    if isinstance(audience, list):
+        return {item for item in audience if isinstance(item, str) and item}
+    return set()
+
+
+def _claim_text(claims: dict, key: str) -> str:
+    value = claims.get(key)
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _b64url_json(segment: str) -> dict | None:
+    try:
+        padded = segment + "=" * (-len(segment) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        body = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeError):
+        return None
+    return body if isinstance(body, dict) else None
 
 
 def _account_email(access_token: str, tokeninfo: dict) -> str:

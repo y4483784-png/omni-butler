@@ -21,9 +21,18 @@ from sqlalchemy.orm import Session
 
 from app.models.models import CalendarConnection, CalendarEvent
 from app.services import calendar_secrets
-from app.services.calendar_local import LocalCalendarProvider, event_to_dto, free_gaps
+from app.services.calendar_local import (
+    LocalCalendarProvider,
+    _participants_from_row,
+    event_to_dto,
+    free_gaps,
+)
 from app.services.calendar_provider import CalendarEventDTO
-from app.services.calendar_secrets import CalendarTokenError, refresh_access_token
+from app.services.calendar_secrets import (
+    CalendarTokenError,
+    CalendarTransientError,
+    refresh_access_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +40,8 @@ _TIMEZONE_URL = "https://www.googleapis.com/calendar/v3/users/me/settings/timezo
 _SETTINGS_URL = "https://www.googleapis.com/calendar/v3/users/me/settings"
 _EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 _MISSING_TIMEZONE = "Etc/GMT"
+# Transport failures and these statuses are retried once. 500 is transient with no retry.
+_TIMEZONE_RETRY_STATUSES = frozenset({502, 503, 504})
 _MAX_EVENT_PAGES = 5
 _LIST_LIMIT = 20
 _GOOGLE_ONLY_TITLE = "Google 日历上已有安排"
@@ -45,6 +56,7 @@ _LOCAL_SAVE_FAILED = "本地保存失败，未完成创建。"
 _LOCAL_UPDATE_FAILED = "本地保存失败，未完成修改。"
 _CANCEL_FAILED = "暂时无法在 Google 日历上取消，本地日程未改。"
 _RECONNECT_REQUIRED = "需要重新连接 Google 日历后才能修改或取消。"
+_TITLE_UNMATCHED = "没有在 Google 日历上找到同标题的日程，未写入。"
 
 
 class CalendarRemoteError(Exception):
@@ -71,6 +83,14 @@ class CalendarOverlapError(Exception):
     def __init__(self, conflicts: list) -> None:
         super().__init__("calendar conflict")
         self.conflicts = conflicts
+
+
+class CalendarTitleUnmatched(Exception):
+    """Confirm-time title lookup missed. Nothing was written."""
+
+    def __init__(self, message: str = _TITLE_UNMATCHED) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 class CalendarReconnectRequired(Exception):
@@ -179,7 +199,7 @@ class GoogleCalendarProvider:
             return local_rows
         try:
             items, truncated = self._read_event_pages(start, end, self.timezone_name())
-        except (CalendarRemoteReadError, CalendarTokenError):
+        except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
             self.list_notice = _LIST_LOCAL_ONLY
             return local_rows[:_LIST_LIMIT]
         if truncated:
@@ -346,6 +366,127 @@ class GoogleCalendarProvider:
                 raise CalendarRemoteWriteError(_CANCEL_FAILED) from None
         return self._local.cancel_event(user_id, event_id)
 
+    def confirm_titled_change(
+        self,
+        user_id: int,
+        *,
+        action: str,
+        title: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+        participants: list[str] | None = None,
+        location: str | None = None,
+        description: str | None = None,
+        external_id: str | None = None,
+    ) -> CalendarEventDTO:
+        """Patch or delete one primary event.
+
+        A non-empty ``external_id`` selects that Google event. Exact summary
+        is the fallback only when the card has no id. A miss writes nothing.
+        A local row is updated only when it already has that id. No row is inserted.
+        """
+        needle = (title or "").strip()
+        zone_name = self.timezone_name()
+        match = self._event_for_confirm(needle, external_id, zone_name)
+        gid = str(match.get("id") or "").strip()
+        local_rows = self._local.rows_for_external_ids(user_id, [gid])
+        local = local_rows[0] if local_rows else None
+        if action == "cancel":
+            if local is not None:
+                cancelled = self.cancel_event(user_id, local.id)
+                if cancelled is None:
+                    raise CalendarRemoteWriteError(_CANCEL_FAILED)
+                return cancelled
+            self._delete_google_event_required(gid)
+            return _remote_only_dto(
+                user_id,
+                title=needle,
+                start_at=start_at,
+                end_at=end_at,
+                zone_name=zone_name,
+                external_id=gid,
+                status="cancelled",
+            )
+        if start_at is None or end_at is None:
+            raise CalendarRemoteWriteError()
+        if local is not None:
+            updated = self.update_event(
+                user_id,
+                local.id,
+                title=needle,
+                start_at=start_at,
+                end_at=end_at,
+                participants=participants,
+                location=location,
+                description=description,
+            )
+            if updated is None:
+                raise CalendarRemoteWriteError()
+            return updated
+        conflicts = self._conflicts_in_window(
+            user_id,
+            _as_naive(start_at),
+            _as_naive(end_at),
+            exclude_event_id=None,
+            zone_name=zone_name,
+            exclude_external_id=gid,
+        )
+        if conflicts:
+            raise CalendarOverlapError(conflicts)
+        sent = _patch_body(
+            title=needle,
+            start_at=start_at,
+            end_at=end_at,
+            effective_start=start_at,
+            effective_end=end_at,
+            location=location,
+            description=description,
+            zone_name=zone_name,
+        )
+        self._patch_google_event(gid, sent)
+        return _remote_only_dto(
+            user_id,
+            title=needle,
+            start_at=start_at,
+            end_at=end_at,
+            zone_name=zone_name,
+            external_id=gid,
+            location=location or "",
+            description=description or "",
+        )
+
+    def _event_for_title(self, title: str, zone_name: str) -> dict:
+        """One live primary event with this exact summary. Otherwise nothing is writable."""
+        return self._event_for_confirm(title, None, zone_name)
+
+    def _event_for_confirm(self, title: str, external_id: str | None, zone_name: str) -> dict:
+        """Prefer one Google id. Exact title is used only when no id was given."""
+        now = datetime.now(ZoneInfo(zone_name)).replace(tzinfo=None, microsecond=0)
+        items = self._list_primary_events(now, datetime(2100, 1, 1), zone_name)
+        visible = [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and not _hidden_on_list(item)
+            and str(item.get("id") or "").strip()
+        ]
+        gid = (external_id or "").strip()
+        if gid:
+            matches = [item for item in visible if str(item.get("id") or "").strip() == gid]
+            if len(matches) != 1:
+                raise CalendarTitleUnmatched()
+            return matches[0]
+        if not title:
+            raise CalendarTitleUnmatched()
+        matches = [
+            item
+            for item in visible
+            if str(item.get("summary") or "").strip() == title
+        ]
+        if len(matches) != 1:
+            raise CalendarTitleUnmatched()
+        return matches[0]
+
     def conflicts_for_create(
         self,
         user_id: int,
@@ -379,6 +520,63 @@ class GoogleCalendarProvider:
             exclude_event_id=exclude_event_id,
             zone_name=self.timezone_name(),
         )
+
+    def primary_events_for_title(
+        self, start: datetime, end: datetime, zone_name: str
+    ) -> list[dict]:
+        """Visible primary events for connected update/cancel prefill.
+
+        ``summary`` is the stripped Google summary. ``start_at`` and ``end_at``
+        are naive wall times, or None when the item has no usable span.
+        ``location``, ``description``, and ``participants`` come from the live
+        item. ``id`` is the Google event id. Attendees are not how this app
+        stores participants, so a linked local row fills those three fields
+        when the Google item left them empty. Hidden rows are skipped. Nothing
+        is stored. Confirm prefers this id and falls back to an exact summary
+        only when the card has no id.
+        """
+        items = self._list_primary_events(_as_naive(start), _as_naive(end), zone_name)
+        visible = [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and not _hidden_on_list(item)
+            and str(item.get("id") or "").strip()
+        ]
+        local_by_id = {
+            row.external_id: row
+            for row in self._local.rows_for_external_ids(
+                self.user_id, [str(item.get("id") or "") for item in visible]
+            )
+            if row.external_id
+        }
+        found: list[dict] = []
+        for item in visible:
+            gid = str(item.get("id") or "").strip()
+            view = _event_view(item)
+            participants = _participant_names(item)
+            location = str(item.get("location") or "").strip()
+            description = str(item.get("description") or "").strip()
+            local = local_by_id.get(gid)
+            if local is not None:
+                if not participants:
+                    participants = _participants_from_row(local.participants)
+                if not location:
+                    location = (local.location or "").strip()
+                if not description:
+                    description = (local.description or "").strip()
+            found.append(
+                {
+                    "id": gid,
+                    "summary": str(item.get("summary") or "").strip(),
+                    "start_at": None if view is None else view.start,
+                    "end_at": None if view is None else view.end,
+                    "participants": participants,
+                    "location": location,
+                    "description": description,
+                }
+            )
+        return found
 
     def readonly_titles(self, user_id: int, start: datetime, end: datetime) -> list[str]:
         """Titles of primary-calendar events that have no local row.
@@ -474,6 +672,7 @@ class GoogleCalendarProvider:
         *,
         exclude_event_id: int | None,
         zone_name: str,
+        exclude_external_id: str = "",
     ) -> list:
         _intervals, conflicts = self._read_window(
             user_id,
@@ -481,6 +680,7 @@ class GoogleCalendarProvider:
             end,
             zone_name,
             exclude_event_id=exclude_event_id,
+            exclude_external_id=exclude_external_id,
         )
         return conflicts
 
@@ -492,10 +692,11 @@ class GoogleCalendarProvider:
         zone_name: str,
         *,
         exclude_event_id: int | None = None,
+        exclude_external_id: str = "",
     ) -> tuple[list[tuple[datetime, datetime]], list]:
         items = self._list_primary_events(start, end, zone_name)
-        excluded_external = ""
-        if exclude_event_id is not None:
+        excluded_external = (exclude_external_id or "").strip()
+        if not excluded_external and exclude_event_id is not None:
             owned = self._local.get_event(user_id, exclude_event_id)
             if owned is not None and owned.external_id:
                 excluded_external = owned.external_id
@@ -679,7 +880,7 @@ class GoogleCalendarProvider:
         """
         try:
             response = self._call("GET", _SETTINGS_URL)
-        except (CalendarRemoteReadError, CalendarTokenError):
+        except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
             logger.warning("google calendar settings list failed status=network")
             return []
         if response.status_code != 200:
@@ -911,27 +1112,73 @@ class GoogleCalendarProvider:
         if connection is None:
             return _MISSING_TIMEZONE
         access = refresh_access_token(self.db, connection)
-        request = self._http_request or _http_request
-        try:
-            response = request(
-                "GET",
-                _TIMEZONE_URL,
-                headers={"Authorization": f"Bearer {access}"},
-            )
-        except httpx.HTTPError:
-            logger.warning("google calendar timezone lookup failed status=network")
-            raise CalendarTokenError() from None
+        response = self._timezone_response(access)
         if response.status_code == 404:
             return _MISSING_TIMEZONE
-        if response.status_code != 200:
-            logger.warning(
-                "google calendar timezone lookup failed status=%s", response.status_code
-            )
+        if response.status_code == 200:
+            value = _setting_value(response)
+            if not value:
+                return _MISSING_TIMEZONE
+            return value
+        logger.warning(
+            "google calendar timezone lookup failed status=%s", response.status_code
+        )
+        if response.status_code in (401, 403):
             raise CalendarTokenError()
-        value = _setting_value(response)
-        if not value:
-            return _MISSING_TIMEZONE
-        return value
+        if response.status_code == 500 or response.status_code in _TIMEZONE_RETRY_STATUSES:
+            raise CalendarTransientError()
+        raise CalendarTokenError()
+
+    def _timezone_response(self, access: str) -> httpx.Response:
+        """GET the timezone setting. Transport errors and 502/503/504 retry once."""
+        request = self._http_request or _http_request
+        first = _timezone_once(request, access)
+        if first is None or first.status_code in _TIMEZONE_RETRY_STATUSES:
+            second = _timezone_once(request, access)
+            if second is not None:
+                return second
+            logger.warning("google calendar timezone lookup failed status=network")
+            raise CalendarTransientError()
+        return first
+
+
+def _timezone_once(request, access: str) -> httpx.Response | None:
+    try:
+        return request(
+            "GET",
+            _TIMEZONE_URL,
+            headers={"Authorization": f"Bearer {access}"},
+        )
+    except httpx.HTTPError:
+        return None
+
+
+def _remote_only_dto(
+    user_id: int,
+    *,
+    title: str,
+    start_at: datetime | None,
+    end_at: datetime | None,
+    zone_name: str,
+    external_id: str,
+    status: str = "active",
+    location: str = "",
+    description: str = "",
+) -> CalendarEventDTO:
+    """A confirm result with no local id. Nothing is inserted."""
+    return CalendarEventDTO(
+        id=None,
+        user_id=user_id,
+        title=title,
+        start_at=_as_naive(start_at) if start_at is not None else None,
+        end_at=_as_naive(end_at) if end_at is not None else None,
+        status=status,
+        timezone=zone_name,
+        location=location,
+        description=description,
+        external_id=external_id,
+        provider="google",
+    )
 
 
 def _setting_value(response: httpx.Response) -> str:
@@ -1234,6 +1481,23 @@ def _slots_in_windows(
             break
         slots.extend(free_gaps(busy, begin, finish, duration, limit - len(slots)))
     return slots
+
+
+def _participant_names(item: dict) -> list[str]:
+    """Other people on a Google event. The calendar owner is not a participant."""
+    attendees = item.get("attendees")
+    if not isinstance(attendees, list):
+        return []
+    names: list[str] = []
+    for person in attendees:
+        if not isinstance(person, dict) or person.get("self"):
+            continue
+        if str(person.get("responseStatus") or "") == "declined":
+            continue
+        name = str(person.get("displayName") or person.get("email") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 def _self_declined(item: dict) -> bool:

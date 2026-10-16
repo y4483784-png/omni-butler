@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -14,10 +14,15 @@ from app.core.llm import complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
-from app.services.calendar_google import CalendarReconnectRequired, CalendarRemoteReadError
-from app.services.calendar_secrets import CalendarTokenError
+from app.services.calendar_google import (
+    CalendarReconnectRequired,
+    CalendarRemoteReadError,
+    CalendarRemoteWriteError,
+    CalendarTitleUnmatched,
+)
+from app.services.calendar_secrets import CalendarTokenError, CalendarTransientError
 
-REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError)
+REMOTE_READ_ERRORS = (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError)
 
 # Accept Arabic and Chinese numerals ("3点" / "三点" / "三点半") — real users rarely type digits only.
 _CALENDAR_TIME = re.compile(
@@ -82,6 +87,19 @@ class EventDraft:
     original_request: str = ""
     # Update only: the existing event's time. start_at/end_at are the new slot.
     reference_start_at: datetime | None = None
+    # Create fallthrough only: "list" switches to the read-only list reply.
+    requested_action: str = ""
+    list_day: str = ""
+    # Model classification. Empty means the card layer treats a write as a meeting.
+    kind: str = ""
+    description: str = ""
+    location: str = ""
+    # The start the model returned, before a local regex fallback moves it.
+    model_start: datetime | None = None
+    # The end the model returned. None means an update keeps the matched duration.
+    specified_end: datetime | None = None
+    # True when the model returned a note the user asked to change.
+    notes_specified: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +110,11 @@ class EventDraft:
             "missing_fields": list(self.missing_fields),
             "original_request": self.original_request,
             "reference_start_at": self.reference_start_at.isoformat() if self.reference_start_at else "",
+            "requested_action": self.requested_action,
+            "list_day": self.list_day,
+            "kind": self.kind,
+            "description": self.description,
+            "location": self.location,
         }
 
     @classmethod
@@ -104,6 +127,11 @@ class EventDraft:
             missing_fields=[str(x).strip() for x in (data.get("missing_fields") or []) if str(x).strip()],
             original_request=str(data.get("original_request") or ""),
             reference_start_at=_parse_dt(str(data.get("reference_start_at") or "")),
+            requested_action=str(data.get("requested_action") or ""),
+            list_day=_civil_day(str(data.get("list_day") or "")),
+            kind=str(data.get("kind") or ""),
+            description=str(data.get("description") or ""),
+            location=str(data.get("location") or ""),
         )
 
 
@@ -119,22 +147,141 @@ def is_calendar_cancel(message: str) -> bool:
     return bool(_CANCEL_PAT.search(message or ""))
 
 
+def _extract_system_prompt(
+    now: datetime | None,
+    timezone_name: str | None,
+    *,
+    existing_event: bool = False,
+) -> str:
+    """Name the calendar day that 「明天」 and 「后天」 are relative to.
+
+    A connected account also gets that account's IANA id. An unconnected
+    prompt names the date only and does not invent a product zone. The model
+    still returns offset-less wall times; nothing here rewrites them.
+
+    Update and cancel ask for the existing event's name. The model is not
+    told to concatenate participant nicknames into that title.
+    """
+    clock = now or datetime.now()
+    day = clock.date().isoformat()
+    zone = (timezone_name or "").strip()
+    if zone:
+        today = f"今天是 {day}，账户时区是 {zone}。"
+    else:
+        today = f"今天是 {day}。"
+    existing = ""
+    if existing_event:
+        existing = (
+            " 修改或撤销时，title 是已有日程的名称，不要把参与人昵称或其他词拼进标题。"
+        )
+        fields = (
+            '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
+            '"missing_fields":[str],"kind":str,"description":str,'
+            '"change_end":bool,"change_notes":bool}'
+        )
+        scheduling = ""
+        existing += (
+            " 修改时 kind 为 meeting 或 block。"
+            " 留给自己的一段时间是 block，拿不准就 meeting。"
+            " change_end 只在用户明确要改结束时间或时长时为 true，否则为 false。"
+            " end_at 只在 change_end 为 true 时填写，否则输出空字符串。"
+            " 没给出 change_end，或它为 false、空，都表示不改结束时间和时长。"
+            " change_notes 只在用户明确要改备注时为 true，否则为 false。"
+            " description 只在 change_notes 为 true 时填写用户要的新备注，否则输出空字符串。"
+            " 没给出 change_notes，或它为 false、空，都表示不改备注。"
+            " 不要把已有备注缩短后填进 description，也不要把时长默认写成一小时。"
+        )
+    else:
+        fields = (
+            '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
+            '"missing_fields":[str],"action":str,"day":str,"kind":str,"description":str}'
+        )
+        scheduling = (
+            " 用户说了时长就写 end_at，用开始之后的那段无偏移时间。"
+            " 个人时间块参与人可空，不要把参与人放进 missing_fields。"
+            " kind 为 meeting 或 block。开会或有别人参加是 meeting；"
+            " 留给自己的一段时间是 block；拿不准就 meeting。"
+            " description 是用户说的备注，没说就输出空字符串，不要放进 missing_fields。"
+            " 若用户是在查已有日程，或问某一天怎么安排，action 输出 list，并填写 day。"
+            " 若用户是要创建日程或留下一段时间，action 输出 create。"
+            " 点名了某一天时 day 输出 YYYY-MM-DD；说本周、这几天或没点名，day 输出空字符串。"
+        )
+    return (
+        "你是日程信息提取器。只输出 JSON："
+        f"{fields}。"
+        " start_at/end_at 用无偏移的 ISO 8601；缺失则输出空字符串。"
+        " 参与人可以省略，不要因为没有参与人写入 missing_fields。"
+        " 用户没说结束时间时 end_at 留空，不要把 end_at 放进 missing_fields。"
+        f" {today}"
+        "「明天」「后天」相对这一天。"
+        " start_at/end_at 仍输出无偏移的 ISO 8601。"
+        f"{scheduling}"
+        f"{existing}"
+    )
+
+
+def _explicit_yes(parsed: dict, key: str) -> bool:
+    """True only when the model explicitly says the user asked for this change.
+
+    Missing, null, false, and empty all mean don't change. A filled end time
+    or note is not itself a request.
+    """
+    if key not in parsed:
+        return False
+    value = parsed.get(key)
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    if isinstance(value, (int, float)):
+        return value == 1
+    return False
+
+
+def _civil_day(raw: str) -> str:
+    """A model-named civil day, or empty when the 7-day list window should be used."""
+    text = (raw or "").strip()
+    if len(text) != 10:
+        return ""
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return text
+
+
+def _list_day_prompt(now: datetime | None, timezone_name: str | None) -> str:
+    clock = now or datetime.now()
+    day = clock.date().isoformat()
+    zone = (timezone_name or "").strip()
+    if zone:
+        today = f"今天是 {day}，账户时区是 {zone}。"
+    else:
+        today = f"今天是 {day}。"
+    return (
+        '你只输出 JSON：{"day":str}。'
+        f" {today}"
+        " 用户点名了某一天（含明天、后天或具体日期）时，day 填那一天的 YYYY-MM-DD。"
+        " 用户说本周、这几天，或没有点名某一天时，day 输出空字符串。"
+    )
+
+
 def extract_event(
     message: str,
     history: list[dict] | None = None,
     *,
     now: datetime | None = None,
+    timezone_name: str | None = None,
+    existing_event: bool = False,
 ) -> EventDraft:
     parsed = complete_json(
         [
             {
                 "role": "system",
-                "content": (
-                    "你是日程信息提取器。只输出 JSON："
-                    '{"title":str,"start_at":str,"end_at":str,"participants":[str],"missing_fields":[str]}。'
-                    " start_at/end_at 用无偏移的 ISO 8601；缺失则输出空字符串。"
-                    " 参与人可以省略，不要因为没有参与人写入 missing_fields。"
-                    " 用户没说结束时间时 end_at 留空，不要把 end_at 放进 missing_fields。"
+                "content": _extract_system_prompt(
+                    now, timezone_name, existing_event=existing_event
                 ),
             },
             {
@@ -167,8 +314,122 @@ def extract_event(
         missing_fields=list(dict.fromkeys(missing)),
         original_request=message,
     )
+    raw_kind = str(parsed.get("kind") or "").strip().lower()
+    draft.kind = raw_kind if raw_kind in {"meeting", "block"} else ""
+    # Keep the model's start. End and notes on an existing event count only
+    # when change_end / change_notes are explicitly true.
+    draft.model_start = start_at
+    if not existing_event:
+        draft.specified_end = end_at
+        draft.requested_action = "list" if str(parsed.get("action") or "").strip().lower() == "list" else ""
+        draft.list_day = _civil_day(str(parsed.get("day") or ""))
+        draft.description = str(parsed.get("description") or "").strip()
+    else:
+        # Empty or unset flags mean the user did not ask to change that field.
+        # A model-filled end or a shortened note is ignored unless the flag is yes.
+        draft.specified_end = end_at if _explicit_yes(parsed, "change_end") else None
+        notes = str(parsed.get("description") or "").strip()
+        if _explicit_yes(parsed, "change_notes"):
+            draft.description = notes
+            draft.notes_specified = True
+        else:
+            draft.description = ""
+            draft.notes_specified = False
     _supplement_draft_from_message(draft, message, allow_end=True, now=now)
     return _finalize_prefill(draft)
+
+
+def extract_list_day(
+    message: str,
+    history: list[dict] | None = None,
+    *,
+    now: datetime | None = None,
+    timezone_name: str | None = None,
+) -> str:
+    """Civil day for a list that regex already selected. Empty keeps the 7-day window."""
+    parsed = complete_json(
+        [
+            {"role": "system", "content": _list_day_prompt(now, timezone_name)},
+            {
+                "role": "user",
+                "content": (
+                    f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
+                    f"当前消息：{message}"
+                ),
+            },
+        ]
+    )
+    if not isinstance(parsed, dict):
+        return ""
+    return _civil_day(str(parsed.get("day") or ""))
+
+
+def _free_slot_prompt(now: datetime | None, timezone_name: str | None) -> str:
+    clock = now or datetime.now()
+    day = clock.date().isoformat()
+    zone = (timezone_name or "").strip()
+    if zone:
+        today = f"今天是 {day}，账户时区是 {zone}。"
+    else:
+        today = f"今天是 {day}。"
+    return (
+        "你在帮用户从已经列出的日程里挑少量合适的空闲时段。"
+        f" {today}"
+        " 列出的时间是账户墙钟。"
+        " 按列出的这一天挑合适时段。"
+        " 不要推荐半夜到清晨，除非用户明确要夜里，或这一天只剩夜里有空。"
+        " 列表里已经占用的时段不能说成有空，也不要推荐和它们重叠的时间。"
+        " 拿不准某一段是不是空闲时，不要断言有空，请用户看列表。"
+        " 不要编造日程，不要创建。"
+        ' 只输出 JSON：{"slots":[{"start_at":str,"end_at":str}],"note":str}。'
+        " start_at 和 end_at 用无偏移的 ISO 8601。"
+        " note 用一句中文说明，不得把列出的忙时说成有空。"
+    )
+
+
+def extract_free_slots(
+    message: str,
+    history: list[dict] | None = None,
+    *,
+    now: datetime | None = None,
+    timezone_name: str | None = None,
+    listed: str = "",
+) -> tuple[list[tuple[datetime, datetime]], str] | None:
+    """Model-picked slots. None means the call failed. An empty list is a real answer.
+
+    Clock values are kept as the model wrote them. Nothing here drops a night slot.
+    """
+    try:
+        parsed = complete_json(
+            [
+                {"role": "system", "content": _free_slot_prompt(now, timezone_name)},
+                {
+                    "role": "user",
+                    "content": (
+                        f"已列出的日程：\n{listed}\n"
+                        f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
+                        f"当前消息：{message}"
+                    ),
+                },
+            ]
+        )
+    except Exception:
+        return None
+    if not isinstance(parsed, dict) or "slots" not in parsed:
+        return None
+    slots: list[tuple[datetime, datetime]] = []
+    raw_slots = parsed.get("slots") or []
+    if not isinstance(raw_slots, list):
+        return None
+    for item in raw_slots:
+        if not isinstance(item, dict):
+            continue
+        start_at = _parse_dt(str(item.get("start_at") or ""))
+        end_at = _parse_dt(str(item.get("end_at") or ""))
+        if start_at is None or end_at is None:
+            continue
+        slots.append((start_at, end_at))
+    return slots, str(parsed.get("note") or "").strip()
 
 
 DRAFT_TTL = timedelta(minutes=30)
@@ -206,7 +467,7 @@ def _normalize_missing_fields(
     participants: list[str],
     existing: list[str],
 ) -> list[str]:
-    missing = [item for item in existing if item not in {"end_at", "participants"}]
+    missing = [item for item in existing if item not in {"end_at", "participants", "description", "kind"}]
     if not title:
         missing.append("title")
     if not start_at:
@@ -409,6 +670,39 @@ def _block_disconnected_remote(db: Session, user_id: int, event: CalendarEvent) 
         raise CalendarReconnectRequired()
 
 
+def confirm_titled_change(
+    db: Session,
+    user_id: int,
+    *,
+    action: str,
+    title: str,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    participants: list[str] | None = None,
+    location: str | None = None,
+    description: str | None = None,
+    external_id: str | None = None,
+):
+    """Connected confirm. Prefer the card's Google id, else one exact title."""
+    if not calendar_writes_remote(db, user_id):
+        raise CalendarTitleUnmatched()
+    provider = calendar_provider_for(db, user_id)
+    confirmer = getattr(provider, "confirm_titled_change", None)
+    if confirmer is None:
+        raise CalendarRemoteWriteError()
+    return confirmer(
+        user_id,
+        action=action,
+        title=title,
+        start_at=start_at,
+        end_at=end_at,
+        participants=participants,
+        location=location,
+        description=description,
+        external_id=external_id,
+    )
+
+
 def conflicts_for_update(
     db: Session,
     user_id: int,
@@ -539,8 +833,18 @@ def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
 
 
 def draft_expires_at(now: datetime | None = None) -> str:
-    base = (now or datetime.now()).replace(microsecond=0)
-    return (base + DRAFT_TTL).isoformat()
+    """UTC expiry for a confirm card, as ISO-8601 with a numeric offset.
+
+    Naive ``now`` is a UTC wall time (the container clock). Aware values are
+    converted to UTC. An offset-less stamp is read as browser-local time, so a
+    UTC+8 client treated a fresh 30-minute draft as already expired.
+    """
+    base = now if now is not None else datetime.now(timezone.utc)
+    if base.tzinfo is None or base.tzinfo.utcoffset(base) is None:
+        base = base.replace(tzinfo=timezone.utc)
+    else:
+        base = base.astimezone(timezone.utc)
+    return (base.replace(microsecond=0) + DRAFT_TTL).isoformat()
 
 
 def titles_match(query: str, title: str) -> bool:

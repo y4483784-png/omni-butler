@@ -15,6 +15,7 @@ from app.models.models import User
 from app.services.calendar_secrets import (
     CalendarOAuthError,
     CalendarTokenError,
+    CalendarTransientError,
     app_home_url,
     build_authorize_url,
     connect_google_account,
@@ -29,6 +30,7 @@ from app.services.calendar import (
     calendar_now,
     cancel_event,
     check_conflict,
+    confirm_titled_change,
     create_event,
     free_slots_for,
     serialize_event_card,
@@ -39,6 +41,8 @@ from app.services.calendar_google import (
     CalendarReconnectRequired,
     CalendarRemoteReadError,
     CalendarRemoteWriteError,
+    CalendarTitleUnmatched,
+    _LIST_LOCAL_ONLY,
 )
 from app.services.calendar_factory import (
     account_timezone_name,
@@ -93,6 +97,15 @@ def _conflict_http(db, user_id, start_at, end_at, conflicts, *, exclude_event_id
     raise HTTPException(status_code=409, detail=_conflict_payload(conflicts, slots))
 
 
+def _local_rows_when_clock_fails(db, user_id: int) -> dict:
+    """Saved rows and the existing read-failure sentence. No stand-in clock."""
+    provider = calendar_provider_for(db, user_id)
+    local = getattr(provider, "_local", provider)
+    rows = local.list_events(user_id, datetime(2000, 1, 1), datetime(2100, 1, 1))
+    body = [serialize_event_card(row) for row in rows[:20]]
+    return {"events": body, "notice": _LIST_LOCAL_ONLY}
+
+
 def _slots_or_empty(db, user_id, start_at, end_at, *, exclude_event_id=None):
     try:
         return free_slots_for(
@@ -111,12 +124,26 @@ def list_calendar_events(
     current_user: User = Depends(get_current_user),
 ):
     """Events overlapping [start, end) for the signed-in user. Default is the next 7 days."""
-    today = calendar_now(db, current_user.id).replace(hour=0, minute=0, second=0, microsecond=0)
     try:
-        start_at = _parse_dt(start) or today
-        end_at = _parse_dt(end) or (today + timedelta(days=7))
+        parsed_start = _parse_dt(start)
+        parsed_end = _parse_dt(end)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="时间格式无效") from exc
+    try:
+        today = calendar_now(db, current_user.id).replace(hour=0, minute=0, second=0, microsecond=0)
+    except CalendarTransientError:
+        today = None
+    start_at = parsed_start or today
+    if parsed_end is not None:
+        end_at = parsed_end
+    elif today is not None:
+        end_at = today + timedelta(days=7)
+    elif start_at is not None:
+        end_at = start_at + timedelta(days=7)
+    else:
+        end_at = None
+    if start_at is None or end_at is None:
+        return _local_rows_when_clock_fails(db, current_user.id)
     if end_at <= start_at:
         raise HTTPException(status_code=400, detail="结束时间需晚于开始时间")
     provider = calendar_provider_for(db, current_user.id)
@@ -207,6 +234,8 @@ def _create_connected_event(
         raise HTTPException(status_code=502, detail=str(exc)) from None
     except CalendarTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     return serialize_event_card(event)
 
 
@@ -261,6 +290,8 @@ def patch_event(
         raise HTTPException(status_code=502, detail=str(exc)) from None
     except CalendarTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
@@ -283,12 +314,75 @@ def delete_event(
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
 
 
+class GoogleTitleConfirm(BaseModel):
+    action: str
+    title: str | None = None
+    start_at: str | None = None
+    end_at: str | None = None
+    participants: list[str] | None = None
+    location: str | None = None
+    description: str | None = None
+    external_id: str | None = None
+
+
 # Connected update and cancel go to Google first. List merges a read-only overlay.
+@router.post("/google/confirm")
+def confirm_google_title_change(
+    body: GoogleTitleConfirm,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    """Write one primary event. Prefer the card's Google id, else its exact title."""
+    action = (body.action or "").strip().lower()
+    if action not in {"update", "cancel"}:
+        raise HTTPException(status_code=400, detail="需要改期或撤销")
+    if not calendar_writes_remote(db, current_user.id):
+        raise HTTPException(status_code=400, detail="未连接 Google 日历")
+    title = (body.title or "").strip()
+    start_at = _parse_dt(body.start_at)
+    end_at = _parse_dt(body.end_at)
+    if action == "update":
+        if not title or start_at is None:
+            raise HTTPException(status_code=400, detail="需要标题和开始时间")
+        if end_at is None:
+            end_at = start_at + timedelta(hours=1)
+    try:
+        event = confirm_titled_change(
+            db,
+            current_user.id,
+            action=action,
+            title=title,
+            start_at=start_at,
+            end_at=end_at,
+            participants=body.participants,
+            location=body.location,
+            description=body.description,
+            external_id=body.external_id,
+        )
+    except CalendarTitleUnmatched as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from None
+    except CalendarOverlapError as exc:
+        _conflict_http(
+            db, current_user.id, start_at, end_at, exc.conflicts
+        )
+    except CalendarRemoteReadError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
+    except CalendarRemoteWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    except CalendarTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    return serialize_event_card(event)
+
+
 @router.get("/google/status")
 def google_calendar_status(
     db: Session = Depends(get_db_scoped),
@@ -299,7 +393,7 @@ def google_calendar_status(
         return status
     try:
         zone = account_timezone_name(db, current_user.id)
-    except (CalendarTokenError, httpx.HTTPError):
+    except (CalendarTokenError, CalendarTransientError, httpx.HTTPError):
         zone = ""
     if zone:
         status["timezone"] = zone

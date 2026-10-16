@@ -43,6 +43,13 @@ export interface ScheduleCandidate {
   readonly?: boolean;
 }
 
+export interface ScheduleListItem {
+  title: string;
+  start_at: string;
+  end_at: string;
+  all_day?: boolean;
+}
+
 export interface ScheduleCard {
   id?: number | null;
   title: string;
@@ -50,7 +57,9 @@ export interface ScheduleCard {
   end_at: string;
   participants: string[];
   status?: "active" | "cancelled" | string;
-  mode?: "create" | "update" | "cancel" | "choose" | "suggest" | string;
+  mode?: "create" | "update" | "cancel" | "choose" | "suggest" | "list" | string;
+  kind?: "meeting" | "block" | "" | string;
+  items?: ScheduleListItem[];
   phase?: "draft" | "confirmed" | "cancelled" | "expired" | "info" | string;
   action?: "create" | "update" | "cancel" | string;
   expires_at?: string;
@@ -440,6 +449,25 @@ export async function createCalendarEvent(payload: {
     body: JSON.stringify(payload),
   });
   if (!r.ok) await readCalendarError(r, "创建日程失败");
+  return r.json();
+}
+
+export async function confirmGoogleCalendarChange(payload: {
+  action: "update" | "cancel";
+  title: string;
+  start_at: string;
+  end_at: string;
+  participants?: string[];
+  location?: string;
+  description?: string;
+  external_id?: string;
+}): Promise<ScheduleCard> {
+  const r = await apiFetch("/api/calendar/google/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) await readCalendarError(r, payload.action === "cancel" ? "撤销日程失败" : "修改日程失败");
   return r.json();
 }
 

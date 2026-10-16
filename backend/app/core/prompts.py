@@ -63,6 +63,9 @@ ROUTER_SYSTEM = """你是 Omni-Butler 的工具规划器。根据用户消息与
 输入：把明天的周会改到四点 | → needs_calendar=true
 输入：取消明天的面试 | → needs_calendar=true
 输入：明天下午有空吗 | → needs_calendar=true
+输入：明天下午留两小时写报告 | → needs_calendar=true
+输入：帮我看看明天怎么安排 | → needs_calendar=true
+输入：什么是时间规划 | → 全部 false
 输入：什么是日历 | → 全部 false
 输入：最新的国家个税政策 | → needs_web=true, needs_freshness=true
 
