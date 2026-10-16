@@ -15,6 +15,8 @@
 
 `yz` 已经从登记册拿掉。不要再 `run yz`，也不要引用它的分数。
 
+日历套件是真实抽槽加假 Google。数字是模型抽出的卡片、确认结果对不对，不是线上 Google。时间说全时，卡片起止必须和金标准相同。
+
 ```bash
 cd backend
 pip install -r requirements-dev.txt
@@ -27,6 +29,12 @@ python scripts/eval.py run pytest --profile smoke
 python scripts/eval.py run rag --profile smoke
 python scripts/eval.py run tabular --profile smoke
 python scripts/eval.py run context --profile smoke
+
+# 日历：真实抽槽，假 Google。完整档要 LLM_API_KEY，并重写缓存。
+# 冒烟只重放 backend/data/eval/calendar_model_cache.json，不打模型。
+python scripts/eval.py run calendar --profile full
+python scripts/eval.py run calendar --profile smoke
+python scripts/eval.py last calendar --profile full
 
 # 需要 MinIO、Qdrant、Postgres 的套件：Compose 的 eval 服务。
 # 先按仓库根目录 README 把栈拉起来。

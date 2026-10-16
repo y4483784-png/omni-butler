@@ -12,6 +12,7 @@ L2 主指标套件是 `agent`。`yz` 套件已下线（由 `agent` 取代），�
 | grounding | 120 | ok | `grounding_faithfulness.jsonl` |
 | tabular | 200 | ok | `office_tabular.jsonl` |
 | context | 384 | ok | `context_recall.jsonl` |
+| calendar | 150 | ok | `calendar_behavior.jsonl` |
 
 ## Distributions
 
@@ -21,11 +22,11 @@ L2 主指标套件是 `agent`。`yz` 套件已下线（由 `agent` 取代），�
 
 ### agent
 
-`attendance`=62, `fact`=58, `multiturn`=48, `aggregate`=40, `kb`=25, `refuse`=23, `calendar`=16, `chat`=12, `security`=11, `meeting`=9, `upload`=8, `availability_gate`=8, `late`=7, `document`=6, `noisy`=6, `lookup`=6, `slot_fill`=6, `doc_scope`=5, `incident`=4, `limits`=4, `headcount`=4, `late_total`=4, `multi_tool`=4, `hours`=3, `table`=3, `break`=2, `bonus`=2, `approval`=2, `device`=2, `access`=2, `formats`=2, `kb_mode`=2, `sandbox_ui`=2, `troubleshoot`=2, `render`=2, `getting_started`=2, `data_analysis`=2
+`attendance`=62, `fact`=58, `multiturn`=48, `aggregate`=40, `kb`=25, `refuse`=23, `chat`=15, `calendar`=13, `security`=11, `meeting`=9, `upload`=8, `availability_gate`=8, `late`=7, `document`=6, `noisy`=6, `lookup`=6, `doc_scope`=5, `incident`=4, `limits`=4, `headcount`=4, `late_total`=4, `multi_tool`=4, `hours`=3, `table`=3, `break`=2, `bonus`=2, `approval`=2, `device`=2, `access`=2, `formats`=2, `kb_mode`=2, `sandbox_ui`=2, `troubleshoot`=2, `render`=2, `getting_started`=2, `data_analysis`=2
 
 ### routing
 
-`rag`=130, `chat`=83, `calendar`=74, `data_analysis`=69, `web_search`=64
+`rag`=130, `chat`=91, `data_analysis`=69, `calendar`=66, `web_search`=64
 
 ### grounding
 
@@ -38,3 +39,7 @@ L2 主指标套件是 `agent`。`yz` 套件已下线（由 `agent` 取代），�
 ### context
 
 `user_fact`=48, `assistant_fact`=48, `knowledge_update`=48, `multi_hop`=48, `temporal`=48, `pending_task`=48, `preference`=48, `abstention`=48
+
+### calendar
+
+`id_mutate`=22, `confirm_before_write`=20, `free_busy`=20, `meeting_block`=18, `notes_description`=16, `create_meeting`=10, `create_block`=10, `list_schedule`=8, `conflict`=8, `error_paths`=8, `attendees`=6, `wall_clock`=4

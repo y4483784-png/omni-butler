@@ -176,7 +176,10 @@ def preflight(suite: SuiteSpec, target: str, profile: str, extra: list[str]) -> 
             f"python scripts/eval.py run {suite.id} --profile {profile}"
         )
 
-    if "llm" in req and not _llm_key_ok():
+    # Calendar smoke replays a cache of real responses and does not call the model.
+    # Routing smoke still asks for a key; do not copy that gap onto this suite.
+    cache_replay = suite.id == "calendar" and "--require-cache" in flags
+    if "llm" in req and not _llm_key_ok() and not cache_replay:
         # Settings may still load key from .env after bootstrap — soft check only
         # for early hint; suite will fail later if truly missing.
         env_file = BACKEND / ".env"

@@ -188,9 +188,21 @@ def test_hermetic_suites_isolate_app_db():
     assert get_suite("rag").isolate_app_db is True
     assert get_suite("tabular").isolate_app_db is True
     assert get_suite("context").isolate_app_db is True
+    assert get_suite("calendar").isolate_app_db is True
     assert get_suite("grounding").isolate_app_db is False
     assert get_suite("agent").isolate_app_db is False
     assert get_suite("agent").default_target == "services"
+
+
+def test_preflight_calendar_smoke_replay_does_not_need_a_key(monkeypatch, tmp_path):
+    """Cache replay must not fail preflight the way routing smoke still does."""
+    cli = _load_eval_cli()
+    monkeypatch.setattr(cli, "BACKEND", tmp_path)
+    monkeypatch.setattr(cli, "_llm_key_ok", lambda: False)
+    errors = cli.preflight(get_suite("calendar"), "venv", "smoke", [])
+    assert errors == []
+    live = cli.preflight(get_suite("calendar"), "venv", "full", [])
+    assert any("LLM_API_KEY" in item for item in live)
 
 
 def test_retired_yz_suite_is_not_registered():

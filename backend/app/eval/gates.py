@@ -109,6 +109,35 @@ GATES: dict[tuple[str, str], list[Gate]] = {
             note="compose must actually compact on some cases",
         ),
     ],
+    # Clock equality is not a soft score. A wrong wall time stays in the
+    # denominator, so the floor is 1.0 with no drop budget. Transport failures
+    # are the only rows that leave it, and those are capped on their own.
+    ("calendar", "smoke"): [
+        Gate("pass_rate", min=1.0, max_drop=None),
+        Gate("hard_pass_rate", min=1.0, max_drop=None),
+        Gate("clock_exact_rate", min=1.0, max_drop=None),
+        Gate("slices.confirm_before_write.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.meeting_block.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.id_mutate.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.free_busy.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.notes_description.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.wall_clock.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.error_paths.pass_rate", min=1.0, max_drop=None),
+        Gate("infra_error_rate", max=0.05, max_drop=None),
+    ],
+    ("calendar", "full"): [
+        Gate("pass_rate", min=1.0, max_drop=None),
+        Gate("hard_pass_rate", min=1.0, max_drop=None),
+        Gate("clock_exact_rate", min=1.0, max_drop=None),
+        Gate("slices.confirm_before_write.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.meeting_block.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.id_mutate.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.free_busy.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.notes_description.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.wall_clock.pass_rate", min=1.0, max_drop=None),
+        Gate("slices.error_paths.pass_rate", min=1.0, max_drop=None),
+        Gate("infra_error_rate", max=0.05, max_drop=None),
+    ],
 }
 
 

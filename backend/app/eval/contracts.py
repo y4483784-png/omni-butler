@@ -171,6 +171,124 @@ class ContextCase(StrictModel):
     tags: list[str]
 
 
+_CALENDAR_CATEGORIES = (
+    "confirm_before_write",
+    "meeting_block",
+    "id_mutate",
+    "free_busy",
+    "notes_description",
+    "wall_clock",
+    "create_meeting",
+    "create_block",
+    "list_schedule",
+    "conflict",
+    "attendees",
+    "error_paths",
+)
+CalendarCategory = Literal[
+    "confirm_before_write",
+    "meeting_block",
+    "id_mutate",
+    "free_busy",
+    "notes_description",
+    "wall_clock",
+    "create_meeting",
+    "create_block",
+    "list_schedule",
+    "conflict",
+    "attendees",
+    "error_paths",
+]
+
+
+class CalendarSeed(StrictModel):
+    key: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    start_at: str
+    end_at: str
+    description: str
+    location: str
+    all_day: bool
+    participants: list[str]
+    external_id: str
+    local: bool
+
+
+class CalendarTurn(StrictModel):
+    utterance: str = Field(min_length=1)
+
+
+class CalendarFields(StrictModel):
+    title: str | None = None
+    start_at: str | None = None
+    end_at: str | None = None
+    duration_minutes: int | None = None
+    participants: list[str] | None = None
+    location: str | None = None
+    description: str | None = None
+    kind: str | None = None
+    external_id: str | None = None
+
+
+class CalendarMatch(CalendarFields):
+    attendees: list[str] | None = None
+
+
+class CalendarSpan(StrictModel):
+    start_at: str
+    end_at: str
+
+
+class CalendarCardExpect(StrictModel):
+    type: Literal[
+        "meeting_create",
+        "block_create",
+        "meeting_update",
+        "block_update",
+        "cancel",
+        "list",
+        "none",
+    ] | None = None
+    phase: Literal["draft", "info", "absent"] | None = None
+    fields: CalendarFields | None = None
+    suggested_slots: Literal["absent", "present_ok", "non_overlapping"] | None = None
+    must_not_overlap: list[CalendarSpan] | None = None
+    must_list_titles: list[str] | None = None
+
+
+class CalendarGoogleExpect(StrictModel):
+    op: Literal["none", "create", "update", "delete"] | None = None
+    external_id: str | None = None
+    match: CalendarMatch | None = None
+    unchanged: list[str] | None = None
+
+
+class CalendarExpect(StrictModel):
+    confirm: Literal["do_not_confirm", "confirm_create", "confirm_update", "confirm_cancel"]
+    before_confirm_google: Literal["none"] | None = None
+    card: CalendarCardExpect | None = None
+    google: CalendarGoogleExpect | None = None
+    http_status: int | None = None
+    copy_must: list[str] | None = None
+    copy_must_not: list[str] | None = None
+    local_row: Literal["unchanged", "inserted", "updated", "absent"] | None = None
+
+
+class CalendarCase(StrictModel):
+    id: str = Field(min_length=1)
+    split: Literal["smoke", "full"]
+    category: CalendarCategory
+    tags: list[str] = Field(min_length=1)
+    time_complete: bool
+    now: str
+    zone: str = Field(min_length=1)
+    connection: Literal["connected", "disconnected"]
+    fault: Literal["none", "blackhole", "revoke", "insert_500"]
+    seeds: list[CalendarSeed]
+    turns: list[CalendarTurn] = Field(min_length=1, max_length=3)
+    expect: CalendarExpect
+
+
 RowCheck = Callable[[list[dict[str, Any]], list[str]], None]
 
 # Tool precedence mirrors ``router.intent_from_decision``: sandbox dominates kb, which
@@ -568,6 +686,165 @@ def _context_check(rows: list[dict[str, Any]], errors: list[str]) -> None:
             )
 
 
+_CALENDAR_QUOTAS = {
+    "confirm_before_write": (20, 4),
+    "meeting_block": (18, 3),
+    "id_mutate": (22, 4),
+    "free_busy": (20, 4),
+    "notes_description": (16, 3),
+    "wall_clock": (4, 2),
+    "create_meeting": (10, 2),
+    "create_block": (10, 2),
+    "list_schedule": (8, 2),
+    "conflict": (8, 1),
+    "attendees": (6, 1),
+    "error_paths": (8, 2),
+}
+_CALENDAR_GATED = frozenset(
+    {
+        "confirm_before_write",
+        "meeting_block",
+        "id_mutate",
+        "free_busy",
+        "notes_description",
+        "wall_clock",
+        "error_paths",
+    }
+)
+_CALENDAR_EXTRA_TAGS = frozenset({"past_clock", "disconnected", "multi_turn", "all_day"})
+_WALL_CLOCK = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00$")
+_BLOCK_TYPES = frozenset({"block_create", "block_update"})
+
+
+def _wall_ok(value: str) -> bool:
+    return bool(_WALL_CLOCK.match(value or "")) and "+" not in value and not value.endswith("Z")
+
+
+def _calendar_check(rows: list[dict[str, Any]], errors: list[str]) -> None:
+    if len(rows) != 150:
+        errors.append(f"calendar rows: {len(rows)}, expected 150")
+    want_ids = {f"CAL-{index:03d}" for index in range(1, 151)}
+    have_ids = {row["id"] for row in rows}
+    if have_ids != want_ids:
+        missing = sorted(want_ids - have_ids)[:8]
+        extra = sorted(have_ids - want_ids)[:8]
+        errors.append(f"calendar ids must be CAL-001..CAL-150 missing={missing} extra={extra}")
+    counts: Counter[str] = Counter(row["category"] for row in rows)
+    smoke_counts: Counter[str] = Counter(row["category"] for row in rows if row["split"] == "smoke")
+    if sum(smoke_counts.values()) != 30:
+        errors.append(f"calendar smoke: {sum(smoke_counts.values())}, expected 30")
+    for category, (full, smoke) in _CALENDAR_QUOTAS.items():
+        if counts[category] != full:
+            errors.append(f"calendar.{category}: {counts[category]}, expected {full}")
+        if smoke_counts[category] != smoke:
+            errors.append(f"calendar.{category} smoke: {smoke_counts[category]}, expected {smoke}")
+    for category in _CALENDAR_GATED:
+        if smoke_counts[category] < 1:
+            errors.append(f"calendar smoke must cover gated category {category}")
+    seen: dict[tuple, str] = {}
+    past_clock = 0
+    for row in rows:
+        tags = list(row["tags"])
+        if tags.count(row["category"]) != 1:
+            errors.append(f"{row['id']}: category tag {row['category']} must appear once")
+        other_categories = [tag for tag in tags if tag in _CALENDAR_QUOTAS and tag != row["category"]]
+        if other_categories:
+            errors.append(f"{row['id']}: tags include another category {other_categories}")
+        unknown = [tag for tag in tags if tag not in _CALENDAR_QUOTAS and tag not in _CALENDAR_EXTRA_TAGS]
+        if unknown:
+            errors.append(f"{row['id']}: tags outside the calendar vocab {unknown}")
+        if row["connection"] == "disconnected" and "disconnected" not in tags:
+            errors.append(f"{row['id']}: disconnected rows must carry the disconnected tag")
+        if len(row["turns"]) > 1 and "multi_turn" not in tags:
+            errors.append(f"{row['id']}: multi-turn rows must carry multi_turn")
+        signature = (
+            "\n".join(turn["utterance"] for turn in row["turns"]),
+            row["connection"],
+            row["fault"],
+            tuple(seed["key"] for seed in row["seeds"]),
+        )
+        if signature in seen:
+            errors.append(f"{row['id']}: duplicates scenario {seen[signature]}")
+        else:
+            seen[signature] = row["id"]
+        if not _wall_ok(row["now"]):
+            errors.append(f"{row['id']}: now must be an offset-less wall clock")
+        keys = [seed["key"] for seed in row["seeds"]]
+        if len(keys) != len(set(keys)):
+            errors.append(f"{row['id']}: duplicate seed keys")
+        for seed in row["seeds"]:
+            if not _wall_ok(seed["start_at"]) or not _wall_ok(seed["end_at"]):
+                errors.append(f"{row['id']}: seed {seed['key']} times must be offset-less")
+            if row["connection"] == "disconnected" and not seed["local"]:
+                errors.append(f"{row['id']}: disconnected seed {seed['key']} must be local")
+        expect = row["expect"]
+        card = expect.get("card") or {}
+        fields = card.get("fields") or {}
+        if row["time_complete"]:
+            if not _wall_ok(str(fields.get("start_at") or "")) or not _wall_ok(str(fields.get("end_at") or "")):
+                errors.append(f"{row['id']}: time_complete requires offset-less card start_at and end_at")
+        elif fields.get("start_at") or fields.get("end_at"):
+            errors.append(f"{row['id']}: time_complete=false must not carry card start_at/end_at")
+        if expect.get("confirm") == "do_not_confirm" and expect.get("http_status") is not None:
+            errors.append(f"{row['id']}: do_not_confirm must not set http_status")
+        google = expect.get("google") or {}
+        external = google.get("external_id")
+        if external is not None and external not in {"absent", "new"} and not str(external).startswith("seed:"):
+            errors.append(f"{row['id']}: google.external_id must be absent, new, or seed:<key>")
+        if isinstance(external, str) and external.startswith("seed:"):
+            key = external.split(":", 1)[1]
+            if key not in keys:
+                errors.append(f"{row['id']}: google.external_id references unknown seed {key}")
+        category = row["category"]
+        if category == "confirm_before_write":
+            if expect.get("before_confirm_google") != "none" or expect.get("confirm") != "do_not_confirm":
+                errors.append(f"{row['id']}: confirm_before_write must not confirm and must keep google quiet")
+        elif category == "meeting_block":
+            kind = card.get("type")
+            if kind not in {
+                "meeting_create",
+                "block_create",
+                "meeting_update",
+                "block_update",
+                "cancel",
+            }:
+                errors.append(f"{row['id']}: meeting_block card.type must be a meeting, block, or cancel")
+            if kind in _BLOCK_TYPES and (
+                "participants" not in fields or "location" not in fields
+            ):
+                errors.append(f"{row['id']}: block cards must check participants and location")
+        elif category == "id_mutate":
+            if not external and expect.get("http_status") != 409:
+                errors.append(f"{row['id']}: id_mutate needs google.external_id or http 409")
+        elif category == "free_busy":
+            read_failure = bool(expect.get("copy_must"))
+            listed = bool(card.get("must_list_titles"))
+            if not listed and not read_failure:
+                errors.append(f"{row['id']}: free_busy needs titles or a read-failure sentence")
+            if not any(
+                (
+                    card.get("suggested_slots"),
+                    card.get("must_not_overlap"),
+                    expect.get("copy_must"),
+                )
+            ):
+                errors.append(f"{row['id']}: free_busy needs a slot, overlap, or copy check")
+        elif category == "notes_description":
+            if "description" not in fields and "description" not in (google.get("match") or {}):
+                errors.append(f"{row['id']}: notes_description must check description")
+        elif category == "wall_clock":
+            if not row["time_complete"] or "start_at" not in fields or "end_at" not in fields:
+                errors.append(f"{row['id']}: wall_clock must lock start_at and end_at")
+            if "past_clock" in tags:
+                past_clock += 1
+                if str(fields.get("start_at") or "") >= row["now"]:
+                    errors.append(f"{row['id']}: past_clock gold must be earlier than now")
+        if category in {"create_meeting", "create_block"} and not row["time_complete"]:
+            errors.append(f"{row['id']}: {category} must be time_complete")
+    if counts["wall_clock"] and past_clock < 1:
+        errors.append("calendar wall_clock must include at least one past_clock row")
+
+
 CONTRACTS: dict[str, DatasetContract] = {
     "rag": DatasetContract(
         "rag", "rag_retrieval.jsonl", RagCase, 380, 420, "query", _rag_check
@@ -612,6 +889,15 @@ CONTRACTS: dict[str, DatasetContract] = {
         384,
         None,
         _context_check,
+    ),
+    "calendar": DatasetContract(
+        "calendar",
+        "calendar_behavior.jsonl",
+        CalendarCase,
+        150,
+        150,
+        None,
+        _calendar_check,
     ),
 }
 
@@ -691,6 +977,26 @@ TAG_VOCAB: dict[str, frozenset[str]] = {
             "user_fact", "assistant_fact", "knowledge_update", "multi_hop",
             "temporal", "pending_task", "preference", "abstention",
             "b12", "b30", "b60", "b120", "d0", "d25", "d50", "d75",
+        }
+    ),
+    "calendar": frozenset(
+        {
+            "confirm_before_write",
+            "meeting_block",
+            "id_mutate",
+            "free_busy",
+            "notes_description",
+            "wall_clock",
+            "create_meeting",
+            "create_block",
+            "list_schedule",
+            "conflict",
+            "attendees",
+            "error_paths",
+            "past_clock",
+            "disconnected",
+            "multi_turn",
+            "all_day",
         }
     ),
 }
@@ -828,6 +1134,8 @@ def render_dataset_card(results: list[ValidationResult]) -> str:
             values = Counter(row["source"] for row in rows)
         elif result.contract.name == "context":
             values = Counter(row["type"] for row in rows)
+        elif result.contract.name == "calendar":
+            values = Counter(row["category"] for row in rows)
         else:
             values = Counter(tag for row in rows for tag in row.get("tags", []))
         lines.append("")

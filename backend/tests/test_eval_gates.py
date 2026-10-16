@@ -81,6 +81,19 @@ def test_allow_missing_can_be_opted_out(monkeypatch):
 
 
 @pytest.mark.unit
+def test_calendar_floors_stay_exact():
+    """Wrong clocks stay in the denominator. Floors are 1.0 with no drop budget."""
+    for profile in ("smoke", "full"):
+        gates = {gate.metric: gate for gate in GATES[("calendar", profile)]}
+        assert gates["pass_rate"].min == 1.0
+        assert gates["hard_pass_rate"].min == 1.0
+        assert gates["clock_exact_rate"].min == 1.0
+        assert gates["slices.wall_clock.pass_rate"].min == 1.0
+        assert gates["infra_error_rate"].max == 0.05
+        assert all(gate.max_drop is None for gate in gates.values())
+
+
+@pytest.mark.unit
 def test_infra_and_planner_error_rates_are_gated():
     ok = evaluate_gates(
         "agent",
