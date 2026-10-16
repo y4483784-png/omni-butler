@@ -329,6 +329,7 @@ class GoogleTitleConfirm(BaseModel):
     participants: list[str] | None = None
     location: str | None = None
     description: str | None = None
+    external_id: str | None = None
 
 
 # Connected update and cancel go to Google first. List merges a read-only overlay.
@@ -338,7 +339,7 @@ def confirm_google_title_change(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    """Write one primary event chosen by the card title. No local row is inserted."""
+    """Write one primary event. Prefer the card's Google id, else its exact title."""
     action = (body.action or "").strip().lower()
     if action not in {"update", "cancel"}:
         raise HTTPException(status_code=400, detail="需要改期或撤销")
@@ -363,6 +364,7 @@ def confirm_google_title_change(
             participants=body.participants,
             location=body.location,
             description=body.description,
+            external_id=body.external_id,
         )
     except CalendarTitleUnmatched as exc:
         raise HTTPException(status_code=409, detail=exc.message) from None

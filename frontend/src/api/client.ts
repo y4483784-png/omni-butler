@@ -460,6 +460,7 @@ export async function confirmGoogleCalendarChange(payload: {
   participants?: string[];
   location?: string;
   description?: string;
+  external_id?: string;
 }): Promise<ScheduleCard> {
   const r = await apiFetch("/api/calendar/google/confirm", {
     method: "POST",

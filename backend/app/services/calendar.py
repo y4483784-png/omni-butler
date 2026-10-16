@@ -176,14 +176,20 @@ def _extract_system_prompt(
         )
         fields = (
             '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
-            '"missing_fields":[str],"kind":str,"description":str}'
+            '"missing_fields":[str],"kind":str,"description":str,'
+            '"change_end":bool,"change_notes":bool}'
         )
         scheduling = ""
         existing += (
             " 修改时 kind 为 meeting 或 block。"
             " 留给自己的一段时间是 block，拿不准就 meeting。"
-            " end_at 只在用户明确要改结束时间或时长时填写，否则留空。"
-            " description 只在用户明确要改备注时填写，否则留空。"
+            " change_end 只在用户明确要改结束时间或时长时为 true，否则为 false。"
+            " end_at 只在 change_end 为 true 时填写，否则输出空字符串。"
+            " 没给出 change_end，或它为 false、空，都表示不改结束时间和时长。"
+            " change_notes 只在用户明确要改备注时为 true，否则为 false。"
+            " description 只在 change_notes 为 true 时填写用户要的新备注，否则输出空字符串。"
+            " 没给出 change_notes，或它为 false、空，都表示不改备注。"
+            " 不要把已有备注缩短后填进 description，也不要把时长默认写成一小时。"
         )
     else:
         fields = (
@@ -212,6 +218,26 @@ def _extract_system_prompt(
         f"{scheduling}"
         f"{existing}"
     )
+
+
+def _explicit_yes(parsed: dict, key: str) -> bool:
+    """True only when the model explicitly says the user asked for this change.
+
+    Missing, null, false, and empty all mean don't change. A filled end time
+    or note is not itself a request.
+    """
+    if key not in parsed:
+        return False
+    value = parsed.get(key)
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    if isinstance(value, (int, float)):
+        return value == 1
+    return False
 
 
 def _civil_day(raw: str) -> str:
@@ -290,18 +316,25 @@ def extract_event(
     )
     raw_kind = str(parsed.get("kind") or "").strip().lower()
     draft.kind = raw_kind if raw_kind in {"meeting", "block"} else ""
-    # Keep the model's own start and end. A later +1 hour fill is not a request
-    # to change the matched event's duration.
+    # Keep the model's start. End and notes on an existing event count only
+    # when change_end / change_notes are explicitly true.
     draft.model_start = start_at
-    draft.specified_end = end_at
     if not existing_event:
+        draft.specified_end = end_at
         draft.requested_action = "list" if str(parsed.get("action") or "").strip().lower() == "list" else ""
         draft.list_day = _civil_day(str(parsed.get("day") or ""))
         draft.description = str(parsed.get("description") or "").strip()
     else:
+        # Empty or unset flags mean the user did not ask to change that field.
+        # A model-filled end or a shortened note is ignored unless the flag is yes.
+        draft.specified_end = end_at if _explicit_yes(parsed, "change_end") else None
         notes = str(parsed.get("description") or "").strip()
-        draft.description = notes
-        draft.notes_specified = bool(notes)
+        if _explicit_yes(parsed, "change_notes"):
+            draft.description = notes
+            draft.notes_specified = True
+        else:
+            draft.description = ""
+            draft.notes_specified = False
     _supplement_draft_from_message(draft, message, allow_end=True, now=now)
     return _finalize_prefill(draft)
 
@@ -345,10 +378,12 @@ def _free_slot_prompt(now: datetime | None, timezone_name: str | None) -> str:
         " 列出的时间是账户墙钟。"
         " 按列出的这一天挑合适时段。"
         " 不要推荐半夜到清晨，除非用户明确要夜里，或这一天只剩夜里有空。"
+        " 列表里已经占用的时段不能说成有空，也不要推荐和它们重叠的时间。"
+        " 拿不准某一段是不是空闲时，不要断言有空，请用户看列表。"
         " 不要编造日程，不要创建。"
         ' 只输出 JSON：{"slots":[{"start_at":str,"end_at":str}],"note":str}。'
         " start_at 和 end_at 用无偏移的 ISO 8601。"
-        " note 用一句中文说明。"
+        " note 用一句中文说明，不得把列出的忙时说成有空。"
     )
 
 
@@ -646,8 +681,9 @@ def confirm_titled_change(
     participants: list[str] | None = None,
     location: str | None = None,
     description: str | None = None,
+    external_id: str | None = None,
 ):
-    """Connected confirm. The target id is resolved from a live ``events.list``."""
+    """Connected confirm. Prefer the card's Google id, else one exact title."""
     if not calendar_writes_remote(db, user_id):
         raise CalendarTitleUnmatched()
     provider = calendar_provider_for(db, user_id)
@@ -663,6 +699,7 @@ def confirm_titled_change(
         participants=participants,
         location=location,
         description=description,
+        external_id=external_id,
     )
 
 

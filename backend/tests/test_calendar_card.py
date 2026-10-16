@@ -1468,6 +1468,7 @@ def test_free_slot_lists_the_day_then_uses_model_slots(monkeypatch):
         assert "2026-10-15" in prompt
         assert "Asia/Singapore" in prompt
         assert "不要推荐半夜" in prompt
+        assert "不能说成有空" in prompt
         assert db.query(CalendarEvent).count() == before
     finally:
         db.close()
@@ -1790,6 +1791,8 @@ def test_update_keeps_matched_duration_and_notes_unless_asked(monkeypatch):
                     "participants": ["别人"],
                     "kind": "block",
                     "description": "新备注",
+                    "change_end": True,
+                    "change_notes": True,
                 }
             return {
                 "title": "写报告",
@@ -1843,6 +1846,87 @@ def test_update_keeps_matched_duration_and_notes_unless_asked(monkeypatch):
         assert meeting.start_at == datetime(2026, 10, 16, 15, 0)
         assert meeting.description == "旧备注"
         assert meeting.location == "会议室"
+    finally:
+        _cleanup(db, created)
+        db.close()
+
+
+def test_reschedule_ignores_filled_end_and_notes_without_change_flags(monkeypatch):
+    """A 1h end and a shortened note are not a request. Flags are."""
+    _freeze_planning_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    created: list[int] = []
+    prompts: list[str] = []
+    try:
+        from app.services.calendar import create_event
+
+        owner_id = _planning_owner(db)
+        block = create_event(
+            db,
+            user_id=owner_id,
+            title="写报告",
+            start_at=datetime(2026, 10, 16, 15, 0),
+            end_at=datetime(2026, 10, 16, 17, 0),
+            participants=[],
+            location="",
+            description="带上大纲",
+        )
+        created.append(block.id)
+
+        def _json(messages, *_args, **_kwargs):
+            prompts.append("\n".join(str(item.get("content") or "") for item in messages))
+            blob = messages[-1]["content"] if messages else ""
+            if "新备注" in blob:
+                return {
+                    "title": "写报告",
+                    "start_at": "2026-10-17T16:00:00",
+                    "end_at": "2026-10-17T16:30:00",
+                    "description": "新备注",
+                    "change_end": True,
+                    "change_notes": True,
+                }
+            return {
+                "title": "写报告",
+                "start_at": "2026-10-17T16:00:00",
+                "end_at": "2026-10-17T17:00:00",
+                "participants": ["别人"],
+                "kind": "meeting",
+                "description": "大纲",
+            }
+
+        monkeypatch.setattr("app.services.calendar.complete_json", _json)
+        kept = execute_calendar(
+            ToolContext(db=db, message="把写报告改到后天", history=[], user_id=owner_id)
+        )
+        card = kept.schedule_card
+        assert card["mode"] == "update"
+        assert card["phase"] == "draft"
+        assert card["start_at"] == "2026-10-17T16:00:00"
+        assert card["end_at"] == "2026-10-17T18:00:00"
+        assert card["description"] == "带上大纲"
+        assert "change_end" in prompts[0]
+        assert "change_notes" in prompts[0]
+        assert "不改" in prompts[0]
+        db.refresh(block)
+        assert block.start_at == datetime(2026, 10, 16, 15, 0)
+        assert block.end_at == datetime(2026, 10, 16, 17, 0)
+        assert block.description == "带上大纲"
+
+        changed = execute_calendar(
+            ToolContext(
+                db=db,
+                message="把写报告改到后天，备注改成新备注，时长改成半小时",
+                history=[],
+                user_id=owner_id,
+            )
+        )
+        moved = changed.schedule_card
+        assert moved["start_at"] == "2026-10-17T16:00:00"
+        assert moved["end_at"] == "2026-10-17T16:30:00"
+        assert moved["description"] == "新备注"
+        db.refresh(block)
+        assert block.description == "带上大纲"
     finally:
         _cleanup(db, created)
         db.close()
@@ -1948,6 +2032,62 @@ def test_free_slot_drops_overlapping_slots_but_not_by_hour(monkeypatch):
             {"start_at": "2026-10-16T15:00:00", "end_at": "2026-10-16T16:00:00"},
         ]
         assert result.direct_answer == "午夜不和周会重叠。"
+    finally:
+        db.close()
+
+
+def test_free_slot_note_does_not_call_a_busy_hour_free(monkeypatch):
+    """Overlap filtering drops the busy slot, and a note that calls it free is replaced."""
+    from types import SimpleNamespace
+
+    row = SimpleNamespace(
+        title="周会",
+        start_at=datetime(2026, 10, 16, 10, 0),
+        end_at=datetime(2026, 10, 16, 11, 0),
+        all_day=False,
+        readonly=False,
+    )
+    provider = _Listed([row])
+    prompts: dict = {}
+
+    def _json(messages, *_args, **_kwargs):
+        blob = "\n".join(str(item.get("content") or "") for item in messages)
+        if "不要推荐半夜" in blob:
+            prompts["slot"] = blob
+            return {
+                "slots": [
+                    {"start_at": "2026-10-16T10:00:00", "end_at": "2026-10-16T11:00:00"},
+                    {"start_at": "2026-10-16T15:00:00", "end_at": "2026-10-16T16:00:00"},
+                ],
+                "note": "10点有空",
+            }
+        return {"day": "2026-10-16"}
+
+    monkeypatch.setattr("app.services.calendar.complete_json", _json)
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_provider_for",
+        lambda *_a, **_k: provider,
+    )
+    _freeze_planning_clock(monkeypatch)
+    init_db()
+    db = SessionLocal()
+    try:
+        result = execute_calendar(
+            ToolContext(db=db, message="明天有空吗", history=[], user_id=1)
+        )
+        card = result.schedule_card
+        assert card["mode"] == "list"
+        assert card["items"][0]["title"] == "周会"
+        assert card["items"][0]["start_at"] == "2026-10-16T10:00:00"
+        assert card["items"][0]["end_at"] == "2026-10-16T11:00:00"
+        assert card["suggested_slots"] == [
+            {"start_at": "2026-10-16T15:00:00", "end_at": "2026-10-16T16:00:00"}
+        ]
+        assert result.direct_answer == "请以上面的列表为准，已有安排的时段不是空闲。"
+        assert "10点有空" not in result.direct_answer
+        assert "有空" not in result.direct_answer
+        assert "不能说成有空" in prompts["slot"]
+        assert "请用户看列表" in prompts["slot"]
     finally:
         db.close()
 

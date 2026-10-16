@@ -40,6 +40,17 @@ test("block form shows duration and hides participants", () => {
   assert.doesNotMatch(source.slice(cancelAt, updateAt), /description/);
 });
 
+test("google confirm submits the card external id", () => {
+  const source = readFileSync(new URL("../src/components/ScheduleCard.tsx", import.meta.url), "utf8");
+  const cancelAt = source.indexOf('action: "cancel"');
+  const updateAt = source.indexOf('action: "update"', cancelAt);
+  const cancelPayload = source.slice(cancelAt, updateAt);
+  const updatePayload = source.slice(updateAt, source.indexOf("});", updateAt));
+  assert.match(cancelPayload, /external_id: \(card\.external_id \|\| ""\)\.trim\(\)/);
+  assert.match(updatePayload, /external_id: \(card\.external_id \|\| ""\)\.trim\(\)/);
+  assert.doesNotMatch(cancelPayload, /description/);
+});
+
 test("list card renders above the advice text", () => {
   const source = readFileSync(new URL("../src/components/ChatWindow.tsx", import.meta.url), "utf8");
   const listAt = source.indexOf('m.scheduleCard?.mode === "list"');
