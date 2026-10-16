@@ -4,7 +4,7 @@
 
 ## 0. 统一入口（必读）
 
-所有套件经 `backend/scripts/eval.py` 调度。目标优先级：`--target` > 环境变量 `EVAL_TARGET` > 套件默认。venv 目标强制 SQLite + 关 Redis；Compose `eval` 服务会注入 `EVAL_TARGET=services`（日常 `up/start/ps` 不会拉起该服务）。`rag` / `routing` / `context` / `tabular` 即使 target=services 也把应用库指到 scratch SQLite，避免往线上 Postgres 灌评测行、踩 FORCE RLS。`agent` / `yz` / `grounding` 仍用真实库并 `set_rls_context`。`tabular` full 在 services 下探 `sandbox-runner /health`，不在 eval 容器里查 `omni-sandbox` 镜像。对外汇报的 L2 主指标是 **`agent` 任务完成率**；`yz` 已弃用，仅作对照。
+所有套件经 `backend/scripts/eval.py` 调度。目标优先级：`--target` > 环境变量 `EVAL_TARGET` > 套件默认。venv 目标强制 SQLite + 关 Redis；Compose `eval` 服务会注入 `EVAL_TARGET=services`（日常 `up/start/ps` 不会拉起该服务）。`rag` / `routing` / `context` / `tabular` / `calendar` 即使 target=services 也把应用库指到 scratch SQLite，避免往线上 Postgres 灌评测行、踩 FORCE RLS。`agent` / `yz` / `grounding` 仍用真实库并 `set_rls_context`。`tabular` full 在 services 下探 `sandbox-runner /health`，不在 eval 容器里查 `omni-sandbox` 镜像。对外汇报的 L2 主指标是 **`agent` 任务完成率**；`yz` 已弃用，仅作对照。
 
 Compose `eval` 服务已设 `EVAL_TARGET=services`。**不要**在 eval 容器里查本机 `omni-sandbox` 镜像——live 表格走 `sandbox-runner:8002`。`omni-butler-sandbox-1 Exited` 是镜像占位容器正常退出，不是故障。
 
@@ -22,6 +22,7 @@ Compose `eval` 服务已设 `EVAL_TARGET=services`。**不要**在 eval 容器�
 | `grounding` 全部档位 | 部分 | 调用生产 `ground_and_repair_answer`，但证据用冻结上下文，不经过真实检索 | "依据核验组件的忠实度" |
 | `context` 全部档位 | 部分 | 上下文按生产逻辑组装，但历史是脚本化回放；多臂对照（legacy/window/full）是评测专有 | 上下文策略对照；live 档判分模型见 `judge_model` |
 | `agent` 全部档位 | ✅ | 真实 `run_agent_workflow`；仅联网工具是确定性桩 | 唯一可对外汇报的 L2 指标 |
+| `calendar` 全部档位 | 部分 | 真实 `complete_json` / `complete_text` 抽槽，假 Google；确认走本地接口 | 模型抽出的卡片和确认结果对不对，不是线上 Google |
 | `yz` | ❌ 已下线 | 旁路实现（upload→ingest→retrieve→answer），不经过工作流 | 套件已从注册表移除，只保留文件作历史对照；不要引用 |
 
 两条补充规则：
@@ -38,6 +39,7 @@ Compose `eval` 服务已设 `EVAL_TARGET=services`。**不要**在 eval 容器�
 | `grounding` | `--skip-ragas --limit 24` | `--score-drafts`（repair Δ） | **services** |
 | `tabular` | `--dry-compile` heuristic | live `--planner llm` | venv |
 | `context` | extractive legacy vs full + gate | 同 smoke，384 条；live 需 `RUN_CTX_EVAL=1` | venv |
+| `calendar` | `--require-cache` 重放真实返回 | `--refresh-cache`，假 Google | venv |
 
 ```bash
 cd backend
@@ -71,7 +73,7 @@ backend/reports/
 
 `report.json` 含 `meta`（suite/profile/target/argv/duration/git/dataset sha）与 `metrics` / `failures`。旧路径 `*_eval_latest.json` 已废弃。
 
-路由缓存 / Context 基线仍在 `data/eval/`（不是报告）：`router_cache.json`、`context_eval_baseline.json`。
+路由缓存 / Context 基线仍在 `data/eval/`（不是报告）：`router_cache.json`、`calendar_model_cache.json`、`context_eval_baseline.json`。日历缓存只收真实 `complete_json` / `complete_text` 的返回，不手写金标准。
 
 ### 题集质量检查
 

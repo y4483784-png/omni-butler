@@ -216,6 +216,39 @@ SUITES: dict[str, SuiteSpec] = {
         default_target="venv",
         needs_blob_stub=True,
     ),
+    "calendar": SuiteSpec(
+        id="calendar",
+        title="日历行为评分",
+        kind="eval",
+        description=(
+            "150 题。真实 complete_json / complete_text，假 Google。"
+            "时间说全时卡片起止必须与金标准相同。"
+            "另查确认前不写、会议/时间块、按 id 改删、空档诚实、备注进说明。"
+        ),
+        requires=("llm",),
+        targets=("venv", "services"),
+        key_metrics=(
+            "raw.pass_rate",
+            "raw.hard_pass_rate",
+            "raw.clock_exact_rate",
+            "raw.slices.confirm_before_write.pass_rate",
+            "raw.slices.meeting_block.pass_rate",
+            "raw.slices.id_mutate.pass_rate",
+            "raw.slices.free_busy.pass_rate",
+            "raw.slices.notes_description.pass_rate",
+            "raw.slices.wall_clock.pass_rate",
+            "raw.slices.error_paths.pass_rate",
+            "raw.infra_error_rate",
+        ),
+        profiles={
+            "smoke": ["--split", "smoke", "--require-cache"],
+            "full": ["--split", "full", "--refresh-cache"],
+        },
+        module="scripts.run_calendar_eval",
+        default_target="venv",
+        needs_blob_stub=True,
+        isolate_app_db=True,
+    ),
 }
 
 
