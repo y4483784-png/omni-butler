@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime as _Wall
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -100,6 +101,13 @@ class EventDraft:
     specified_end: datetime | None = None
     # True when the model returned a note the user asked to change.
     notes_specified: bool = False
+    # Update/cancel: the name used to find an event. The card title is separate.
+    search_title: str = ""
+    new_title: str = ""
+    change_title: bool = False
+    change_participants: bool = False
+    change_location: bool = False
+    change_kind: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -115,6 +123,12 @@ class EventDraft:
             "kind": self.kind,
             "description": self.description,
             "location": self.location,
+            "search_title": self.search_title,
+            "new_title": self.new_title,
+            "change_title": self.change_title,
+            "change_participants": self.change_participants,
+            "change_location": self.change_location,
+            "change_kind": self.change_kind,
         }
 
     @classmethod
@@ -132,6 +146,12 @@ class EventDraft:
             kind=str(data.get("kind") or ""),
             description=str(data.get("description") or ""),
             location=str(data.get("location") or ""),
+            search_title=str(data.get("search_title") or ""),
+            new_title=str(data.get("new_title") or ""),
+            change_title=bool(data.get("change_title")),
+            change_participants=bool(data.get("change_participants")),
+            change_location=bool(data.get("change_location")),
+            change_kind=bool(data.get("change_kind")),
         )
 
 
@@ -145,6 +165,66 @@ def calendar_hint(message: str, history: list[dict] | None = None) -> bool:
 
 def is_calendar_cancel(message: str) -> bool:
     return bool(_CANCEL_PAT.search(message or ""))
+
+
+_CALENDAR_ACTIONS = frozenset({"create", "update", "cancel", "list", "suggest"})
+_HORIZON_END = datetime(2100, 1, 1)
+
+
+def _classify_prompt(now: datetime | None, timezone_name: str | None) -> str:
+    """Five actions, one JSON field. Examples name the words the old keywords missed."""
+    clock = now or datetime.now()
+    day = clock.date().isoformat()
+    zone = (timezone_name or "").strip()
+    if zone:
+        today = f"今天是 {day}，账户时区是 {zone}。"
+    else:
+        today = f"今天是 {day}。"
+    return (
+        "你是日程动作分类器。只输出 JSON："
+        '{"action":str}。'
+        f" {today}"
+        " action 必须正好是 create、update、cancel、list、suggest 之一。"
+        " 不要输出把握程度，不要输出第二个动作。"
+        " create 是新建一条日程，例如「新建」「安排」「约一场会」。"
+        " update 是改已有日程，例如「改期」「修改」「推迟」「提前」「改成」「改为」「换到」「挪到」「延后」。"
+        " cancel 是删掉已有日程，例如「删除」「取消」「撤销」「删掉」。"
+        " list 是查看已有日程，例如「查日程」「有哪些」「我的日程」。"
+        " suggest 是看空闲，例如「有空」「空闲」「什么时候方便」。"
+    )
+
+
+def classify_calendar_action(
+    message: str,
+    history: list[dict] | None = None,
+    *,
+    now: datetime | None = None,
+    timezone_name: str | None = None,
+) -> str:
+    """One of the five actions, or empty when the model did not name one.
+
+    Transport failures propagate from ``complete_json`` when the caller asks
+    it to raise. A missing or unexpected action is empty. This function does
+    not look for keywords in the sentence.
+    """
+    parsed = complete_json(
+        [
+            {"role": "system", "content": _classify_prompt(now, timezone_name)},
+            {
+                "role": "user",
+                "content": (
+                    f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
+                    f"当前消息：{message}"
+                ),
+            },
+        ]
+    )
+    if not isinstance(parsed, dict):
+        return ""
+    action = str(parsed.get("action") or "").strip().lower()
+    if action in _CALENDAR_ACTIONS:
+        return action
+    return ""
 
 
 def _extract_system_prompt(
@@ -175,26 +255,36 @@ def _extract_system_prompt(
             " 修改或撤销时，title 是已有日程的名称，不要把参与人昵称或其他词拼进标题。"
         )
         fields = (
-            '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
-            '"missing_fields":[str],"kind":str,"description":str,'
-            '"change_end":bool,"change_notes":bool}'
+            '{"title":str,"new_title":str,"start_at":str,"end_at":str,"participants":[str],'
+            '"location":str,"missing_fields":[str],"kind":str,"description":str,'
+            '"change_title":bool,"change_end":bool,"change_notes":bool,'
+            '"change_participants":bool,"change_location":bool,"change_kind":bool}'
         )
         scheduling = ""
         existing += (
+            " title 是用来寻找已有日程的称呼，不要把参与人昵称拼进去。"
+            " 下面会附上已有日程的标题和起止，没有编号。不要编造编号，也不要输出编号。"
+            " new_title 是要写成的新标题，只在 change_title 为 true 时填写，否则输出空字符串。"
+            " change_title 只在用户明确要改标题时为 true，否则为 false。"
             " 修改时 kind 为 meeting 或 block。"
             " 留给自己的一段时间是 block，拿不准就 meeting。"
+            " change_kind 只在用户明确要改会议还是时间块时为 true，否则为 false。"
             " change_end 只在用户明确要改结束时间或时长时为 true，否则为 false。"
             " end_at 只在 change_end 为 true 时填写，否则输出空字符串。"
             " 没给出 change_end，或它为 false、空，都表示不改结束时间和时长。"
             " change_notes 只在用户明确要改备注时为 true，否则为 false。"
             " description 只在 change_notes 为 true 时填写用户要的新备注，否则输出空字符串。"
             " 没给出 change_notes，或它为 false、空，都表示不改备注。"
+            " change_participants 只在用户明确要改参与人时为 true，否则为 false。"
+            " participants 只在 change_participants 为 true 时填写，否则输出空数组。"
+            " change_location 只在用户明确要改地点时为 true，否则为 false。"
+            " location 只在 change_location 为 true 时填写，否则输出空字符串。"
             " 不要把已有备注缩短后填进 description，也不要把时长默认写成一小时。"
         )
     else:
         fields = (
             '{"title":str,"start_at":str,"end_at":str,"participants":[str],'
-            '"missing_fields":[str],"action":str,"day":str,"kind":str,"description":str}'
+            '"missing_fields":[str],"kind":str,"description":str,"location":str}'
         )
         scheduling = (
             " 用户说了时长就写 end_at，用开始之后的那段无偏移时间。"
@@ -202,9 +292,7 @@ def _extract_system_prompt(
             " kind 为 meeting 或 block。开会或有别人参加是 meeting；"
             " 留给自己的一段时间是 block；拿不准就 meeting。"
             " description 是用户说的备注，没说就输出空字符串，不要放进 missing_fields。"
-            " 若用户是在查已有日程，或问某一天怎么安排，action 输出 list，并填写 day。"
-            " 若用户是要创建日程或留下一段时间，action 输出 create。"
-            " 点名了某一天时 day 输出 YYYY-MM-DD；说本周、这几天或没点名，day 输出空字符串。"
+            " location 是用户说的地点，没说就输出空字符串。"
         )
     return (
         "你是日程信息提取器。只输出 JSON："
@@ -268,6 +356,24 @@ def _list_day_prompt(now: datetime | None, timezone_name: str | None) -> str:
     )
 
 
+def _catalog_text(rows) -> str:
+    """Titles and wall times only. Ids are not shown to the model."""
+    lines: list[str] = []
+    for row in rows or []:
+        title = str(getattr(row, "title", "") or "").strip() or "（无标题）"
+        start = getattr(row, "start_at", None)
+        end = getattr(row, "end_at", None)
+        if isinstance(start, datetime) and isinstance(end, datetime):
+            lines.append(f"{title} {start:%Y-%m-%d %H:%M}–{end:%H:%M}")
+        elif isinstance(start, datetime):
+            lines.append(f"{title} {start:%Y-%m-%d %H:%M}")
+        else:
+            lines.append(title)
+    if not lines:
+        return "（没有未结束的日程）"
+    return "\n".join(lines)
+
+
 def extract_event(
     message: str,
     history: list[dict] | None = None,
@@ -275,7 +381,11 @@ def extract_event(
     now: datetime | None = None,
     timezone_name: str | None = None,
     existing_event: bool = False,
+    listed: str = "",
 ) -> EventDraft:
+    catalog = ""
+    if existing_event:
+        catalog = f"已有未结束的日程（只有标题和起止，没有编号）：\n{listed or '（没有未结束的日程）'}\n"
     parsed = complete_json(
         [
             {
@@ -287,6 +397,7 @@ def extract_event(
             {
                 "role": "user",
                 "content": (
+                    f"{catalog}"
                     f"最近对话：{json.dumps(clip_history_for_prompt(history, max_msgs=8, max_chars=300), ensure_ascii=False)}\n"
                     f"当前消息：{message}"
                 ),
@@ -295,8 +406,8 @@ def extract_event(
     )
     if not isinstance(parsed, dict):
         draft = EventDraft(original_request=message)
-        _supplement_draft_from_message(draft, message, allow_end=True, now=now)
-        return _finalize_prefill(draft)
+        _supplement_draft_from_message(draft, message, allow_end=not existing_event, now=now)
+        return _finalize_prefill(draft, fill_hour=not existing_event)
 
     start_at = _parse_dt(str(parsed.get("start_at") or ""))
     end_at = _parse_dt(str(parsed.get("end_at") or ""))
@@ -322,13 +433,32 @@ def extract_event(
     draft.model_start = start_at
     if not existing_event:
         draft.specified_end = end_at
-        draft.requested_action = "list" if str(parsed.get("action") or "").strip().lower() == "list" else ""
-        draft.list_day = _civil_day(str(parsed.get("day") or ""))
         draft.description = str(parsed.get("description") or "").strip()
     else:
+        # The lookup name is not the card title. A model id, if any, is ignored.
+        draft.search_title = str(parsed.get("title") or "").strip()
+        draft.title = draft.search_title
+        if _explicit_yes(parsed, "change_title"):
+            draft.change_title = True
+            draft.new_title = str(parsed.get("new_title") or "").strip()
+        if _explicit_yes(parsed, "change_participants"):
+            draft.change_participants = True
+        else:
+            draft.participants = []
+        if _explicit_yes(parsed, "change_location"):
+            draft.change_location = True
+        else:
+            draft.location = ""
+        if _explicit_yes(parsed, "change_kind") and draft.kind in {"meeting", "block"}:
+            draft.change_kind = True
+        else:
+            draft.kind = ""
+            draft.change_kind = False
         # Empty or unset flags mean the user did not ask to change that field.
         # A model-filled end or a shortened note is ignored unless the flag is yes.
         draft.specified_end = end_at if _explicit_yes(parsed, "change_end") else None
+        if draft.specified_end is None:
+            draft.end_at = None
         notes = str(parsed.get("description") or "").strip()
         if _explicit_yes(parsed, "change_notes"):
             draft.description = notes
@@ -336,8 +466,10 @@ def extract_event(
         else:
             draft.description = ""
             draft.notes_specified = False
-    _supplement_draft_from_message(draft, message, allow_end=True, now=now)
-    return _finalize_prefill(draft)
+    _supplement_draft_from_message(draft, message, allow_end=not existing_event, now=now)
+    if existing_event and draft.search_title == "" and draft.title:
+        draft.search_title = draft.title
+    return _finalize_prefill(draft, fill_hour=not existing_event)
 
 
 def extract_list_day(
@@ -436,9 +568,12 @@ def extract_free_slots(
 DRAFT_TTL = timedelta(minutes=30)
 
 
-def _finalize_prefill(draft: EventDraft) -> EventDraft:
-    """Optional participants. A missing end becomes start + 1 hour when start is known."""
-    if draft.start_at is not None and draft.end_at is None:
+def _finalize_prefill(draft: EventDraft, *, fill_hour: bool = True) -> EventDraft:
+    """Optional participants. Create still fills a missing end as start + 1 hour.
+
+    Update and cancel pass ``fill_hour=False``. A missing end stays empty.
+    """
+    if fill_hour and draft.start_at is not None and draft.end_at is None:
         draft.end_at = draft.start_at + timedelta(hours=1)
     draft.missing_fields = _normalize_missing_fields(
         title=draft.title,
@@ -856,6 +991,93 @@ def titles_match(query: str, title: str) -> bool:
     return needle.casefold() in hay.casefold() or hay.casefold() in needle.casefold()
 
 
+def _ends_after_now(row, now: datetime) -> bool:
+    """In progress stays. An all-day row stays when its exclusive end day is today or later."""
+    end = getattr(row, "end_at", None)
+    if not isinstance(end, _Wall):
+        return False
+    if bool(getattr(row, "all_day", False)):
+        return end.date() >= now.date()
+    return end > now
+
+
+def _row_has_identity(row, *, require_google_id: bool) -> bool:
+    external = str(getattr(row, "external_id", "") or "").strip()
+    if require_google_id:
+        return bool(external)
+    if getattr(row, "id", None) is not None or external:
+        return True
+    # A real DTO always has an id field. A display double that omitted it can still be listed.
+    fields = getattr(row, "__dataclass_fields__", None)
+    if fields is not None and "id" in fields:
+        return False
+    return "id" not in getattr(row, "__dict__", {})
+
+
+def upcoming_events(
+    db: Session,
+    user_id: int,
+    now: datetime,
+    *,
+    provider=None,
+    connected: bool | None = None,
+) -> tuple[list, str]:
+    """One read from account-wall now through year 2100.
+
+    Connected reads use the provider's primary span when it has one, which
+    merges Google rows with local rows by external id. Callers narrow that
+    list in memory. Ended rows are omitted. A non-empty notice means the read
+    failed or stopped early; update and cancel must not rank that list.
+    """
+    if provider is None:
+        provider = calendar_provider_for(db, user_id)
+    if connected is None:
+        connected = bool(calendar_writes_remote(db, user_id))
+    start = now.replace(microsecond=0)
+    span = getattr(provider, "events_between", None)
+    if span is not None:
+        rows, notice = span(user_id, start, _HORIZON_END)
+    else:
+        rows = list(provider.list_events(user_id, start, _HORIZON_END))
+        notice = str(getattr(provider, "list_notice", "") or "")
+    require_google_id = bool(connected) and not notice
+    kept = [
+        row
+        for row in rows
+        if _ends_after_now(row, start) and _row_has_identity(row, require_google_id=require_google_id)
+    ]
+    return kept, str(notice or "")
+
+
+def rank_one_event(events, query: str):
+    """The one event whose title is the unique exact hit, else the unique soft hit.
+
+    Exact equality wins over ``titles_match``. Several equally good titles are
+    not reduced to the first row. What else to rank on is not settled, so a
+    tie returns None.
+    """
+    needle = (query or "").strip()
+    if not needle:
+        return None
+    exact = [
+        row
+        for row in events
+        if str(getattr(row, "title", "") or "").strip() == needle
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return None
+    soft = [
+        row
+        for row in events
+        if titles_match(needle, str(getattr(row, "title", "") or ""))
+    ]
+    if len(soft) == 1:
+        return soft[0]
+    return None
+
+
 def calendar_now(db: Session | None = None, user_id: int | None = None) -> datetime:
     """Naive wall clock for ``user_id``.
 
@@ -892,27 +1114,10 @@ def _parse_clause_time(text: str, *, now: datetime) -> datetime | None:
 
 
 def apply_update_times(draft: EventDraft, message: str, *, now: datetime | None = None) -> EventDraft:
-    """Split '把周三的周会改到周四三点' into the event's day and the new slot.
+    """Reschedule clocks come from extraction. This no longer splits the sentence.
 
-    ``reference_start_at`` is only the day used to find the existing event.
-    ``start_at`` / ``end_at`` are the new slot. A message with only a new time
-    leaves the reference empty so lookup is by title.
+    It does not move ``start_at`` and does not fill a one-hour end.
     """
-    now = now or datetime.now()
-    parts = _UPDATE_SPLIT.split(message or "", maxsplit=1)
-    if len(parts) < 3:
-        draft.reference_start_at = None
-        return draft
-    reference_clause, _pivot, target_clause = parts[0], parts[1], parts[2]
-    reference = _parse_clause_time(reference_clause, now=now)
-    target = _parse_clause_time(target_clause, now=now)
-    draft.reference_start_at = reference
-    title = _infer_title(reference_clause)
-    if title:
-        draft.title = title
-    if target is not None:
-        draft.start_at = target
-        draft.end_at = target + timedelta(hours=1)
     return draft
 
 

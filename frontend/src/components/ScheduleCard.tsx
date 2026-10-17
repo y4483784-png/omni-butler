@@ -114,7 +114,7 @@ export function ScheduleCard({
     if (card.phase === "cancelled") return "未确认";
     if (card.status === "cancelled") return "已撤销";
     if (card.phase === "confirmed" || legacy) return card.status === "cancelled" ? "已撤销" : "已安排";
-    if (mode === "cancel") return "待确认撤销";
+    if (mode === "cancel") return "待确认删除";
     if (mode === "choose") return "请选择";
     return "待确认";
   }, [card.phase, card.status, expired, legacy, mode]);
@@ -165,7 +165,8 @@ export function ScheduleCard({
         return;
       }
       const id = savedEventId(card);
-      if (id == null && (mode === "cancel" || mode === "update")) {
+      const externalId = (card.external_id || "").trim();
+      if ((mode === "cancel" || mode === "update") && externalId) {
         const saved = await confirmGoogleCalendarChange(
           mode === "cancel"
             ? {
@@ -174,7 +175,7 @@ export function ScheduleCard({
                 start_at: payload.start_at,
                 end_at: payload.end_at,
                 participants: [],
-                external_id: (card.external_id || "").trim(),
+                external_id: externalId,
               }
             : {
                 action: "update",
@@ -184,7 +185,7 @@ export function ScheduleCard({
                 participants: payload.participants,
                 location: payload.location,
                 description: payload.description,
-                external_id: (card.external_id || "").trim(),
+                external_id: externalId,
               }
         );
         onChange({
@@ -196,6 +197,10 @@ export function ScheduleCard({
           suggested_slots: [],
           candidates: [],
         });
+        return;
+      }
+      if ((mode === "cancel" || mode === "update") && !externalId && id == null) {
+        setError("还没有选中日程");
         return;
       }
       if (id == null) {
@@ -313,7 +318,7 @@ export function ScheduleCard({
     );
   }
 
-  const confirmLabel = mode === "cancel" ? "确认撤销" : mode === "update" || legacy ? "确认修改" : "确认创建";
+  const confirmLabel = mode === "cancel" ? "确认删除" : mode === "update" || legacy ? "确认修改" : "确认创建";
   const showForm = mode !== "choose";
 
   return (
@@ -332,7 +337,7 @@ export function ScheduleCard({
         >
           <label>
             标题
-            <input value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked} />
+            <input value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked || mode === "cancel"} />
           </label>
           <label>
             开始
@@ -399,6 +404,16 @@ export function ScheduleCard({
           ) : null}
           {error ? <div className="schedule-note">{error}</div> : null}
           <div className="schedule-actions">
+            {mode === "cancel" ? (
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={locked || busy}
+                onClick={() => onChange({ ...card, phase: "cancelled" })}
+              >
+                先不删
+              </button>
+            ) : null}
             <button type="submit" className="ghost-btn" disabled={locked || busy || mode === "choose"}>
               {confirmLabel}
             </button>

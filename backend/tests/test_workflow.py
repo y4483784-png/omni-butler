@@ -470,7 +470,6 @@ def test_calendar_complete_request_is_a_draft_until_confirm():
         with (
             patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
-            patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
             patch("app.services.calendar.create_event") as create_event,
         ):
             r = run_agent_workflow(db, message="明天三点开周会", history=[], has_kb_docs=False)
@@ -498,7 +497,6 @@ def test_pending_calendar_does_not_skip_planner_or_write():
         with (
             patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
-            patch("app.agents.tools.calendar_tool.check_conflict", return_value=[]),
             patch("app.services.calendar.create_event") as create_event,
         ):
             r = run_agent_workflow(

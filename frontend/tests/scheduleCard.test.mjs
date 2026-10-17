@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-test("cancel card title is editable", () => {
+test("cancel card title is read only", () => {
   const source = readFileSync(new URL("../src/components/ScheduleCard.tsx", import.meta.url), "utf8");
   const titleAt = source.indexOf("\n            标题\n");
   const startAt = source.indexOf("\n            开始\n");
@@ -10,9 +10,14 @@ test("cancel card title is editable", () => {
   const titleField = source.slice(titleAt, startAt);
   const startField = source.slice(startAt, endAt);
   assert.match(titleField, /onChange=\{\(event\) => setTitle\(event\.target\.value\)\}/);
-  assert.match(titleField, /disabled=\{locked\}/);
-  assert.doesNotMatch(titleField, /mode === "cancel"/);
+  assert.match(titleField, /disabled=\{locked \|\| mode === "cancel"\}/);
   assert.match(startField, /disabled=\{locked \|\| mode === "cancel"\}/);
+  assert.match(source, /待确认删除/);
+  assert.match(source, /确认删除/);
+  assert.match(source, /先不删/);
+  assert.match(source, /phase: "cancelled"/);
+  assert.doesNotMatch(source, /确认撤销/);
+  assert.doesNotMatch(source, /待确认撤销/);
 });
 
 test("list card is time and title without a confirm button", () => {
@@ -42,12 +47,15 @@ test("block form shows duration and hides participants", () => {
 
 test("google confirm submits the card external id", () => {
   const source = readFileSync(new URL("../src/components/ScheduleCard.tsx", import.meta.url), "utf8");
+  const guardAt = source.indexOf('const externalId = (card.external_id || "").trim();');
   const cancelAt = source.indexOf('action: "cancel"');
   const updateAt = source.indexOf('action: "update"', cancelAt);
+  const guard = source.slice(guardAt, source.indexOf("if (mode === \"cancel\")", updateAt));
   const cancelPayload = source.slice(cancelAt, updateAt);
   const updatePayload = source.slice(updateAt, source.indexOf("});", updateAt));
-  assert.match(cancelPayload, /external_id: \(card\.external_id \|\| ""\)\.trim\(\)/);
-  assert.match(updatePayload, /external_id: \(card\.external_id \|\| ""\)\.trim\(\)/);
+  assert.match(guard, /!externalId && id == null/);
+  assert.match(cancelPayload, /external_id: externalId/);
+  assert.match(updatePayload, /external_id: externalId/);
   assert.doesNotMatch(cancelPayload, /description/);
 });
 

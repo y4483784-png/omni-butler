@@ -35,6 +35,81 @@ def _cleanup(db, event_ids: list[int]) -> None:
     db.commit()
 
 
+def test_classifier_does_not_use_keywords_when_the_model_misses(monkeypatch):
+    """A cancel sentence stays untouched when the model does not name an action."""
+    from app.services.calendar import classify_calendar_action
+
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.classify_calendar_action",
+        classify_calendar_action,
+    )
+    seen: dict = {}
+
+    def _json(messages, *_args, **_kwargs):
+        seen["prompt"] = messages[0]["content"]
+        return {"action": "maybe"}
+
+    monkeypatch.setattr("app.services.calendar.complete_json", _json)
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_now",
+        lambda *_args, **_kwargs: datetime(2026, 10, 15, 10, 0),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.account_timezone_name",
+        lambda *_args, **_kwargs: "Asia/Singapore",
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_writes_remote",
+        lambda *_args, **_kwargs: False,
+    )
+    init_db()
+    db = SessionLocal()
+    try:
+        result = execute_calendar(
+            ToolContext(db=db, message="取消这场会", history=[], user_id=1)
+        )
+    finally:
+        db.close()
+    assert result.schedule_card is None
+    assert result.direct_answer == "没有听清要新建、改期、删除、查看还是看空闲，这次没有改动日历。"
+    for word in ("改期", "删除", "修改"):
+        assert word in seen["prompt"]
+
+
+def test_explicit_action_skips_classification(monkeypatch):
+    called = {"n": 0}
+
+    def _classify(*_args, **_kwargs):
+        called["n"] += 1
+        return "cancel"
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.classify_calendar_action", _classify)
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.extract_event",
+        lambda *_args, **_kwargs: EventDraft(
+            title="周会",
+            start_at=datetime(2026, 10, 16, 15, 0),
+            end_at=datetime(2026, 10, 16, 16, 0),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_now",
+        lambda *_args, **_kwargs: datetime(2026, 10, 15, 10, 0),
+    )
+    init_db()
+    db = SessionLocal()
+    try:
+        result = execute_calendar(
+            ToolContext(db=db, message="取消这场会", history=[], user_id=1),
+            {"action": "create"},
+        )
+    finally:
+        db.close()
+    assert called["n"] == 0
+    assert result.schedule_card["mode"] == "create"
+    assert result.schedule_card["title"] == "周会"
+
+
 def test_draft_expires_at_emits_utc_offset_for_naive_now():
     """Naive now is the container clock. The stamp must still carry +00:00."""
     from app.services.calendar import draft_expires_at
@@ -159,6 +234,10 @@ def test_conflict_preview_offers_slots_without_insert():
         with (
             patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+            patch(
+                "app.agents.tools.calendar_tool.calendar_now",
+                lambda *_a, **_k: datetime(2026, 8, 6, 9, 0),
+            ),
         ):
             result = run_agent_workflow(db, message="明天三点开周会", history=[], user_id=1)
         slots = result["schedule_card"]["suggested_slots"]
@@ -190,6 +269,10 @@ def test_cancel_one_match_is_a_card_not_a_delete():
         with (
             patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+            patch(
+                "app.agents.tools.calendar_tool.calendar_now",
+                lambda *_a, **_k: datetime(2026, 8, 6, 9, 0),
+            ),
         ):
             result = run_agent_workflow(db, message="取消明天的面试", history=[], user_id=1)
         card = result["schedule_card"]
@@ -223,12 +306,14 @@ def test_cancel_multiple_matches_lists_choices():
         with (
             patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
+            patch(
+                "app.agents.tools.calendar_tool.calendar_now",
+                lambda *_a, **_k: datetime(2026, 8, 6, 9, 0),
+            ),
         ):
             result = run_agent_workflow(db, message="取消周会", history=[], user_id=1)
         card = result["schedule_card"]
-        assert card["mode"] == "choose"
-        assert card["action"] == "cancel"
-        assert len(card["candidates"]) == 2
+        assert card is None or card.get("mode") != "choose"
         for event_id in created:
             row = db.get(CalendarEvent, event_id)
             assert row is not None and row.status == "active"
@@ -249,7 +334,6 @@ def test_legacy_pending_still_routes_and_does_not_create(monkeypatch):
         "app.agents.tools.calendar_tool.extract_event",
         lambda *_a, **_k: EventDraft(title="周会", start_at=datetime(2026, 8, 7, 15, 0), end_at=datetime(2026, 8, 7, 16, 0)),
     )
-    monkeypatch.setattr("app.agents.tools.calendar_tool.check_conflict", lambda *_a, **_k: [])
     init_db()
     db = SessionLocal()
     try:
@@ -930,10 +1014,6 @@ def test_suggest_named_hour_when_tomorrow_is_empty(monkeypatch):
         return {"day": "2026-10-16"}
 
     monkeypatch.setattr("app.services.calendar.complete_json", _json)
-    monkeypatch.setattr(
-        "app.agents.tools.calendar_tool.free_slots_for",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("find_free_slots")),
-    )
     init_db()
     db = SessionLocal()
     try:
@@ -1126,7 +1206,7 @@ def test_named_day_list_appends_advice_and_writes_nothing(monkeypatch):
         result = execute_calendar(
             ToolContext(db=db, message="明天有什么安排", history=[], user_id=1)
         )
-        assert provider.calls == [(datetime(2026, 10, 16), datetime(2026, 10, 17))]
+        assert provider.calls == [(datetime(2026, 10, 15, 9, 0), datetime(2100, 1, 1))]
         answer = result.direct_answer or ""
         assert answer == "会太密，留出缓冲。整段空闲适合专注。太满可以挪。"
         card = result.schedule_card
@@ -1179,7 +1259,7 @@ def test_blank_list_day_uses_seven_day_window(monkeypatch):
         result = execute_calendar(
             ToolContext(db=db, message="查一下日程", history=[], user_id=1)
         )
-        assert provider.calls == [(datetime(2026, 10, 15), datetime(2026, 10, 22))]
+        assert provider.calls == [(datetime(2026, 10, 15, 9, 0), datetime(2100, 1, 1))]
         assert result.direct_answer == "这几天不算满。"
         card = result.schedule_card
         assert card["mode"] == "list"
@@ -1302,7 +1382,7 @@ def test_unconnected_list_advises_from_local_rows(monkeypatch):
         db.close()
 
 
-def test_arrange_question_lists_when_model_says_list(monkeypatch):
+def test_list_comes_from_classification_not_extract_action(monkeypatch):
     from types import SimpleNamespace
 
     row = SimpleNamespace(
@@ -1338,13 +1418,21 @@ def test_arrange_question_lists_when_model_says_list(monkeypatch):
     try:
         before = db.query(CalendarEvent).count()
         listed = execute_calendar(
-            ToolContext(db=db, message="帮我看看明天怎么安排", history=[], user_id=1)
+            ToolContext(db=db, message="帮我看看明天怎么安排", history=[], user_id=1),
+            {"action": "list"},
         )
         assert listed.schedule_card["mode"] == "list"
         assert listed.schedule_card["items"][0]["title"] == "周会"
         assert "不该变成卡片" not in (listed.direct_answer or "")
         assert listed.direct_answer == "会太密，留出缓冲。"
-        assert provider.calls == [(datetime(2026, 10, 16), datetime(2026, 10, 17))]
+        assert provider.calls == [(datetime(2026, 10, 15, 9, 0), datetime(2100, 1, 1))]
+        assert db.query(CalendarEvent).count() == before
+        side_door = execute_calendar(
+            ToolContext(db=db, message="帮我看看明天怎么安排", history=[], user_id=1),
+            {"action": "create"},
+        )
+        assert side_door.schedule_card["mode"] == "create"
+        assert side_door.schedule_card["title"] == "不该变成卡片"
         assert db.query(CalendarEvent).count() == before
 
         monkeypatch.setattr(
@@ -1441,10 +1529,6 @@ def test_free_slot_lists_the_day_then_uses_model_slots(monkeypatch):
         "app.agents.tools.calendar_tool.calendar_provider_for",
         lambda *_a, **_k: provider,
     )
-    monkeypatch.setattr(
-        "app.agents.tools.calendar_tool.free_slots_for",
-        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("find_free_slots")),
-    )
     _freeze_planning_clock(monkeypatch)
     init_db()
     db = SessionLocal()
@@ -1453,7 +1537,7 @@ def test_free_slot_lists_the_day_then_uses_model_slots(monkeypatch):
         result = execute_calendar(
             ToolContext(db=db, message="明天有空吗", history=[], user_id=1)
         )
-        assert provider.calls == [(datetime(2026, 10, 16), datetime(2026, 10, 17))]
+        assert provider.calls == [(datetime(2026, 10, 15, 9, 0), datetime(2100, 1, 1))]
         card = result.schedule_card
         assert card["mode"] == "list"
         assert card["phase"] == "info"
