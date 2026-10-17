@@ -502,6 +502,9 @@ def _cleanup_user(db, user_id: int) -> None:
     db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).delete(synchronize_session=False)
     db.query(User).filter(User.id == user_id).delete(synchronize_session=False)
     db.commit()
+    # synchronize_session=False leaves the deleted User in the identity map.
+    # Drop it so the next _seed_user can insert the same primary key.
+    db.expunge_all()
 
 
 def _freeze_clock(now: datetime):
