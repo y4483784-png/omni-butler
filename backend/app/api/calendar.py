@@ -339,20 +339,21 @@ def confirm_google_title_change(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    """Write one primary event. Prefer the card's Google id, else its exact title."""
+    """Write one primary event. The card's Google id is required."""
     action = (body.action or "").strip().lower()
     if action not in {"update", "cancel"}:
         raise HTTPException(status_code=400, detail="需要改期或撤销")
     if not calendar_writes_remote(db, current_user.id):
         raise HTTPException(status_code=400, detail="未连接 Google 日历")
+    external_id = (body.external_id or "").strip()
+    if not external_id:
+        raise HTTPException(status_code=400, detail="需要日程编号")
     title = (body.title or "").strip()
     start_at = _parse_dt(body.start_at)
     end_at = _parse_dt(body.end_at)
     if action == "update":
-        if not title or start_at is None:
-            raise HTTPException(status_code=400, detail="需要标题和开始时间")
-        if end_at is None:
-            end_at = start_at + timedelta(hours=1)
+        if not title or start_at is None or end_at is None:
+            raise HTTPException(status_code=400, detail="需要标题、开始和结束时间")
     try:
         event = confirm_titled_change(
             db,

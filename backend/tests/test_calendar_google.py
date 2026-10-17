@@ -932,6 +932,13 @@ def _freeze_calendar_clock(monkeypatch) -> None:
     monkeypatch.setattr("app.services.calendar.datetime", _FrozenDateTime)
 
 
+def _freeze_tool_now(monkeypatch, when: datetime) -> None:
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.calendar_now",
+        lambda *_args, **_kwargs: when,
+    )
+
+
 def _ensure_user(db, user_id: int, name: str) -> None:
     if db.get(User, user_id) is None:
         db.add(User(id=user_id, external_id=name, name=name, is_active=1))
@@ -1713,6 +1720,7 @@ def test_preview_shows_google_conflict_and_survives_list_failure(
     end = datetime(2026, 8, 6, 16, 0)
     try:
         user_id = _connect_admin(auth_client, db, fake_google)
+        _freeze_tool_now(monkeypatch, datetime(2026, 8, 6, 9, 0))
         local = CalendarEvent(
             user_id=user_id,
             title="已有会",
@@ -2336,7 +2344,12 @@ def test_update_preview_merges_google_and_survives_list_failure(
         stale = _google_row(db, user_id, title="库里的旧时间", start=start, external_id="evt-stale")
         before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
         fake_google.events_items = [
-            _google_item("evt-self", "2026-12-02T15:00:00+08:00", "2026-12-02T16:00:00+08:00"),
+            _google_item(
+                "evt-self",
+                "2026-12-02T15:00:00+08:00",
+                "2026-12-02T16:00:00+08:00",
+                summary="已同步会",
+            ),
             _google_item("evt-stale", "2026-12-02T20:00:00+08:00", "2026-12-02T21:00:00+08:00"),
             _google_item("evt-other", "2026-12-02T15:45:00+08:00", "2026-12-02T16:45:00+08:00", summary="外面的会"),
         ]
@@ -2356,14 +2369,17 @@ def test_update_preview_merges_google_and_survives_list_failure(
             return draft
 
         monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
-        monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _apply)
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.apply_update_times", _apply, raising=False
+        )
         preview = execute_calendar(
             ToolContext(db=db, message="把已同步会改到三点半", history=[], user_id=user_id)
         )
         card = preview.schedule_card
         assert card["mode"] == "update"
         assert card["phase"] == "draft"
-        assert card["event_id"] is None
+        assert card["event_id"] == row.id
+        assert card["external_id"] == "evt-self"
         assert card["title"] == "已同步会"
         assert card["start_at"].startswith("2026-12-02T15:30:00")
         other = [item for item in card["conflicts"] if str(item["start_at"]).startswith("2026-12-02T15:45:00")]
@@ -2382,16 +2398,11 @@ def test_update_preview_merges_google_and_survives_list_failure(
         missed = execute_calendar(
             ToolContext(db=db, message="把已同步会改到三点半", history=[], user_id=user_id)
         )
-        missed_card = missed.schedule_card
-        assert missed_card["mode"] == "update"
-        assert missed_card["phase"] == "draft"
-        assert missed_card["event_id"] is None
-        assert missed_card["suggested_slots"] == []
-        assert any(item["id"] == stale.id for item in missed_card["conflicts"])
-        assert "没读到 Google" in (missed.direct_answer or "")
-        assert "确认时会再查" in (missed.direct_answer or "")
-        assert "不会写入" in (missed.direct_answer or "")
+        assert missed.schedule_card is None
+        assert "暂时读不到 Google 日历" in (missed.direct_answer or "")
+        assert "没有找到对应日程" not in (missed.direct_answer or "")
         assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
     finally:
         _cleanup(user_id)
@@ -2422,7 +2433,9 @@ def test_readonly_google_item_has_no_update_or_cancel_card(
             return draft
 
         monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
-        monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _apply)
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.apply_update_times", _apply, raising=False
+        )
 
         cancel = execute_calendar(
             ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
@@ -2488,8 +2501,8 @@ def test_readonly_google_item_has_no_update_or_cancel_card(
         unread = execute_calendar(
             ToolContext(db=db, message="取消外面的会", history=[], user_id=user_id)
         )
-        assert unread.schedule_card["mode"] == "cancel"
-        assert unread.schedule_card["title"] == "外面的会"
+        assert unread.schedule_card is None
+        assert "暂时读不到 Google 日历" in (unread.direct_answer or "")
         assert "没有找到对应日程" not in (unread.direct_answer or "")
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
         assert (
@@ -2707,7 +2720,8 @@ def test_connected_list_overlays_google_without_writing(
         assert chat.schedule_card["mode"] == "list"
         assert chat.schedule_card["phase"] == "info"
         titles = [item["title"] for item in chat.schedule_card["items"]]
-        assert titles == ["本地会", "（无标题）", "透明安排", "新标题", "外面的会", "休息"]
+        assert titles == ["（无标题）", "透明安排", "新标题", "外面的会", "休息"]
+        assert "本地会" not in titles
         rest = next(item for item in chat.schedule_card["items"] if item["title"] == "休息")
         assert rest["all_day"] is True
         assert "00:00" not in (chat.direct_answer or "")
@@ -3227,8 +3241,12 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
     def _forbid_lookup(*_args, **_kwargs):
         raise AssertionError("local candidate lookup")
 
-    monkeypatch.setattr("app.agents.tools.calendar_tool.find_event_candidates", _forbid_lookup)
-    monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _forbid_lookup)
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.find_event_candidates", _forbid_lookup, raising=False
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.apply_update_times", _forbid_lookup, raising=False
+    )
 
     def _extract(message, _history=None, **_kwargs):
         if "取消" in (message or ""):
@@ -3240,6 +3258,7 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
     monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
     try:
         user_id = _connect_admin(auth_client, db, fake_google)
+        _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
         before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
         fake_google.events_items = [
             _google_item(
@@ -3263,7 +3282,11 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
 
         confirmed = auth_client.post(
             "/api/calendar/google/confirm",
-            json={"action": "cancel", "title": "测试会议"},
+            json={
+                "action": "cancel",
+                "title": "测试会议",
+                "external_id": cancel.schedule_card["external_id"],
+            },
         )
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()["id"] is None
@@ -3292,7 +3315,8 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
         assert update.schedule_card["title"] == "测试会议"
         assert update.schedule_card["start_at"].startswith("2026-10-17T16:00:00")
         assert update.schedule_card["end_at"].startswith("2026-10-17T17:00:00")
-        assert update.schedule_card["event_id"] is None
+        assert update.schedule_card["event_id"] == row.id
+        assert update.schedule_card["external_id"] == "evt-move"
         assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
         db.refresh(row)
@@ -3306,6 +3330,7 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
                 "title": "测试会议",
                 "start_at": "2026-10-17T16:00:00",
                 "end_at": "2026-10-17T17:00:00",
+                "external_id": update.schedule_card["external_id"],
             },
         )
         assert moved.status_code == 200, moved.text
@@ -3331,7 +3356,8 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "测试会议"},
         )
-        assert missed.status_code == 409
+        assert missed.status_code == 400
+        assert missed.json()["detail"] == "需要日程编号"
         assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
         db.refresh(row)
@@ -3346,8 +3372,12 @@ def _forbid_local_lookup(monkeypatch) -> None:
     def _forbid(*_args, **_kwargs):
         raise AssertionError("local candidate lookup")
 
-    monkeypatch.setattr("app.agents.tools.calendar_tool.find_event_candidates", _forbid)
-    monkeypatch.setattr("app.agents.tools.calendar_tool.apply_update_times", _forbid)
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.find_event_candidates", _forbid, raising=False
+    )
+    monkeypatch.setattr(
+        "app.agents.tools.calendar_tool.apply_update_times", _forbid, raising=False
+    )
 
 
 def _assert_offset_free(card: dict) -> None:
@@ -3379,6 +3409,7 @@ def test_connected_prefill_soft_aligns_one_live_title(
     db = SessionLocal()
     user_id = 0
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
     assert titles_match("Grok测试会议", "测试会议")
     assert "Grok测试会议" != "测试会议"
 
@@ -3440,8 +3471,8 @@ def test_connected_prefill_soft_aligns_one_live_title(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "Grok测试会议"},
         )
-        assert missed.status_code == 409
-        assert missed.json()["detail"] == "没有在 Google 日历上找到同标题的日程，未写入。"
+        assert missed.status_code == 400
+        assert missed.json()["detail"] == "需要日程编号"
         assert _delete_calls(fake_google) == []
         assert _patch_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
@@ -3450,10 +3481,9 @@ def test_connected_prefill_soft_aligns_one_live_title(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "测试会议"},
         )
-        assert confirmed.status_code == 200, confirmed.text
-        assert [call["url"].rstrip("/").rsplit("/", 1)[-1] for call in _delete_calls(fake_google)] == [
-            "evt-real"
-        ]
+        assert confirmed.status_code == 400
+        assert _delete_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
     finally:
         _cleanup(user_id)
@@ -3468,6 +3498,7 @@ def test_connected_prefill_leaves_an_exact_title(
     db = SessionLocal()
     user_id = 0
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
 
     def _extract(_message, _history=None, **_kwargs):
         start = datetime(2026, 10, 18, 9, 0)
@@ -3515,6 +3546,7 @@ def test_connected_prefill_leaves_zero_or_many_soft_hits(
     db = SessionLocal()
     user_id = 0
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
 
     def _extract(_message, _history=None, **_kwargs):
         start = datetime(2026, 10, 18, 9, 0)
@@ -3535,13 +3567,7 @@ def test_connected_prefill_leaves_zero_or_many_soft_hits(
             ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
         )
         assert titles_match("Grok测试会议", "牙医") is False
-        card = none.schedule_card
-        assert card["mode"] == "cancel"
-        assert card["title"] == "Grok测试会议"
-        assert card["start_at"] == "2026-10-18T09:00:00"
-        assert card["end_at"] == "2026-10-18T10:00:00"
-        assert card["candidates"] == []
-        assert card["external_id"] == ""
+        assert none.schedule_card is None
         assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
 
@@ -3564,13 +3590,8 @@ def test_connected_prefill_leaves_zero_or_many_soft_hits(
         many = execute_calendar(
             ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
         )
-        crowded = many.schedule_card
-        assert crowded["mode"] == "cancel"
-        assert crowded["title"] == "Grok测试会议"
-        assert crowded["start_at"] == "2026-10-18T09:00:00"
-        assert crowded["end_at"] == "2026-10-18T10:00:00"
-        assert crowded["candidates"] == []
-        assert crowded["external_id"] == ""
+        assert many.schedule_card is None or many.schedule_card.get("mode") != "choose"
+        assert many.schedule_card is None
         assert _delete_calls(fake_google) == []
         assert _patch_calls(fake_google) == []
     finally:
@@ -3585,6 +3606,7 @@ def test_connected_prefill_keeps_extraction_when_list_fails(
     db = SessionLocal()
     user_id = 0
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
 
     def _extract(_message, _history=None, **_kwargs):
         start = datetime(2026, 10, 18, 9, 0)
@@ -3605,12 +3627,11 @@ def test_connected_prefill_keeps_extraction_when_list_fails(
         result = execute_calendar(
             ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
         )
-        card = result.schedule_card
-        assert card["mode"] == "cancel"
-        assert card["title"] == "Grok测试会议"
-        assert card["start_at"] == "2026-10-18T09:00:00"
-        assert card["timezone"] == "Asia/Singapore"
+        assert result.schedule_card is None
+        assert "暂时读不到 Google 日历" in (result.direct_answer or "")
+        assert "没有找到对应日程" not in (result.direct_answer or "")
         assert _delete_calls(fake_google) == []
+        assert _patch_calls(fake_google) == []
     finally:
         _cleanup(user_id)
         db.close()
@@ -3762,6 +3783,7 @@ def test_cancel_confirm_does_not_change_description(
                 "start_at": "2026-10-16T10:00:00",
                 "end_at": "2026-10-16T11:00:00",
                 "description": "不要改说明",
+                "external_id": "evt-note",
             },
         )
         assert confirmed.status_code == 200, confirmed.text
@@ -3784,6 +3806,7 @@ def test_connected_update_prefills_live_event_fields(
     db = SessionLocal()
     user_id = 0
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
 
     def _json(messages, *_args, **_kwargs):
         blob = messages[-1]["content"] if messages else ""
@@ -3926,6 +3949,7 @@ def test_connected_prefill_uses_local_participants_when_google_has_none(
     db = SessionLocal()
     user_id = 0
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
     monkeypatch.setattr(
         "app.services.calendar.complete_json",
         lambda *_a, **_k: {
@@ -3985,6 +4009,7 @@ def test_connected_reschedule_keeps_duration_and_notes_unless_flags(
     user_id = 0
     prompts: list[str] = []
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
 
     def _json(messages, *_args, **_kwargs):
         prompts.append("\n".join(str(item.get("content") or "") for item in messages))
@@ -4066,6 +4091,7 @@ def test_confirm_prefers_prefilled_external_id_over_exact_title(
     db = SessionLocal()
     user_id = 0
     _forbid_local_lookup(monkeypatch)
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
 
     def _extract(message, _history=None, **_kwargs):
         start = datetime(2026, 10, 17, 16, 0)
@@ -4098,8 +4124,8 @@ def test_confirm_prefers_prefilled_external_id_over_exact_title(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "PR34忙"},
         )
-        assert missed.status_code == 409
-        assert missed.json()["detail"] == "没有在 Google 日历上找到同标题的日程，未写入。"
+        assert missed.status_code == 400
+        assert missed.json()["detail"] == "需要日程编号"
         assert _delete_calls(fake_google) == []
 
         unknown = auth_client.post(
@@ -4269,7 +4295,8 @@ def test_confirm_duplicate_title_deletes_only_the_given_id(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "测试会议"},
         )
-        assert untitled.status_code == 409
+        assert untitled.status_code == 400
+        assert untitled.json()["detail"] == "需要日程编号"
         assert _delete_calls(fake_google) == []
         assert {item["id"] for item in fake_google.events_items} == {"evt-a", "evt-b"}
         assert fake_google.deleted_ids == []

@@ -79,6 +79,30 @@ def auth_client() -> TestClient:
     return client
 
 
+@pytest.fixture(autouse=True)
+def _calendar_action_double(monkeypatch):
+    """Tests pass an action or get this fixed stand-in.
+
+    Production classification is ``classify_calendar_action``. This double
+    only keeps older tests on the branch they already named in the sentence.
+    """
+    import re
+
+    def _fake(message, history=None, *, now=None, timezone_name=None):
+        text = message or ""
+        if re.search(r"(有空|空闲|什么时候方便)", text):
+            return "suggest"
+        if re.search(r"(有哪些|有什么安排|有什么会|查一下日程|查日程|我的日程|哪些日程|怎么安排)", text):
+            return "list"
+        if re.search(r"(取消|撤销|删掉|删除)", text):
+            return "cancel"
+        if re.search(r"(改到|改成|改为|推迟|提前|换到|挪到|延后|改期|修改)", text):
+            return "update"
+        return "create"
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.classify_calendar_action", _fake)
+
+
 @pytest.fixture
 def fake_llm(monkeypatch):
     """Deterministic LLM stubs used by workflow / chat tests (no network)."""

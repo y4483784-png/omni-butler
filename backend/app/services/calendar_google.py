@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, time, timedelta, tzinfo
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -206,6 +206,27 @@ class GoogleCalendarProvider:
             self.list_notice = _LIST_TRUNCATED
         return self._merge_list(user_id, local_rows, items, start, end)[:_LIST_LIMIT]
 
+    def events_between(
+        self, user_id: int, start: datetime, end: datetime
+    ) -> tuple[list[CalendarEventDTO], str]:
+        """Full primary merge for one window. No display cap.
+
+        The notice is ``_LIST_LOCAL_ONLY`` or ``_LIST_TRUNCATED`` when the read
+        failed or a page remained. Location, description, and participants are
+        filled from the Google item when the merged row left them empty.
+        """
+        self.list_notice = ""
+        local_rows = self._local.list_events(user_id, start, end, status="active")
+        try:
+            items, truncated = self._read_event_pages(start, end, self.timezone_name())
+        except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
+            self.list_notice = _LIST_LOCAL_ONLY
+            return local_rows, _LIST_LOCAL_ONLY
+        notice = _LIST_TRUNCATED if truncated else ""
+        self.list_notice = notice
+        merged = self._merge_list(user_id, local_rows, items, start, end)
+        return _with_google_details(merged, items), notice
+
     def get_event(self, user_id: int, event_id: int) -> CalendarEventDTO | None:
         return self._local.get_event(user_id, event_id)
 
@@ -381,9 +402,8 @@ class GoogleCalendarProvider:
     ) -> CalendarEventDTO:
         """Patch or delete one primary event.
 
-        A non-empty ``external_id`` selects that Google event. Exact summary
-        is the fallback only when the card has no id. A miss writes nothing.
-        A local row is updated only when it already has that id. No row is inserted.
+        The Google id selects the event. A missing id writes nothing. A local
+        row is updated only when it already has that id. No row is inserted.
         """
         needle = (title or "").strip()
         zone_name = self.timezone_name()
@@ -460,7 +480,11 @@ class GoogleCalendarProvider:
         return self._event_for_confirm(title, None, zone_name)
 
     def _event_for_confirm(self, title: str, external_id: str | None, zone_name: str) -> dict:
-        """Prefer one Google id. Exact title is used only when no id was given."""
+        """One Google id. Title is not a second lookup."""
+        del title
+        gid = (external_id or "").strip()
+        if not gid:
+            raise CalendarTitleUnmatched()
         now = datetime.now(ZoneInfo(zone_name)).replace(tzinfo=None, microsecond=0)
         items = self._list_primary_events(now, datetime(2100, 1, 1), zone_name)
         visible = [
@@ -470,19 +494,7 @@ class GoogleCalendarProvider:
             and not _hidden_on_list(item)
             and str(item.get("id") or "").strip()
         ]
-        gid = (external_id or "").strip()
-        if gid:
-            matches = [item for item in visible if str(item.get("id") or "").strip() == gid]
-            if len(matches) != 1:
-                raise CalendarTitleUnmatched()
-            return matches[0]
-        if not title:
-            raise CalendarTitleUnmatched()
-        matches = [
-            item
-            for item in visible
-            if str(item.get("summary") or "").strip() == title
-        ]
+        matches = [item for item in visible if str(item.get("id") or "").strip() == gid]
         if len(matches) != 1:
             raise CalendarTitleUnmatched()
         return matches[0]
@@ -532,8 +544,7 @@ class GoogleCalendarProvider:
         item. ``id`` is the Google event id. Attendees are not how this app
         stores participants, so a linked local row fills those three fields
         when the Google item left them empty. Hidden rows are skipped. Nothing
-        is stored. Confirm prefers this id and falls back to an exact summary
-        only when the card has no id.
+        is stored. Confirm writes only when the card already carries this id.
         """
         items = self._list_primary_events(_as_naive(start), _as_naive(end), zone_name)
         visible = [
@@ -1322,6 +1333,41 @@ def _span_from_item(item: dict) -> tuple[datetime, datetime, bool] | None:
     if start is None or end is None or end <= start:
         return None
     return start, end, all_day
+
+
+def _with_google_details(rows: list[CalendarEventDTO], items: list[dict]) -> list[CalendarEventDTO]:
+    """Fill empty location, description, and participants from the live item."""
+    by_id = {
+        str(item.get("id") or "").strip(): item
+        for item in items
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    }
+    filled: list[CalendarEventDTO] = []
+    for row in rows:
+        item = by_id.get((row.external_id or "").strip())
+        if item is None:
+            filled.append(row)
+            continue
+        participants = list(row.participants)
+        location = row.location or ""
+        description = row.description or ""
+        if not participants:
+            participants = _participant_names(item)
+        if not location:
+            location = str(item.get("location") or "").strip()
+        if not description:
+            description = str(item.get("description") or "").strip()
+        if (
+            participants == list(row.participants)
+            and location == (row.location or "")
+            and description == (row.description or "")
+        ):
+            filled.append(row)
+            continue
+        filled.append(
+            replace(row, participants=participants, location=location, description=description)
+        )
+    return filled
 
 
 def _overlay_dto(local: CalendarEventDTO, view: _EventView) -> CalendarEventDTO:

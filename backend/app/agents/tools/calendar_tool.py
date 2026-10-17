@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timedelta
 
 from app.agents.harness.types import ToolContext, ToolResult
@@ -12,21 +11,18 @@ from app.core.llm import complete_text
 from app.services.calendar import (
     REMOTE_READ_ERRORS,
     EventDraft,
+    _catalog_text,
     _civil_day,
-    apply_update_times,
     calendar_now,
-    check_conflict,
-    conflicts_for_create,
-    conflicts_for_update,
+    classify_calendar_action,
     draft_expires_at,
     extract_event,
     extract_free_slots,
     extract_list_day,
-    find_event_candidates,
-    free_slots_for,
-    readonly_titles,
-    titles_match,
+    rank_one_event,
+    upcoming_events,
 )
+from app.services.calendar_local import free_gaps
 from app.services.calendar_factory import (
     account_timezone_name,
     calendar_provider_for,
@@ -43,31 +39,29 @@ _SAFE_SLOT_NOTE = "请以上面的列表为准，已有安排的时段不是空�
 _FREE_CLAIM = ("有空", "空闲", "方便", "可以")
 _BUSY_ACK = ("重叠", "占用", "已有安排", "不是空", "没空", "忙")
 _NOT_FOUND = "没有找到对应日程。"
-_NOT_FOUND_UNREAD = "没有找到对应日程。暂时读不到 Google 日历，以下只是这里保存的日程。"
-_READONLY_IN_GOOGLE = "这条日程只在 Google 日历里，请在 Google 日历里改。"
-
-_UPDATE = re.compile(r"(改到|改成|改为|推迟|提前|换到|挪到|延后)")
-_CANCEL = re.compile(r"(取消|撤销|删掉)")
-_LIST = re.compile(r"(有哪些|有什么安排|有什么会|查一下日程|查日程|我的日程|哪些日程)")
-_SUGGEST = re.compile(r"(有空|空闲|什么时候方便)")
+_UNCLEAR_ACTION = "没有听清要新建、改期、删除、查看还是看空闲，这次没有改动日历。"
+_ACTIONS = frozenset({"create", "update", "cancel", "list", "suggest"})
 
 
-def resolve_action(message: str, args: dict | None) -> str:
+def resolve_action(
+    message: str,
+    args: dict | None,
+    *,
+    history: list | None = None,
+    now: datetime | None = None,
+    timezone_name: str | None = None,
+) -> str:
+    """Use a passed action when it is one of the five. Otherwise ask the model.
+
+    Anything else in ``args`` is ignored. Keywords in the sentence do not decide.
+    An empty return means the model did not name one action.
+    """
     action = str((args or {}).get("action") or "").strip().lower()
-    if action == "query":
-        action = "list"
-    if action in {"create", "update", "cancel", "list", "suggest"}:
+    if action in _ACTIONS:
         return action
-    text = message or ""
-    if _SUGGEST.search(text):
-        return "suggest"
-    if _LIST.search(text):
-        return "list"
-    if _CANCEL.search(text):
-        return "cancel"
-    if _UPDATE.search(text):
-        return "update"
-    return "create"
+    return classify_calendar_action(
+        message, history, now=now, timezone_name=timezone_name
+    )
 
 
 def _iso(value: datetime | None) -> str:
@@ -80,15 +74,6 @@ def _clock(value: datetime | None) -> str:
     if value is None:
         return ""
     return f"{value:%Y-%m-%d %H:%M}"
-
-
-def _candidate_payload(row) -> dict:
-    return {
-        "id": row.id,
-        "title": row.title or "",
-        "start_at": _iso(row.start_at),
-        "end_at": _iso(row.end_at),
-    }
 
 
 def _conflict_payload(row) -> dict:
@@ -142,59 +127,62 @@ def _as_clock(value) -> datetime | None:
     return value if isinstance(value, datetime) else None
 
 
-def _rescheduled_end(
-    draft: EventDraft, old_start: datetime | None, old_end: datetime | None
-) -> datetime | None:
-    """Model end only when that end still belongs to the model's start.
-
-    A local regex may move the start after extraction. That move is a new
-    start, not a request to change the duration, so the matched length wins.
-    """
-    new_start = draft.start_at
-    specified = draft.specified_end
-    if (
-        isinstance(specified, datetime)
-        and isinstance(new_start, datetime)
-        and specified > new_start
-        and new_start == draft.model_start
-    ):
-        return specified
-    if (
-        isinstance(new_start, datetime)
-        and isinstance(old_start, datetime)
-        and isinstance(old_end, datetime)
-        and old_end > old_start
-    ):
-        return new_start + (old_end - old_start)
-    if isinstance(draft.end_at, datetime):
-        return draft.end_at
-    return old_end
+def _matched_dict(row) -> dict:
+    return {
+        "title": getattr(row, "title", "") or "",
+        "start_at": getattr(row, "start_at", None),
+        "end_at": getattr(row, "end_at", None),
+        "participants": getattr(row, "participants", None) or [],
+        "location": getattr(row, "location", "") or "",
+        "description": getattr(row, "description", "") or "",
+    }
 
 
 def _apply_matched_fields(draft: EventDraft, matched: dict, action: str) -> None:
-    """Copy one matched event onto the draft. Update keeps the model's new start."""
+    """Copy the selected event, then overlay only fields the user asked to change."""
     title = str(matched.get("title") or "").strip()
-    if title:
-        draft.title = title
     participants = _people(matched.get("participants"))
     location = str(matched.get("location") or "")
     description = str(matched.get("description") or "")
     old_start = _as_clock(matched.get("start_at"))
     old_end = _as_clock(matched.get("end_at"))
-    draft.participants = participants
-    draft.location = location
     if action == "cancel":
+        draft.title = title
+        draft.participants = participants
+        draft.location = location
         draft.description = description
-        if old_start is not None:
-            draft.start_at = old_start
-        if old_end is not None:
-            draft.end_at = old_end
+        draft.start_at = old_start
+        draft.end_at = old_end
+        draft.kind = ""
         return
-    draft.kind = _infer_kind(participants, location)
+    if draft.change_title:
+        draft.title = (draft.new_title or "").strip()
+    else:
+        draft.title = title
+    if not draft.change_participants:
+        draft.participants = participants
+    if not draft.change_location:
+        draft.location = location
     if not draft.notes_specified:
         draft.description = description
-    draft.start_at = draft.start_at or old_start
-    draft.end_at = _rescheduled_end(draft, old_start, old_end)
+    new_start = draft.start_at if isinstance(draft.start_at, datetime) else old_start
+    draft.start_at = new_start
+    if isinstance(draft.specified_end, datetime):
+        draft.end_at = draft.specified_end
+    elif (
+        isinstance(new_start, datetime)
+        and isinstance(old_start, datetime)
+        and isinstance(old_end, datetime)
+        and old_end > old_start
+        and new_start != old_start
+    ):
+        draft.end_at = new_start + (old_end - old_start)
+    elif isinstance(old_end, datetime):
+        draft.end_at = old_end
+    else:
+        draft.end_at = None
+    if not (draft.change_kind and draft.kind in {"meeting", "block"}):
+        draft.kind = _infer_kind(participants, location)
 
 
 def _base_card(
@@ -250,7 +238,7 @@ def _confirm_text(card: dict, *, full: bool = False) -> str:
             when = start
     name = f"「{title}」" if title else "这条日程"
     if card.get("mode") == "cancel":
-        return f"请确认撤销{name}{('，时间 ' + when) if when else ''}。未确认不会写入。"
+        return f"请确认删除{name}。还没点确认删除就不会删。"
     if card.get("mode") == "update":
         return f"请确认修改{name}{('，时间 ' + when) if when else ''}。未确认不会写入。"
     if not title or not start:
@@ -403,12 +391,59 @@ def _listed_text(rows, header: str, empty: str) -> str:
     return header + "\n" + "\n".join(lines)
 
 
+def _row_overlaps(row, start: datetime, end: datetime) -> bool:
+    busy_start = getattr(row, "start_at", None)
+    busy_end = getattr(row, "end_at", None)
+    if not isinstance(busy_start, datetime) or not isinstance(busy_end, datetime):
+        return False
+    if busy_end <= busy_start or end <= start:
+        return False
+    return busy_start < end and busy_end > start
+
+
+def _same_event(row, *, event_id: int | None, external_id: str) -> bool:
+    if event_id is not None and getattr(row, "id", None) == event_id:
+        return True
+    ext = str(getattr(row, "external_id", "") or "").strip()
+    return bool(external_id) and bool(ext) and ext == external_id
+
+
+def _rows_overlapping(rows, start: datetime, end: datetime, *, event_id=None, external_id: str = ""):
+    found = []
+    for row in rows:
+        if _same_event(row, event_id=event_id, external_id=external_id):
+            continue
+        if _row_overlaps(row, start, end):
+            found.append(row)
+    return found
+
+
+def _memory_slots(rows, start: datetime, end: datetime, *, event_id=None, external_id: str = ""):
+    duration = end - start if end > start else timedelta(hours=1)
+    if duration <= timedelta(0):
+        duration = timedelta(hours=1)
+    busy = []
+    for row in rows:
+        if _same_event(row, event_id=event_id, external_id=external_id):
+            continue
+        busy_start = getattr(row, "start_at", None)
+        busy_end = getattr(row, "end_at", None)
+        if not isinstance(busy_start, datetime) or not isinstance(busy_end, datetime):
+            continue
+        if busy_end <= busy_start:
+            continue
+        busy.append((busy_start, busy_end))
+    return free_gaps(busy, start, start + timedelta(days=7), duration, 3)
+
+
 def _list_text(
     ctx: ToolContext,
     *,
     day: str = "",
     now: datetime | None = None,
     zone_name: str | None = None,
+    events=None,
+    notice: str = "",
 ) -> tuple[str, dict | None]:
     if now is None:
         try:
@@ -417,9 +452,16 @@ def _list_text(
             return _saved_rows_when_clock_fails(ctx)
     zone = zone_name if zone_name is not None else _zone_name(ctx)
     start, end, header, empty = _list_span(day, now)
-    provider = calendar_provider_for(ctx.db, ctx.user_id)
-    rows = provider.list_events(ctx.user_id, start, end)
-    notice = str(getattr(provider, "list_notice", "") or "")
+    if events is None:
+        provider = calendar_provider_for(ctx.db, ctx.user_id)
+        events, notice = upcoming_events(
+            ctx.db,
+            ctx.user_id,
+            now,
+            provider=provider,
+            connected=_writes_remote(ctx),
+        )
+    rows = [row for row in events if _row_overlaps(row, start, end)]
     shown = list(rows[:20])
     card = _list_card(shown)
     listed = _listed_text(shown, header, empty)
@@ -467,23 +509,38 @@ def _replace_unreliable_free_note(note: str, removed: int) -> str:
     return text
 
 
-def _suggest_result(ctx: ToolContext) -> tuple[str, dict | None]:
-    """List the named day, then let the model pick slots. No gap algorithm."""
-    try:
-        now = calendar_now(ctx.db, ctx.user_id)
-    except CalendarTransientError:
-        return _SUGGEST_UNAVAILABLE, None
-    zone = _zone_name(ctx)
+def _suggest_result(
+    ctx: ToolContext,
+    *,
+    now: datetime | None = None,
+    zone_name: str | None = None,
+    events=None,
+    notice: str = "",
+) -> tuple[str, dict | None]:
+    """List the named day, then let the model pick slots. No second calendar read."""
+    if now is None:
+        try:
+            now = calendar_now(ctx.db, ctx.user_id)
+        except CalendarTransientError:
+            return _SUGGEST_UNAVAILABLE, None
+    zone = zone_name if zone_name is not None else _zone_name(ctx)
     day = extract_list_day(ctx.message, ctx.history, now=now, timezone_name=zone or None)
     start, end, header, empty = _list_span(day, now)
-    provider = calendar_provider_for(ctx.db, ctx.user_id)
-    try:
-        rows = provider.list_events(ctx.user_id, start, end)
-    except REMOTE_READ_ERRORS:
-        return _SUGGEST_UNAVAILABLE, None
-    notice = str(getattr(provider, "list_notice", "") or "")
+    if events is None:
+        provider = calendar_provider_for(ctx.db, ctx.user_id)
+        try:
+            events, notice = upcoming_events(
+                ctx.db,
+                ctx.user_id,
+                now,
+                provider=provider,
+                connected=_writes_remote(ctx),
+            )
+        except REMOTE_READ_ERRORS:
+            return _SUGGEST_UNAVAILABLE, None
     if notice in _SKIP_ADVICE:
         return _SUGGEST_UNAVAILABLE, None
+    rows = [row for row in events if _row_overlaps(row, start, end)]
     shown = list(rows[:20])
     listed = _listed_text(shown, header, empty)
     picked = extract_free_slots(
@@ -512,179 +569,65 @@ def _writes_remote(ctx: ToolContext) -> bool:
     return calendar_writes_remote(ctx.db, ctx.user_id)
 
 
-def _confirm_horizon(now: datetime) -> tuple[datetime, datetime]:
-    """Same window confirm lists: account wall now through year 2100."""
-    return now.replace(microsecond=0), datetime(2100, 1, 1)
-
-
-def _align_connected_title(
-    ctx: ToolContext,
-    draft: EventDraft,
-    action: str,
-    now: datetime,
-    zone_name: str | None,
-) -> str:
-    """Copy one live primary event onto a connected update or cancel draft.
-
-    One exact summary, or else exactly one soft title, supplies kind, times,
-    notes, participants, and location. The return value is that event's Google
-    id, or empty when nothing unique matched. Update keeps the model's new
-    start. Its end and notes change only when extraction says the user asked.
-    Cancel uses the event's wall times. Zero or many soft hits, or a failed
-    read, leave the extraction and return no id.
-    """
-    title = (draft.title or "").strip()
-    if not title or not zone_name or ctx.db is None or ctx.user_id is None:
-        return ""
+def _load_upcoming(ctx: ToolContext, now: datetime) -> tuple[list, str]:
     provider = calendar_provider_for(ctx.db, ctx.user_id)
-    reader = getattr(provider, "primary_events_for_title", None)
-    if reader is None:
-        return ""
-    start, end = _confirm_horizon(now)
-    try:
-        events = reader(start, end, zone_name)
-    except REMOTE_READ_ERRORS:
-        return ""
-    if not isinstance(events, list):
-        return ""
-    exact = [
-        item
-        for item in events
-        if isinstance(item, dict) and str(item.get("summary") or "").strip() == title
-    ]
-    if len(exact) == 1:
-        match = exact[0]
-    else:
-        soft = [
-            item
-            for item in events
-            if isinstance(item, dict) and titles_match(title, str(item.get("summary") or ""))
-        ]
-        if len(soft) != 1:
-            return ""
-        match = soft[0]
-    _apply_matched_fields(
-        draft,
-        {
-            "title": match.get("summary"),
-            "start_at": match.get("start_at"),
-            "end_at": match.get("end_at"),
-            "participants": match.get("participants") or [],
-            "location": match.get("location") or "",
-            "description": match.get("description") or "",
-        },
-        action,
+    return upcoming_events(
+        ctx.db,
+        ctx.user_id,
+        now,
+        provider=provider,
+        connected=_writes_remote(ctx),
     )
-    return str(match.get("id") or "").strip()
 
 
-def _remote_change_preview(
-    ctx: ToolContext,
-    steps: list[str],
-    action: str,
-    draft: EventDraft,
-    *,
-    now: datetime,
-    zone_name: str | None,
-) -> ToolResult:
-    """Connected update/cancel. Prefill copies one matched event. Confirm writes."""
-    matched_id = _align_connected_title(ctx, draft, action, now, zone_name)
-    card = _base_card(mode=action, action=action, draft=draft, kind=_write_kind(action, draft))
-    if matched_id:
-        card["external_id"] = matched_id
-    if zone_name:
-        card["timezone"] = zone_name
-    remote_note = ""
-    if action == "update" and draft.start_at and draft.end_at:
-        conflicts, remote_note = _update_preview_conflicts(
-            ctx, draft.start_at, draft.end_at, None
-        )
-        if conflicts:
-            card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
-            if remote_note:
-                card["suggested_slots"] = []
-            else:
-                slots, slot_note = _preview_slots(ctx, draft.start_at, draft.end_at)
-                remote_note = remote_note or slot_note
-                card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
-    steps.append("已生成待确认卡片，尚未写入")
-    return _cleared(steps, _create_answer(card, remote_note), card)
+def _read_failure_reply(notice: str) -> str:
+    """Existing read-failure sentences. They do not say the calendar is empty."""
+    if notice == _LIST_TRUNCATED:
+        return _LIST_TRUNCATED
+    if notice:
+        return notice
+    return _LIST_LOCAL_ONLY
 
 
-def _update_preview_conflicts(
-    ctx: ToolContext, start: datetime, end: datetime, event_id: int | None
-) -> tuple[list, str]:
-    """Merged busy time for a connected time change. A failed read keeps local conflicts only."""
-    if not calendar_writes_remote(ctx.db, ctx.user_id):
-        rows = [
-            row
-            for row in check_conflict(ctx.db, ctx.user_id, start, end)
-            if getattr(row, "id", None) != event_id
-        ]
-        return rows, ""
-    try:
-        return (
-            conflicts_for_update(
-                ctx.db, ctx.user_id, start, end, exclude_event_id=event_id
-            ),
-            "",
-        )
-    except REMOTE_READ_ERRORS:
-        rows = [
-            row
-            for row in check_conflict(ctx.db, ctx.user_id, start, end)
-            if getattr(row, "id", None) != event_id
-        ]
-        return rows, _GOOGLE_UNCHECKED
+def _conflict_note(notice: str) -> str:
+    if notice == _LIST_TRUNCATED:
+        return _LIST_TRUNCATED
+    if notice:
+        return _GOOGLE_UNCHECKED
+    return ""
 
 
-def _readonly_reply(
-    ctx: ToolContext, draft: EventDraft, search_at: datetime | None, now: datetime
-) -> str | None:
-    """When nothing local matches, a Google-only title is not an editable card."""
-    if not calendar_writes_remote(ctx.db, ctx.user_id) or not (draft.title or "").strip():
-        return None
-    try:
-        titles = readonly_titles(
-            ctx.db, ctx.user_id, title=draft.title, start_at=search_at, now=now
-        )
-    except REMOTE_READ_ERRORS:
-        return _NOT_FOUND_UNREAD
-    if any(titles_match(draft.title, item) for item in titles):
-        return _READONLY_IN_GOOGLE
-    return None
-
-
-def _create_conflicts(ctx: ToolContext, start: datetime, end: datetime) -> tuple[list, str]:
-    """Local conflicts, plus primary-calendar busy time when Google is connected.
-
-    A failed read still returns local conflicts and a note. It does not recommend slots.
-    """
-    if not calendar_writes_remote(ctx.db, ctx.user_id):
-        return check_conflict(ctx.db, ctx.user_id, start, end), ""
-    try:
-        return conflicts_for_create(ctx.db, ctx.user_id, start, end), ""
-    except REMOTE_READ_ERRORS:
-        return check_conflict(ctx.db, ctx.user_id, start, end), _GOOGLE_UNCHECKED
-
-
-def _preview_slots(
-    ctx: ToolContext,
+def _fill_conflicts(
+    card: dict,
+    rows,
+    notice: str,
     start: datetime,
     end: datetime,
     *,
-    exclude_event_id: int | None = None,
-) -> tuple[list[tuple[datetime, datetime]], str]:
-    try:
-        return (
-            free_slots_for(ctx.db, ctx.user_id, start, end, exclude_event_id=exclude_event_id),
-            "",
-        )
-    except REMOTE_READ_ERRORS:
-        return [], _GOOGLE_UNCHECKED
+    event_id: int | None = None,
+    external_id: str = "",
+) -> str:
+    """Conflicts and gaps from the read already in hand. No second events.list."""
+    remote_note = _conflict_note(notice)
+    conflicts = _rows_overlapping(
+        rows, start, end, event_id=event_id, external_id=external_id
+    )
+    if not conflicts:
+        return remote_note
+    card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
+    if remote_note:
+        card["suggested_slots"] = []
+        return remote_note
+    slots = _memory_slots(
+        rows, start, end, event_id=event_id, external_id=external_id
+    )
+    card["suggested_slots"] = _slot_payload(slots)
+    return ""
 
 
 def _create_answer(card: dict, remote_note: str) -> str:
+    if remote_note == _LIST_TRUNCATED:
+        return _LIST_TRUNCATED
     if not remote_note:
         return _confirm_text(card, full=bool(card.get("conflicts")))
     if card.get("conflicts"):
@@ -696,131 +639,167 @@ def _create_answer(card: dict, remote_note: str) -> str:
     return f"{remote_note}{confirm}"
 
 
+def _account_clock(ctx: ToolContext) -> tuple[datetime, str | None]:
+    now = calendar_now(ctx.db, ctx.user_id)
+    zone_name = None
+    if ctx.db is not None and ctx.user_id is not None:
+        zone_name = account_timezone_name(ctx.db, ctx.user_id) or None
+    return now, zone_name
+
+
+def _mutate_from_selection(
+    ctx: ToolContext,
+    steps: list[str],
+    action: str,
+    draft: EventDraft,
+    selected,
+    *,
+    zone_name: str | None,
+    events,
+    notice: str,
+) -> ToolResult:
+    _apply_matched_fields(draft, _matched_dict(selected), action)
+    event_id = getattr(selected, "id", None)
+    external_id = str(getattr(selected, "external_id", "") or "").strip()
+    connected = _writes_remote(ctx)
+    if connected and not external_id:
+        return _cleared(steps, _NOT_FOUND)
+    if not connected and event_id is None:
+        return _cleared(steps, _NOT_FOUND)
+    card = _base_card(
+        mode=action,
+        action=action,
+        draft=draft,
+        event_id=event_id,
+        kind=_write_kind(action, draft),
+    )
+    card["external_id"] = external_id if connected else ""
+    if zone_name:
+        card["timezone"] = zone_name
+    status = str(getattr(selected, "status", "") or "")
+    if status:
+        card["status"] = status
+    remote_note = ""
+    if (
+        action == "update"
+        and isinstance(draft.start_at, datetime)
+        and isinstance(draft.end_at, datetime)
+    ):
+        remote_note = _fill_conflicts(
+            card,
+            events,
+            notice,
+            draft.start_at,
+            draft.end_at,
+            event_id=event_id,
+            external_id=external_id if connected else "",
+        )
+        if card.get("conflicts") and not card.get("suggested_slots") and not remote_note:
+            steps.append("该时段已满")
+    steps.append("已生成待确认卡片，尚未写入")
+    return _cleared(steps, _create_answer(card, remote_note), card)
+
+
 def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     steps = [f"第 {ctx.iteration} 轮：解析日程并生成确认卡片"]
-    action = resolve_action(ctx.message, args or {})
-    if action == "list":
-        steps.append("只读查询，不写入")
-        try:
-            now = calendar_now(ctx.db, ctx.user_id)
-        except CalendarTransientError:
+    explicit = str((args or {}).get("action") or "").strip().lower()
+    passed = explicit if explicit in _ACTIONS else ""
+    now: datetime | None = None
+    zone_name: str | None = None
+    clock_error: CalendarTransientError | None = None
+    try:
+        now, zone_name = _account_clock(ctx)
+    except CalendarTransientError as exc:
+        clock_error = exc
+
+    if passed:
+        action = passed
+    else:
+        action = resolve_action(
+            ctx.message,
+            None,
+            history=ctx.history,
+            now=now,
+            timezone_name=zone_name,
+        )
+        if not action:
+            if clock_error is not None:
+                steps.append("暂时连不上 Google 日历")
+                return _cleared(steps, str(clock_error))
+            return _cleared(steps, _UNCLEAR_ACTION)
+
+    if clock_error is not None:
+        if action == "list":
+            steps.append("只读查询，不写入")
             text, card = _saved_rows_when_clock_fails(ctx)
             return _cleared(steps, text, card)
-        zone_name = _zone_name(ctx)
-        day = extract_list_day(ctx.message, ctx.history, now=now, timezone_name=zone_name or None)
-        text, card = _list_text(ctx, day=day, now=now, zone_name=zone_name)
+        if action == "suggest":
+            steps.append("只读空闲建议，不写入")
+            return _cleared(steps, _SUGGEST_UNAVAILABLE)
+        steps.append("暂时连不上 Google 日历")
+        return _cleared(steps, str(clock_error))
+
+    assert now is not None
+    events, notice = _load_upcoming(ctx, now)
+
+    if action == "list":
+        steps.append("只读查询，不写入")
+        day = extract_list_day(
+            ctx.message, ctx.history, now=now, timezone_name=zone_name or None
+        )
+        text, card = _list_text(
+            ctx, day=day, now=now, zone_name=zone_name or "", events=events, notice=notice
+        )
         return _cleared(steps, text, card)
     if action == "suggest":
         steps.append("只读空闲建议，不写入")
-        text, card = _suggest_result(ctx)
+        text, card = _suggest_result(
+            ctx, now=now, zone_name=zone_name or "", events=events, notice=notice
+        )
         return _cleared(steps, text, card)
 
-    try:
-        now = calendar_now(ctx.db, ctx.user_id)
-        zone_name = None
-        if ctx.db is not None and ctx.user_id is not None:
-            zone_name = account_timezone_name(ctx.db, ctx.user_id)
-    except CalendarTransientError as exc:
-        steps.append("暂时连不上 Google 日历")
-        return _cleared(steps, str(exc))
+    if action in {"update", "cancel"} and notice:
+        steps.append("没有读完日程，未生成卡片")
+        return _cleared(steps, _read_failure_reply(notice))
+
     draft = extract_event(
         ctx.message,
         ctx.history,
         now=now,
         timezone_name=zone_name,
         existing_event=action in {"update", "cancel"},
+        listed=_catalog_text(events) if action in {"update", "cancel"} else "",
     )
-    if action == "create" and draft.requested_action == "list":
-        steps.append("只读查询，不写入")
-        text, card = _list_text(ctx, day=draft.list_day, now=now, zone_name=zone_name or "")
-        return _cleared(steps, text, card)
-    remote = _writes_remote(ctx)
-    if action == "update" and not remote:
-        apply_update_times(draft, ctx.message, now=now)
     if action == "create":
         card = _base_card(
             mode="create", action="create", draft=draft, kind=_write_kind("create", draft)
         )
         remote_note = ""
-        if draft.start_at and draft.end_at:
-            conflicts, remote_note = _create_conflicts(ctx, draft.start_at, draft.end_at)
-            if conflicts:
-                card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
-                if remote_note:
-                    card["suggested_slots"] = []
-                else:
-                    slots, slot_note = _preview_slots(ctx, draft.start_at, draft.end_at)
-                    remote_note = remote_note or slot_note
-                    card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
-                if not card["suggested_slots"] and not remote_note:
-                    steps.append("该时段已满")
+        if isinstance(draft.start_at, datetime) and isinstance(draft.end_at, datetime):
+            remote_note = _fill_conflicts(
+                card, events, notice, draft.start_at, draft.end_at
+            )
+            if card.get("conflicts") and not card.get("suggested_slots") and not remote_note:
+                steps.append("该时段已满")
         steps.append("已生成待确认卡片，尚未写入")
         return _cleared(steps, _create_answer(card, remote_note), card)
 
-    if remote and action in {"update", "cancel"}:
-        return _remote_change_preview(
-            ctx, steps, action, draft, now=now, zone_name=zone_name
-        )
-
-    # Unconnected update/cancel still confirm against a local row.
-    # Update searches the named original day, not the new slot. No original day
-    # means title-only among events that have not already ended.
-    search_at = draft.reference_start_at if action == "update" else draft.start_at
-    matches = find_event_candidates(
-        ctx.db, ctx.user_id, title=draft.title, start_at=search_at, now=now
-    )
-    if not matches:
-        steps.append("没有定位到已有日程")
-        readonly = _readonly_reply(ctx, draft, search_at, now)
-        if readonly is not None:
-            return _cleared(steps, readonly)
+    query = (draft.search_title or draft.title or "").strip()
+    selected = rank_one_event(events, query)
+    if selected is None:
+        # Reply wording for no unique upcoming event is not settled.
+        steps.append("没有定位到唯一的未结束日程")
         return _cleared(steps, _NOT_FOUND)
-    if len(matches) > 1:
-        card = _base_card(mode="choose", action=action, draft=draft)
-        card["candidates"] = [_candidate_payload(row) for row in matches]
-        card["title"] = ""
-        card["start_at"] = ""
-        card["end_at"] = ""
-        steps.append("多条日程，等待在卡片上选择")
-        return _cleared(steps, _confirm_text(card), card)
-
-    event = matches[0]
-    _apply_matched_fields(
-        draft,
-        {
-            "title": event.title,
-            "start_at": event.start_at,
-            "end_at": event.end_at,
-            "participants": event.participants,
-            "location": getattr(event, "location", "") or "",
-            "description": getattr(event, "description", "") or "",
-        },
+    return _mutate_from_selection(
+        ctx,
+        steps,
         action,
+        draft,
+        selected,
+        zone_name=zone_name,
+        events=events,
+        notice=notice,
     )
-    card = _base_card(
-        mode=action,
-        action=action,
-        draft=draft,
-        event_id=event.id,
-        kind=_write_kind(action, draft),
-    )
-    card["status"] = event.status or "active"
-    remote_note = ""
-    if action == "update" and draft.start_at and draft.end_at:
-        start = draft.start_at
-        end = draft.end_at
-        if start and end:
-            conflicts, remote_note = _update_preview_conflicts(ctx, start, end, event.id)
-            if conflicts:
-                card["conflicts"] = [_conflict_payload(row) for row in conflicts[:5]]
-                if remote_note:
-                    card["suggested_slots"] = []
-                else:
-                    slots, slot_note = _preview_slots(ctx, start, end, exclude_event_id=event.id)
-                    remote_note = remote_note or slot_note
-                    card["suggested_slots"] = [] if remote_note else _slot_payload(slots)
-    steps.append("已生成待确认卡片，尚未写入")
-    return _cleared(steps, _create_answer(card, remote_note), card)
 
 
 register(
