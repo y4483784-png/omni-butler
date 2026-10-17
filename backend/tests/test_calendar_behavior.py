@@ -308,3 +308,30 @@ def test_runner_fails_a_wrong_clock_and_passes_an_exact_one(tmp_path: Path):
     assert report["n_scored"] == 2
     assert report["failures"][0]["failed_checks"]
     assert "clock_exact" in report["failures"][0]["failed_checks"]
+
+
+@pytest.mark.unit
+def test_cleanup_expunges_user_before_the_next_seed():
+    from sqlalchemy.orm import object_session
+
+    from app.core.db import SessionLocal, init_db
+    from app.models.models import User
+    from scripts.run_calendar_eval import FakeGoogle, _cleanup_user, _seed_user
+
+    init_db()
+    db = SessionLocal()
+    user_id = 94022
+    case = {"zone": "Asia/Singapore", "connection": "disconnected", "seeds": []}
+    try:
+        _seed_user(db, user_id, case, FakeGoogle())
+        held = db.get(User, user_id)
+        assert held is not None and object_session(held) is db
+        _cleanup_user(db, user_id)
+        # A live reference must not keep the deleted row in this session.
+        assert object_session(held) is None
+        _seed_user(db, user_id, case, FakeGoogle())
+        recreated = db.get(User, user_id)
+        assert recreated is not None and recreated.id == user_id
+    finally:
+        _cleanup_user(db, user_id)
+        db.close()
