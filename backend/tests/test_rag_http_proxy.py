@@ -1,5 +1,3 @@
-"""Zhipu rerank and embedding clients must see the same proxy env as chat."""
-
 from __future__ import annotations
 
 import httpx

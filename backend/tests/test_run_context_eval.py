@@ -62,7 +62,6 @@ def test_live_infra_is_not_a_zero_fact_recall(monkeypatch):
 
 
 def test_gate_report_does_not_fail_smoke_against_full_baseline():
-    """Smoke and full are different samples. A full baseline must not fail the smoke process."""
     import json
 
     from app.eval.context_replay import DEFAULT_BASELINE, EvalReport, gate_report

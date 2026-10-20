@@ -1,5 +1,3 @@
-"""DeepSeek JSON-mode judge text must still yield a faithfulness score."""
-
 from __future__ import annotations
 
 import json
@@ -48,7 +46,6 @@ def _score(payload: dict) -> float:
 
 
 def test_schema_object_is_not_a_faithfulness_score():
-    """ragas extract_json keeps the first object. A JSON Schema is not a score."""
     from ragas.prompt.utils import extract_json
 
     raw = json.dumps(_SCHEMA, ensure_ascii=False) + "\n" + json.dumps(_answer(verdict=1))
@@ -152,9 +149,9 @@ def test_faithfulness_prompt_does_not_embed_json_schema():
     pytest.importorskip("ragas")
     from ragas.metrics._faithfulness import NLIStatementInput, StatementGeneratorInput
 
-    from app.eval.ragas_judge import faithfulness_metric
+    from app.eval.ragas_judge import faithfulness_without_schema
 
-    metric = faithfulness_metric()
+    metric = faithfulness_without_schema()
     statement_prompt = metric.statement_generator_prompt.to_string(
         StatementGeneratorInput(question="上限是多少", answer="住宿上限为650元")
     )

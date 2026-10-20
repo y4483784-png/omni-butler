@@ -28,7 +28,6 @@ _SCHEMA_KEYS = {"$defs", "$schema", "properties", "required", "title", "type", "
 
 
 def json_mode_output_instruction(kind: str) -> str:
-    """Tell the judge to return an instance. A JSON Schema in the prompt is not one."""
     if kind == "statements":
         return (
             "Return one JSON object and no other text. "
@@ -152,13 +151,7 @@ def _prepare_payload(payload: dict) -> dict:
     return {"statements": prepared}
 
 
-def normalize_judge_payload(raw: str) -> str:
-    """Return one JSON instance.
-
-    ragas keeps the first `{...}` object. A model that echoes the JSON Schema
-    from the prompt therefore drops the score. A later object with `statements`,
-    or a verdict missing `reason`, is still a score.
-    """
+def last_usable_statements_json(raw: str) -> str:
     if not isinstance(raw, str) or not raw.strip():
         return raw
     found: list[dict] = []
@@ -176,12 +169,7 @@ def normalize_judge_payload(raw: str) -> str:
     return json.dumps(prepared, ensure_ascii=False)
 
 
-def faithfulness_metric():
-    """Faithfulness prompts without an embedded JSON Schema.
-
-    DeepSeek JSON mode returns one object. The schema in the ragas prompt is
-    itself an object, and the model often returns that instead of the instance.
-    """
+def faithfulness_without_schema():
     from ragas.metrics import Faithfulness
     from ragas.metrics._faithfulness import NLIStatementPrompt, StatementGeneratorPrompt
 
@@ -228,7 +216,7 @@ def build_ragas_llm_embeddings():
                 payload.append({"role": role, "content": content})
             spoken = complete_text(payload, role=Role.JUDGE, raise_on_error=True, kind="json")
             raw = spoken.content if hasattr(spoken, "content") else str(spoken or "")
-            text = normalize_judge_payload(raw)
+            text = last_usable_statements_json(raw)
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=text))])
 
     llm = _JudgeChat()
@@ -259,7 +247,7 @@ def _resolve_metrics(metric_names: Sequence[str]):
     for name in metric_names:
         key = str(name).strip()
         if key == "faithfulness":
-            out.append(faithfulness_metric())
+            out.append(faithfulness_without_schema())
             continue
         if key not in mapping:
             raise ValueError(f"unknown ragas metric: {name}")
