@@ -13,42 +13,28 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel
+
 from app.core.config import settings
-from app.core.llm import LLMStructuredError, complete_json_schema, complete_text, resolved_router_model
+from app.core.llm import LLMStructuredError, complete_json_object, complete_text, resolved_router_model
 
 logger = logging.getLogger(__name__)
 
 _SUMMARY_MARK = "===SUMMARY==="
 _NUMBER_RE = re.compile(r"(?<![\[\d])(?<!\d)(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?![\]\d])")
 _YEAR_RE = re.compile(r"^(?:19|20)\d{2}$")
-_CRITIQUE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "grounded": {
-            "type": "boolean",
-            "description": "True when factual claims in the draft are supported by the evidence pool.",
-        },
-        "addresses_question": {
-            "type": "boolean",
-            "description": "True when the draft answers the user question.",
-        },
-        "unsupported": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["text", "reason"],
-                "additionalProperties": False,
-            },
-            "description": "Statements that cannot be inferred from evidence (max ~8).",
-        },
-    },
-    "required": ["grounded", "addresses_question", "unsupported"],
-    "additionalProperties": False,
-}
+
+
+class UnsupportedItem(BaseModel):
+    text: str
+    reason: str
+
+
+class CritiqueVerdict(BaseModel):
+    grounded: bool
+    addresses_question: bool
+    unsupported: list[UnsupportedItem]
+
 
 _DISCLAIMER_HEADER = "\n\n---\n**依据核验说明**（以下表述未能在上文证据中找到充分支撑）：\n"
 _UNAVAILABLE_NOTE = "\n\n---\n**说明**：依据核验暂时不可用，请谨慎引用上文中的具体数字与制度条款。\n"
@@ -74,6 +60,8 @@ _CRITIQUE_SYSTEM = """你是忠实度判定器。只根据【证据】判断【�
 - 「甲主修生物」→ 未蕴含（证据写的是计算机）
 - 「甲勤奋」且证据写「经常在图书馆学习到很晚」→ 蕴含（可直接推出）
 - 「甲有兼职」→ 未蕴含（证据未提及）
+
+只输出一行 json，例如 {"grounded":true,"addresses_question":true,"unsupported":[]}
 """
 
 _REPAIR_HEADER = """【修订说明】
@@ -314,58 +302,31 @@ def critique_draft(
         f"【问题】\n{question.strip()}\n\n"
         f"【证据】\n{evidence_text}\n\n"
         f"【回答】\n{draft.strip()}\n\n"
-        "输出 JSON：grounded、addresses_question、unsupported。"
+        "输出 json：grounded、addresses_question、unsupported。"
     )
     messages = [
         {"role": "system", "content": _CRITIQUE_SYSTEM},
         {"role": "user", "content": user},
     ]
     try:
-        raw = complete_json_schema(
-            messages,
-            schema=_CRITIQUE_SCHEMA,
-            name="grounding_critique",
-            model=resolved_router_model(),
-            max_attempts=2,
-        )
+        verdict = complete_json_object(messages, CritiqueVerdict, resolved_router_model())
     except LLMStructuredError as exc:
-        logger.warning("grounding critique schema failed: %s", exc)
-        merged = rule_hits
-        return CritiqueResult(
-            grounded=False,
-            addresses_question=False,
-            unsupported=merged,
-            critique_failed=True,
-            critique_error=str(exc),
-        )
-    except Exception as exc:
-        logger.warning("grounding critique failed: %s", exc)
+        logger.warning("grounding critique json failed: %s", exc)
         return CritiqueResult(
             grounded=False,
             addresses_question=False,
             unsupported=rule_hits,
             critique_failed=True,
-            critique_error=f"{type(exc).__name__}: {str(exc)[:200]}",
+            critique_error=str(exc),
         )
 
-    unsupported_raw = raw.get("unsupported") if isinstance(raw, dict) else None
-    if isinstance(unsupported_raw, str) and unsupported_raw.strip():
-        unsupported_list: list[Any] = [unsupported_raw.strip()]
-    elif isinstance(unsupported_raw, list):
-        unsupported_list = unsupported_raw
-    else:
-        unsupported_list = []
     unsupported = _merge_unsupported(
-        unsupported_list,
+        [item.model_dump() for item in verdict.unsupported],
         rule_hits,
     )
-    grounded = bool(raw.get("grounded")) and not unsupported
-    addresses = bool(raw.get("addresses_question"))
-    if unsupported:
-        grounded = False
     return CritiqueResult(
-        grounded=grounded,
-        addresses_question=addresses,
+        grounded=bool(verdict.grounded) and not unsupported,
+        addresses_question=bool(verdict.addresses_question),
         unsupported=unsupported,
         critique_failed=False,
     )

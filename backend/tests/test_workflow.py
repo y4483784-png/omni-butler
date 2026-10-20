@@ -7,6 +7,7 @@ from datetime import datetime
 from app.agents.harness.verify import web_is_stale
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarEvent
+from app.agents.harness.critique import CritiqueVerdict
 from app.agents.router import classify_intent, plan_needs, plan_tools
 from app.agents.workflow import (
     build_pool_prompt,
@@ -27,11 +28,13 @@ from app.services.web_search import (
     search_planned,
 )
 
-_GROUNDING_PASS = {
-    "grounded": True,
-    "addresses_question": True,
-    "unsupported": [],
-}
+_GROUNDING_PASS = CritiqueVerdict.model_validate(
+    {
+        "grounded": True,
+        "addresses_question": True,
+        "unsupported": [],
+    }
+)
 
 
 @contextmanager
@@ -40,7 +43,7 @@ def _grounding_pass(draft: str = "根据证据的简要说明。[1]"):
     with (
         patch("app.agents.workflow.complete_text", return_value=draft),
         patch(
-            "app.agents.harness.critique.complete_json_schema",
+            "app.agents.harness.critique.complete_json_object",
             return_value=_GROUNDING_PASS,
         ),
         patch("app.agents.harness.critique.settings.llm_api_key", "fake"),
@@ -54,7 +57,7 @@ def test_tier1_kb_deixis_via_plan_tools(monkeypatch):
     def boom(*a, **k):
         raise AssertionError("Tier-1 deixis must not reach the LLM")
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    monkeypatch.setattr(router_mod, "complete_json_object", boom)
     p = plan_tools("文档里总结一下架构", [], has_kb_docs=True, forced_kb=False)
     assert p["needs_kb"] is True
     assert "kb" in p["pending_tools"]
@@ -66,25 +69,27 @@ def test_classify_no_docs_clamps_kb(monkeypatch):
     def boom(*a, **k):
         raise AssertionError("LLM should not be called for exact greeting")
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    monkeypatch.setattr(router_mod, "complete_json_object", boom)
     assert classify_intent("你好", [], has_kb_docs=True) == "chat"
 
 
 def test_plan_tools_queue_order(monkeypatch):
     import app.agents.router as router_mod
 
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
-        return {
-            "reasoning": "multi",
-            "needs_kb": True,
-            "needs_web": True,
-            "needs_calendar": True,
-            "needs_sandbox": True,
-            "needs_freshness": True,
-            "confidence": "high",
-        }
+    def fake_schema(messages, result_model, model_name):
+        return result_model.model_validate(
+            {
+                "reasoning": "multi",
+                "needs_kb": True,
+                "needs_web": True,
+                "needs_calendar": True,
+                "needs_sandbox": True,
+                "needs_freshness": True,
+                "confidence": "high",
+            }
+        )
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     p = plan_tools(
         "结合方案看最近政策并安排会议",
         [],
@@ -106,18 +111,20 @@ def test_plan_tools_queue_order(monkeypatch):
 def test_plan_tools_sandbox_without_forced_kb(monkeypatch):
     import app.agents.router as router_mod
 
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
-        return {
-            "reasoning": "画图统计",
-            "needs_kb": False,
-            "needs_web": False,
-            "needs_calendar": False,
-            "needs_sandbox": True,
-            "needs_freshness": False,
-            "confidence": "high",
-        }
+    def fake_schema(messages, result_model, model_name):
+        return result_model.model_validate(
+            {
+                "reasoning": "画图统计",
+                "needs_kb": False,
+                "needs_web": False,
+                "needs_calendar": False,
+                "needs_sandbox": True,
+                "needs_freshness": False,
+                "confidence": "high",
+            }
+        )
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     p = plan_tools(
         "按报考专业分类画出所有考生四门科目的平均值的柱状图",
         [],
@@ -631,7 +638,7 @@ def test_tier1_greeting_skips_llm(monkeypatch):
     def boom(*a, **k):
         raise AssertionError("LLM should not run for certain chat")
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    monkeypatch.setattr(router_mod, "complete_json_object", boom)
     p = plan_tools("你好", [], has_kb_docs=True, forced_kb=False)
     assert p["pending_tools"] == []
 
@@ -642,7 +649,7 @@ def test_tier1_kb_deixis_skips_llm(monkeypatch):
     def boom(*a, **k):
         raise AssertionError("LLM should not run for certain KB deixis")
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    monkeypatch.setattr(router_mod, "complete_json_object", boom)
     p = plan_tools("文档里总结架构", [], has_kb_docs=True, forced_kb=False)
     assert p["needs_kb"] is True
 

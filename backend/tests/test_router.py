@@ -17,10 +17,23 @@ from app.agents.router import (
 from app.core.llm import (
     LLMInfraError,
     LLMStructuredError,
-    complete_json_schema,
     is_llm_infra_exception,
     llm_infra_backoff_seconds,
 )
+
+
+def _decision(result_model, **overrides):
+    payload = {
+        "reasoning": "制度事实问",
+        "needs_kb": False,
+        "needs_web": False,
+        "needs_calendar": False,
+        "needs_sandbox": False,
+        "needs_freshness": False,
+        "confidence": "high",
+    }
+    payload.update(overrides)
+    return result_model.model_validate(payload)
 
 
 def test_router_prompt_names_personal_block_and_planning():
@@ -56,65 +69,45 @@ def test_tier0_document_ids_force_kb():
 
 
 def test_availability_clamp_no_docs(monkeypatch):
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
-        return {
-            "reasoning": "以为要查库",
-            "needs_kb": True,
-            "needs_web": False,
-            "needs_calendar": False,
-            "needs_sandbox": True,
-            "needs_freshness": False,
-            "confidence": "high",
-        }
+    def fake_schema(messages, result_model, model_name):
+        return _decision(result_model, reasoning="以为要查库", needs_kb=True, needs_sandbox=True)
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     d = route("文档里的制度", [], has_kb_docs=False, has_tabular_docs=False)
     assert d.needs_kb is False
     assert d.needs_sandbox is False
 
 
 def test_llm_path_normal_work_hours(monkeypatch):
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
-        return {
-            "reasoning": "制度事实问",
-            "needs_kb": True,
-            "needs_web": False,
-            "needs_calendar": False,
-            "needs_sandbox": False,
-            "needs_freshness": False,
-            "confidence": "high",
-        }
+    def fake_schema(messages, result_model, model_name):
+        return _decision(result_model, reasoning="制度事实问", needs_kb=True)
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     d = route("正常工作时间", [], has_kb_docs=True)
     assert d.needs_kb is True
     assert classify_intent("正常工作时间", [], has_kb_docs=True) == "rag"
 
 
 def test_llm_path_chat_lib(monkeypatch):
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
-        return {
-            "reasoning": "写诗闲聊",
-            "needs_kb": False,
-            "needs_web": False,
-            "needs_calendar": False,
-            "needs_sandbox": False,
-            "needs_freshness": False,
-            "confidence": "high",
-        }
+    def fake_schema(messages, result_model, model_name):
+        return _decision(result_model, reasoning="写诗闲聊")
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     assert classify_intent("写首诗", [], has_kb_docs=True) == "chat"
 
 
 def test_router_error_after_failures(monkeypatch):
-    def boom(*args, **kwargs):
-        raise LLMStructuredError("schema 约束输出失败")
+    calls = {"n": 0}
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    def boom(messages, result_model, model_name):
+        calls["n"] += 1
+        raise LLMStructuredError("json 对象校验失败")
+
+    monkeypatch.setattr(router_mod, "complete_json_object", boom)
     monkeypatch.setattr(router_mod.settings, "router_max_attempts", 2)
     with pytest.raises(RouterError):
         route("公司几点上班", [], has_kb_docs=True)
+    assert calls["n"] == 1
 
 
 def test_no_regex_fallback_branch_in_plan_tools():
@@ -157,18 +150,10 @@ def test_route_redis_key_uses_live_prompt_sha(monkeypatch):
     monkeypatch.setattr(router_mod, "json_get", lambda _key: None)
     monkeypatch.setattr(router_mod, "json_set", lambda *_a, **_k: True)
 
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
-        return {
-            "reasoning": "制度事实问",
-            "needs_kb": True,
-            "needs_web": False,
-            "needs_calendar": False,
-            "needs_sandbox": False,
-            "needs_freshness": False,
-            "confidence": "high",
-        }
+    def fake_schema(messages, result_model, model_name):
+        return _decision(result_model, reasoning="制度事实问", needs_kb=True)
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     route("正常工作时间", [], has_kb_docs=True)
     assert seen["namespace"] == "route"
     assert seen["payload"]["prompt_sha"] == router_prompt_sha()
@@ -188,19 +173,11 @@ def test_eval_bootstrap_bypasses_router_redis(monkeypatch):
     monkeypatch.setattr(router_mod, "json_set", boom_set)
     calls = {"n": 0}
 
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
+    def fake_schema(messages, result_model, model_name):
         calls["n"] += 1
-        return {
-            "reasoning": "制度事实问",
-            "needs_kb": True,
-            "needs_web": False,
-            "needs_calendar": False,
-            "needs_sandbox": False,
-            "needs_freshness": False,
-            "confidence": "high",
-        }
+        return _decision(result_model, reasoning="制度事实问", needs_kb=True)
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     decision = route("正常工作时间", [], has_kb_docs=True)
     assert calls["n"] == 1
     assert decision.needs_kb is True
@@ -219,11 +196,11 @@ def test_router_rate_limit_backs_off_then_raises_infra(monkeypatch):
     monkeypatch.setattr(router_mod.settings, "router_max_attempts", 3)
     calls = {"n": 0}
 
-    def boom(*_args, **_kwargs):
+    def boom(messages, result_model, model_name):
         calls["n"] += 1
         raise LLMInfraError("RateLimitError: 429")
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    monkeypatch.setattr(router_mod, "complete_json_object", boom)
     with pytest.raises(RouterInfraError) as raised:
         route("公司几点上班", [], has_kb_docs=True)
     assert calls["n"] == 3
@@ -238,79 +215,19 @@ def test_router_schema_retry_is_not_infra_and_does_not_sleep(monkeypatch):
     monkeypatch.setattr(router_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(router_mod.settings, "router_max_attempts", 2)
 
-    def boom(*_args, **_kwargs):
-        raise LLMStructuredError("schema 约束输出失败")
+    calls = {"n": 0}
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", boom)
+    def boom(messages, result_model, model_name):
+        calls["n"] += 1
+        raise LLMStructuredError("json 对象校验失败")
+
+    monkeypatch.setattr(router_mod, "complete_json_object", boom)
     with pytest.raises(RouterError) as raised:
         route("公司几点上班", [], has_kb_docs=True)
+    assert calls["n"] == 1
     assert not isinstance(raised.value, RouterInfraError)
     assert sleeps == []
     assert not router_mod.router_failure_is_infra(raised.value)
-
-
-def test_complete_json_schema_rate_limit_backs_off(monkeypatch):
-    from app.core import llm as llm_mod
-
-    sleeps: list[float] = []
-    monkeypatch.setattr(llm_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
-    monkeypatch.setattr(llm_mod.settings, "llm_api_key", "test-key")
-
-    class RateLimitError(Exception):
-        status_code = 429
-
-    calls = {"n": 0}
-
-    class Completions:
-        def create(self, **_kwargs):
-            calls["n"] += 1
-            raise RateLimitError("slow down")
-
-    class Client:
-        def __init__(self):
-            self.chat = type("Chat", (), {})()
-            self.chat.completions = Completions()
-
-    monkeypatch.setattr(llm_mod, "_get_sync_client", lambda: Client())
-    with pytest.raises(LLMInfraError):
-        complete_json_schema(
-            [{"role": "user", "content": "hi"}],
-            schema={"type": "object"},
-            name="router_decision",
-            max_attempts=2,
-        )
-    assert calls["n"] == 2
-    assert sleeps == [llm_infra_backoff_seconds(1)]
-
-
-def test_complete_json_schema_bad_request_stays_structured(monkeypatch):
-    from app.core import llm as llm_mod
-
-    sleeps: list[float] = []
-    monkeypatch.setattr(llm_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
-    monkeypatch.setattr(llm_mod.settings, "llm_api_key", "test-key")
-
-    class BadRequestError(Exception):
-        status_code = 400
-
-    class Completions:
-        def create(self, **_kwargs):
-            raise BadRequestError("invalid schema")
-
-    class Client:
-        def __init__(self):
-            self.chat = type("Chat", (), {})()
-            self.chat.completions = Completions()
-
-    monkeypatch.setattr(llm_mod, "_get_sync_client", lambda: Client())
-    with pytest.raises(LLMStructuredError):
-        complete_json_schema(
-            [{"role": "user", "content": "hi"}],
-            schema={"type": "object"},
-            name="router_decision",
-            max_attempts=2,
-        )
-    assert sleeps == []
 
 
 def test_infra_classification_uses_type_not_message_text():
@@ -330,18 +247,17 @@ def test_infra_classification_uses_type_not_message_text():
 
 
 def test_queue_order(monkeypatch):
-    def fake_schema(messages, *, schema, name, model=None, max_attempts=None):
-        return {
-            "reasoning": "multi",
-            "needs_kb": True,
-            "needs_web": True,
-            "needs_calendar": True,
-            "needs_sandbox": True,
-            "needs_freshness": False,
-            "confidence": "high",
-        }
+    def fake_schema(messages, result_model, model_name):
+        return _decision(
+            result_model,
+            reasoning="multi",
+            needs_kb=True,
+            needs_web=True,
+            needs_calendar=True,
+            needs_sandbox=True,
+        )
 
-    monkeypatch.setattr(router_mod, "complete_json_schema", fake_schema)
+    monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
     p = plan_tools(
         "综合问题",
         [],

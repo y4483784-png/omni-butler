@@ -202,7 +202,7 @@ parse → AutoHarness.evaluate（可选）→ 本地 risk/permission → execute
 
 ### 4.5b `harness/critique.py`（H2 内容核验 + 至多一次重写）
 
-**功能**：有 kb/web/sandbox 证据时，在 `answer_node` 内先 `complete_text` 成稿，再 `complete_json_schema` 对照证据做 NLI 忠实度判定（RAGAS / LangGraph hallucination grader）。不过关则把 `unsupported` 作为 Reflexion verbal feedback 再生成一次；第二次仍不过关才在文末加「依据核验说明」。沙箱数字规则仅在本轮 `needs_sandbox` 且证据含 `===SUMMARY===` 时启用。
+**功能**：有 kb/web/sandbox 证据时，在 `answer_node` 内先 `complete_text` 成稿，再 `complete_json_object` 对照证据做 NLI 忠实度判定（RAGAS / LangGraph hallucination grader）。不过关则把 `unsupported` 作为 Reflexion verbal feedback 再生成一次；第二次仍不过关才在文末加「依据核验说明」。沙箱数字规则仅在本轮 `needs_sandbox` 且证据含 `===SUMMARY===` 时启用。
 
 | 字段 / 步骤 | 作用 |
 |-------------|------|

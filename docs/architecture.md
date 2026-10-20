@@ -108,12 +108,12 @@ docker compose run --rm --name omni-butler-migrate api alembic upgrade head
 
 - **Tier 0**：用户勾选了文档，或请求里 `use_kb=true`，并且库里真有文档。直接走知识库，不调路由模型。库是空的则不会强制。
 - **Tier 1**：整句精确匹配的短问候（「你好」「在吗」「hi」等，去掉空白后不超过 6 个字符）走闲聊。句子里出现「知识库」「文档里」这类明确指代、并且库里有文档，走知识库。
-- **Tier 2**：其余情况让模型按固定 JSON 结构做判断。模型名是 `ROUTER_MODEL`（空则 `PLANNER_MODEL`，再空则 `LLM_MODEL`）。校验失败最多重试 `ROUTER_MAX_ATTEMPTS` 次（默认 2）。失败就用 SSE 的 `error` 告诉用户「工具规划失败」，不会改用正则，也不会假装当成闲聊。
+- **Tier 2**：其余情况让模型按固定 JSON 结构做判断。模型名是 `ROUTER_MODEL`（空则 `PLANNER_MODEL`，再空则 `LLM_MODEL`）。模型返回 json。缺字段算失败，再试一次。`ROUTER_MAX_ATTEMPTS`（默认 1）只限制限流或超时后再请求几次。失败就用 SSE 的 `error` 告诉用户「工具规划失败」，不会改用正则，也不会假装当成闲聊。
 
 | 变量 | 作用 |
 | --- | --- |
 | `ROUTER_MODEL` | 路由判断用的模型。人多时用轻量模型。 |
-| `ROUTER_MAX_ATTEMPTS` | 结构校验失败的重试上限。 |
+| `ROUTER_MAX_ATTEMPTS` | 限流或超时后，路由再请求的次数上限。默认 1。非法 json 不记在这里。 |
 | `CHAT_MODEL` | 闲聊回答。空则与 `LLM_MODEL` 相同。 |
 | `LLM_MODEL` | 要调工具或比较复杂的回答。 |
 | `PLANNER_MODEL` | 规划用。空则 `LLM_MODEL`。 |

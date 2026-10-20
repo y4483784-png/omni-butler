@@ -128,8 +128,31 @@ def fake_llm(monkeypatch):
             "confidence": "high",
         }
 
-    def _complete_json_schema(*_a, **_k):
-        return _complete_json()
+    def _complete_json_object(messages, result_model, model_name):
+        from app.agents.harness.critique import CritiqueVerdict
+        from app.agents.router import RouterDecision, RouterReply
+
+        if result_model in (RouterDecision, RouterReply):
+            return result_model.model_validate(
+                {
+                    "reasoning": "mock chat",
+                    "needs_kb": False,
+                    "needs_web": False,
+                    "needs_calendar": False,
+                    "needs_sandbox": False,
+                    "needs_freshness": False,
+                    "confidence": "high",
+                }
+            )
+        if result_model is CritiqueVerdict:
+            return result_model.model_validate(
+                {
+                    "grounded": True,
+                    "addresses_question": True,
+                    "unsupported": [],
+                }
+            )
+        raise AssertionError(f"unexpected result model {result_model}")
 
     def _critique(*_a, **_k):
         """Grounding critique: accept the draft as-is, no repair, no network call."""
@@ -147,22 +170,19 @@ def fake_llm(monkeypatch):
     monkeypatch.setattr("app.core.llm.stream_chat", _stream)
     monkeypatch.setattr("app.core.llm.complete_text", _complete_text)
     monkeypatch.setattr("app.core.llm.complete_json", _complete_json)
-    monkeypatch.setattr("app.core.llm.complete_json_schema", _complete_json_schema)
-    monkeypatch.setattr("app.agents.router.complete_json_schema", _complete_json_schema)
+    monkeypatch.setattr("app.core.llm.complete_json_object", _complete_json_object)
+    monkeypatch.setattr("app.agents.router.complete_json_object", _complete_json_object)
     monkeypatch.setattr("app.agents.workflow.complete_text", _complete_text)
     monkeypatch.setattr("app.api.chat.stream_chat", _stream)
     # Seams bound at import time: patching app.core.llm alone leaves these pointing at
     # the real client, so with a live key in .env the test would call the network.
     monkeypatch.setattr("app.agents.harness.critique.complete_text", _critique, raising=False)
     monkeypatch.setattr(
-        "app.agents.harness.critique.complete_json_schema", _complete_json_schema, raising=False
+        "app.agents.harness.critique.complete_json_object", _complete_json_object, raising=False
     )
     monkeypatch.setattr("app.agents.context.summary.complete_json", _summary, raising=False)
     monkeypatch.setattr("app.services.memory.complete_json", _complete_json, raising=False)
     monkeypatch.setattr("app.agents.tools.web.complete_json", _complete_json, raising=False)
-    monkeypatch.setattr(
-        "app.agents.tools.web.complete_json_schema", _complete_json_schema, raising=False
-    )
     yield
 
 

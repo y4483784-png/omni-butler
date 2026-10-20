@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Eval judge: scoring with the model that produced the answer is self-grading
     # (and measured 0.34 answer_relevancy on this family), so keep it separate.
     judge_model: str = "glm-4-air"
-    router_max_attempts: int = 2                     # schema validate + retry bound
+    router_max_attempts: int = 1
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = "embedding-3"
