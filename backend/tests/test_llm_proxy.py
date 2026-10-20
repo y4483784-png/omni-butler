@@ -85,6 +85,31 @@ def test_httpx_clients_fall_through_proxy_env_names(monkeypatch: pytest.MonkeyPa
     assert captured["sync"]["proxy"] == expected
 
 
+class _CaseFoldedEnv(dict):
+    def __setitem__(self, key, value):
+        for existing in list(self):
+            if existing.lower() == key.lower():
+                super().__delitem__(existing)
+                break
+        super().__setitem__(key, value)
+
+
+@pytest.mark.unit
+def test_case_folded_env_prefers_https_over_the_last_http_write(monkeypatch: pytest.MonkeyPatch):
+    env = _CaseFoldedEnv()
+    env["HTTP_PROXY"] = "http://b"
+    env["https_proxy"] = "http://c"
+    env["http_proxy"] = "http://d"
+    monkeypatch.setattr("app.core.proxy.os.environ", env)
+    captured = _capture_clients(monkeypatch)
+
+    sync = llm_mod._get_sync_client()
+    sync.close()
+
+    assert dict(env) == {"https_proxy": "http://c", "http_proxy": "http://d"}
+    assert captured["sync"]["proxy"] == "http://c"
+
+
 @pytest.mark.unit
 def test_httpx_clients_omit_proxy_when_env_is_blank(monkeypatch: pytest.MonkeyPatch):
     _clear_proxy_env(monkeypatch)
