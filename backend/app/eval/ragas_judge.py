@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Sequence
 
-from app.core.config import settings
+from app.core.config import ZhipuService, settings, zhipu_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +67,11 @@ def build_ragas_llm_embeddings():
         timeout=settings.llm_timeout,
         max_retries=3,
     )
+    embedding = zhipu_endpoint(ZhipuService.EMBEDDING)
     embeddings = OpenAIEmbeddings(
         model=settings.embedding_model,
-        api_key=settings.llm_api_key or "dummy",
-        base_url=settings.llm_base_url,
+        api_key=embedding.api_key,
+        base_url=embedding.base_url,
         timeout=settings.llm_timeout,
         max_retries=1,
     )

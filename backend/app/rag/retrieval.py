@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import ZhipuService, settings, zhipu_in_use
 from app.core.embeddings import EmbeddingError, embed_query
 from app.models.models import Chunk, Document
 from app.rag import vector_store
@@ -206,10 +206,8 @@ def _vector_ranked(
     that only want ids can ignore the second value; eval uses it so a mid-run
     failure is not reported as a healthy production hybrid.
     """
-    if not settings.rag_hybrid_enabled:
+    if not zhipu_in_use(ZhipuService.EMBEDDING):
         return [], ""
-    if not settings.llm_api_key:
-        return [], "missing_api_key"
     if not vector_store.is_available():
         return [], "qdrant_unavailable"
     try:

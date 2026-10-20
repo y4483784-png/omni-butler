@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
-from app.core.config import settings
+from app.core.config import ZhipuService, settings, zhipu_in_use
 from app.core.messages import KB_PARSE_FAIL_MESSAGE
 
 SUPPORTED = {
@@ -654,11 +654,11 @@ def _read_docx(path: Path) -> ParseResult:
     ocr_ok = 0
     ocr_fail = 0
     warnings: list[str] = []
-    ocr_ready = settings.vision_ocr_enabled and bool(settings.llm_api_key)
+    ocr_ready = zhipu_in_use(ZhipuService.VISION)
 
     if image_rels and not ocr_ready:
         warnings.append(
-            f"文档含 {len(image_rels)} 张嵌入图，但未启用 OCR（需 LLM_API_KEY 且 VISION_OCR_ENABLED=true）"
+            f"文档含 {len(image_rels)} 张嵌入图，但未启用 OCR：请设 VISION_OCR_ENABLED=true 并配置 VISION_BASE_URL / VISION_API_KEY"
         )
 
     for idx, rel in enumerate(image_rels, start=1):
@@ -784,7 +784,7 @@ def _read_pdf(path: Path) -> ParseResult:
     skipped_cap = 0
     page_bodies: list[tuple[int, str]] = []
     max_ocr = settings.ocr_max_pages
-    ocr_ready = settings.vision_ocr_enabled and bool(settings.llm_api_key)
+    ocr_ready = zhipu_in_use(ZhipuService.VISION)
 
     try:
         if getattr(doc, "is_encrypted", False):
@@ -820,7 +820,7 @@ def _read_pdf(path: Path) -> ParseResult:
                         warnings.append(f"第{i + 1}页 OCR 失败：{type(e).__name__}（{reason}）")
             elif need and not ocr_ready:
                 warnings.append(
-                    f"第{i + 1}页需 OCR（{reason}）但未启用：请配置 LLM_API_KEY 并保持 VISION_OCR_ENABLED=true"
+                    f"第{i + 1}页需 OCR（{reason}）但未启用：请设 VISION_OCR_ENABLED=true 并配置 VISION_BASE_URL / VISION_API_KEY"
                 )
 
             if page_text:
@@ -842,7 +842,7 @@ def _read_pdf(path: Path) -> ParseResult:
             elements.append(el)
     text = "\n\n".join(parts).strip()
     if not text:
-        raise ValueError("未能从 PDF 提取到文本（可检查是否加密，或配置 LLM_API_KEY 启用多模态 OCR）")
+        raise ValueError("未能从 PDF 提取到文本（可检查是否加密，或开启 VISION_OCR_ENABLED 并配置 VISION_API_KEY 启用多模态 OCR）")
 
     if used_ocr:
         warnings.insert(

@@ -1,27 +1,31 @@
-"""Embedding seam (OpenAI-compatible API; same key/base_url as LLM)."""
-
 from __future__ import annotations
 
-from app.core.config import settings
+from app.core.config import Endpoint, EndpointConfigError, ZhipuService, settings, zhipu_endpoint
 from app.core.redis import json_get, json_set, model_slot, stable_key
 
 
 class EmbeddingError(RuntimeError):
-    """Raised when embeddings cannot be produced (missing key / API failure)."""
+    """Raised when embeddings cannot be produced (missing endpoint settings / API failure)."""
+
+
+def _embedding_endpoint() -> Endpoint:
+    try:
+        return zhipu_endpoint(ZhipuService.EMBEDDING)
+    except EndpointConfigError as e:
+        raise EmbeddingError(str(e)) from e
 
 
 def embed_texts(texts: list[str], *, batch_size: int = 16) -> list[list[float]]:
     """Return one embedding vector per input string (same order)."""
     if not texts:
         return []
-    if not settings.llm_api_key:
-        raise EmbeddingError("未配置 LLM_API_KEY，无法向量化")
+    endpoint = _embedding_endpoint()
 
     from openai import OpenAI
 
     client = OpenAI(
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
+        api_key=endpoint.api_key,
+        base_url=endpoint.base_url,
         timeout=min(settings.llm_timeout, 60.0),
         max_retries=1,
     )
@@ -55,7 +59,7 @@ def embed_query(text: str) -> list[float]:
         {
             "text": normalized,
             "model": settings.embedding_model,
-            "base_url": settings.llm_base_url,
+            "base_url": _embedding_endpoint().base_url,
         },
     )
     cached = json_get(key)

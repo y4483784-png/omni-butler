@@ -54,9 +54,23 @@ Windows 上复制用 `copy .env.example backend\.env`。这个文件不要提交
 
 | 变量 | 说明 |
 | --- | --- |
-| `LLM_API_KEY` | 智谱的密钥。留空时聊天是演示回复，页面仍能走通。旧名字 `OPENAI_API_KEY` 也认。 |
+| `LLM_API_KEY` | 智谱的密钥，只给聊天用。留空时聊天是演示回复。旧名字 `OPENAI_API_KEY` 也认。 |
 | `LLM_BASE_URL` | 模板里已是智谱地址 `https://open.bigmodel.cn/api/paas/v4/`。 |
 | `LLM_MODEL` | 模板里是 `glm-4-air`。 |
+
+### 向量、OCR、Rerank 各有一组地址和密钥
+
+聊天用 `LLM_BASE_URL` 和 `LLM_API_KEY`。下面三项不读这两个变量，也不会回退到它们。模型名以 `glm` 开头时自动改成智谱地址的规则只改 `LLM_BASE_URL`，不碰这三组。
+
+| 功能 | 开关（模板里都是 `true`） | 开着时必须填 |
+| --- | --- | --- |
+| 向量检索 | `RAG_HYBRID_ENABLED` | `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY` |
+| 多模态 OCR | `VISION_OCR_ENABLED` | `VISION_BASE_URL`、`VISION_API_KEY` |
+| 智谱 Rerank | `RAG_RERANK_ENABLED`，且 `RAG_RERANK_PROVIDER` 是 `zhipu`、`auto` 或空 | `RERANK_BASE_URL`、`RERANK_API_KEY` |
+
+模板里三个地址已是智谱 `https://open.bigmodel.cn/api/paas/v4/`，三个密钥空着。用智谱时一般三处填同一个智谱 key。
+
+开关开着却有空项时，api 和 worker 启动就报错退出。日志写出缺的变量名和对应的关闭开关。暂时不用某项，就把它的开关设成 `false`。向量关掉后只剩关键词检索，OCR 关掉后扫描件和图片不识别文字，Rerank 关掉后用本地启发式排序。
 
 ### 保持模板原样即可
 
@@ -205,6 +219,7 @@ docker compose run --rm --name omni-butler-migrate api alembic upgrade head
 | 登录失败 | 看 `backend/.env` 的 `ADMIN_PASSWORD` 是否为空。空密码只在第一次写入：`docker compose up -d --no-build --force-recreate api api2`（没有 api2 就只写 api）。库里已经有密码时，用侧栏「改密」。 |
 | 浏览器里只有 `172.17` / `172.18` | 那是 Docker 网桥。改用 `ip -4 addr` 里的局域网地址。 |
 | `/health` 正常，`/health/ready` 不是 200 | `docker compose ps` 看 postgres、redis 是否 Up；`docker compose logs postgres redis api`。 |
+| api 或 worker 起不来，日志里有 `Zhipu endpoint settings are empty` | 日志后面列出缺的变量。在 `backend/.env` 填上，或把对应开关设成 `false`，见上面「向量、OCR、Rerank 各有一组地址和密钥」。改完重建进程：`docker compose up -d --no-build --force-recreate api api2 worker worker2`（没有 api2、worker2 时去掉这两项） |
 | 页面能开，聊天一直是演示回复 | `LLM_API_KEY` 还空着。填进 `backend/.env` 后让进程重新读配置（没有 api2、worker2 时从命令里去掉这两项）：`docker compose up -d --no-build --force-recreate api api2 worker worker2 beat` |
 | 画图提示沙箱镜像不可用 | `docker compose build sandbox`，再 `docker image inspect omni-sandbox:latest`。 |
 | Windows ping 不通、共享盘是空的 | [docs/dev-setup.md](docs/dev-setup.md)。 |

@@ -28,6 +28,8 @@ x-backend-environment: &backend-environment
   DB_MAX_OVERFLOW: "10"
 
 x-backend-env: &backend-env
+  # backend/.env 里 EMBEDDING_* / VISION_* / RERANK_* 三组地址和密钥不是 LLM_BASE_URL / LLM_API_KEY 的别名。
+  # 对应开关开着却留空时，api 和 worker 启动即退出，日志写出缺的变量名。
   env_file:
     - ./backend/.env
   environment:

@@ -10,7 +10,14 @@ from urllib.parse import urljoin
 
 import httpx
 
-from app.core.config import settings
+from app.core.config import (
+    Endpoint,
+    EndpointConfigError,
+    ZhipuService,
+    settings,
+    zhipu_endpoint,
+    zhipu_in_use,
+)
 from app.core.redis import model_slot
 from app.rag.expand import ExpandedHit
 
@@ -91,27 +98,21 @@ class HeuristicReranker:
 
 
 class ZhipuReranker:
-    """POST {base}/rerank — Zhipu text rerank API."""
-
     def __init__(
         self,
+        endpoint: Endpoint,
         *,
-        api_key: str | None = None,
-        base_url: str | None = None,
         model: str | None = None,
         timeout: float | None = None,
     ) -> None:
-        self.api_key = (api_key if api_key is not None else settings.llm_api_key) or ""
-        base = (base_url if base_url is not None else settings.llm_base_url) or ""
-        self.base_url = base.rstrip("/") + "/"
+        self.api_key = endpoint.api_key
+        self.base_url = endpoint.base_url.rstrip("/") + "/"
         self.model = (model if model is not None else settings.rerank_model) or "rerank"
         self.timeout = float(timeout if timeout is not None else min(settings.llm_timeout, 30.0))
 
     def rerank(self, query: str, hits: list[ExpandedHit], *, top_n: int) -> list[RankedHit]:
         if not hits:
             return []
-        if not self.api_key:
-            raise RuntimeError("missing api key")
 
         documents = [_passage_for_api(h) for h in hits]
         url = urljoin(self.base_url, "rerank")
@@ -158,18 +159,14 @@ class ZhipuReranker:
 
 
 def resolve_reranker() -> Reranker:
-    """Pick Zhipu when enabled + key present; else heuristic."""
-    if not settings.rag_rerank_enabled:
+    """Zhipu when rerank is in use, else heuristic.
+
+    A missing RERANK_BASE_URL / RERANK_API_KEY raises EndpointConfigError instead of
+    quietly returning the heuristic.
+    """
+    if not zhipu_in_use(ZhipuService.RERANK):
         return HeuristicReranker()
-    provider = (settings.rag_rerank_provider or "zhipu").strip().lower()
-    if provider in ("none", "heuristic", "off"):
-        return HeuristicReranker()
-    if provider in ("zhipu", "auto", ""):
-        if settings.llm_api_key:
-            return ZhipuReranker()
-        return HeuristicReranker()
-    # Unknown provider → heuristic
-    return HeuristicReranker()
+    return ZhipuReranker(zhipu_endpoint(ZhipuService.RERANK))
 
 
 def rerank_hits(
@@ -184,22 +181,24 @@ def rerank_hits(
 
     ``diag["rerank_fallback"]`` is set when a non-heuristic reranker was attempted
     and the heuristic path was used instead. A configured heuristic reranker does
-    not count as a fallback.
+    not count as a fallback. EndpointConfigError is configuration, not a rerank
+    failure, so it propagates and is never relabeled as a fallback.
     """
     if not hits:
         return []
     n = max(1, int(top_n))
-    primary = reranker or resolve_reranker()
-    heuristic = HeuristicReranker()
     if diag is not None:
         diag["rerank_fallback"] = False
-    try:
-        if isinstance(primary, HeuristicReranker):
-            return primary.rerank(query, hits, top_n=n)
+    primary = reranker or resolve_reranker()
+    if isinstance(primary, HeuristicReranker):
         return primary.rerank(query, hits, top_n=n)
+    try:
+        return primary.rerank(query, hits, top_n=n)
+    except EndpointConfigError:
+        raise
     except Exception as e:
-        logger.warning("rerank failed, falling back to heuristic: %s", e)
+        logger.error("rerank failed, falling back to heuristic: %s", e)
         if diag is not None:
             diag["rerank_fallback"] = True
             diag["rerank_error"] = f"{type(e).__name__}: {e}"
-        return heuristic.rerank(query, hits, top_n=n)
+        return HeuristicReranker().rerank(query, hits, top_n=n)

@@ -62,7 +62,7 @@ def test_ingest_document_writes_chunks_and_ready_warning():
             doc_id = doc.id
 
             with (
-                patch("app.rag.ingestion.settings.llm_api_key", "fake-key"),
+                patch("app.rag.ingestion.settings.rag_hybrid_enabled", True),
                 patch("app.rag.ingestion.vector_store.is_available", return_value=False),
                 patch("app.rag.ingestion.vector_store.delete_by_document"),
             ):
@@ -137,7 +137,7 @@ def test_ingest_real_xlsx_fixture_preserves_sheet_metadata():
         doc_id = doc.id
 
         with (
-            patch("app.rag.ingestion.settings.llm_api_key", "fake-key"),
+            patch("app.rag.ingestion.settings.rag_hybrid_enabled", True),
             patch("app.rag.ingestion.vector_store.is_available", return_value=False),
             patch("app.rag.ingestion.vector_store.delete_by_document"),
         ):
