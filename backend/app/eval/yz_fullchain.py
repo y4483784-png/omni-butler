@@ -19,10 +19,10 @@ from app.agents.workflow import build_pool_prompt
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
 from app.eval.tenant import ensure_eval_user
-from app.core.llm import LLMInfraError, complete_text, resolved_chat_model
+from app.core.llm import LLMInfraError, Role, Spoken, complete_text
 from app.eval.judges import is_refusal, number_matches
 from app.eval.metrics import multilabel_report, retrieval_report
-from app.eval.ragas_judge import run_ragas_metrics
+from app.eval.ragas_judge import run_ragas_rows
 from app.eval.tool_routing import EvalCase as RoutingEvalCase, predict_case
 from app.models.models import Chunk, Document
 from app.rag import vector_store
@@ -296,12 +296,13 @@ def generate_answer(query: str, evidence: list[dict[str, Any]]) -> tuple[str, li
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": query},
     ]
-    answer = complete_text(
+    spoken = complete_text(
         messages,
-        model=resolved_chat_model(),
+        role=Role.CHAT,
         retries=4,
         raise_on_error=True,
     )
+    answer = spoken.content if isinstance(spoken, Spoken) else str(spoken or "")
     return answer, included
 
 
@@ -350,7 +351,7 @@ def citation_hit(
     return bool(cited_doc_ids & gold_ids)
 
 
-def _predict_routing(case: YZEvalCase, key_to_id: dict[str, int]) -> tuple[str, list[str], bool]:
+def _predict_routing(case: YZEvalCase, key_to_id: dict[str, int]) -> tuple[str, list[str], bool, bool]:
     has_tabular = "attendance_csv" in key_to_id
     rc = RoutingEvalCase(
         id=case.id,
@@ -368,11 +369,13 @@ def _predict_routing(case: YZEvalCase, key_to_id: dict[str, int]) -> tuple[str, 
         tags=case.tags,
     )
     result = predict_case(rc)
+    if result.infra_error:
+        return "", [], False, True
     gold_intent = str(case.gold.get("intent") or "chat")
     gold_tools = sorted(case.gold.get("tools") or [])
     pred_tools = sorted(result.pred_tools or [])
     ok = result.pred_intent == gold_intent and pred_tools == gold_tools
-    return result.pred_intent or "chat", list(result.pred_tools or []), ok
+    return result.pred_intent or "chat", list(result.pred_tools or []), ok, False
 
 
 def run_yz_fullchain_eval(
@@ -420,6 +423,7 @@ def run_yz_fullchain_eval(
         case_results: list[CaseResult] = []
         ragas_rows: list[dict[str, Any]] = []
         routing_gold_intent: list[str] = []
+        routing_infra_n = 0
         routing_pred_intent: list[str] = []
         routing_gold_tools: list[set[str]] = []
         routing_pred_tools: list[set[str]] = []
@@ -472,13 +476,19 @@ def run_yz_fullchain_eval(
             gold_tools = pred_tools = None
             routing_ok = None
             if case.gold.get("intent") is not None:
-                pred_intent, pred_tools, routing_ok = _predict_routing(case, key_to_id)
-                gold_intent = str(case.gold.get("intent") or "chat")
-                gold_tools = list(case.gold.get("tools") or [])
-                routing_gold_intent.append(gold_intent)
-                routing_pred_intent.append(pred_intent)
-                routing_gold_tools.append(set(gold_tools))
-                routing_pred_tools.append(set(pred_tools or []))
+                pred_intent, pred_tools, routing_ok, routing_infra = _predict_routing(case, key_to_id)
+                if routing_infra:
+                    routing_infra_n += 1
+                    pred_intent = None
+                    pred_tools = None
+                    routing_ok = None
+                else:
+                    gold_intent = str(case.gold.get("intent") or "chat")
+                    gold_tools = list(case.gold.get("tools") or [])
+                    routing_gold_intent.append(gold_intent)
+                    routing_pred_intent.append(pred_intent)
+                    routing_gold_tools.append(set(gold_tools))
+                    routing_pred_tools.append(set(pred_tools or []))
 
             if cite is not None:
                 citation_scores.append(cite)
@@ -538,7 +548,10 @@ def run_yz_fullchain_eval(
 
         ragas_scores: dict[str, float | None] = {}
         if not skip_ragas:
-            ragas_scores = run_ragas_metrics(ragas_rows)
+            ragas_outcome = run_ragas_rows(ragas_rows)
+            ragas_scores = ragas_outcome.means
+            if ragas_outcome.infra_error:
+                routing_infra_n += 1
 
         routing_summary: dict[str, Any] | None = None
         if routing_gold_intent:
@@ -596,7 +609,8 @@ def run_yz_fullchain_eval(
             skipped_ragas=skip_ragas,
             failure_buckets=buckets,
             refusal_accuracy=None if refusal_acc is None else round(refusal_acc, 4),
-            n_infra_error=sum(1 for c in case_results if "infra_error" in (c.fail_reasons or [])),
+            n_infra_error=sum(1 for c in case_results if "infra_error" in (c.fail_reasons or []))
+            + routing_infra_n,
             fact_containment_ci95=fc_ci,
         )
     finally:

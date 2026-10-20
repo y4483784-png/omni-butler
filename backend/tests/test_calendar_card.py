@@ -805,7 +805,7 @@ def test_confirmed_event_shows_up_in_list(auth_client: TestClient, monkeypatch):
 def _capture_extract(monkeypatch, payload: dict):
     captured: dict = {}
 
-    def fake_json(messages, model=None):
+    def fake_json(messages, *args, **kwargs):
         captured["messages"] = messages
         return payload
 

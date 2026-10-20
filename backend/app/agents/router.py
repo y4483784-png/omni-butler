@@ -12,9 +12,10 @@ from app.core.config import settings
 from app.core.llm import (
     LLMInfraError,
     LLMStructuredError,
+    Role,
+    cache_identity,
     complete_json_object,
     llm_infra_backoff_seconds,
-    resolved_router_model,
 )
 from app.core.prompts import plan_user, router_system, today_str
 from app.core.redis import json_get, json_set, stable_key
@@ -22,7 +23,7 @@ from app.core.redis import json_get, json_set, stable_key
 logger = logging.getLogger(__name__)
 # Bump when the cached decision shape changes. Prompt edits invalidate on their
 # own: the Redis key includes router_prompt_sha() (same hash as the disk cache).
-_ROUTER_CACHE_VERSION = 2
+_ROUTER_CACHE_VERSION = 3
 
 Intent = Literal["chat", "rag", "web_search", "calendar", "data_analysis"]
 
@@ -170,7 +171,7 @@ def _llm_decide(
     max_attempts = max(1, int(settings.router_max_attempts))
     for attempt in range(1, max_attempts + 1):
         try:
-            reply = complete_json_object(messages, RouterReply, resolved_router_model())
+            reply = complete_json_object(messages, RouterReply, role=Role.ROUTER)
             return RouterDecision.model_validate(reply.model_dump())
         except LLMInfraError as exc:
             if attempt >= max_attempts:
@@ -202,6 +203,7 @@ def router_cache_key(
     has_kb_docs: bool,
     has_tabular_docs: bool,
     model: str,
+    thinking: str,
     prompt_sha: str | None = None,
     today: str | None = None,
 ) -> str:
@@ -216,6 +218,7 @@ def router_cache_key(
             "has_kb_docs": has_kb_docs,
             "has_tabular_docs": has_tabular_docs,
             "model": model,
+            "thinking": thinking,
         },
     )
 
@@ -288,11 +291,13 @@ def route(
     cache_key = ""
     decided: RouterDecision | None = None
     if use_cache:
+        identity = cache_identity(Role.ROUTER)
         cache_key = router_cache_key(
             plan_text,
             has_kb_docs=has_kb_docs,
             has_tabular_docs=has_tabular_docs,
-            model=resolved_router_model(),
+            model=identity.model,
+            thinking=identity.thinking,
         )
         cached = json_get(cache_key)
         if isinstance(cached, dict):

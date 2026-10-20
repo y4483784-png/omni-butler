@@ -149,21 +149,22 @@ def settings_snapshot_safe() -> dict[str, Any]:
     try:
         from app.core.config import settings
 
+        from app.core.llm import ROLE_SPECS, resolve
+
+        roles: dict[str, Any] = {}
+        for role, spec in ROLE_SPECS.items():
+            call = resolve(role)
+            roles[spec.model_env.lower()] = call.model
+            roles[spec.thinking_env.lower()] = "on" if call.thinking else "off"
         return {
-            "llm_model": settings.llm_model,
-            "router_model": settings.router_model or settings.planner_model or settings.llm_model,
-            "judge_model": (getattr(settings, "judge_model", "") or "").strip() or None,
+            **roles,
             "embedding_model": settings.embedding_model,
-            "chat_model": getattr(settings, "chat_model", None) or settings.llm_model,
             "llm_base_url": settings.llm_base_url,
             "rerank_model": getattr(settings, "rerank_model", None),
             "rag_top_k": settings.rag_top_k,
             "rag_candidate_k": getattr(settings, "rag_candidate_k", None),
             "rag_expand_window": getattr(settings, "rag_expand_window", None),
             "llm_timeout": settings.llm_timeout,
-            # Generation knobs that actually shape the answers, not a literal.
-            "temperature_default": getattr(settings, "llm_temperature", None) or 0.2,
-            "max_tokens": getattr(settings, "llm_max_tokens", None),
             "rag_hybrid_enabled": settings.rag_hybrid_enabled,
             "rag_rerank_provider": settings.rag_rerank_provider,
             "context_manager_enabled": settings.context_manager_enabled,

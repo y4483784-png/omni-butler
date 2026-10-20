@@ -83,7 +83,9 @@ def test_feedback_rejects_user_message(auth_client: TestClient):
 
 
 async def _fake_stream(*_args, **_kwargs):
-    yield "新"
+    from app.core.llm import AnswerDelta
+
+    yield AnswerDelta("新")
 
 
 def test_regenerate_truncates_later_and_replaces_assistant(auth_client: TestClient):

@@ -174,7 +174,7 @@ docker compose up -d --no-build --force-recreate api api2 worker worker2 beat
 docker compose -f docker-compose.yml up -d --no-build
 ```
 
-显式写出 `-f` 时不会加载 override。同时说话的人数仍受智谱并发槽位限制（配置里大约几十到一百路，见 `LLM_MODEL_CONCURRENCY_LIMITS`）。
+显式写出 `-f` 时不会加载 override。同时说话的人数受 `LLM_MODEL_CONCURRENCY_LIMITS` 里的槽位限制。聊天、规划和路由默认共用 `deepseek-flash`，判分用 `deepseek-v4-pro`。嵌入、视觉和 Rerank 仍是各自的智谱槽位。
 
 改后端时只构建一次 api 镜像，再 `docker compose up -d --no-build`。沙箱是另一份小镜像，单独 `docker compose build sandbox`。不要和五个后端角色一起 `--build`。
 

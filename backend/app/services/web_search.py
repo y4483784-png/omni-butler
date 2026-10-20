@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import settings
-from app.core.llm import complete_json
+from app.core.llm import Role, complete_json
 from app.core.prompts import REWRITE_SYSTEM, rewrite_user
 from app.core.redis import json_get, json_set, model_slot, stable_key
 
@@ -56,9 +56,9 @@ class SearchOutcome:
 
 
 def _web_search_url() -> str:
-    base = (settings.llm_base_url or "").rstrip("/")
+    base = (settings.web_search_base_url or "").strip().rstrip("/")
     if not base:
-        return "https://open.bigmodel.cn/api/paas/v4/web_search"
+        base = "https://open.bigmodel.cn/api/paas/v4"
     return f"{base}/web_search"
 
 
@@ -112,7 +112,8 @@ def _llm_rewrite_queries(message: str, *, max_n: int, iteration: int) -> list[st
         [
             {"role": "system", "content": REWRITE_SYSTEM},
             {"role": "user", "content": rewrite_user(message, iteration=iteration)},
-        ]
+        ],
+        role=Role.PLANNER,
     )
     out: list[str] = []
     if isinstance(parsed, dict):
@@ -247,7 +248,7 @@ def search_api(
         except (TypeError, ValueError):
             pass
 
-    api_key = (settings.llm_api_key or "").strip()
+    api_key = (settings.web_search_api_key or "").strip()
     if not api_key:
         return SearchOutcome(error="未配置 API Key，无法联网搜索", query_used=q)
 

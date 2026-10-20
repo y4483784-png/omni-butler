@@ -16,7 +16,9 @@ import logging
 import re
 import time
 import weakref
-from typing import Any, TypeVar
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, AsyncIterator, Literal, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -103,24 +105,194 @@ def llm_infra_backoff_seconds(attempt: int) -> float:
     return min(8.0, 2.0 ** max(1, int(attempt)))
 
 
-def resolved_chat_model() -> str:
-    return (settings.chat_model or "").strip() or settings.llm_model
-
-
-def resolved_planner_model() -> str:
-    return (settings.planner_model or "").strip() or settings.llm_model
-
-
-def resolved_router_model() -> str:
-    return (
-        (settings.router_model or "").strip()
-        or (settings.planner_model or "").strip()
-        or settings.llm_model
-    )
-
-
 class LLMStructuredError(RuntimeError):
     """Raised when json object completion fails validation (no silent fallback)."""
+
+
+class RoleConfigError(RuntimeError):
+    """A role's model is empty, or its thinking switch is not on or off."""
+
+
+class ToolsRefused(RuntimeError):
+    """Caller passed tools or a tool turn. The request was not sent."""
+
+
+class Role(str, Enum):
+    CHAT = "chat"
+    PLANNER = "planner"
+    ROUTER = "router"
+    JUDGE = "judge"
+
+
+@dataclass(frozen=True)
+class RoleSpec:
+    model_attr: str
+    thinking_attr: str
+    model_env: str
+    thinking_env: str
+
+
+ROLE_SPECS: dict[Role, RoleSpec] = {
+    Role.CHAT: RoleSpec("chat_model", "chat_thinking", "CHAT_MODEL", "CHAT_THINKING"),
+    Role.PLANNER: RoleSpec("planner_model", "planner_thinking", "PLANNER_MODEL", "PLANNER_THINKING"),
+    Role.ROUTER: RoleSpec("router_model", "router_thinking", "ROUTER_MODEL", "ROUTER_THINKING"),
+    Role.JUDGE: RoleSpec("judge_model", "judge_thinking", "JUDGE_MODEL", "JUDGE_THINKING"),
+}
+
+
+@dataclass(frozen=True)
+class RoleCall:
+    role: Role
+    model: str
+    thinking: bool
+
+
+@dataclass(frozen=True)
+class CacheIdentity:
+    model: str
+    thinking: str
+
+
+class FinishClass(str, Enum):
+    STOP = "stop"
+    STRUCTURED = "structured"
+    INFRA = "infra"
+
+
+@dataclass(frozen=True)
+class ReasoningDelta:
+    text: str
+
+
+@dataclass(frozen=True)
+class AnswerDelta:
+    text: str
+
+
+StreamDelta = ReasoningDelta | AnswerDelta
+
+
+@dataclass(frozen=True)
+class Spoken:
+    content: str
+    reasoning: str
+    prompt_tokens: int | None = None
+
+
+def _parse_role(role: Role, source: Any) -> RoleCall:
+    spec = ROLE_SPECS[role]
+    model = str(getattr(source, spec.model_attr) or "").strip()
+    thinking = str(getattr(source, spec.thinking_attr) or "").strip()
+    if not model:
+        raise RoleConfigError(f"{spec.model_env} is empty")
+    if thinking not in ("on", "off"):
+        raise RoleConfigError(f"{spec.thinking_env} must be on or off")
+    return RoleCall(role=role, model=model, thinking=thinking == "on")
+
+
+def assert_role_config(source: Any | None = None) -> None:
+    target = settings if source is None else source
+    for role in ROLE_SPECS:
+        _parse_role(role, target)
+
+
+def resolve(role: Role) -> RoleCall:
+    return _parse_role(role, settings)
+
+
+def cache_identity(role: Role) -> CacheIdentity:
+    call = resolve(role)
+    return CacheIdentity(model=call.model, thinking="on" if call.thinking else "off")
+
+
+def classify_finish(reason: str | None, *, thinking: bool, role: Role) -> FinishClass:
+    if reason is None or reason == "stop":
+        return FinishClass.STOP
+    if reason in ("insufficient_system_resource", "aborted"):
+        return FinishClass.INFRA
+    if reason == "length" and (thinking or role is Role.JUDGE):
+        return FinishClass.INFRA
+    return FinishClass.STRUCTURED
+
+
+def message_parts(message: Any) -> tuple[str, str]:
+    content = getattr(message, "content", None)
+    if not isinstance(content, str):
+        content = ""
+    reasoning = getattr(message, "reasoning_content", None)
+    if not isinstance(reasoning, str):
+        extra = getattr(message, "model_extra", None)
+        found = extra.get("reasoning_content") if isinstance(extra, dict) else None
+        reasoning = found if isinstance(found, str) else ""
+    return content, reasoning
+
+
+def _refuse_outbound(messages: list[dict], tools: Any) -> None:
+    if tools is not None:
+        raise ToolsRefused("tools are not sent")
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        if (
+            "reasoning_content" in message
+            or message.get("role") == "tool"
+            or "tool_calls" in message
+        ):
+            raise ToolsRefused("message carries tool or reasoning fields")
+
+
+def _wire_messages(messages: list[dict]) -> list[dict[str, str]]:
+    wire: list[dict[str, str]] = []
+    for message in messages or []:
+        content = message.get("content") if isinstance(message, dict) else ""
+        role = message.get("role") if isinstance(message, dict) else ""
+        wire.append(
+            {
+                "role": role if isinstance(role, str) else "",
+                "content": content if isinstance(content, str) else "",
+            }
+        )
+    return wire
+
+
+def _build_request(
+    call: RoleCall,
+    messages: list[dict],
+    *,
+    kind: Literal["text", "json"],
+    stream: bool,
+    tools: Any = None,
+    timeout: float | None = None,
+) -> dict[str, Any]:
+    _refuse_outbound(messages, tools)
+    body: dict[str, Any] = {
+        "model": call.model,
+        "messages": _wire_messages(messages),
+        "stream": stream,
+        "extra_body": {"thinking": {"type": "enabled" if call.thinking else "disabled"}},
+        "reasoning_effort": "high" if call.thinking else "none",
+    }
+    if kind == "json":
+        body["response_format"] = {"type": "json_object"}
+        if not call.thinking:
+            body["temperature"] = 0
+    if timeout is not None:
+        body["timeout"] = timeout
+    return body
+
+
+def answer_pair(
+    *,
+    spoken: Spoken | None = None,
+    canned: str | None = None,
+    prior_content: str | None = None,
+    prior_reasoning: str | None = None,
+) -> dict[str, str | None]:
+    if spoken is not None:
+        return {"direct_answer": spoken.content, "answer_reasoning": spoken.reasoning}
+    if canned is not None:
+        return {"direct_answer": canned, "answer_reasoning": ""}
+    return {"direct_answer": prior_content, "answer_reasoning": prior_reasoning}
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -181,41 +353,66 @@ def _usage_prompt_tokens(usage: Any) -> int | None:
     return None
 
 
+def _record_call(prompt_tokens: int | None, started: float) -> None:
+    dt = time.monotonic() - started
+    _STATS["calls"] += 1
+    _STATS["prompt_tokens"] += int(prompt_tokens or 0)
+    _STATS["latency_s_total"] += dt
+    _STATS["latency_s_max"] = max(_STATS["latency_s_max"], dt)
+
+
+def _mock_text(messages: list[dict]) -> str:
+    last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    system = next((m["content"] for m in messages if m["role"] == "system"), "")
+    if system and "【证据池】" in system:
+        return (
+            f"（演示模式）根据证据，关于「{last_user}」的简要说明如下：[1]\n"
+            "配置 LLM_API_KEY 后将由大模型基于证据生成完整回答。"
+        )
+    if system and ("未取得任何可用证据" in system or "未检索到" in system):
+        return "当前未检索到与问题匹配的相关内容。"
+    return f"（演示模式）已收到：{last_user}"
+
+
+def _raise_infra(exc: BaseException) -> None:
+    _STATS["infra_errors"] += 1
+    if isinstance(exc, LLMInfraError):
+        raise exc
+    raise LLMInfraError(f"{type(exc).__name__}: {exc}") from exc
+
+
 async def stream_chat(
     messages: list[dict],
-    model: str | None = None,
     *,
+    role: Role,
     usage_out: dict[str, Any] | None = None,
+    tools: Any = None,
 ):
-    """Yield text deltas for an assistant reply.
+    """Yield reasoning and answer deltas for one role.
 
-    When ``usage_out`` is provided, best-effort fill ``prompt_tokens`` /
-    ``completion_tokens`` from stream usage (``stream_options.include_usage``).
-    Providers that ignore the option leave ``usage_out`` unchanged.
+    ``usage_out`` receives ``prompt_tokens`` when the stream includes usage.
+    A gateway that rejects ``stream_options`` is retried once without it.
     """
+    _refuse_outbound(messages, tools)
     if not settings.llm_api_key:
         async for ch in _mock_stream(messages):
-            yield ch
+            if ch:
+                yield AnswerDelta(ch)
         return
 
+    call = resolve(role)
+    body = _build_request(call, messages, kind="text", stream=True, tools=tools)
+    if usage_out is not None:
+        body["stream_options"] = {"include_usage": True}
     client = _get_async_client()
-    model_name = model or resolved_chat_model()
-    async with async_model_slot(model_name):
-        create_kwargs: dict[str, Any] = {
-            "model": model_name,
-            "messages": messages,
-            "stream": True,
-        }
-        if usage_out is not None:
-            create_kwargs["stream_options"] = {"include_usage": True}
+    async with async_model_slot(call.model):
         try:
-            resp = await client.chat.completions.create(**create_kwargs)
+            resp = await client.chat.completions.create(**body)
         except Exception:
-            # Some gateways reject stream_options; retry without it.
-            if usage_out is not None and "stream_options" in create_kwargs:
+            if usage_out is not None and "stream_options" in body:
                 logger.debug("stream_chat retry without stream_options")
-                create_kwargs.pop("stream_options", None)
-                resp = await client.chat.completions.create(**create_kwargs)
+                body.pop("stream_options", None)
+                resp = await client.chat.completions.create(**body)
             else:
                 raise
         async for chunk in resp:
@@ -237,144 +434,125 @@ async def stream_chat(
             choices = getattr(chunk, "choices", None) or []
             if not choices:
                 continue
-            delta = (choices[0].delta.content or "") if choices[0].delta else ""
-            if delta:
-                yield delta
+            choice = choices[0]
+            finish = getattr(choice, "finish_reason", None)
+            if finish:
+                kind = classify_finish(finish, thinking=call.thinking, role=role)
+                if kind is FinishClass.INFRA:
+                    raise LLMInfraError(f"finish_reason={finish}")
+                if kind is not FinishClass.STOP:
+                    raise LLMStructuredError(f"finish_reason={finish}")
+            delta = getattr(choice, "delta", None)
+            content, reasoning = message_parts(delta)
+            if reasoning:
+                yield ReasoningDelta(reasoning)
+            if content:
+                yield AnswerDelta(content)
 
 
 def complete_text(
     messages: list[dict],
-    model: str | None = None,
     *,
-    temperature: float = 0.2,
+    role: Role,
     timeout: float | None = None,
     retries: int = 0,
     raise_on_error: bool = False,
-) -> str:
-    """Non-streaming text completion for eval / batch answer generation.
-
-    Uses ``settings.llm_timeout`` (default 120s) rather than the short sync
-    client timeout used by ``complete_json`` classifiers.
-    Default model remains ``settings.llm_model`` for backward compatibility;
-    production chat alignment should call ``complete_text_with_usage`` with
-    ``resolved_chat_model()`` or omit model there.
-    """
-    text, _usage = complete_text_with_usage(
-        messages,
-        model=model or settings.llm_model,
-        temperature=temperature,
-        timeout=timeout,
-        retries=retries,
-        raise_on_error=raise_on_error,
-    )
-    return text
-
-
-def complete_text_with_usage(
-    messages: list[dict],
-    model: str | None = None,
-    *,
-    temperature: float = 0.2,
-    timeout: float | None = None,
-    retries: int = 0,
-    raise_on_error: bool = False,
-) -> tuple[str, int | None]:
-    """Like ``complete_text``, also returning ``prompt_tokens`` when the API provides usage.
-
-    Default model follows ``resolved_chat_model()`` when ``model`` is omitted so
-    context eval aligns with production ``stream_chat``.
-    """
+    tools: Any = None,
+) -> Spoken:
+    _refuse_outbound(messages, tools)
     if not settings.llm_api_key:
-        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        system = next((m["content"] for m in messages if m["role"] == "system"), "")
-        if system and "【证据池】" in system:
-            return (
-                f"（演示模式）根据证据，关于「{last_user}」的简要说明如下：[1]\n"
-                "配置 LLM_API_KEY 后将由大模型基于证据生成完整回答。"
-            ), None
-        if system and ("未取得任何可用证据" in system or "未检索到" in system):
-            return "当前未检索到与问题匹配的相关内容。", None
-        return f"（演示模式）已收到：{last_user}", None
+        return Spoken(_mock_text(messages), "", None)
 
-    # 智谱要求 temperature 最多 2 位小数
-    temp = round(float(temperature), 2)
+    call = resolve(role)
     req_timeout = float(timeout if timeout is not None else settings.llm_timeout)
+    body = _build_request(call, messages, kind="text", stream=False, tools=tools, timeout=req_timeout)
     client = _get_sync_client()
-    model_name = model or resolved_chat_model()
     attempts = 1 + max(0, int(retries))
     for attempt in range(1, attempts + 1):
-        t0 = time.monotonic()
+        started = time.monotonic()
         try:
-            with model_slot(model_name):
-                resp = client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    stream=False,
-                    temperature=temp,
-                    timeout=req_timeout,
-                )
-            text = (resp.choices[0].message.content or "").strip()
-            pt = _usage_prompt_tokens(getattr(resp, "usage", None))
-            dt = time.monotonic() - t0
-            _STATS["calls"] += 1
-            _STATS["prompt_tokens"] += int(pt or 0)
-            _STATS["latency_s_total"] += dt
-            _STATS["latency_s_max"] = max(_STATS["latency_s_max"], dt)
-            return text, pt
+            with model_slot(call.model):
+                resp = client.chat.completions.create(**body)
         except Exception as exc:
-            name = type(exc).__name__
-            transient = "Timeout" in name or "RateLimit" in name
-            if transient and attempt < attempts:
+            if is_llm_infra_exception(exc) and attempt < attempts:
                 _STATS["retries"] += 1
                 delay = min(30.0, 2.0 ** attempt)
-                logger.warning("complete_text %s (attempt %d/%d), retry in %.0fs", name, attempt, attempts, delay)
+                logger.warning(
+                    "complete_text %s (attempt %d/%d), retry in %.0fs",
+                    type(exc).__name__,
+                    attempt,
+                    attempts,
+                    delay,
+                )
                 time.sleep(delay)
                 continue
-            _STATS["infra_errors"] += 1
-            if transient:
-                logger.warning("complete_text %s: %s", name, exc)
-            else:
-                logger.exception("complete_text failed")
             if raise_on_error:
-                raise LLMInfraError(f"{name}: {exc}") from exc
-            return "", None
-    return "", None
+                _raise_infra(exc)
+            _STATS["infra_errors"] += 1
+            logger.warning("complete_text %s: %s", type(exc).__name__, exc)
+            return Spoken("", "", None)
+        choice = resp.choices[0]
+        finish = classify_finish(
+            getattr(choice, "finish_reason", None),
+            thinking=call.thinking,
+            role=role,
+        )
+        content, reasoning = message_parts(getattr(choice, "message", None))
+        prompt_tokens = _usage_prompt_tokens(getattr(resp, "usage", None))
+        if finish is FinishClass.STOP:
+            _record_call(prompt_tokens, started)
+            return Spoken(content.strip(), reasoning, prompt_tokens)
+        reason = getattr(choice, "finish_reason", None)
+        if finish is FinishClass.INFRA:
+            if raise_on_error:
+                _raise_infra(LLMInfraError(f"finish_reason={reason}"))
+            _STATS["infra_errors"] += 1
+            return Spoken("", "", None)
+        return Spoken("", "", None)
+    return Spoken("", "", None)
 
 
 def complete_json(
     messages: list[dict],
-    model: str | None = None,
     *,
+    role: Role,
     raise_on_error: bool = False,
+    tools: Any = None,
 ) -> dict | None:
-    """Non-streaming JSON completion for short classifiers (intent router).
+    """JSON object for a planner or judge. Reasoning is discarded here.
 
-    The default still returns None on failure so production classifiers keep
-    their fallbacks. Eval callers pass ``raise_on_error=True`` so a timeout or
-    rate limit is an infra error instead of a silently empty plan or grade.
-    Invalid JSON stays None: that is a parse miss, not transport failure.
+    Returns None on a parse miss so production classifiers keep their fallbacks.
+    ``raise_on_error`` turns transport and infra finishes into ``LLMInfraError``.
     """
+    _refuse_outbound(messages, tools)
     if not settings.llm_api_key:
         return None
 
+    call = resolve(role)
+    body = _build_request(call, messages, kind="json", stream=False, tools=tools)
     client = _get_sync_client()
-    model_name = model or resolved_planner_model()
     try:
-        with model_slot(model_name):
-            resp = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                stream=False,
-                temperature=0,
-                response_format={"type": "json_object"},
-            )
-        raw = (resp.choices[0].message.content or "").strip()
-        return _parse_json_object(raw)
+        with model_slot(call.model):
+            resp = client.chat.completions.create(**body)
     except Exception as exc:
         if raise_on_error:
-            _STATS["infra_errors"] += 1
-            raise LLMInfraError(f"{type(exc).__name__}: {exc}") from exc
+            _raise_infra(exc)
         return None
+    choice = resp.choices[0]
+    finish = classify_finish(
+        getattr(choice, "finish_reason", None),
+        thinking=call.thinking,
+        role=role,
+    )
+    content, _reasoning = message_parts(getattr(choice, "message", None))
+    if finish is FinishClass.INFRA:
+        if raise_on_error:
+            _raise_infra(LLMInfraError(f"finish_reason={getattr(choice, 'finish_reason', None)}"))
+        _STATS["infra_errors"] += 1
+        return None
+    if finish is not FinishClass.STOP:
+        return None
+    return _parse_json_object(content.strip())
 
 
 def _schema_ref(root: dict, ref: str) -> dict:
@@ -458,37 +636,41 @@ def _fail_or_retry(
 def complete_json_object(
     messages: list[dict],
     result_model: type[T],
-    model_name: str,
+    *,
+    role: Role,
+    tools: Any = None,
 ) -> T:
     """Parse one json_object completion into ``result_model``.
 
-    Retries once when the body is empty, truncated, or invalid. Transport
-    failures raise ``LLMInfraError`` on the call that failed.
+    Retries once when the body is empty, truncated, or invalid. Transport and
+    infra finishes raise ``LLMInfraError`` on the call that failed.
     """
     if not settings.llm_api_key:
         raise LLMStructuredError("未配置 LLM_API_KEY，无法进行工具规划")
 
+    call = resolve(role)
     client = _get_sync_client()
     example = _one_line_example(result_model)
     timeout = min(settings.llm_timeout, 60.0)
-    response_format = {"type": "json_object"}
     msgs = list(messages)
 
     for attempt in (1, 2):
+        body = _build_request(
+            call,
+            msgs,
+            kind="json",
+            stream=False,
+            tools=tools,
+            timeout=timeout,
+        )
         try:
-            with model_slot(model_name):
-                resp = client.chat.completions.create(
-                    model=model_name,
-                    messages=msgs,
-                    stream=False,
-                    temperature=0.0,
-                    response_format=response_format,
-                    timeout=timeout,
-                )
+            with model_slot(call.model):
+                resp = client.chat.completions.create(**body)
+        except (ToolsRefused, RoleConfigError):
+            raise
         except Exception as exc:
             if is_llm_infra_exception(exc):
-                _STATS["infra_errors"] += 1
-                raise LLMInfraError(f"{type(exc).__name__}: {exc}") from exc
+                _raise_infra(exc)
             msgs = _fail_or_retry(
                 attempt,
                 messages,
@@ -500,28 +682,34 @@ def complete_json_object(
             continue
 
         choice = resp.choices[0]
-        raw = choice.message.content
-        text = raw if isinstance(raw, str) else ""
-        finish = getattr(choice, "finish_reason", None)
-        if finish == "length" or not text.strip():
-            reason = "finish_reason=length" if finish == "length" else "empty content"
-            msgs = _fail_or_retry(attempt, messages, text, reason, example)
+        content, _reasoning = message_parts(getattr(choice, "message", None))
+        finish_reason = getattr(choice, "finish_reason", None)
+        finish = classify_finish(finish_reason, thinking=call.thinking, role=role)
+        if finish is FinishClass.INFRA:
+            _raise_infra(LLMInfraError(f"finish_reason={finish_reason}"))
+        if finish is not FinishClass.STOP or not content.strip():
+            reason = (
+                f"finish_reason={finish_reason}"
+                if finish is not FinishClass.STOP
+                else "empty content"
+            )
+            msgs = _fail_or_retry(attempt, messages, content, reason, example)
             continue
 
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(content)
         except json.JSONDecodeError as exc:
-            msgs = _fail_or_retry(attempt, messages, text, f"invalid JSON: {exc.msg}", example, exc)
+            msgs = _fail_or_retry(attempt, messages, content, f"invalid JSON: {exc.msg}", example, exc)
             continue
 
         if not isinstance(parsed, dict):
-            msgs = _fail_or_retry(attempt, messages, text, "JSON value is not an object", example)
+            msgs = _fail_or_retry(attempt, messages, content, "JSON value is not an object", example)
             continue
 
         try:
             return result_model.model_validate(parsed)
         except ValidationError as exc:
-            msgs = _fail_or_retry(attempt, messages, text, str(exc), example, exc)
+            msgs = _fail_or_retry(attempt, messages, content, str(exc), example, exc)
 
     raise LLMStructuredError("json 对象校验失败")
 
@@ -563,3 +751,6 @@ async def _mock_stream(messages: list[dict]):
         )
     for ch in reply:
         yield ch
+
+
+assert_role_config()

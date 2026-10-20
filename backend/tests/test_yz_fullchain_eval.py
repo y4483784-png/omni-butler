@@ -10,13 +10,14 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.llm import Spoken
+from app.eval.ragas_judge import run_ragas_metrics
 from app.eval.yz_fullchain import (
     YZ_FIXTURE_DIR,
     YZ_FIXTURES,
     YZEvalCase,
     fact_containment,
     load_cases,
-    run_ragas_metrics,
     run_yz_fullchain_eval,
 )
 
@@ -102,7 +103,9 @@ def test_yz_fullchain_smoke(memory_blob_store, monkeypatch):
         pytest.skip("YZ attendance CSV is gitignored and not in a clean checkout")
     monkeypatch.setattr(
         "app.eval.yz_fullchain.complete_text",
-        lambda messages, **kw: "演示回答：月度累计迟到超过5次，取消当季度全勤奖资格 [1]",
+        lambda messages, **kw: Spoken(
+            "演示回答：月度累计迟到超过5次，取消当季度全勤奖资格 [1]", "", None
+        ),
     )
     cases = load_cases()[:2]
     with (
@@ -116,6 +119,35 @@ def test_yz_fullchain_smoke(memory_blob_store, monkeypatch):
     assert "recall_at_k" in report.retrieval
     assert report.skipped_ragas is True
     assert report.fact_containment_mean >= 0.0
+
+
+def test_routing_rate_limit_counts_as_infra_and_keeps_the_answer(monkeypatch):
+    case = YZEvalCase.from_dict(
+        {
+            "id": "r1",
+            "query": "hello",
+            "gold_doc_keys": [],
+            "gold_facts": ["hello"],
+            "ground_truth": "gt",
+            "gold": {"intent": "chat", "tools": []},
+        }
+    )
+    monkeypatch.setattr("app.eval.yz_fullchain.seed_yz_corpus", lambda db: {})
+    monkeypatch.setattr("app.eval.yz_fullchain.retrieve", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        "app.eval.yz_fullchain.generate_answer",
+        lambda query, evidence: ("hello", []),
+    )
+    monkeypatch.setattr(
+        "app.eval.yz_fullchain._predict_routing",
+        lambda case, key_to_id: ("", [], False, True),
+    )
+    report = run_yz_fullchain_eval([case], skip_ragas=True, skip_ingest=True)
+    assert report.n_infra_error == 1
+    assert report.routing is None
+    assert report.fact_containment_mean == 1.0
+    assert report.failures == []
+    assert report.failure_buckets == {}
 
 
 def test_yz_case_from_dict_minimal():

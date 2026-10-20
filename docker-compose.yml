@@ -28,8 +28,11 @@ x-backend-environment: &backend-environment
   DB_MAX_OVERFLOW: "10"
 
 x-backend-env: &backend-env
-  # backend/.env 里 EMBEDDING_* / VISION_* / RERANK_* 三组地址和密钥不是 LLM_BASE_URL / LLM_API_KEY 的别名。
-  # 对应开关开着却留空时，api 和 worker 启动即退出，日志写出缺的变量名。
+  # backend/.env supplies LLM_API_KEY, LLM_BASE_URL, CHAT_MODEL, CHAT_THINKING,
+  # PLANNER_MODEL, PLANNER_THINKING, ROUTER_MODEL, ROUTER_THINKING, JUDGE_MODEL,
+  # JUDGE_THINKING, WEB_SEARCH_BASE_URL, WEB_SEARCH_API_KEY, plus EMBEDDING_* / VISION_* / RERANK_*.
+  # Those names are not set in the environment map below. An embedding, vision, or rerank
+  # switch that is on with an empty pair makes api and worker exit at startup.
   env_file:
     - ./backend/.env
   environment:

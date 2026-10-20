@@ -128,7 +128,7 @@ def test_regenerate_invalidates_and_rebuild_excludes_deleted(monkeypatch):
     # rebuild with extractive-like summarizer on remaining messages only
     monkeypatch.setattr(
         "app.agents.context.summary.complete_json",
-        lambda messages, model=None: {"summary": "仅剩普通闲聊"},
+        lambda messages, **_kwargs: {"summary": "仅剩普通闲聊"},
     )
     monkeypatch.setattr("app.agents.context.summary.settings.context_summary_enabled", True)
     monkeypatch.setattr("app.agents.context.summary.settings.context_manager_enabled", True)
@@ -158,7 +158,7 @@ def test_needle_beyond_600_char_clip_is_known_gap(monkeypatch):
     assert len(long_msg) > 700
     captured = {}
 
-    def fake_complete_json(messages, model=None):
+    def fake_complete_json(messages, *args, **kwargs):
         captured["user"] = messages[-1]["content"]
         return {"summary": "ok"}
 

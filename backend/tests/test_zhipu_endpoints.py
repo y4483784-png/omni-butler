@@ -20,6 +20,7 @@ from app.rag import rerank, vision_ocr
 from app.rag.expand import ExpandedHit
 from app.rag.rerank import HeuristicReranker, rerank_hits, resolve_reranker
 
+CHECKED = (ZhipuService.EMBEDDING, ZhipuService.VISION, ZhipuService.RERANK)
 ENV_VARS = {
     ZhipuService.EMBEDDING: ("EMBEDDING_BASE_URL", "EMBEDDING_API_KEY"),
     ZhipuService.VISION: ("VISION_BASE_URL", "VISION_API_KEY"),
@@ -107,7 +108,7 @@ def _hits() -> list[ExpandedHit]:
     ]
 
 
-@pytest.mark.parametrize("service", list(ZhipuService), ids=lambda s: s.name)
+@pytest.mark.parametrize("service", CHECKED, ids=lambda s: s.name)
 def test_each_service_reads_its_own_env_vars(monkeypatch, service):
     url_var, key_var = ENV_VARS[service]
     monkeypatch.setenv(url_var, " http://own.test/v4/ ")
@@ -119,7 +120,7 @@ def test_each_service_reads_its_own_env_vars(monkeypatch, service):
     assert endpoint.api_key == "own-key"
 
 
-@pytest.mark.parametrize("service", list(ZhipuService), ids=lambda s: s.name)
+@pytest.mark.parametrize("service", CHECKED, ids=lambda s: s.name)
 def test_service_never_falls_back_to_llm_pair(monkeypatch, service):
     monkeypatch.setenv("LLM_BASE_URL", CHAT_URL)
     monkeypatch.setenv("LLM_API_KEY", CHAT_KEY)
@@ -145,10 +146,10 @@ def test_check_fails_naming_the_empty_variable(service, empty_var):
     assert empty_var in str(err.value)
 
 
-@pytest.mark.parametrize("service", list(ZhipuService), ids=lambda s: s.name)
+@pytest.mark.parametrize("service", CHECKED, ids=lambda s: s.name)
 def test_check_passes_when_switch_off_and_pair_empty(service):
     others_on: dict = {}
-    for other in ZhipuService:
+    for other in CHECKED:
         if other is not service:
             others_on |= SWITCH_ON[other] | _full_pair(other)
 
@@ -156,7 +157,7 @@ def test_check_passes_when_switch_off_and_pair_empty(service):
 
 
 def test_check_lists_every_gap_at_once():
-    all_on = {k: v for svc in ZhipuService for k, v in SWITCH_ON[svc].items()}
+    all_on = {k: v for svc in CHECKED for k, v in SWITCH_ON[svc].items()}
 
     with pytest.raises(EndpointConfigError) as err:
         check_zhipu_endpoints(_settings(**all_on))
@@ -239,20 +240,41 @@ def test_zhipu_reranker_posts_to_rerank_base_url(live_settings, httpx_requests):
     assert seen[0].headers["authorization"] == "Bearer rerank-key"
 
 
-def test_ragas_embeddings_use_embedding_pair_and_judge_keeps_chat_pair(live_settings):
+def test_ragas_embeddings_use_embedding_pair_and_judge_is_not_chat_openai(live_settings):
     pytest.importorskip("langchain_openai")
+    from langchain_openai import ChatOpenAI
+
     from app.eval.ragas_judge import build_ragas_llm_embeddings
 
-    live_settings(llm_model="chat-model", **_full_pair(ZhipuService.EMBEDDING))
+    live_settings(**_full_pair(ZhipuService.EMBEDDING))
 
     llm, emb = build_ragas_llm_embeddings()
 
-    assert (llm.model_name, llm.openai_api_base, llm.openai_api_key.get_secret_value()) == (
-        "chat-model",
-        CHAT_URL,
-        CHAT_KEY,
-    )
+    assert not isinstance(llm, ChatOpenAI)
+    assert getattr(llm, "max_tokens", None) is None
     assert (emb.openai_api_base, emb.openai_api_key.get_secret_value()) == ("http://embedding.test/v4/", "embedding-key")
+
+
+def test_web_search_endpoint_reads_its_own_pair():
+    endpoint = zhipu_endpoint(
+        ZhipuService.WEB,
+        _settings(web_search_base_url=" http://web.test/v4/ ", web_search_api_key="web-key"),
+    )
+    assert endpoint.base_url == "http://web.test/v4/"
+    assert endpoint.api_key == "web-key"
+
+
+def test_web_search_endpoint_does_not_fall_back_to_chat_pair():
+    with pytest.raises(EndpointConfigError) as err:
+        zhipu_endpoint(
+            ZhipuService.WEB,
+            _settings(llm_base_url=CHAT_URL, llm_api_key=CHAT_KEY, web_search_base_url="", web_search_api_key=""),
+        )
+    assert err.value.missing == ("WEB_SEARCH_BASE_URL", "WEB_SEARCH_API_KEY")
+
+
+def test_empty_web_key_does_not_fail_startup_check():
+    check_zhipu_endpoints(_settings(web_search_api_key="", web_search_base_url=""))
 
 
 @pytest.mark.parametrize("provider", ["zhipu", "auto", ""])

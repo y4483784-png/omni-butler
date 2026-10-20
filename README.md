@@ -54,13 +54,16 @@ Windows 上复制用 `copy .env.example backend\.env`。这个文件不要提交
 
 | 变量 | 说明 |
 | --- | --- |
-| `LLM_API_KEY` | 智谱的密钥，只给聊天用。留空时聊天是演示回复。旧名字 `OPENAI_API_KEY` 也认。 |
-| `LLM_BASE_URL` | 模板里已是智谱地址 `https://open.bigmodel.cn/api/paas/v4/`。 |
-| `LLM_MODEL` | 模板里是 `glm-4-air`。 |
+| `LLM_API_KEY` | DeepSeek 的密钥，只给聊天、规划、路由和判分。留空时聊天是演示回复。 |
+| `LLM_BASE_URL` | 模板里是 `https://api.deepseek.com`。 |
+| `CHAT_MODEL` | 回答模型。模板里是 `deepseek-flash`，`CHAT_THINKING=on`。 |
+| `PLANNER_MODEL` | 规划模型。模板里是 `deepseek-flash`，`PLANNER_THINKING=off`。 |
+| `ROUTER_MODEL` | 路由模型。模板里是 `deepseek-flash`，`ROUTER_THINKING=off`。 |
+| `JUDGE_MODEL` | 判分模型。模板里是 `deepseek-v4-pro`，`JUDGE_THINKING=on`。 |
 
 ### 向量、OCR、Rerank 各有一组地址和密钥
 
-聊天用 `LLM_BASE_URL` 和 `LLM_API_KEY`。下面三项不读这两个变量，也不会回退到它们。模型名以 `glm` 开头时自动改成智谱地址的规则只改 `LLM_BASE_URL`，不碰这三组。
+聊天、规划、路由和判分用 `LLM_BASE_URL` 和 `LLM_API_KEY`。下面三项不读这两个变量，也不会回退到它们。联网搜索另用 `WEB_SEARCH_BASE_URL` 和 `WEB_SEARCH_API_KEY`，同样不回退。
 
 | 功能 | 开关（模板里都是 `true`） | 开着时必须填 |
 | --- | --- | --- |

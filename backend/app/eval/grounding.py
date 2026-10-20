@@ -22,7 +22,7 @@ from app.agents.harness.critique import (
 from app.agents.workflow import build_pool_prompt
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
-from app.core.llm import LLMInfraError, complete_text, resolved_chat_model
+from app.core.llm import LLMInfraError, Role, Spoken, complete_text
 from app.eval.judges import is_refusal, strip_grounding_disclaimer
 from app.eval.ragas_judge import run_ragas_rows
 from app.eval.yz_fullchain import (
@@ -275,10 +275,12 @@ def generate_grounded_answer(
         }
     draft = complete_text(
         messages,
-        model=resolved_chat_model(),
+        role=Role.CHAT,
         retries=4,
         raise_on_error=True,
     )
+    if not isinstance(draft, Spoken):
+        draft = Spoken(str(draft or ""), "", None)
     sandbox_gate = should_apply_sandbox_number_gate(
         evidence=included or evidence,
         needs_sandbox=needs_sandbox,
@@ -292,7 +294,8 @@ def generate_grounded_answer(
         sandbox_gate=sandbox_gate,
         repair_enabled=repair_enabled,
     )
-    return final, draft, included, critique, repaired, sandbox_gate
+    final_text = final.content if isinstance(final, Spoken) else str(final or "")
+    return final_text, draft.content, included, critique, repaired, sandbox_gate
 
 
 def answer_body_for_scoring(answer: str) -> str:
@@ -440,11 +443,12 @@ def run_grounding_eval(
             }
             for i in answerable_idx
         ]
-        _, per_row = run_ragas_rows(ragas_rows, metrics=metric_names)
-        for j, i in enumerate(answerable_idx):
-            if j < len(per_row):
-                case_results[i].faithfulness = per_row[j].get("faithfulness")
-                case_results[i].answer_relevancy = per_row[j].get("answer_relevancy")
+        answer_ragas = run_ragas_rows(ragas_rows, metrics=metric_names)
+        if not answer_ragas.infra_error:
+            for j, i in enumerate(answerable_idx):
+                if j < len(answer_ragas.per_row):
+                    case_results[i].faithfulness = answer_ragas.per_row[j].get("faithfulness")
+                    case_results[i].answer_relevancy = answer_ragas.per_row[j].get("answer_relevancy")
 
         if score_drafts:
             repaired_idxs = [i for i in answerable_idx if case_results[i].repaired]
@@ -457,12 +461,17 @@ def run_grounding_eval(
                 for i in repaired_idxs
             ]
             if draft_rows:
-                _, draft_per = run_ragas_rows(draft_rows, metrics=["faithfulness"])
-                for j, i in enumerate(repaired_idxs):
-                    if j < len(draft_per):
-                        case_results[i].draft_faithfulness = draft_per[j].get("faithfulness")
+                draft_ragas = run_ragas_rows(draft_rows, metrics=["faithfulness"])
+                if not draft_ragas.infra_error:
+                    for j, i in enumerate(repaired_idxs):
+                        if j < len(draft_ragas.per_row):
+                            case_results[i].draft_faithfulness = draft_ragas.per_row[j].get("faithfulness")
 
     infra_n = sum(1 for r in case_results if r.infra_error)
+    if not skip_ragas and answer_ragas.infra_error:
+        infra_n += 1
+    if not skip_ragas and score_drafts and draft_rows and draft_ragas.infra_error:
+        infra_n += 1
     scored_results = [r for r in case_results if not r.infra_error]
     n = len(scored_results)
     repair_rate = sum(1 for r in scored_results if r.repaired) / max(n, 1)
@@ -521,56 +530,3 @@ def run_grounding_eval(
         failures=failures,
         cases=[c.to_dict() for c in case_results],
     )
-
-
-def _per_row_ragas(
-    rows: list[dict[str, Any]],
-    *,
-    metrics: list[str],
-) -> list[dict[str, float | None]]:
-    """Return per-sample ragas scores; empty list on skip/error."""
-    if not rows:
-        return []
-    if not settings.llm_api_key:
-        return [{m: None for m in metrics} for _ in rows]
-    try:
-        from datasets import Dataset
-        from ragas import evaluate
-
-        from app.eval.ragas_judge import _resolve_metrics, build_ragas_llm_embeddings
-    except ImportError as exc:
-        logger.warning("ragas not available for per-row: %s", exc)
-        return [{m: None for m in metrics} for _ in rows]
-
-    try:
-        metric_objs = _resolve_metrics(metrics)
-    except ValueError as exc:
-        logger.warning("%s", exc)
-        return [{m: None for m in metrics} for _ in rows]
-
-    llm, embeddings = build_ragas_llm_embeddings()
-    dataset = Dataset.from_dict(
-        {
-            "question": [r["question"] for r in rows],
-            "answer": [r["answer"] for r in rows],
-            "contexts": [r["contexts"] for r in rows],
-        }
-    )
-    try:
-        result = evaluate(dataset, metrics=metric_objs, llm=llm, embeddings=embeddings)
-        df = result.to_pandas()
-    except Exception as exc:
-        logger.warning("per-row ragas failed: %s", exc)
-        return [{m: None for m in metrics} for _ in rows]
-
-    out: list[dict[str, float | None]] = []
-    for i in range(len(rows)):
-        row_scores: dict[str, float | None] = {}
-        for m in metrics:
-            if m in df.columns and i < len(df):
-                val = df[m].iloc[i]
-                row_scores[m] = float(val) if val == val else None
-            else:
-                row_scores[m] = None
-        out.append(row_scores)
-    return out

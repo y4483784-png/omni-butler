@@ -11,7 +11,7 @@ from typing import Any, Literal
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.llm import complete_json
+from app.core.llm import Role, complete_json
 from app.core.messages import SANDBOX_TIMEOUT_MESSAGE
 from app.models.models import Document
 from app.sandbox.runner import ExecutionResult, docker_available, run_code
@@ -365,7 +365,8 @@ def _plan_analysis_spec(
                 "role": "user",
                 "content": f"最近对话：{hist!r}\n用户请求：{message}\n\n表格 schema：\n{hints}",
             },
-        ]
+        ],
+        role=Role.PLANNER,
     )
     base = build_heuristic_ir(message, schema)
     if prior_ir and isinstance(prior_ir, dict):

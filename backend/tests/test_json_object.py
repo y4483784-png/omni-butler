@@ -11,9 +11,11 @@ from app.core.config import settings
 from app.core.llm import (
     LLMInfraError,
     LLMStructuredError,
+    Role,
     complete_json_object,
     llm_stats_reset,
     llm_stats_snapshot,
+    resolve,
 )
 from app.core.prompts import ROUTER_SYSTEM, router_system
 
@@ -87,6 +89,9 @@ def _assert_json_object_request(kwargs: dict) -> None:
     assert kwargs["response_format"] == {"type": "json_object"}
     assert kwargs["stream"] is False
     assert kwargs["temperature"] == 0.0
+    assert kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert kwargs["reasoning_effort"] == "none"
+    assert "max_tokens" not in kwargs
     assert kwargs["timeout"] == min(settings.llm_timeout, 60.0)
     blob = json.dumps(kwargs)
     assert "json_schema" not in blob
@@ -102,14 +107,14 @@ def test_valid_json_returns_model_and_requests_json_object(monkeypatch):
     decision = complete_json_object(
         [{"role": "user", "content": "hi"}],
         RouterDecision,
-        "router-test",
+        role=Role.ROUTER,
     )
     assert isinstance(decision, RouterDecision)
     assert decision.needs_calendar is True
     assert decision.confidence == "low"
     assert decision.reasoning == "查日程"
     assert len(calls) == 1
-    assert calls[0]["model"] == "router-test"
+    assert calls[0]["model"] == resolve(Role.ROUTER).model
     _assert_json_object_request(calls[0])
     assert sleeps == []
 
@@ -117,7 +122,7 @@ def test_valid_json_returns_model_and_requests_json_object(monkeypatch):
 def test_empty_content_retries_once_then_raises(monkeypatch):
     calls, sleeps = _install(monkeypatch, [_Resp(""), _Resp("")])
     with pytest.raises(LLMStructuredError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 2
     assert sleeps == []
     _assert_json_object_request(calls[0])
@@ -127,7 +132,7 @@ def test_empty_content_retries_once_then_raises(monkeypatch):
 def test_whitespace_content_retries_once_then_raises(monkeypatch):
     calls, sleeps = _install(monkeypatch, [_Resp("  \n\t"), _Resp("   ")])
     with pytest.raises(LLMStructuredError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 2
     assert sleeps == []
 
@@ -137,7 +142,7 @@ def test_invalid_json_then_valid_returns_model(monkeypatch):
     decision = complete_json_object(
         [{"role": "user", "content": "hi"}],
         RouterDecision,
-        "router-test",
+        role=Role.ROUTER,
     )
     assert decision.needs_calendar is True
     assert len(calls) == 2
@@ -157,7 +162,7 @@ def test_both_responses_invalid_json_raises(monkeypatch):
     )
     calls, sleeps = _install(monkeypatch, [_Resp(wrapped), _Resp(wrapped)])
     with pytest.raises(LLMStructuredError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 2
     assert sleeps == []
 
@@ -169,7 +174,7 @@ def test_length_finish_is_failure_even_with_content(monkeypatch):
         [_Resp(body, finish_reason="length"), _Resp(body, finish_reason="length")],
     )
     with pytest.raises(LLMStructuredError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 2
     assert sleeps == []
 
@@ -178,7 +183,7 @@ def test_rate_limit_is_infra_on_first_call_without_sleep(monkeypatch):
     llm_stats_reset()
     calls, sleeps = _install(monkeypatch, [_RateLimitError("slow down")])
     with pytest.raises(LLMInfraError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 1
     assert sleeps == []
     assert llm_stats_snapshot()["infra_errors"] == 1
@@ -190,7 +195,7 @@ def test_bad_request_retries_once_then_stays_structured(monkeypatch):
         [_BadRequestError("invalid request"), _BadRequestError("invalid request")],
     )
     with pytest.raises(LLMStructuredError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 2
     assert sleeps == []
     user = calls[1]["messages"][-1]["content"]
@@ -203,7 +208,7 @@ def test_bad_request_retries_once_then_stays_structured(monkeypatch):
 def test_second_call_infra_is_not_hidden_as_structured(monkeypatch):
     calls, sleeps = _install(monkeypatch, [_Resp("not-json"), _RateLimitError("slow down")])
     with pytest.raises(LLMInfraError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 2
     assert sleeps == []
 
@@ -218,7 +223,7 @@ def test_missing_api_key_raises_structured_without_a_call(monkeypatch):
 
     monkeypatch.setattr(llm_mod, "_get_sync_client", boom)
     with pytest.raises(LLMStructuredError, match="未配置 LLM_API_KEY，无法进行工具规划"):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
 
 
 def test_critique_draft_rate_limit_propagates(monkeypatch):
@@ -249,7 +254,7 @@ def test_omitted_router_fields_fail_validation(monkeypatch):
     decision = complete_json_object(
         [{"role": "user", "content": "hi"}],
         RouterReply,
-        "router-test",
+        role=Role.ROUTER,
     )
     assert isinstance(decision, RouterReply)
     assert decision.needs_calendar is True
@@ -264,7 +269,7 @@ def test_omitted_router_fields_fail_validation(monkeypatch):
 def test_non_dict_json_is_not_accepted(monkeypatch):
     calls, _sleeps = _install(monkeypatch, [_Resp("[]"), _Resp("[]")])
     with pytest.raises(LLMStructuredError):
-        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, "router-test")
+        complete_json_object([{"role": "user", "content": "hi"}], RouterDecision, role=Role.ROUTER)
     assert len(calls) == 2
 
 
@@ -275,7 +280,7 @@ class _Box(BaseModel):
 
 def test_example_uses_defaults_for_a_small_model(monkeypatch):
     calls, _sleeps = _install(monkeypatch, [_Resp("nope"), _Resp('{"name":"a","ok":true}')])
-    result = complete_json_object([{"role": "user", "content": "hi"}], _Box, "box")
+    result = complete_json_object([{"role": "user", "content": "hi"}], _Box, role=Role.ROUTER)
     assert result.name == "a"
     assert result.ok is True
     example = calls[1]["messages"][-1]["content"].splitlines()[-1]

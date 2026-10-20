@@ -11,7 +11,7 @@ import logging
 import re
 
 from app.core.config import settings
-from app.core.llm import complete_json, resolved_planner_model
+from app.core.llm import Role, complete_json
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def generate_session_title(user_message: str, assistant_message: str = "") -> st
                     "content": f"用户：{(user_message or '')[:400]}\n助手：{asst[:400]}",
                 },
             ],
-            model=resolved_planner_model(),
+            role=Role.PLANNER,
         )
         if isinstance(parsed, dict):
             cleaned = _clean_llm_title(str(parsed.get("title") or ""))

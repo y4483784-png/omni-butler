@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from scripts.gen_context_eval import FILLERS, NEEDLE_BANK, build_cases, write_dataset
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "eval" / "context_recall.jsonl"
@@ -61,16 +63,16 @@ def test_written_dataset_matches_builder():
 
 
 def test_judge_model_is_separate_from_answer_model(monkeypatch):
-    """Grading with the answering model is self-grading; keep the default separate."""
     from app.core.config import settings
-    from app.core.llm import resolved_chat_model
-    from app.eval.context_replay import resolved_judge_model
+    from app.core.llm import Role, RoleConfigError, resolve
 
-    monkeypatch.setattr(settings, "judge_model", "glm-4-air")
-    assert resolved_judge_model() == "glm-4-air"
-    # An unset judge falls back to the answer model, which the report flags.
+    assert resolve(Role.JUDGE).model == "deepseek-v4-pro"
+    assert resolve(Role.JUDGE).model != resolve(Role.CHAT).model
+    monkeypatch.setattr(settings, "judge_model", "judge-other")
+    assert resolve(Role.JUDGE).model == "judge-other"
     monkeypatch.setattr(settings, "judge_model", "")
-    assert resolved_judge_model() == resolved_chat_model()
+    with pytest.raises(RoleConfigError):
+        resolve(Role.JUDGE)
 
 
 def test_context_report_records_judge_identity():

@@ -76,7 +76,7 @@ def test_classify_no_docs_clamps_kb(monkeypatch):
 def test_plan_tools_queue_order(monkeypatch):
     import app.agents.router as router_mod
 
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         return result_model.model_validate(
             {
                 "reasoning": "multi",
@@ -111,7 +111,7 @@ def test_plan_tools_queue_order(monkeypatch):
 def test_plan_tools_sandbox_without_forced_kb(monkeypatch):
     import app.agents.router as router_mod
 
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         return result_model.model_validate(
             {
                 "reasoning": "画图统计",
@@ -197,13 +197,17 @@ def test_search_without_options_skips_llm():
 
 def test_search_api_is_http_only():
     with patch("app.services.web_search.httpx.Client") as client_cls:
-        client_cls.return_value.__enter__.return_value.post.return_value.json.return_value = {
-            "search_result": []
-        }
-        client_cls.return_value.__enter__.return_value.post.return_value.raise_for_status = lambda: None
-        with patch("app.core.config.settings.llm_api_key", "test-key"):
+        post = client_cls.return_value.__enter__.return_value.post
+        post.return_value.json.return_value = {"search_result": []}
+        post.return_value.raise_for_status = lambda: None
+        with (
+            patch("app.core.config.settings.llm_api_key", "chat-key"),
+            patch("app.core.config.settings.web_search_api_key", "web-key"),
+        ):
             search_api("天气", options=SearchOptions(query="天气", count=5))
-    client_cls.return_value.__enter__.return_value.post.assert_called_once()
+    post.assert_called_once()
+    assert post.call_args.args[0] == "https://open.bigmodel.cn/api/paas/v4/web_search"
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer web-key"
 
 
 def test_web_is_stale_fresh_dates():
@@ -286,7 +290,7 @@ def test_search_api_uses_refer_fallback():
         resp.json.return_value = sample
         resp.raise_for_status = lambda: None
         client_cls.return_value.__enter__.return_value.post.return_value = resp
-        with patch("app.core.config.settings.llm_api_key", "test-key"):
+        with patch("app.core.config.settings.web_search_api_key", "test-key"):
             out = search_api("q", options=SearchOptions(query="q", count=1))
     assert out.results[0].url == "https://fallback.com/b"
 
@@ -316,7 +320,7 @@ def test_search_api_falls_back_when_std_has_no_links():
         resp2.raise_for_status = lambda: None
         client_cls.return_value.__enter__.return_value.post.side_effect = [resp1, resp2]
         with (
-            patch("app.core.config.settings.llm_api_key", "test-key"),
+            patch("app.core.config.settings.web_search_api_key", "test-key"),
             patch("app.core.config.settings.web_search_engine", "search_std"),
         ):
             out = search_api("q", options=SearchOptions(query="q", count=1))

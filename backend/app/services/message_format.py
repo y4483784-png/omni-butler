@@ -27,12 +27,20 @@ def serialize_message(m: Message) -> dict:
         except json.JSONDecodeError:
             artifact = None
     fb = (getattr(m, "feedback", None) or "").strip()
+    reasoning = getattr(m, "reasoning", None)
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        reasoning = None
     return {
         "id": m.id,
         "role": m.role,
         "content": m.content,
+        "reasoning": reasoning,
         "citations": citations,
         "scheduleCard": schedule_card,
         "artifact": artifact,
         "feedback": fb if fb in ("up", "down") else None,
     }
+
+
+def model_turn(m: Message) -> dict[str, str]:
+    return {"role": m.role, "content": m.content or ""}

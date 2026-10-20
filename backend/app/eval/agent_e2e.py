@@ -29,11 +29,7 @@ from app.agents.harness import gateway
 from app.agents.harness.types import ToolResult
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db, set_rls_context
-from app.core.llm import (
-    complete_text,
-    complete_text_with_usage,
-    resolved_chat_model,
-)
+from app.core.llm import Role, Spoken, complete_text
 from app.eval.judges import Verdict, judge_completion
 from app.eval.stats import bootstrap_ci
 from app.eval.yz_fullchain import (
@@ -263,13 +259,16 @@ def run_task(
         answer = out.get("direct_answer") or ""
         if not answer and out.get("llm_messages"):
             # With usage, so the report can attribute token cost per question.
-            answer, tokens = complete_text_with_usage(
+            spoken = complete_text(
                 out["llm_messages"],
-                model=resolved_chat_model(),
+                role=Role.CHAT,
                 retries=retries,
                 raise_on_error=True,
             )
-            res.prompt_tokens = tokens
+            if not isinstance(spoken, Spoken):
+                spoken = Spoken(str(spoken or ""), "", None)
+            answer = spoken.content
+            res.prompt_tokens = spoken.prompt_tokens
         res.answer = answer or ""
         res.thinking_tail = list(out.get("thinking_steps") or [])[-4:]
         citations = out.get("citations") or []

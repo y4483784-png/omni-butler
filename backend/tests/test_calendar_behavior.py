@@ -196,18 +196,20 @@ def test_text_cache_hit_is_not_treated_as_a_key():
     from scripts.run_calendar_eval import CacheMissError, _LLMBridge, _fingerprint
 
     messages = [{"role": "user", "content": "advice"}]
-    key = _fingerprint("text", messages, None)
+    from app.core.llm import Role
+
+    key = _fingerprint("text", messages, Role.CHAT)
     bridge = _LLMBridge(
         {key: {"kind": "text", "value": "看列表即可。"}},
         refresh=False,
         require=True,
     )
-    assert bridge.complete_text(messages) == "看列表即可。"
+    assert bridge.complete_text(messages, role=Role.CHAT) == "看列表即可。"
     assert bridge.live == 0
 
     missing = _LLMBridge({}, refresh=False, require=True)
     with pytest.raises(CacheMissError):
-        missing.complete_text(messages)
+        missing.complete_text(messages, role=Role.CHAT)
 
 
 def test_require_cache_blocks_without_scoring(tmp_path: Path):
@@ -234,7 +236,7 @@ def test_runner_fails_a_wrong_clock_and_passes_an_exact_one(tmp_path: Path):
     original_json = calendar.complete_json
     original_text = tool.complete_text
 
-    def stub_json(messages, model=None, *, raise_on_error=False):
+    def stub_json(messages, *args, **kwargs):
         user = str(messages[-1].get("content") or "")
         if "九点" in user:
             start, end, title = "2026-10-16T09:00:00", "2026-10-16T10:00:00", "错点"

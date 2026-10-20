@@ -203,7 +203,7 @@ def test_invalidate_summary_if_needed():
 def test_refresh_only_summarizes_overflow_beyond_upto_id(monkeypatch):
     calls = {"n": 0}
 
-    def fake_complete_json(messages, model=None):
+    def fake_complete_json(messages, *args, **kwargs):
         calls["n"] += 1
         return {"summary": f"摘要{calls['n']}"}
 
@@ -289,7 +289,7 @@ def test_plan_user_context_line_and_cache_key_follow_prompt_text():
 def test_extract_event_history_clipped(monkeypatch):
     captured = {}
 
-    def fake_json(messages, model=None):
+    def fake_json(messages, *args, **kwargs):
         captured["messages"] = messages
         return {
             "title": "会",

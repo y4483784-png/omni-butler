@@ -23,7 +23,7 @@ _PLAN = {
 }
 
 
-def _fake_extract(messages, model=None):
+def _fake_extract(messages, *args, **kwargs):
     text = messages[-1]["content"]
     if "改到周五三点" in text:
         return {

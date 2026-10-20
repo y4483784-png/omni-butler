@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from app.agents.harness.types import ToolContext, ToolResult
 from app.agents.tools.registry import ToolSpec, register
-from app.core.llm import complete_text
+from app.core.llm import Role, Spoken, complete_text
 from app.services.calendar import (
     REMOTE_READ_ERRORS,
     EventDraft,
@@ -246,11 +246,18 @@ def _confirm_text(card: dict, *, full: bool = False) -> str:
     return f"请确认日程{name}，时间 {when}。未确认不会写入。"
 
 
-def _cleared(steps: list[str], answer: str, card: dict | None = None) -> ToolResult:
+def _cleared(
+    steps: list[str],
+    answer: str,
+    card: dict | None = None,
+    *,
+    reasoning: str | None = None,
+) -> ToolResult:
     return ToolResult(
         ok=True,
         thinking_steps=steps,
         direct_answer=answer,
+        answer_reasoning=reasoning,
         schedule_card=card,
         pending_calendar=None,
         update_pending_calendar=True,
@@ -359,20 +366,25 @@ def _advice_prompt(now: datetime, zone_name: str) -> str:
     )
 
 
-def _planning_advice(now: datetime, zone_name: str, listed: str) -> str:
+def _planning_advice(now: datetime, zone_name: str, listed: str) -> Spoken:
     """Model notes on the list already shown. A failed call does not invent a schedule."""
     try:
-        text = complete_text(
+        spoken = complete_text(
             [
                 {"role": "system", "content": _advice_prompt(now, zone_name)},
                 {"role": "user", "content": listed},
             ],
+            role=Role.CHAT,
             raise_on_error=True,
         )
+        if not isinstance(spoken, Spoken):
+            spoken = Spoken(str(spoken or ""), "", None)
     except Exception:
-        return _ADVICE_UNAVAILABLE
-    cleaned = (text or "").strip()
-    return cleaned or _ADVICE_UNAVAILABLE
+        return Spoken(_ADVICE_UNAVAILABLE, "", None)
+    cleaned = (spoken.content or "").strip()
+    if not cleaned:
+        return Spoken(_ADVICE_UNAVAILABLE, "", None)
+    return Spoken(cleaned, spoken.reasoning, spoken.prompt_tokens)
 
 
 def _zone_name(ctx: ToolContext) -> str:
@@ -444,12 +456,13 @@ def _list_text(
     zone_name: str | None = None,
     events=None,
     notice: str = "",
-) -> tuple[str, dict | None]:
+) -> tuple[str, str, dict | None]:
     if now is None:
         try:
             now = calendar_now(ctx.db, ctx.user_id)
         except CalendarTransientError:
-            return _saved_rows_when_clock_fails(ctx)
+            text, card = _saved_rows_when_clock_fails(ctx)
+            return text, "", card
     zone = zone_name if zone_name is not None else _zone_name(ctx)
     start, end, header, empty = _list_span(day, now)
     if events is None:
@@ -466,11 +479,11 @@ def _list_text(
     card = _list_card(shown)
     listed = _listed_text(shown, header, empty)
     if notice in _SKIP_ADVICE:
-        return notice, card
+        return notice, "", card
     advice = _planning_advice(now, zone, listed)
     if not shown:
-        return f"{empty}\n\n{advice}", None
-    return advice, card
+        return f"{empty}\n\n{advice.content}", advice.reasoning, None
+    return advice.content, advice.reasoning, card
 
 
 def _overlaps_listed(start: datetime, end: datetime, rows) -> bool:
@@ -747,10 +760,10 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         day = extract_list_day(
             ctx.message, ctx.history, now=now, timezone_name=zone_name or None
         )
-        text, card = _list_text(
+        text, reasoning, card = _list_text(
             ctx, day=day, now=now, zone_name=zone_name or "", events=events, notice=notice
         )
-        return _cleared(steps, text, card)
+        return _cleared(steps, text, card, reasoning=reasoning)
     if action == "suggest":
         steps.append("只读空闲建议，不写入")
         text, card = _suggest_result(

@@ -18,27 +18,18 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Omni-Butler"
 
-    # LLM (provider-agnostic via OpenAI-compatible base_url)
-    # ADR-005 (revised): one async-generator seam; we call the OpenAI Python SDK
-    # against a configurable base_url so OpenAI / 智谱 GLM / 本地 vLLM 都可切换，
-    # 无需沉重的 LiteLLM 网关依赖。超时由 client 控制，防止连接挂死。
-    # 兼容旧字段名 OPENAI_API_KEY（你当前 .env 里就是用它）。
-    llm_api_key: str = Field(default="", validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"))
-    llm_base_url: str = "https://api.openai.com/v1"  # OpenAI 兼容端点；智谱填 https://open.bigmodel.cn/api/paas/v4/
-    llm_model: str = "gpt-4o-mini"
-    chat_model: str = ""                             # empty → llm_model
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.deepseek.com"
     llm_timeout: float = 120.0                       # 单次流式请求超时（秒）
     llm_max_retries: int = 3                         # PRD §5：超时后自动重试 3 次
-    # Generation knobs, recorded in every eval report so a run's numbers can be
-    # reproduced (or explained) later.
-    llm_temperature: float = 0.2
-    llm_max_tokens: int = 2048
-    # Tool router: lighter model preferred; empty → planner_model → llm_model
-    planner_model: str = ""
-    router_model: str = ""
-    # Eval judge: scoring with the model that produced the answer is self-grading
-    # (and measured 0.34 answer_relevancy on this family), so keep it separate.
-    judge_model: str = "glm-4-air"
+    chat_model: str = "deepseek-flash"
+    chat_thinking: str = "on"
+    planner_model: str = "deepseek-flash"
+    planner_thinking: str = "off"
+    router_model: str = "deepseek-flash"
+    router_thinking: str = "off"
+    judge_model: str = "deepseek-v4-pro"
+    judge_thinking: str = "on"
     router_max_attempts: int = 1
     embedding_base_url: str = ""
     embedding_api_key: str = ""
@@ -141,7 +132,8 @@ class Settings(BaseSettings):
     tabular_max_chars: int = 800_000
     tabular_batch_rows: int = 40
 
-    # Web Search（智谱 POST {llm_base_url}/web_search；复用 LLM_API_KEY）
+    web_search_base_url: str = "https://open.bigmodel.cn/api/paas/v4/"
+    web_search_api_key: str = ""
     web_search_engine: str = "search_pro_quark"  # search_std/pro omit link; quark/sogou include URLs
     web_search_count: int = 5
 
@@ -194,14 +186,12 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# 友好默认：若未显式配置 base_url 且模型是智谱 GLM，则自动指向智谱的
-# OpenAI 兼容端点，让你现有的 backend/.env（OPENAI_API_KEY + LLM_MODEL=glm-*）开箱即用。
-_DEFAULT_ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4/"
-if settings.llm_base_url == "https://api.openai.com/v1" and settings.llm_model.lower().startswith("glm"):
-    settings.llm_base_url = _DEFAULT_ZHIPU_BASE
-
 
 _ZHIPU_RERANK_PROVIDERS = frozenset({"zhipu", "auto", ""})
+
+
+def _web_search_blocks_startup(_settings: Settings) -> bool:
+    return False
 
 
 def _zhipu_rerank_selected(s: Settings) -> bool:
@@ -230,6 +220,7 @@ class ZhipuService(Enum):
     )
     VISION = _Row("VISION_BASE_URL", "VISION_API_KEY", lambda s: s.vision_ocr_enabled, "VISION_OCR_ENABLED=false")
     RERANK = _Row("RERANK_BASE_URL", "RERANK_API_KEY", _zhipu_rerank_selected, "RAG_RERANK_ENABLED=false")
+    WEB = _Row("WEB_SEARCH_BASE_URL", "WEB_SEARCH_API_KEY", _web_search_blocks_startup, "")
 
 
 @dataclass(frozen=True)

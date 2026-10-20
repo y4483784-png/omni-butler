@@ -49,6 +49,7 @@ class Message(Base):
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
     role = Column(String)  # user | assistant
     content = Column(Text)
+    reasoning = Column(Text, nullable=True)
     citations = Column(Text, default="")  # JSON list of {index, filename, snippet}
     schedule_card = Column(Text, default="")  # JSON object for calendar action card
     artifact = Column(Text, default="")  # JSON: kind/title/language/content for chart/code panel

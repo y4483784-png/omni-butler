@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.llm import Spoken, answer_pair
+
 
 @dataclass
 class ToolContext:
@@ -32,6 +34,7 @@ class ToolResult:
     thinking_steps: list[str] = field(default_factory=list)
     schedule_card: dict | None = None
     direct_answer: str | None = None
+    answer_reasoning: str | None = None
     pending_calendar: dict | None = None
     update_pending_calendar: bool = False
     artifact: dict | None = None
@@ -62,7 +65,13 @@ class ToolResult:
         if self.schedule_card is not None:
             out["schedule_card"] = self.schedule_card
         if self.direct_answer is not None:
-            out["direct_answer"] = self.direct_answer
+            if self.answer_reasoning is None:
+                pair = answer_pair(canned=self.direct_answer)
+            else:
+                pair = answer_pair(
+                    spoken=Spoken(self.direct_answer, self.answer_reasoning)
+                )
+            out.update(pair)
         if self.update_pending_calendar or self.denied:
             out["pending_calendar"] = self.pending_calendar
         if self.artifact is not None:
