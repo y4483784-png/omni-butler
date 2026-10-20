@@ -1,8 +1,3 @@
-"""Strict tool router: minimal deterministic gates + schema-constrained LLM.
-
-No silent regex fallback. LLM failure raises RouterError.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -17,7 +12,7 @@ from app.core.config import settings
 from app.core.llm import (
     LLMInfraError,
     LLMStructuredError,
-    complete_json_schema,
+    complete_json_object,
     llm_infra_backoff_seconds,
     resolved_router_model,
 )
@@ -61,6 +56,16 @@ class RouterDecision(BaseModel):
     confidence: Literal["high", "low"] = "high"
 
 
+class RouterReply(BaseModel):
+    reasoning: str
+    needs_kb: bool
+    needs_web: bool
+    needs_calendar: bool
+    needs_sandbox: bool
+    needs_freshness: bool
+    confidence: Literal["high", "low"]
+
+
 class RouterError(RuntimeError):
     """Tool planning failed; callers must surface to the user (no silent chat fallback)."""
 
@@ -71,30 +76,6 @@ class RouterInfraError(RouterError, LLMInfraError):
     Subclasses both so chat still surfaces a router error, and eval treats the
     failure as infrastructure (out of the accuracy / core-completion denominator).
     """
-
-
-ROUTER_JSON_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "reasoning": {"type": "string"},
-        "needs_kb": {"type": "boolean"},
-        "needs_web": {"type": "boolean"},
-        "needs_calendar": {"type": "boolean"},
-        "needs_sandbox": {"type": "boolean"},
-        "needs_freshness": {"type": "boolean"},
-        "confidence": {"type": "string", "enum": ["high", "low"]},
-    },
-    "required": [
-        "reasoning",
-        "needs_kb",
-        "needs_web",
-        "needs_calendar",
-        "needs_sandbox",
-        "needs_freshness",
-        "confidence",
-    ],
-    "additionalProperties": False,
-}
 
 
 def _decision_to_plan(d: RouterDecision) -> dict[str, Any]:
@@ -187,60 +168,25 @@ def _llm_decide(
         {"role": "user", "content": user},
     ]
     max_attempts = max(1, int(settings.router_max_attempts))
-    last_err = "unknown"
     for attempt in range(1, max_attempts + 1):
         try:
-            raw = complete_json_schema(
-                messages,
-                schema=ROUTER_JSON_SCHEMA,
-                name="router_decision",
-                model=resolved_router_model(),
-                max_attempts=1,
-            )
-            try:
-                return RouterDecision.model_validate(raw)
-            except ValidationError as ve:
-                last_err = str(ve)
-                messages = [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                    {"role": "assistant", "content": str(raw)},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"字段校验失败：{last_err}\n"
-                            "请按 schema 修正后重新输出完整 JSON。"
-                        ),
-                    },
-                ]
-                continue
+            reply = complete_json_object(messages, RouterReply, resolved_router_model())
+            return RouterDecision.model_validate(reply.model_dump())
         except LLMInfraError as exc:
-            last_err = str(exc)
             if attempt >= max_attempts:
-                raise RouterInfraError(f"工具规划失败：{last_err}") from exc
+                raise RouterInfraError(f"工具规划失败：{exc}") from exc
             delay = llm_infra_backoff_seconds(attempt)
             logger.warning(
                 "router infra backoff %.0fs (attempt %s/%s): %s",
                 delay,
                 attempt,
                 max_attempts,
-                last_err,
+                exc,
             )
             time.sleep(delay)
-            continue
         except LLMStructuredError as exc:
-            last_err = str(exc)
-            if attempt >= max_attempts:
-                break
-            messages = [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-                {
-                    "role": "user",
-                    "content": f"上一次失败：{last_err}\n请重新输出符合 schema 的 JSON。",
-                },
-            ]
-    raise RouterError(f"工具规划失败：{last_err}")
+            raise RouterError(f"工具规划失败：{exc}") from exc
+    raise RouterError("工具规划失败")
 
 
 def router_prompt_sha() -> str:
@@ -476,7 +422,6 @@ __all__ = [
     "RouterDecision",
     "RouterError",
     "RouterInfraError",
-    "ROUTER_JSON_SCHEMA",
     "route",
     "plan_tools",
     "plan_needs",

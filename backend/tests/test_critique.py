@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from app.agents.harness.critique import (
     CritiqueResult,
+    CritiqueVerdict,
     UnsupportedClaim,
     append_grounding_disclaimer,
     append_repair_to_messages,
@@ -19,6 +20,10 @@ from app.agents.harness.critique import (
     should_ground_answer,
 )
 from app.core.llm import LLMStructuredError
+
+
+def _verdict(data: dict) -> CritiqueVerdict:
+    return CritiqueVerdict.model_validate(data)
 
 
 def test_should_ground_answer_only_for_kb_web_sandbox():
@@ -114,12 +119,14 @@ def test_critique_merges_llm_unsupported_and_rule_hits():
     evidence = [{"source_type": "kb", "index": 1, "content": "住宿上限 500 元"}]
     with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
         with patch(
-            "app.agents.harness.critique.complete_json_schema",
-            return_value={
-                "grounded": False,
-                "addresses_question": True,
-                "unsupported": [{"text": "上限 800 元", "reason": "证据为 500 元"}],
-            },
+            "app.agents.harness.critique.complete_json_object",
+            return_value=_verdict(
+                {
+                    "grounded": False,
+                    "addresses_question": True,
+                    "unsupported": [{"text": "上限 800 元", "reason": "证据为 500 元"}],
+                }
+            ),
         ):
             result = critique_draft(
                 question="差旅住宿标准？",
@@ -186,12 +193,14 @@ def test_finalize_grounded_answer_end_to_end_mock():
     evidence = [{"source_type": "kb", "index": 1, "filename": "a.pdf", "content": "500 元"}]
     with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
         with patch(
-            "app.agents.harness.critique.complete_json_schema",
-            return_value={
-                "grounded": True,
-                "addresses_question": True,
-                "unsupported": [],
-            },
+            "app.agents.harness.critique.complete_json_object",
+            return_value=_verdict(
+                {
+                    "grounded": True,
+                    "addresses_question": True,
+                    "unsupported": [],
+                }
+            ),
         ):
             final, cr = finalize_grounded_answer(
                 question="标准？",
@@ -208,7 +217,7 @@ def test_critique_schema_failure_marks_critique_failed():
     evidence = [{"source_type": "kb", "index": 1, "content": "x"}]
     with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
         with patch(
-            "app.agents.harness.critique.complete_json_schema",
+            "app.agents.harness.critique.complete_json_object",
             side_effect=LLMStructuredError("schema fail"),
         ):
             result = critique_draft(
@@ -247,16 +256,18 @@ def test_repair_regenerates_when_first_critique_fails():
         {"role": "user", "content": "标准？"},
     ]
     critiques = [
-        {
-            "grounded": False,
-            "addresses_question": True,
-            "unsupported": [{"text": "800 元", "reason": "证据为 500 元"}],
-        },
-        {"grounded": True, "addresses_question": True, "unsupported": []},
+        _verdict(
+            {
+                "grounded": False,
+                "addresses_question": True,
+                "unsupported": [{"text": "800 元", "reason": "证据为 500 元"}],
+            }
+        ),
+        _verdict({"grounded": True, "addresses_question": True, "unsupported": []}),
     ]
     with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
         with patch(
-            "app.agents.harness.critique.complete_json_schema",
+            "app.agents.harness.critique.complete_json_object",
             side_effect=critiques,
         ):
             with patch(
@@ -285,14 +296,16 @@ def test_repair_second_fail_appends_one_disclaimer():
         {"role": "system", "content": "【证据池】\n住宿上限 500 元"},
         {"role": "user", "content": "标准？"},
     ]
-    fail = {
-        "grounded": False,
-        "addresses_question": True,
-        "unsupported": [{"text": "800 元", "reason": "证据为 500 元"}],
-    }
+    fail = _verdict(
+        {
+            "grounded": False,
+            "addresses_question": True,
+            "unsupported": [{"text": "800 元", "reason": "证据为 500 元"}],
+        }
+    )
     with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
         with patch(
-            "app.agents.harness.critique.complete_json_schema",
+            "app.agents.harness.critique.complete_json_object",
             return_value=fail,
         ):
             with patch(
@@ -318,14 +331,16 @@ def test_repair_disabled_appends_disclaimer_without_regenerate():
         {"role": "system", "content": "【证据池】"},
         {"role": "user", "content": "标准？"},
     ]
-    fail = {
-        "grounded": False,
-        "addresses_question": True,
-        "unsupported": [{"text": "800 元", "reason": "证据为 500 元"}],
-    }
+    fail = _verdict(
+        {
+            "grounded": False,
+            "addresses_question": True,
+            "unsupported": [{"text": "800 元", "reason": "证据为 500 元"}],
+        }
+    )
     with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
         with patch(
-            "app.agents.harness.critique.complete_json_schema",
+            "app.agents.harness.critique.complete_json_object",
             return_value=fail,
         ):
             with patch("app.agents.harness.critique.complete_text") as gen:
@@ -348,7 +363,7 @@ def test_critique_failed_skips_repair():
     messages = [{"role": "user", "content": "q"}]
     with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
         with patch(
-            "app.agents.harness.critique.complete_json_schema",
+            "app.agents.harness.critique.complete_json_object",
             side_effect=LLMStructuredError("schema fail"),
         ):
             with patch("app.agents.harness.critique.complete_text") as gen:

@@ -10,7 +10,7 @@ _MAX_ITEM_CHARS = 1200
 _MAX_POOL_CHARS = 12000
 
 ROUTER_SYSTEM = """你是 Omni-Butler 的工具规划器。根据用户消息与上下文，决定需要哪些工具。
-只输出一个符合 schema 的 JSON 对象，禁止解释、禁止 Markdown 代码块。
+只输出一个 json 对象，禁止解释、禁止 Markdown 代码块。例如 {{"reasoning":"","needs_kb":false,"needs_web":false,"needs_calendar":false,"needs_sandbox":false,"needs_freshness":false,"confidence":"high"}}
 
 今天是 {today}。
 

@@ -16,9 +16,10 @@ import logging
 import re
 import time
 import weakref
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
+from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
 from app.core.redis import async_model_slot, model_slot
@@ -119,7 +120,10 @@ def resolved_router_model() -> str:
 
 
 class LLMStructuredError(RuntimeError):
-    """Raised when schema-constrained completion fails (no silent fallback)."""
+    """Raised when json object completion fails validation (no silent fallback)."""
+
+
+T = TypeVar("T", bound=BaseModel)
 
 
 def _get_async_client():
@@ -373,62 +377,104 @@ def complete_json(
         return None
 
 
-async def complete_json_async(messages: list[dict], model: str | None = None) -> dict | None:
-    """Async wrapper; uses shared async client (non-streaming)."""
-    if not settings.llm_api_key:
+def _schema_ref(root: dict, ref: str) -> dict:
+    node: Any = root
+    for part in ref.lstrip("#/").split("/"):
+        if part:
+            node = node[part]
+    return node
+
+
+def _example_value(node: Any, root: dict) -> Any:
+    if not isinstance(node, dict):
         return None
-
-    client = _get_async_client()
-    model_name = model or resolved_planner_model()
-    try:
-        async with async_model_slot(model_name):
-            resp = await client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                stream=False,
-                temperature=0,
-                response_format={"type": "json_object"},
-            )
-        raw = (resp.choices[0].message.content or "").strip()
-        return _parse_json_object(raw)
-    except Exception:
+    if "default" in node:
+        return node["default"]
+    if "$ref" in node:
+        return _example_value(_schema_ref(root, node["$ref"]), root)
+    enum = node.get("enum")
+    if isinstance(enum, list) and enum:
+        return enum[0]
+    for key in ("anyOf", "oneOf"):
+        options = node.get(key)
+        if isinstance(options, list):
+            for option in options:
+                if isinstance(option, dict) and option.get("type") != "null":
+                    return _example_value(option, root)
+            return None
+    typ = node.get("type")
+    if isinstance(typ, list):
+        for item in typ:
+            if item != "null":
+                return _example_value({**node, "type": item}, root)
         return None
+    if typ == "object" or "properties" in node:
+        props = node.get("properties") or {}
+        return {key: _example_value(prop, root) for key, prop in props.items()}
+    if typ == "array":
+        return []
+    if typ == "boolean":
+        return False
+    if typ == "string":
+        return ""
+    if typ == "integer":
+        return 0
+    if typ == "number":
+        return 0
+    if typ == "null":
+        return None
+    return None
 
 
-def complete_json_schema(
+def _one_line_example(model: type[BaseModel]) -> str:
+    schema = model.model_json_schema()
+    return json.dumps(_example_value(schema, schema), ensure_ascii=False, separators=(",", ":"))
+
+
+def _retry_messages(messages: list[dict], assistant: str, error: str, example: str) -> list[dict]:
+    return [
+        *messages,
+        {"role": "assistant", "content": assistant},
+        {
+            "role": "user",
+            "content": f"错误：{error}\n请只输出一行 json 对象，例如：\n{example}",
+        },
+    ]
+
+
+def _fail_or_retry(
+    attempt: int,
     messages: list[dict],
-    *,
-    schema: dict[str, Any],
-    name: str,
-    model: str | None = None,
-    max_attempts: int | None = None,
-) -> dict[str, Any]:
-    """Schema-constrained JSON completion. Raises LLMStructuredError on schema failure.
+    assistant: str,
+    error: str,
+    example: str,
+    cause: BaseException | None = None,
+) -> list[dict]:
+    if attempt >= 2:
+        raise LLMStructuredError(f"json 对象校验失败：{error}") from cause
+    return _retry_messages(messages, assistant, error, example)
 
-    Rate-limit, timeout, and similar transport errors retry with backoff, then
-    raise ``LLMInfraError`` so callers can treat them as infrastructure rather
-    than a bad plan. Uses OpenAI-compatible ``response_format=json_schema``.
-    Retries up to ``max_attempts`` (default ``settings.router_max_attempts``), feeding
-    validation/parse errors back to the model. Never returns None / silent fallback.
+
+def complete_json_object(
+    messages: list[dict],
+    result_model: type[T],
+    model_name: str,
+) -> T:
+    """Parse one json_object completion into ``result_model``.
+
+    Retries once when the body is empty, truncated, or invalid. Transport
+    failures raise ``LLMInfraError`` on the call that failed.
     """
     if not settings.llm_api_key:
         raise LLMStructuredError("未配置 LLM_API_KEY，无法进行工具规划")
 
-    attempts = int(max_attempts if max_attempts is not None else settings.router_max_attempts)
-    attempts = max(1, attempts)
     client = _get_sync_client()
-    model_name = model or resolved_router_model()
-    response_format = {
-        "type": "json_schema",
-        "json_schema": {
-            "name": name,
-            "strict": True,
-            "schema": schema,
-        },
-    }
+    example = _one_line_example(result_model)
+    timeout = min(settings.llm_timeout, 60.0)
+    response_format = {"type": "json_object"}
     msgs = list(messages)
-    last_err = "unknown"
-    for attempt in range(1, attempts + 1):
+
+    for attempt in (1, 2):
         try:
             with model_slot(model_name):
                 resp = client.chat.completions.create(
@@ -437,57 +483,47 @@ def complete_json_schema(
                     stream=False,
                     temperature=0.0,
                     response_format=response_format,
-                    timeout=min(settings.llm_timeout, 60.0),
+                    timeout=timeout,
                 )
-            raw = (resp.choices[0].message.content or "").strip()
-            obj = _parse_json_object(raw)
-            if obj is None:
-                last_err = f"invalid JSON: {(raw or '')[:200]}"
-                msgs = list(messages) + [
-                    {"role": "assistant", "content": raw or ""},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"输出无法解析为 JSON 对象。错误：{last_err}\n"
-                            "请严格按 schema 重新输出完整 JSON，不要 Markdown。"
-                        ),
-                    },
-                ]
-                continue
-            return obj
-        except LLMStructuredError:
-            raise
         except Exception as exc:
-            last_err = f"{type(exc).__name__}: {str(exc)[:300]}"
-            logger.warning("complete_json_schema attempt %s/%s failed: %s", attempt, attempts, last_err)
             if is_llm_infra_exception(exc):
-                # Transport failures are not schema misses. Back off, then surface
-                # LLMInfraError so eval can drop them from the accuracy denominator.
-                if attempt >= attempts:
-                    _STATS["infra_errors"] += 1
-                    raise LLMInfraError(last_err) from exc
-                _STATS["retries"] += 1
-                delay = llm_infra_backoff_seconds(attempt)
-                logger.warning(
-                    "complete_json_schema infra backoff %.0fs (attempt %s/%s)",
-                    delay,
-                    attempt,
-                    attempts,
-                )
-                time.sleep(delay)
-                continue
-            if attempt >= attempts:
-                break
-            msgs = list(messages) + [
-                {
-                    "role": "user",
-                    "content": (
-                        f"上一次调用失败：{last_err}\n"
-                        "请严格按 schema 重新输出完整 JSON，不要 Markdown。"
-                    ),
-                },
-            ]
-    raise LLMStructuredError(f"schema 约束输出失败（{attempts} 次）：{last_err}")
+                _STATS["infra_errors"] += 1
+                raise LLMInfraError(f"{type(exc).__name__}: {exc}") from exc
+            msgs = _fail_or_retry(
+                attempt,
+                messages,
+                "",
+                f"{type(exc).__name__}: {exc}",
+                example,
+                exc,
+            )
+            continue
+
+        choice = resp.choices[0]
+        raw = choice.message.content
+        text = raw if isinstance(raw, str) else ""
+        finish = getattr(choice, "finish_reason", None)
+        if finish == "length" or not text.strip():
+            reason = "finish_reason=length" if finish == "length" else "empty content"
+            msgs = _fail_or_retry(attempt, messages, text, reason, example)
+            continue
+
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            msgs = _fail_or_retry(attempt, messages, text, f"invalid JSON: {exc.msg}", example, exc)
+            continue
+
+        if not isinstance(parsed, dict):
+            msgs = _fail_or_retry(attempt, messages, text, "JSON value is not an object", example)
+            continue
+
+        try:
+            return result_model.model_validate(parsed)
+        except ValidationError as exc:
+            msgs = _fail_or_retry(attempt, messages, text, str(exc), example, exc)
+
+    raise LLMStructuredError("json 对象校验失败")
 
 
 def _parse_json_object(raw: str) -> dict | None:
