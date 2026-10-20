@@ -77,6 +77,7 @@ def openai_requests(monkeypatch):
     real = openai.OpenAI
 
     def factory(**kwargs):
+        kwargs.pop("http_client", None)
         return real(**kwargs, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
 
     monkeypatch.setattr(openai, "OpenAI", factory)
@@ -95,6 +96,7 @@ def httpx_requests(monkeypatch):
     real = httpx.Client
 
     def factory(*args, **kwargs):
+        kwargs.pop("proxy", None)
         return real(*args, transport=httpx.MockTransport(handler), **kwargs)
 
     monkeypatch.setattr(httpx, "Client", factory)

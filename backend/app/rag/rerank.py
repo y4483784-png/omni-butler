@@ -18,6 +18,7 @@ from app.core.config import (
     zhipu_endpoint,
     zhipu_in_use,
 )
+from app.core.proxy import proxy_from_env
 from app.core.redis import model_slot
 from app.rag.expand import ExpandedHit
 
@@ -129,7 +130,7 @@ class ZhipuReranker:
             "Content-Type": "application/json",
         }
         with model_slot(self.model):
-            with httpx.Client(timeout=self.timeout) as client:
+            with httpx.Client(timeout=self.timeout, proxy=proxy_from_env()) as client:
                 resp = client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
