@@ -68,6 +68,16 @@ omni-butler/
 
 `.env.example` 里的向量模型是 `embedding-3-pro`，视觉模型是 `glm-4v-flash`。`config.py` 在没配环境变量时分别是 `embedding-3` 和 `glm-4.6v`。以你复制出来的 `backend/.env` 为准。
 
+上表的「模型地址」只指聊天。聊天走 `LLM_BASE_URL` 和 `LLM_API_KEY`。向量、OCR、Rerank 各读自己的 `EMBEDDING_*`、`VISION_*`、`RERANK_*` 地址和密钥。`config.py` 里这六项默认是空字符串，不回退到聊天那组，`glm` 自动改写也不碰它们。规则表是 `app/core/config.py` 的 `ZhipuService`：
+
+| 服务 | 何时算在用 | 关闭开关 |
+| --- | --- | --- |
+| 向量 | `RAG_HYBRID_ENABLED=true` | `RAG_HYBRID_ENABLED=false` |
+| OCR | `VISION_OCR_ENABLED=true` | `VISION_OCR_ENABLED=false` |
+| Rerank | `RAG_RERANK_ENABLED=true` 且 provider 是 `zhipu`、`auto` 或空 | `RAG_RERANK_ENABLED=false` |
+
+在用的服务有空地址或空密钥时，api 在 `on_startup`（`init_db` 之前）、worker 在 `worker_init` 拒绝启动，报错一次列出所有缺的变量。Beat 和 sandbox-runner 不做这项检查。评测脚本运行中会改这些开关，所以客户端每次调用都重新读地址和密钥；缺项时抛 `EndpointConfigError`。Rerank 的 HTTP 失败仍退回启发式，记一条 `error` 日志并设 `diag["rerank_fallback"]`。配置缺项不算这种失败，直接报错。
+
 测试（pytest）强制用 SQLite，不读 `.env` 里的 Postgres。
 
 ## 数据库
@@ -135,7 +145,7 @@ Redis 是可以丢掉的加速和协调层，不是业务数据的来源。连�
 | 用途 | 按什么做键 | 默认 |
 | --- | --- | --- |
 | Tier 2 路由结果 | 消息、历史、库里有没有文档或表格、模型、路由提示词指纹 | 3 天（`ROUTER_CACHE_TTL`） |
-| 问题向量 | 归一化后的问题、向量模型、供应商地址 | 7 天（`EMBEDDING_CACHE_TTL`） |
+| 问题向量 | 归一化后的问题、向量模型、`EMBEDDING_BASE_URL` | 7 天（`EMBEDDING_CACHE_TTL`） |
 | 联网搜索 | 查询、引擎、条数、时效参数 | 5 分钟（`WEB_CACHE_TTL`） |
 | 模型并发槽 | 模型名 | `LLM_MODEL_CONCURRENCY_LIMITS`；任务结束释放，180 秒租约兜底 |
 | `/api/chat` 每人限流 | 用户 id | 默认 30 次 / 60 秒，超出返回 HTTP 429 和 `Retry-After` |
