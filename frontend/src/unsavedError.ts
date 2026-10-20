@@ -29,12 +29,13 @@ export function overlayUnsavedError<T extends UnsavedRow>(before: T[], synced: T
     last?.id != null && last.id !== beforeLast.id && before.some((message) => message.id === last.id);
   if (last?.role !== "assistant" || lastIsOlderTurn) {
     const { id: _ignored, ...rest } = beforeLast;
-    merged.push({
+    const unsaved = {
       ...rest,
       citations: [],
       scheduleCard: null,
       artifact: null,
-    });
+    } satisfies UnsavedRow;
+    merged.push(unsaved as T);
     return merged;
   }
   merged[merged.length - 1] = { ...last, content: beforeLast.content };
