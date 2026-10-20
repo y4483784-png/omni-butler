@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import httpx
+
 from app.core.config import Endpoint, EndpointConfigError, ZhipuService, settings, zhipu_endpoint
+from app.core.proxy import proxy_from_env
 from app.core.redis import json_get, json_set, model_slot, stable_key
 
 
@@ -23,11 +26,16 @@ def embed_texts(texts: list[str], *, batch_size: int = 16) -> list[list[float]]:
 
     from openai import OpenAI
 
+    http_client = httpx.Client(
+        proxy=proxy_from_env(),
+        timeout=min(settings.llm_timeout, 60.0),
+    )
     client = OpenAI(
         api_key=endpoint.api_key,
         base_url=endpoint.base_url,
         timeout=min(settings.llm_timeout, 60.0),
         max_retries=1,
+        http_client=http_client,
     )
     try:
         out: list[list[float]] = []

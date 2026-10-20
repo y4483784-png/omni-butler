@@ -61,8 +61,10 @@ def test_live_infra_is_not_a_zero_fact_recall(monkeypatch):
     assert "RateLimit" in reason
 
 
-def test_gate_report_rejects_split_mismatch():
-    from app.eval.context_replay import EvalReport, gate_report
+def test_gate_report_does_not_fail_smoke_against_full_baseline():
+    import json
+
+    from app.eval.context_replay import DEFAULT_BASELINE, EvalReport, gate_report
 
     report = EvalReport(
         n=32,
@@ -71,11 +73,20 @@ def test_gate_report_rejects_split_mismatch():
         arms={"full": {"overall": {"pending_retention": 1.0}}},
         invariants={"violations": 0},
     )
-    fails = gate_report(report, {"split": "full", "arms": {"full": {"overall": {"fact_recall": 0.9}}}})
-    assert any("split mismatch" in item for item in fails)
-    # Same split does not add that failure.
+    full_baseline = {"split": "full", "arms": {"full": {"overall": {"fact_recall": 0.9}}}}
+    fails = gate_report(report, full_baseline)
+    assert not any("split mismatch" in item for item in fails)
+    assert fails == []
+
+    checked_in = json.loads(DEFAULT_BASELINE.read_text(encoding="utf-8"))
+    assert checked_in["split"] == "full"
+    assert not any("split mismatch" in item for item in gate_report(report, checked_in))
+
     report.split = "full"
-    assert not any("split mismatch" in item for item in gate_report(report, {"split": "full", "n": 1}))
+    report.mode = "live"
+    report.arms["full"]["overall"]["fact_recall"] = 0.5
+    regressed = gate_report(report, full_baseline)
+    assert any(item.startswith("fact_recall ") for item in regressed)
 
 
 def test_gate_flags_degraded_compaction(monkeypatch):

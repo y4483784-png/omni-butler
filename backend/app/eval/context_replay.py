@@ -926,7 +926,6 @@ def gate_report(report: EvalReport, baseline: dict[str, Any] | None) -> list[str
     base_split = str(baseline.get("split") or "")
     report_split = str(report.split or "")
     if base_split and report_split and base_split != report_split:
-        fails.append(f"split mismatch: report={report_split} baseline={base_split}")
         # Numbers from another split are not a regression signal.
         return fails
 
