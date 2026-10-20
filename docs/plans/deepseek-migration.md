@@ -155,7 +155,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 返回内容为空、只有空白、或 `finish_reason` 为 `length` 时，算失败，不要把空串当成成功。
 - [ ] 校验失败或内容为空时，把错误和示例再发给模型一次。第二次仍失败就抛出 `LLMStructuredError`。不要第三次。
 - [ ] `router.py` 的 `_llm_decide` 改为调用这个函数，并用 `RouterDecision` 校验。外层不要再乘一轮重试。`ROUTER_MAX_ATTEMPTS` 保留为 1 的含义写进 `.env.example`，避免和函数内部的一次重试叠成四次。
-- [ ] `critique_draft` 改为同一个函数，用现有的核验结果模型校验。删掉 `_CRITIQUE_SCHEMA` 那份手写 schema。
+- [ ] `critique_draft` 改为同一个函数，用现有的核验结果模型校验。删掉 `_CRITIQUE_SCHEMA` 那份手写 schema。`LLMInfraError` 必须继续向外抛。现在第 341 行的 `except Exception` 会把 429 收成 `critique_failed`，依据评测仍把这一行算进得分。
 - [ ] 路由提示和核验提示里写上小写 `json`，并给一个一行示例。DeepSeek 在缺少这个单词时会一直输出空白，直到打满 token。智谱这一步先跑通，是为了在换供应商之前证明校验本身。
 - [ ] 不改模型名，不改 `LLM_BASE_URL`，不改前端。
 
@@ -167,7 +167,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] `backend/tests/test_json_object.py` 覆盖合法 JSON、空内容、第一次非法第二次合法、两次都非法。断言请求体是 `json_object`，并且没有 `json_schema`。运行 `cd backend && python -m pytest tests/test_json_object.py tests/test_router.py tests/test_workflow.py -q`。
+- [ ] `backend/tests/test_json_object.py` 覆盖合法 JSON、空内容、第一次非法第二次合法、两次都非法，以及 `LLMInfraError` 不会变成 `critique_failed`。断言请求体是 `json_object`，并且没有 `json_schema`。运行 `cd backend && python -m pytest tests/test_json_object.py tests/test_router.py tests/test_workflow.py -q`。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-xhigh-fast` at the PR head, per the boot recipe.
 
@@ -179,8 +179,8 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Lane 6. 看这一轮的 api 日志。Save `ds2-lane6-attempts.png`. Pass when 路由补全次数不超过 2。
 - [ ] Lane 7. 发送一句普通闲聊。Save `ds2-lane7-chat.png`. Pass when 气泡里有文字，且不是只有空白。
 - [ ] Lane 8. 刷新页面。Save `ds2-lane8-reload.png`. Pass when 上一条助手消息还在，内容与刷新前一致。
-- [ ] Lane 9. 运行 `cd backend && python scripts/eval.py run routing --profile smoke`。Save `ds2-lane9-routing.png`. Pass when 命令退出码是 0，且报告里没有把空内容记成正确路由。
-- [ ] Lane 10. 运行 `cd backend && python scripts/eval.py run calendar --profile smoke`。Save `ds2-lane10-calendar.png`. Pass when 退出码是 0。限流行记在 `infra_error`，不进通过率分母。
+- [ ] Lane 9. 有密钥时运行 `cd backend && python scripts/eval.py run routing --profile full`。Save `ds2-lane9-routing.png`. Pass when 报告不是缓存重放，空内容没有记成正确路由，且 429 记为 `infra_error`。`smoke` 带 `--require-cache`，不能当作这一 PR 的通过。
+- [ ] Lane 10. 有密钥时运行 `cd backend && python scripts/eval.py run calendar --profile full`。Save `ds2-lane10-calendar.png`. Pass when 退出码是 0，且限流行记在 `infra_error`。`smoke` 只重放 `calendar_model_cache.json`，不能当作这一 PR 的通过。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -206,12 +206,13 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] 改 `backend/app/core/config.py` 和 `backend/app/core/llm.py`。
 - [ ] 改 `backend/app/api/chat.py`。
-- [ ] 改 `backend/app/agents/workflow.py` 里 `run_agent_workflow` 的草稿调用。
+- [ ] 改 `backend/app/agents/workflow.py` 里 `answer_node` 的草稿调用。
 - [ ] 改 `backend/app/agents/harness/critique.py` 里 `ground_and_repair_answer`。
 - [ ] 改 `backend/app/agents/tools/calendar_tool.py` 里 `_planning_advice`。
 - [ ] 改 `backend/app/agents/router.py` 的缓存版本。
 - [ ] 改 `backend/app/eval/agent_e2e.py`、`grounding.py`、`yz_fullchain.py`、`context_replay.py`、`ragas_judge.py`。
 - [ ] 改 `frontend/src/api/client.ts`、`frontend/src/services/chatStream.ts`、`frontend/src/components/ChatWindow.tsx`。
+- [ ] 改 `backend/app/services/message_format.py` 的 `serialize_message`，以及 `backend/scripts/run_calendar_eval.py` 的 `_fingerprint`。
 - [ ] 新增一条 Alembic 修订，在 `messages` 上加可空列 `reasoning`。当前头是 `0008_calendar_google_connection`。
 - [ ] 改 `.env.example`、`README.md`、`docs/architecture.md`、`docs/deployment.md`、`backend/app/eval/README.md`。
 - [ ] 新增 `backend/tests/test_deepseek_roles.py`。
@@ -225,14 +226,15 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 增加四个开关，默认值如下。`CHAT_THINKING=on`，`PLANNER_THINKING=off`，`ROUTER_THINKING=off`，`JUDGE_THINKING=on`。开时请求带 `extra_body` 的 `thinking.type=enabled` 和 `reasoning_effort=high`。关时带 `thinking.type=disabled` 和 `reasoning_effort=none`。不要再做一个全局开关。思考力度不做成环境变量。
 - [ ] 思考开着时不要发送 `temperature`，官方文档写明它不起作用。不要把现有的 `llm_max_tokens=2048` 传给思考请求。不传时，思考模式的官方默认输出上限是 64K。`finish_reason=length` 视为失败。
 - [ ] 从安装的 OpenAI SDK 2.x 里用 `getattr` 读取 `reasoning_content`。2.54.0 上这个字段在 `model_extra`，不在声明字段里。`content` 为 `None` 时不要拼接。官方流式示例用「有思考就不要内容」的写法，遇到只有角色的块会把 `None` 加进字符串。
-- [ ] `stream_chat` 把思考增量和回答增量分成两种产出。`chat.py` 新增 SSE 类型 `reasoning`。不要复用现有的 `thinking`，那是「正在搜索」这类状态句。思考增量不要追加进 `acc`。落库的 `content` 只有回答。
-- [ ] 非流式路径只把 `content` 交回调用方。覆盖 `run_agent_workflow` 第 529 行的草稿、`ground_and_repair_answer` 第 485 行的重写、`_planning_advice`、以及 `agent_e2e`、`grounding`、`yz_fullchain`、`context_replay` 的作答。这些函数名已对过代码。日历第 389 行是 `extract_event`，第 536 行是 `extract_free_slots`，数据分析第 361 行是 `_plan_analysis_spec`，记忆第 256 行是 `extract_memories`。它们走规划角色，思考关闭。
-- [ ] 若某次非流式调用的结果会直接显示给用户，例如日程建议，先发一条 `reasoning` 事件，再发回答。回答文本里仍然没有思考。
-- [ ] `messages.reasoning` 存思考全文，刷新后仍能展开。组装下一轮模型输入时只用 `content`。当前代码不传 `tools`。调用方若传入 `tools`，客户端直接抛错，不要发出请求。官方文档写明，带 `tools` 时必须把 `reasoning_content` 原样回传，否则接口返回 400。
+- [ ] `stream_chat` 把思考增量和回答增量分成两种产出。`agent_event_gen` 新增 SSE 类型 `reasoning`。不要复用现有的 `thinking`，那是「正在搜索」这类状态句。思考增量不要追加进 `acc`。落库的 `content` 只有回答。
+- [ ] 非流式路径只把 `content` 交回调用方。覆盖 `answer_node` 第 529 行的草稿、`ground_and_repair_answer` 第 485 行的重写、`_planning_advice`，以及 `agent_e2e`、`grounding`、`yz_fullchain`、`context_replay` 的作答。日历第 389 行是 `extract_event`，第 536 行是 `extract_free_slots`，数据分析第 361 行是 `_plan_analysis_spec`，记忆第 256 行是 `extract_memories`。它们走规划角色，思考关闭。
+- [ ] 有依据的回答不走 `stream_chat`。`answer_node` 把终稿放进 `direct_answer` 并清空 `llm_messages`，`agent_event_gen` 只发一次 `token`。这条路径要先发 `reasoning` 事件，再发回答。日程建议同样处理。回答文本里仍然没有思考。
+- [ ] `messages.reasoning` 存思考全文。`serialize_message` 把它放进 `GET /api/sessions/{id}/messages`。`chatStream.ts` 在回合结束时会 `loadMessages` 并换掉气泡，所以重新加载的消息必须带上 `reasoning`，否则思考块会在回合结束时消失。组装下一轮模型输入时只用 `content`。当前代码不传 `tools`。调用方若传入 `tools`，客户端直接抛错，不要发出请求。官方文档写明，带 `tools` 时必须把 `reasoning_content` 原样回传，否则接口返回 400。
 - [ ] 前端在回答上方放一块可折叠的「思考」。思考 token 到达时展开。第一个回答 token 到达后折叠。用户可以再打开。状态步骤列表保持原样，不要和思考正文混在同一个列表里。
-- [ ] `ragas_judge.py` 的聊天模型从 `settings.llm_model` 改为 `JUDGE_MODEL`，思考按 `JUDGE_THINKING`。去掉这里的 `max_tokens=2048`。嵌入客户端仍用 `ds-1` 的嵌入地址。报告里的 `judge_model` 和 `answer_model` 必须不同，相同则 `self_judged` 为真，该档数字不能当结论。
-- [ ] `router_cache_key` 已经包含 `model`。把 `_ROUTER_CACHE_VERSION` 从 2 调到 3。部署时清掉 Redis 里前缀为路由缓存的键。评测继续尊重 `EVAL_SKIP_ROUTER_REDIS`。
-- [ ] `is_llm_infra_exception` 继续把 HTTP 429 和限流异常算作基础设施失败。响应能正常返回但 `finish_reason` 是 `insufficient_system_resource` 或 `aborted` 时，也抛 `LLMInfraError`。评测不得把这些行算成答错。
+- [ ] `ragas_judge.py` 的聊天模型从 `settings.llm_model` 改为 `JUDGE_MODEL`，思考按 `JUDGE_THINKING`。去掉这里的 `max_tokens=2048`。嵌入客户端仍用 `ds-1` 的嵌入地址。报告里的 `judge_model` 和 `answer_model` 必须不同，相同则 `self_judged` 为真，该档数字不能当结论。`evaluate` 现在没有 429 处理，判分侧限流会让整个进程失败。捕获后把该次运行记为 `infra_error`，不要当成模型答错。
+- [ ] `router_cache_key` 已经包含 `model`。把 `_ROUTER_CACHE_VERSION` 从 2 调到 3。部署时清掉 Redis 前缀 `omni:route:`。同时停用这三份磁盘缓存，`backend/data/eval/router_cache.json`、`context_cache.json`、`calendar_model_cache.json`。路由全量档会重新生成第一份。评测继续尊重 `EVAL_SKIP_ROUTER_REDIS`。
+- [ ] `_fingerprint` 在调用方没传模型时写成 `resolved_planner_model()`，但 `_planning_advice` 的 `complete_text` 实际用的是 `llm_model`。合并后文本缓存键要写成真正发出的模型名，并带上该角色的思考开关。否则两边都叫 `deepseek-flash` 时，会重放另一套思考模式下的建议。
+- [ ] `is_llm_infra_exception` 继续把 HTTP 429 和限流异常算作基础设施失败。响应能正常返回但 `finish_reason` 是 `insufficient_system_resource` 或 `aborted` 时，也抛 `LLMInfraError`。`yz_fullchain` 的作答 429 已经是 `infra_error`。它的路由 429 仍被记成路由失误。`run_yz_eval.py` 若还被调用，把那一处也改成 `infra_error`。套件保持不注册。评测不得把这些行算成答错。
 - [ ] `gen_*.py` 只生成冻结题集，不调用模型。沙箱代码不调用模型。这一 PR 不改它们。负责人用检索确认没有遗漏的调用后再勾掉。
 - [ ] `.env.example` 的 `LLM_MODEL_CONCURRENCY_LIMITS` 改成包含 `deepseek-flash` 和 `deepseek-v4-pro`。起始槽位用 `deepseek-flash=50,deepseek-v4-pro=10`。这是保护账户的上限，不是测出来的最优值。官方并发上限远高于此。
 - [ ] `docker-compose.yml` 的 `environment` 映射不要写入这些密钥。该映射会盖住 `env_file`。只在 `env_file` 旁用注释列出 `backend/.env` 必须有的名字。
@@ -253,11 +255,11 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Lane 2. 在 head 观察思考 token 先到、回答后到。Save `ds3-lane2-collapse.png`. Pass when 思考在到达时是展开的，回答一开始后变为折叠，点击后能再打开。
 - [ ] Lane 3. 发送「明天下午三点开会」。Save `ds3-lane3-card.png`. Pass when 卡片开始时刻是 15:00，且该次规划请求的日志里思考为关。
 - [ ] Lane 4. 发送「查一下明天的日程」。Save `ds3-lane4-list.png`. Pass when 出现列表。路由请求的日志里思考为关。
-- [ ] Lane 5. 问一句需要知识库的事实。Save `ds3-lane5-kb.png`. Pass when 回答有引用，且重排主机不是 `api.deepseek.com`。
+- [ ] Lane 5. 问一句需要知识库的事实。Save `ds3-lane5-kb.png`. Pass when 回答有引用，回答上方有「思考」块，且重排主机不是 `api.deepseek.com`。这条回答来自 `direct_answer`，不经过 `stream_chat`。
 - [ ] Lane 6. 再问一句促使嵌入的问题。Save `ds3-lane6-embed.png`. Pass when 嵌入主机是 `EMBEDDING_BASE_URL`，不是 DeepSeek。
 - [ ] Lane 7. 刷新第 2 路的会话。Save `ds3-lane7-reload.png`. Pass when 回答正文与折叠前的回答一致，思考只出现在「思考」块里。
-- [ ] Lane 8. 在 head 上跑 `cd backend && python scripts/eval.py run calendar --profile smoke`，并对照 trunk 的同命令。Save `ds3-lane8-calendar.png`. Pass when 限流行在两边都记为 `infra_error`。head 没有因模型名仍是 `glm` 而失败。
-- [ ] Lane 9. 在 head 上跑 `cd backend && python scripts/eval.py run agent --profile smoke`。Save `ds3-lane9-agent.png`. Pass when 报告里的作答模型是 `deepseek-flash`。若出现 429，该行是 `infra_error` 而不是答错。
+- [ ] Lane 8. 在 trunk 和 head 上各跑 `cd backend && python scripts/eval.py run calendar --profile full`。Save `ds3-lane8-calendar.png`. Pass when 两边的限流行都记为 `infra_error`，且 head 的缓存键不是在重放 `glm` 建议。`smoke` 只重放缓存，不能代替这次对照。
+- [ ] Lane 9. 在 trunk 和 head 上各跑 `docker compose --profile eval run --rm eval python scripts/eval.py run agent --profile full`。Save `ds3-lane9-agent.png`. Pass when head 报告里的作答模型是 `deepseek-flash`。若出现 429，该行是 `infra_error` 而不是答错。
 - [ ] Lane 10. 部署后发第一句需要路由的话，并看 Redis。Save `ds3-lane10-cache.png`. Pass when 这一次是缓存未命中。旧的 `glm` 路由结果没有被当成这次的决定。
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -325,7 +327,7 @@ SDK 探针在这台机器的 `/tmp/ds-probe-py`，没有提交进仓库。操作
 
 `ds-3` 拒绝带 `tools` 的请求。今天没有这种调用。以后若接上工具却删掉这道拒绝，DeepSeek 会因缺少回传的 `reasoning_content` 返回 400。负责人看这道单测还在。
 
-`ds-3` 的路由缓存。键里已经有模型名。仍要把版本从 2 调到 3，并在部署时清掉旧键。不清的话，只有在有人把模型名改回旧字符串时才会命中旧决定。清掉是为了部署步骤本身可见。
+`ds-3` 的路由缓存。键里已经有模型名，前缀是 `omni:route:`。仍要把版本从 2 调到 3，并清掉 Redis 和三份磁盘缓存。日历文本缓存今天用规划模型名当键，实际调用却是 `llm_model`。合并后两个角色都叫 `deepseek-flash`，思考开关不同，键里必须带上开关。
 
 `ds-3` 的 Ragas。现有代码把 `max_tokens` 设成 2048，注释说默认上限会让生成停不下来。思考模式下 2048 会先被思考吃掉，分数 JSON 变成空。这一 PR 去掉该上限，并把 `length` 当成失败。
 
@@ -343,7 +345,7 @@ DeepSeek Flash 官方支持识图，Pro 不支持。这一计划不把识图迁�
 
 `gen_*.py` 和沙箱没有模型调用。如果负责人的检索发现有，停下来把调用点补进 `ds-3` 的文件列表，不要在计划外顺手改。
 
-比较日历和 agent 全量结果时，429 和 `insufficient_system_resource` 只计入 `infra_error_rate`。这个比率现有门是 0.05。超过就当基础设施失败，不当成 DeepSeek 比智谱笨。
+比较日历和 agent 全量结果时，429 和 `insufficient_system_resource` 只计入 `infra_error_rate`。这个比率现有门是 0.05。超过就当基础设施失败，不当成 DeepSeek 比智谱笨。`critique_draft` 今天会吞掉 429。Ragas 的 `evaluate` 遇到 429 会让进程退出。这两处在 `ds-2` 和 `ds-3` 里改掉，否则全量对照会把限流记成答错或整次崩溃。
 
 ## Appendix D. Links and reading list
 
@@ -366,11 +368,11 @@ DeepSeek Flash 官方支持识图，Pro 不支持。这一计划不把识图迁�
 
 回答角色，思考默认开，模型只读 `CHAT_MODEL`。
 
-- `backend/app/api/chat.py` 约第 539 行，`stream_chat`。这是用户看见的流。思考不要进入 `acc`。
-- `backend/app/agents/workflow.py` 的 `run_agent_workflow`，约第 529 行，`complete_text` 草稿。现在不传模型，因此用的是 `llm_model`，不是 `CHAT_MODEL`。
+- `backend/app/api/chat.py` 的 `agent_event_gen` 约第 539 行，`stream_chat`。只有 `llm_messages` 还在时才走到这里。思考不要进入 `acc`。
+- `backend/app/agents/workflow.py` 的 `answer_node`，约第 529 行，`complete_text` 草稿。现在不传模型，因此用的是 `llm_model`。有依据时第 543 行把终稿放进 `direct_answer` 并清空 `llm_messages`，后面不再流式调用。用户看见的知识库回答走这条。
 - `backend/app/agents/harness/critique.py` 的 `ground_and_repair_answer`，约第 485 行，重写用的 `complete_text`。
 - `backend/app/agents/tools/calendar_tool.py` 的 `_planning_advice`，约第 362 行，`complete_text`。
-- `backend/app/eval/agent_e2e.py` 约第 266 行，`complete_text_with_usage`，模型是 `resolved_chat_model()`。
+- `backend/app/eval/agent_e2e.py` 的 `run_task` 约第 266 行，`complete_text_with_usage`。只补工作流没有给出 `direct_answer` 的轮次。有依据的轮次已经在 `answer_node` 里用 `llm_model` 写过答案。
 - `backend/app/eval/grounding.py` 约第 276 行，`complete_text`。
 - `backend/app/eval/yz_fullchain.py` 约第 299 行，`complete_text`。
 - `backend/app/eval/context_replay.py` 约第 199 行，作答的 `complete_text_with_usage`。
@@ -402,4 +404,10 @@ DeepSeek Flash 官方支持识图，Pro 不支持。这一计划不把识图迁�
 - `backend/scripts/gen_*.py` 生成题集，不调用模型。
 - 沙箱目录里没有聊天补全调用。
 - `backend/app/core/llm.py` 的 `complete_json_async` 没有调用方。`ds-2` 删掉。
-- 路由缓存键在 `router_cache_key`，约第 253 行，字典里已有 `model`。版本常量 `_ROUTER_CACHE_VERSION` 现在是 2。
+- 路由缓存键在 `router_cache_key`，约第 253 行，字典里已有 `model`，Redis 前缀是 `omni:route:`。版本常量 `_ROUTER_CACHE_VERSION` 现在是 2。
+- `backend/scripts/run_calendar_eval.py` 的 `_fingerprint` 约第 71 行。没传模型时键写成 `resolved_planner_model()`。`_planning_advice` 不传模型，`complete_text` 实际用 `llm_model`。
+- `critique_draft` 约第 341 行捕获全部异常，429 变成 `critique_failed`。
+- `ragas_judge.py` 的 `evaluate` 约第 152 行没有限流分支。
+- `chatStream.ts` 约第 212 行在回合结束时 `loadMessages`。`serialize_message` 在 `backend/app/services/message_format.py`。
+- `agent` 全量要走 `docker compose --profile eval`。`calendar` 和 `routing` 的 `smoke` 是缓存重放，对照模型要用 `full`。
+- 上下文判分的现场命令是 `RUN_CTX_EVAL=1 python scripts/run_context_eval.py --live --split full --gate`。注册进 `eval.py` 的 context 档不打模型。
