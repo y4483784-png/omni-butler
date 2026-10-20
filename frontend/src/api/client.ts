@@ -24,6 +24,8 @@ export interface ChatMsg {
   id?: number;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string | null;
+  fold?: "hidden" | "streaming" | "collapsed" | "opened";
   citations?: Citation[];
   scheduleCard?: ScheduleCard | null;
   artifact?: ArtifactPayload | null;
@@ -117,6 +119,7 @@ export type StreamHandlers = {
   onStatus?: (phase: string) => void;
   onTtft?: (ms: number, path: string) => void;
   onThinking?: (steps: string[]) => void;
+  onReasoning?: (chunk: string) => void;
   onScheduleCard?: (card: ScheduleCard) => void;
   onArtifact?: (artifact: ArtifactPayload) => void;
 };
@@ -291,6 +294,7 @@ export async function* streamChat(
           handlers?.onTtft?.(Number(evt.ms) || 0, String(evt.path || ""));
         else if (evt.type === "thinking")
           handlers?.onThinking?.(Array.isArray(evt.steps) ? evt.steps : []);
+        else if (evt.type === "reasoning") handlers?.onReasoning?.(String(evt.content || ""));
         else if (evt.type === "schedule_card") handlers?.onScheduleCard?.(evt.card);
         else if (evt.type === "artifact") handlers?.onArtifact?.(evt.artifact);
         else if (evt.type === "error") throw new Error(evt.content || "模型调用失败");

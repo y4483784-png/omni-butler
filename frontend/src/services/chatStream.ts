@@ -1,7 +1,8 @@
 import { streamChat, loadMessages } from "../api/client";
-import type { Citation, ScheduleCard, ArtifactPayload } from "../api/client";
+import type { ChatMsg, Citation, ScheduleCard, ArtifactPayload } from "../api/client";
 import { useStore, type SessionChatState } from "../store/useStore";
 import { artifactFromPayload } from "../utils/artifact";
+import { foldThinking, type ThinkingFold } from "../thinkingFold";
 
 const abortControllers = new Map<number, AbortController>();
 
@@ -27,6 +28,19 @@ export function abortAllChatStreams(): void {
     ac.abort();
   }
   abortControllers.clear();
+}
+
+function withHydratedFold(before: ChatMsg[], synced: ChatMsg[]): ChatMsg[] {
+  return synced.map((row, i) => {
+    const local =
+      (row.id != null ? before.find((message) => message.id === row.id) : undefined) ?? before[i];
+    const fold = foldThinking(local?.fold ?? "hidden", {
+      type: "hydrate",
+      reasoning: row.reasoning || "",
+      content: row.content || "",
+    });
+    return { ...row, fold };
+  });
 }
 
 function emptyChatState(): SessionChatState {
@@ -59,7 +73,15 @@ function appendAssistantPlaceholder(sessionId: number, userText: string) {
     messages: [
       ...prev,
       { role: "user", content: userText },
-      { role: "assistant", content: "", citations: [], scheduleCard: null, artifact: null },
+      {
+        role: "assistant",
+        content: "",
+        reasoning: null,
+        fold: "hidden",
+        citations: [],
+        scheduleCard: null,
+        artifact: null,
+      },
     ],
     busy: true,
     thinking: true,
@@ -80,6 +102,8 @@ function prepareRegeneratePlaceholder(sessionId: number, assistantMessageId: num
       {
         ...prev[idx],
         content: "",
+        reasoning: null,
+        fold: "hidden",
         citations: [],
         scheduleCard: null,
         artifact: null,
@@ -103,6 +127,8 @@ function updateLastAssistant(
     citations?: Citation[];
     scheduleCard?: ScheduleCard | null;
     artifact?: ArtifactPayload | null;
+    reasoning?: string | null;
+    fold?: ThinkingFold;
   }
 ) {
   const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];
@@ -112,6 +138,8 @@ function updateLastAssistant(
   copy[copy.length - 1] = {
     ...last,
     content,
+    reasoning: extras.reasoning !== undefined ? extras.reasoning : last.reasoning,
+    fold: extras.fold !== undefined ? extras.fold : last.fold,
     citations: extras.citations ?? last.citations,
     scheduleCard: extras.scheduleCard !== undefined ? extras.scheduleCard : last.scheduleCard,
     artifact: extras.artifact !== undefined ? extras.artifact : last.artifact,
@@ -166,6 +194,17 @@ async function runStreamLoop(
         patchSession(sessionId, { routeHint });
       },
       onThinking: (steps) => patchSession(sessionId, { thinkingSteps: steps }),
+      onReasoning: (chunk) => {
+        patchSession(sessionId, { thinking: false, phaseHint: "" });
+        const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];
+        const last = prev.at(-1);
+        if (!last || last.role !== "assistant") return;
+        const reasoning = `${last.reasoning || ""}${chunk}`;
+        const fold = foldThinking(last.fold ?? "hidden", { type: "reasoning" });
+        const copy = [...prev];
+        copy[copy.length - 1] = { ...last, reasoning, fold };
+        patchSession(sessionId, { messages: copy });
+      },
       onCitations: (c) => {
         cites = c;
         updateLastAssistant(sessionId, acc, { citations: c });
@@ -185,10 +224,13 @@ async function runStreamLoop(
     })) {
       patchSession(sessionId, { thinking: false, phaseHint: "" });
       acc += delta;
+      const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];
+      const fold = foldThinking(prev.at(-1)?.fold ?? "hidden", { type: "answer" });
       updateLastAssistant(sessionId, acc, {
         citations: cites,
         scheduleCard,
         artifact: msgArtifact,
+        fold,
       });
     }
   } catch (e) {
@@ -209,7 +251,7 @@ async function runStreamLoop(
     patchSession(sessionId, { busy: false, thinking: false, phaseHint: "" });
     try {
       const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-      const synced = await loadMessages(sessionId);
+      const synced = withHydratedFold(before, await loadMessages(sessionId));
       const beforeLast = before.at(-1);
       const syncedHasAssistantError = synced.some(
         (m) =>
@@ -251,7 +293,7 @@ async function runStreamLoop(
 export async function hydrateSessionMessages(sessionId: number) {
   const existing = useStore.getState().sessionChats[sessionId];
   if (existing?.hydrated || existing?.busy) return;
-  const messages = await loadMessages(sessionId);
+  const messages = withHydratedFold([], await loadMessages(sessionId));
   patchSession(sessionId, { messages, hydrated: true });
 }
 

@@ -7,6 +7,7 @@ import { ScheduleCard } from "./ScheduleCard";
 import { UpcomingEvents } from "./UpcomingEvents";
 import { MessageActions } from "./MessageActions";
 import { artifactButtonLabel, artifactFromPayload } from "../utils/artifact";
+import { foldThinking } from "../thinkingFold";
 
 const MAX_CHARS = 10000; // PRD 3.1.1
 
@@ -88,6 +89,12 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
               copy[i] = { ...copy[i], scheduleCard: next };
               patchSessionChat(sessionId, { messages: copy });
             }}
+            onToggleReasoning={() => {
+              const copy = [...messages];
+              const current = copy[i]?.fold ?? "hidden";
+              copy[i] = { ...copy[i], fold: foldThinking(current, { type: "toggle" }) };
+              patchSessionChat(sessionId, { messages: copy });
+            }}
             onFeedbackChange={(rating) => {
               const copy = [...messages];
               copy[i] = { ...copy[i], feedback: rating };
@@ -142,6 +149,7 @@ function MessageRow({
   useKb,
   kbFocusIds,
   onScheduleChange,
+  onToggleReasoning,
   onFeedbackChange,
   onOpenArtifact,
   onTitle,
@@ -155,6 +163,7 @@ function MessageRow({
   useKb: boolean;
   kbFocusIds: number[];
   onScheduleChange: (next: ChatMsg["scheduleCard"]) => void;
+  onToggleReasoning: () => void;
   onFeedbackChange: (rating: "up" | "down" | null) => void;
   onOpenArtifact: (a: NonNullable<ChatMsg["artifact"]>) => void;
   onTitle: (sessionId: number, title: string) => void;
@@ -173,6 +182,16 @@ function MessageRow({
                 ))}
               </ul>
             ) : null}
+            {m.fold && m.fold !== "hidden" ? (
+              <div className="reasoning-block">
+                <button type="button" onClick={onToggleReasoning}>
+                  思考
+                </button>
+                {m.fold === "streaming" || m.fold === "opened" ? (
+                  <pre className="reasoning-text">{m.reasoning || ""}</pre>
+                ) : null}
+              </div>
+            ) : null}
             {m.scheduleCard?.mode === "list" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} />
             ) : null}
@@ -182,7 +201,7 @@ function MessageRow({
               <span className="thinking">
                 思考中<span className="dot" /><span className="dot" /><span className="dot" />
               </span>
-            ) : m.scheduleCard ? null : (
+            ) : m.fold === "streaming" || m.scheduleCard ? null : (
               <span className="placeholder">…</span>
             )}
             {m.artifact ? (

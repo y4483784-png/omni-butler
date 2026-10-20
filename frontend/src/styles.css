@@ -514,6 +514,27 @@ a.cite-link:hover {
   color: #6b7280;
   line-height: 1.5;
 }
+.reasoning-block {
+  margin: 0 0 8px;
+}
+.reasoning-block button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bubble pre.reasoning-text {
+  background: transparent;
+  color: #374151;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 4px 0 0;
+  margin: 0;
+  white-space: pre-wrap;
+  border-radius: 0;
+}
 .thinking-steps li {
   padding: 2px 0;
   border-left: 2px solid #d1d5db;
