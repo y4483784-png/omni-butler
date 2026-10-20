@@ -192,22 +192,23 @@ def score_live_answer(
     is not stored as a wrong answer. Invalid judge JSON still falls back inside
     ``judge_answer``; only transport failures raise.
     """
-    from app.core.llm import LLMInfraError, complete_json, complete_text_with_usage, resolved_chat_model
+    from app.core.llm import LLMInfraError, Role, complete_json, complete_text
 
-    judge_model = resolved_judge_model()
     try:
-        answer, actual = complete_text_with_usage(
+        spoken = complete_text(
             messages,
-            model=resolved_chat_model(),
+            role=Role.CHAT,
             raise_on_error=True,
         )
+        answer = spoken.content
+        actual = spoken.prompt_tokens
         ok, _reason = judge_answer(
             mode=judge_mode,
             question=question,
             gold=gold,
             hypothesis=answer or "",
             complete_json_fn=lambda msgs: complete_json(
-                msgs, model=judge_model, raise_on_error=True
+                msgs, role=Role.JUDGE, raise_on_error=True
             ),
         )
         return answer or "", actual, (1.0 if ok else 0.0), token_f1(answer or "", gold), False, ""
@@ -427,50 +428,44 @@ def load_cases(path: Path | None = None, *, split: str = "smoke") -> list[dict[s
 
 
 def _load_cache(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    from app.eval.disk_cache import load_or_drop_entries
+
+    return load_or_drop_entries(path)
 
 
 def _save_cache(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    from app.eval.disk_cache import save_entries
 
-
-def resolved_judge_model() -> str:
-    """Model used to grade live answers; falls back to the answer model when unset.
-
-    Grading with the answering model is self-grading, so the setting defaults to a
-    different model and the report records whichever was actually used.
-    """
-    from app.core.llm import resolved_chat_model
-
-    configured = (getattr(settings, "judge_model", "") or "").strip()
-    return configured or resolved_chat_model()
+    save_entries(path, data)
 
 
 def _answer_model_name() -> str:
-    from app.core.llm import resolved_chat_model
+    from app.core.llm import Role, resolve
 
-    return resolved_chat_model()
+    return resolve(Role.CHAT).model
+
+
+def _judge_model_name() -> str:
+    from app.core.llm import Role, resolve
+
+    return resolve(Role.JUDGE).model
 
 
 def _cache_key(arm: str, messages: list[dict], question: str) -> str:
-    from app.core.llm import resolved_chat_model
+    from app.core.llm import Role, cache_identity
     from app.core.prompts import answer_rules
 
+    chat = cache_identity(Role.CHAT)
+    judge = cache_identity(Role.JUDGE)
     blob = json.dumps(
         {
             "arm": arm,
             "messages": messages,
             "q": question,
-            "model": resolved_chat_model(),
-            # The grading model is part of the identity: a verdict cached under a
-            # self-grading judge must not be replayed after the judge changes.
-            "judge_model": resolved_judge_model(),
+            "model": chat.model,
+            "chat_thinking": chat.thinking,
+            "judge_model": judge.model,
+            "judge_thinking": judge.thinking,
             "prompt_sha": hashlib.sha256(answer_rules().encode("utf-8")).hexdigest()[:12],
         },
         ensure_ascii=False,
@@ -880,8 +875,8 @@ def run_context_eval(
         split=split,
         mode="live" if live else "extractive",
         answer_model=_answer_model_name() if live else "",
-        judge_model=resolved_judge_model() if live else "",
-        self_judged=bool(live and resolved_judge_model() == _answer_model_name()),
+        judge_model=_judge_model_name() if live else "",
+        self_judged=bool(live and _judge_model_name() == _answer_model_name()),
         n_infra_error=sum(1 for r in all_results if r.infra_error),
         arms=arm_blocks,
         invariants={"violations": len(violations), "cases": [r.case_id for r in violations[:50]]},

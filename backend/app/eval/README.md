@@ -28,7 +28,7 @@ Compose `eval` 服务已设 `EVAL_TARGET=services`。**不要**在 eval 容器�
 两条补充规则：
 
 - **降级运行不参与判定**：`rag` 退回关键词模式、`tabular` 出现规划失败时，报告标 `degraded=true`，完整档直接判失败而不是给分数（冒烟档本来就是确定性回放，不在其列）。
-- **判分模型**：`context` live 档判分用 `settings.judge_model`（默认 `glm-4-air`），与作答模型解耦；报告记录 `judge_model` / `answer_model` / `self_judged`。三者相同即"自己判自己"，该档数字要打折看。
+- **判分模型**：`context` live 档判分用 `JUDGE_MODEL`（默认 `deepseek-v4-pro`），作答用 `CHAT_MODEL`（默认 `deepseek-flash`）。报告记录 `judge_model` / `answer_model` / `self_judged`。两个模型名相同才是"自己判自己"。默认两者不同，所以默认一次运行不是自评。
 
 | 套件 | smoke | full | 默认 target |
 |------|-------|------|-------------|
@@ -252,7 +252,7 @@ pip install -r requirements.txt   # 含 ragas、datasets、langchain-openai
 ```
 
 Judge LLM 走聊天端点（`LLM_BASE_URL` + `LLM_API_KEY`）。ragas 的 Embeddings 走 `EMBEDDING_BASE_URL` + `EMBEDDING_API_KEY`，不跟随聊天那组；留空时评测直接报错并写出变量名。
-答案生成使用 `LLM_TIMEOUT`（默认 120s）；ragas 侧已将 `temperature` 四舍五入到 2 位小数以兼容智谱。
+答案生成和判分使用 `LLM_TIMEOUT`（默认 120s）。判分思考默认开启，请求不送 `temperature`。
 生成阶段较慢，可用 `--limit N` 先小跑，或 `--skip-ragas` 只测检索+规则指标。
 
 ### 指标

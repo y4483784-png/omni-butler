@@ -48,7 +48,7 @@ def test_live_infra_is_not_a_zero_fact_recall(monkeypatch):
         raise LLMInfraError("RateLimitError: slow down")
 
     # Imported inside score_live_answer, so patch the defining module.
-    monkeypatch.setattr("app.core.llm.complete_text_with_usage", boom)
+    monkeypatch.setattr("app.core.llm.complete_text", boom)
     answer, _tokens, fact, _f1, infra, reason = score_live_answer(
         [{"role": "user", "content": "hi"}],
         question="预算是多少",

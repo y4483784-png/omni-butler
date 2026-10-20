@@ -16,13 +16,14 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
 from app.core.deps import get_db_scoped
-from app.core.llm import stream_chat
-from app.core.moderation import INPUT_BLOCKED_MESSAGE, contains_sensitive, redact_text, redact_token_stream
+from app.core.llm import AnswerDelta, LLMInfraError, ReasoningDelta, Role, stream_chat
+from app.core.moderation import INPUT_BLOCKED_MESSAGE, RedactBuffer, contains_sensitive, redact_text
 from app.core.messages import llm_user_error
 from app.core.ownership import require_owned_session
 from app.core.redis import sliding_window_allow_async
 from app.models.models import Document, Message, Session as ChatSession, User
 from app.services.artifact import infer_workspace_artifact, prepare_artifact_for_storage
+from app.services.message_format import model_turn
 from app.services.session import auto_name, generate_session_title
 from app.services.data_analysis import has_tabular_docs
 from app.services.memory import load_memory_prompt, remember_from_turn
@@ -55,6 +56,7 @@ def _persist_assistant_only(
     session_id: int,
     assistant_content: str,
     *,
+    reasoning: str | None = None,
     citations_payload: list | None = None,
     schedule_card: dict | None = None,
     artifact_stored: dict | None = None,
@@ -66,6 +68,7 @@ def _persist_assistant_only(
         db,
         session_id,
         assistant_content,
+        reasoning=reasoning,
         citations_payload=citations_payload,
         schedule_card=schedule_card,
         artifact_stored=artifact_stored,
@@ -114,7 +117,7 @@ def _apply_regenerate(
         .order_by(Message.id)
         .all()
     )
-    history = [{"role": m.role, "content": m.content} for m in remaining]
+    history = [model_turn(m) for m in remaining]
     if history and history[-1]["role"] == "user":
         history = history[:-1]
 
@@ -146,7 +149,7 @@ def _prepare_session_context(
         history = history_override
     else:
         history = [
-            {"role": m.role, "content": m.content}
+            model_turn(m)
             for m in db.query(Message).filter(Message.session_id == req.session_id).order_by(Message.id).all()
         ]
 
@@ -216,17 +219,20 @@ def _save_assistant_turn(
     session_id: int,
     content: str,
     *,
+    reasoning: str | None = None,
     citations_payload: list | None = None,
     schedule_card: dict | None = None,
     artifact_stored: dict | None = None,
 ) -> None:
-    if not content:
+    stored_reasoning = reasoning.strip() if isinstance(reasoning, str) else ""
+    if not content and not stored_reasoning:
         return
     db.add(
         Message(
             session_id=session_id,
             role="assistant",
-            content=content,
+            content=content or "",
+            reasoning=stored_reasoning or None,
             citations=json.dumps(citations_payload or [], ensure_ascii=False) if citations_payload else "",
             schedule_card=json.dumps(schedule_card, ensure_ascii=False) if schedule_card else "",
             artifact=json.dumps(artifact_stored, ensure_ascii=False) if artifact_stored else "",
@@ -242,6 +248,7 @@ def _persist_turn(
     user_message: str,
     assistant_content: str,
     *,
+    reasoning: str | None = None,
     citations_payload: list | None = None,
     schedule_card: dict | None = None,
     artifact_stored: dict | None = None,
@@ -253,6 +260,7 @@ def _persist_turn(
         db,
         session_id,
         assistant_content,
+        reasoning=reasoning,
         citations_payload=citations_payload,
         schedule_card=schedule_card,
         artifact_stored=artifact_stored,
@@ -389,6 +397,7 @@ async def chat(
     def _finish_persist(
         assistant_content: str,
         *,
+        reasoning: str | None = None,
         citations_payload: list | None = None,
         schedule_card: dict | None = None,
         artifact_stored: dict | None = None,
@@ -400,6 +409,7 @@ async def chat(
                 session,
                 req.session_id,
                 assistant_content,
+                reasoning=reasoning,
                 citations_payload=citations_payload,
                 schedule_card=schedule_card,
                 artifact_stored=artifact_stored,
@@ -412,6 +422,7 @@ async def chat(
                 req.session_id,
                 user_message,
                 assistant_content,
+                reasoning=reasoning,
                 citations_payload=citations_payload,
                 schedule_card=schedule_card,
                 artifact_stored=artifact_stored,
@@ -447,6 +458,7 @@ async def chat(
 
     async def agent_event_gen():
         acc: list[str] = []
+        reasoning_parts: list[str] = []
         ttft_logged = False
         wf: dict | None = None
         wf_task: asyncio.Task | None = None
@@ -499,6 +511,7 @@ async def chat(
             artifact = wf.get("artifact")
             artifact_stored = prepare_artifact_for_storage(artifact)
             direct_answer = redact_text(wf.get("direct_answer") or "")
+            direct_reasoning = redact_text(wf.get("answer_reasoning") or "")
             pending_json = (
                 json.dumps(wf.get("pending_calendar"), ensure_ascii=False) if wf.get("pending_calendar") else ""
             )
@@ -514,39 +527,19 @@ async def chat(
             if artifact_stored:
                 yield _sse({"type": "artifact", "artifact": artifact_stored})
 
-            if direct_answer:
-                if not ttft_logged:
-                    ttft_ms = int((time.perf_counter() - t0) * 1000)
-                    logger.info(
-                        "chat_ttft path=agent_direct ttft_ms=%d intent=%s "
-                        "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
-                        "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
-                        ttft_ms,
-                        intent,
-                        int(ctx_stats.get("tokens") or 0),
-                        ctx_stats.get("level") or "safe",
-                        int(ctx_stats.get("dropped_turns") or 0),
-                        ctx_stats.get("compose_level") or "-",
-                        int(ctx_stats.get("compose_dropped_turns") or 0),
-                        is_regenerate,
-                    )
-                    yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
-                    ttft_logged = True
-                acc.append(direct_answer)
-                yield _sse({"type": "token", "content": direct_answer})
-            else:
-                async for delta in redact_token_stream(
-                    stream_chat(llm_messages, usage_out=stream_usage)
-                ):
+            if direct_answer or direct_reasoning:
+                if direct_reasoning:
+                    reasoning_parts.append(direct_reasoning)
+                    yield _sse({"type": "reasoning", "content": direct_reasoning})
+                if direct_answer:
                     if not ttft_logged:
                         ttft_ms = int((time.perf_counter() - t0) * 1000)
                         logger.info(
-                            "chat_ttft path=agent_stream ttft_ms=%d intent=%s history_len=%d "
+                            "chat_ttft path=agent_direct ttft_ms=%d intent=%s "
                             "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
                             "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
                             ttft_ms,
                             intent,
-                            len(workflow_history),
                             int(ctx_stats.get("tokens") or 0),
                             ctx_stats.get("level") or "safe",
                             int(ctx_stats.get("dropped_turns") or 0),
@@ -556,10 +549,68 @@ async def chat(
                         )
                         yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
                         ttft_logged = True
-                    acc.append(delta)
-                    yield _sse({"type": "token", "content": delta})
-                    if await request.is_disconnected():
-                        break
+                    acc.append(direct_answer)
+                    yield _sse({"type": "token", "content": direct_answer})
+            else:
+                answer_buf = RedactBuffer()
+                reason_buf = RedactBuffer()
+
+                def _note_ttft() -> str | None:
+                    nonlocal ttft_logged
+                    if ttft_logged:
+                        return None
+                    ttft_ms = int((time.perf_counter() - t0) * 1000)
+                    logger.info(
+                        "chat_ttft path=agent_stream ttft_ms=%d intent=%s history_len=%d "
+                        "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
+                        "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
+                        ttft_ms,
+                        intent,
+                        len(workflow_history),
+                        int(ctx_stats.get("tokens") or 0),
+                        ctx_stats.get("level") or "safe",
+                        int(ctx_stats.get("dropped_turns") or 0),
+                        ctx_stats.get("compose_level") or "-",
+                        int(ctx_stats.get("compose_dropped_turns") or 0),
+                        is_regenerate,
+                    )
+                    ttft_logged = True
+                    return _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
+
+                try:
+                    async for delta in stream_chat(
+                        llm_messages, role=Role.CHAT, usage_out=stream_usage
+                    ):
+                        if isinstance(delta, ReasoningDelta):
+                            for piece in reason_buf.push(delta.text):
+                                reasoning_parts.append(piece)
+                                yield _sse({"type": "reasoning", "content": piece})
+                        elif isinstance(delta, AnswerDelta):
+                            for piece in answer_buf.push(delta.text):
+                                marker = _note_ttft()
+                                if marker:
+                                    yield marker
+                                acc.append(piece)
+                                yield _sse({"type": "token", "content": piece})
+                        if await request.is_disconnected():
+                            break
+                    for piece in reason_buf.finish():
+                        reasoning_parts.append(piece)
+                        yield _sse({"type": "reasoning", "content": piece})
+                    for piece in answer_buf.finish():
+                        marker = _note_ttft()
+                        if marker:
+                            yield marker
+                        acc.append(piece)
+                        yield _sse({"type": "token", "content": piece})
+                except LLMInfraError as exc:
+                    for piece in reason_buf.finish():
+                        reasoning_parts.append(piece)
+                        yield _sse({"type": "reasoning", "content": piece})
+                    err_content = llm_user_error(exc)
+                    acc.clear()
+                    acc.append(err_content)
+                    yield _sse({"type": "error", "content": err_content})
             if not artifact_stored:
                 inferred = infer_workspace_artifact(redact_text("".join(acc)))
                 if inferred and inferred.get("kind") != "image":
@@ -587,6 +638,7 @@ async def chat(
             yield _sse({"type": "error", "content": err_content})
         finally:
             assistant_content = redact_text("".join(acc))
+            assistant_reasoning = "".join(reasoning_parts)
             persisted = False
             if wf is not None:
                 persist_artifact = prepare_artifact_for_storage(wf.get("artifact")) or extra_artifact
@@ -598,6 +650,7 @@ async def chat(
                 set_rls_context(db, uid)
                 _finish_persist(
                     assistant_content,
+                    reasoning=assistant_reasoning,
                     citations_payload=wf.get("citations"),
                     schedule_card=wf.get("schedule_card"),
                     pending_calendar_json=pending_json,
@@ -606,7 +659,11 @@ async def chat(
                 persisted = True
             elif acc:
                 set_rls_context(db, uid)
-                _finish_persist(assistant_content, artifact_stored=extra_artifact)
+                _finish_persist(
+                    assistant_content,
+                    reasoning=assistant_reasoning,
+                    artifact_stored=extra_artifact,
+                )
                 persisted = True
             elif not is_regenerate:
                 set_rls_context(db, uid)

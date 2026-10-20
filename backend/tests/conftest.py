@@ -111,11 +111,15 @@ def fake_llm(monkeypatch):
     """Deterministic LLM stubs used by workflow / chat tests (no network)."""
 
     async def _stream(*_a, **_k):
+        from app.core.llm import AnswerDelta
+
         for ch in "你好":
-            yield ch
+            yield AnswerDelta(ch)
 
     def _complete_text(*_a, **_k):
-        return "演示回答"
+        from app.core.llm import Spoken
+
+        return Spoken("演示回答", "", None)
 
     def _complete_json(*_a, **_k):
         return {
@@ -128,7 +132,7 @@ def fake_llm(monkeypatch):
             "confidence": "high",
         }
 
-    def _complete_json_object(messages, result_model, model_name):
+    def _complete_json_object(messages, result_model, *args, **kwargs):
         from app.agents.harness.critique import CritiqueVerdict
         from app.agents.router import RouterDecision, RouterReply
 
@@ -155,14 +159,9 @@ def fake_llm(monkeypatch):
         raise AssertionError(f"unexpected result model {result_model}")
 
     def _critique(*_a, **_k):
-        """Grounding critique: accept the draft as-is, no repair, no network call."""
-        return {
-            "verdict": "ok",
-            "unsupported": [],
-            "reason": "stub",
-            "needs_repair": False,
-            "repaired_answer": "",
-        }
+        from app.core.llm import Spoken
+
+        return Spoken("演示回答", "", None)
 
     def _summary(*_a, **_k):
         return {"summary": "（测试摘要）"}

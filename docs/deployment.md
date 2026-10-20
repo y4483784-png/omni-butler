@@ -70,7 +70,7 @@ docker run --rm -i --network=none --read-only --tmpfs /tmp omni-sandbox \
 
 默认只开 **80**，明文。机器只在可信内网、防火墙也只给可信网段时，可以先这样。
 
-一旦 80 对公网、访客 Wi-Fi 或不可信办公网开放，先上 TLS 再让别人访问。浏览器到 nginx 的登录令牌、聊天、上传文件都会明文经过 80。`LLM_API_KEY` 仍留在 api 容器里，出站访问智谱走 HTTPS，但用户数据在这一跳上没有加密。
+一旦 80 对公网、访客 Wi-Fi 或不可信办公网开放，先上 TLS 再让别人访问。浏览器到 nginx 的登录令牌、聊天、上传文件都会明文经过 80。`LLM_API_KEY` 仍留在 api 容器里，聊天出站访问 DeepSeek，嵌入、识图和重排仍访问智谱，这两段都走 HTTPS。用户数据在浏览器到 nginx 这一跳上没有加密。
 
 不强制公网 Let's Encrypt。内网 CA、mkcert、已有证书都可以。
 
@@ -174,7 +174,7 @@ docker compose up -d --no-build --force-recreate api api2 worker worker2 beat
 docker compose -f docker-compose.yml up -d --no-build
 ```
 
-显式写出 `-f` 时不会加载 override。同时说话的人数仍受智谱并发槽位限制（配置里大约几十到一百路，见 `LLM_MODEL_CONCURRENCY_LIMITS`）。
+显式写出 `-f` 时不会加载 override。同时说话的人数受 `LLM_MODEL_CONCURRENCY_LIMITS` 里的槽位限制。聊天、规划和路由默认共用 `deepseek-flash`，判分用 `deepseek-v4-pro`。嵌入、视觉和 Rerank 仍是各自的智谱槽位。
 
 改后端时只构建一次 api 镜像，再 `docker compose up -d --no-build`。沙箱是另一份小镜像，单独 `docker compose build sandbox`。不要和五个后端角色一起 `--build`。
 

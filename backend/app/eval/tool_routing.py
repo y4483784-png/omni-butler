@@ -187,10 +187,12 @@ def _ctx(case: EvalCase) -> dict[str, Any]:
 def router_fingerprint() -> dict[str, Any]:
     """Model + prompt identity: a changed router must never hit a stale cache entry."""
     from app.agents import router as router_mod
-    from app.core.llm import resolved_router_model
+    from app.core.llm import Role, cache_identity
 
+    identity = cache_identity(Role.ROUTER)
     return {
-        "model": resolved_router_model(),
+        "model": identity.model,
+        "thinking": identity.thinking,
         "prompt_sha": router_mod.router_prompt_sha(),
         "cache_version": getattr(router_mod, "_ROUTER_CACHE_VERSION", 0),
     }
@@ -212,17 +214,15 @@ def _cache_key(case: EvalCase) -> str:
 
 
 def _load_cache(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    from app.eval.disk_cache import load_or_drop_entries
+
+    return load_or_drop_entries(path)
 
 
 def _save_cache(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    from app.eval.disk_cache import save_entries
+
+    save_entries(path, data)
 
 
 def predict_case(

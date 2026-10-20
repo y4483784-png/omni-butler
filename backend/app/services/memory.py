@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.llm import complete_json
+from app.core.llm import Role, complete_json
 from app.models.models import MemoryItem
 
 logger = logging.getLogger(__name__)
@@ -263,7 +263,8 @@ def extract_memories(
                     + "\n\n本轮用户发言：\n"
                     + text[:1500],
                 },
-            ]
+            ],
+            role=Role.PLANNER,
         )
         if isinstance(parsed, dict):
             return _dedupe_against_existing(_items_from_llm_payload(parsed), existing_rows)

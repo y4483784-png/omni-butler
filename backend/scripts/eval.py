@@ -113,7 +113,7 @@ def _docker_ok() -> bool:
 
 def _llm_key_ok() -> bool:
     return bool(
-        (os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
+        (os.environ.get("LLM_API_KEY") or "").strip()
     )
 
 
@@ -186,9 +186,9 @@ def preflight(suite: SuiteSpec, target: str, profile: str, extra: list[str]) -> 
         has_file_key = False
         if env_file.is_file():
             text = env_file.read_text(encoding="utf-8", errors="ignore")
-            has_file_key = "LLM_API_KEY=" in text or "OPENAI_API_KEY=" in text
+            has_file_key = "LLM_API_KEY=" in text
         if not has_file_key:
-            errors.append("缺少 LLM_API_KEY / OPENAI_API_KEY（backend/.env 或环境变量）")
+            errors.append("缺少 LLM_API_KEY（backend/.env 或环境变量）")
 
     if target == "services":
         if "minio" in req and not _tcp_ok("minio", 9000) and not _tcp_ok("127.0.0.1", 9000):

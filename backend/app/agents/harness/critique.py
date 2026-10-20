@@ -16,7 +16,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.core.llm import LLMStructuredError, complete_json_object, complete_text, resolved_router_model
+from app.core.llm import LLMInfraError, LLMStructuredError, Role, Spoken, complete_json_object, complete_text
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ def critique_draft(
         {"role": "user", "content": user},
     ]
     try:
-        verdict = complete_json_object(messages, CritiqueVerdict, resolved_router_model())
+        verdict = complete_json_object(messages, CritiqueVerdict, role=Role.ROUTER)
     except LLMStructuredError as exc:
         logger.warning("grounding critique json failed: %s", exc)
         return CritiqueResult(
@@ -415,49 +415,92 @@ def finalize_grounded_answer(
     return final, critique
 
 
+def _as_spoken(value: Spoken | str | None, *, reasoning: str = "") -> Spoken:
+    if isinstance(value, Spoken):
+        return value
+    return Spoken("" if value is None else str(value), reasoning, None)
+
+
 def ground_and_repair_answer(
     *,
     question: str,
-    draft: str,
+    draft: Spoken | str,
     evidence: list[dict],
     included: list[dict],
     messages: list[dict],
     sandbox_gate: bool = False,
     repair_enabled: bool | None = None,
-) -> tuple[str, CritiqueResult, bool]:
-    """Critique draft; on failure, regenerate once with verbal feedback, then re-critique."""
+) -> tuple[Spoken, CritiqueResult, bool]:
+    """Critique draft content; on failure, regenerate once, then re-critique."""
     if repair_enabled is None:
         repair_enabled = bool(settings.grounding_repair_enabled)
 
+    first = _as_spoken(draft)
     critique = critique_draft(
         question=question,
-        draft=draft,
+        draft=first.content,
         evidence=evidence,
         included=included,
         sandbox_gate=sandbox_gate,
     )
     if critique.passed:
-        return (draft or "").rstrip(), critique, False
+        return Spoken(first.content.rstrip(), first.reasoning, first.prompt_tokens), critique, False
     if critique.critique_failed or not repair_enabled:
-        return append_grounding_disclaimer(draft, critique), critique, False
+        return (
+            Spoken(
+                append_grounding_disclaimer(first.content, critique),
+                first.reasoning,
+                first.prompt_tokens,
+            ),
+            critique,
+            False,
+        )
 
     repair_messages = append_repair_to_messages(messages, critique)
     try:
-        draft2 = complete_text(repair_messages)
+        draft2 = _as_spoken(
+            complete_text(repair_messages, role=Role.CHAT, raise_on_error=True)
+        )
+    except LLMInfraError:
+        raise
     except Exception as exc:
         logger.warning("grounding repair generate failed: %s", exc)
-        return append_grounding_disclaimer(draft, critique), critique, False
+        return (
+            Spoken(
+                append_grounding_disclaimer(first.content, critique),
+                first.reasoning,
+                first.prompt_tokens,
+            ),
+            critique,
+            False,
+        )
 
-    if not (draft2 or "").strip():
-        return append_grounding_disclaimer(draft, critique), critique, False
+    if not (draft2.content or "").strip():
+        return (
+            Spoken(
+                append_grounding_disclaimer(first.content, critique),
+                first.reasoning,
+                first.prompt_tokens,
+            ),
+            critique,
+            False,
+        )
 
     critique2 = critique_draft(
         question=question,
-        draft=draft2,
+        draft=draft2.content,
         evidence=evidence,
         included=included,
         sandbox_gate=sandbox_gate,
     )
     if critique2.passed:
-        return draft2.rstrip(), critique2, True
-    return append_grounding_disclaimer(draft2, critique2), critique2, True
+        return Spoken(draft2.content.rstrip(), draft2.reasoning, draft2.prompt_tokens), critique2, True
+    return (
+        Spoken(
+            append_grounding_disclaimer(draft2.content, critique2),
+            draft2.reasoning,
+            draft2.prompt_tokens,
+        ),
+        critique2,
+        True,
+    )

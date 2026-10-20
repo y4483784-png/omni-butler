@@ -11,7 +11,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core.llm import complete_json
+from app.core.llm import Role, complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
@@ -217,7 +217,8 @@ def classify_calendar_action(
                     f"当前消息：{message}"
                 ),
             },
-        ]
+        ],
+        role=Role.PLANNER,
     )
     if not isinstance(parsed, dict):
         return ""
@@ -402,7 +403,8 @@ def extract_event(
                     f"当前消息：{message}"
                 ),
             },
-        ]
+        ],
+        role=Role.PLANNER,
     )
     if not isinstance(parsed, dict):
         draft = EventDraft(original_request=message)
@@ -490,7 +492,8 @@ def extract_list_day(
                     f"当前消息：{message}"
                 ),
             },
-        ]
+        ],
+        role=Role.PLANNER,
     )
     if not isinstance(parsed, dict):
         return ""
@@ -544,7 +547,8 @@ def extract_free_slots(
                         f"当前消息：{message}"
                     ),
                 },
-            ]
+            ],
+            role=Role.PLANNER,
         )
     except Exception:
         return None

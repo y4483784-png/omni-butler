@@ -14,7 +14,7 @@ from app.agents.context.working_state import (
     merge_working_state,
 )
 from app.core.config import settings
-from app.core.llm import complete_json, resolved_planner_model
+from app.core.llm import Role, complete_json
 from app.models.models import Message
 from app.models.models import Session as ChatSession
 
@@ -73,7 +73,7 @@ def summarize_incremental(
                     ),
                 },
             ],
-            model=resolved_planner_model(),
+            role=Role.PLANNER,
         )
     except Exception:
         logger.exception("summarize_incremental LLM failed")

@@ -45,12 +45,13 @@ def test_routing_eval_meets_thresholds():
     assert report.tools["exact_match_accuracy"] >= _MIN_TOOL_EXACT, report.format_text()
 
 
-def test_routing_dataset_loads():
+def test_routing_dataset_loads(tmp_path):
     cases = load_cases()
     assert cases
     assert all("fast_path" not in c.gold for c in cases), "fast path metric is retired"
     d = run_tool_routing_eval(
         cases[:0],  # empty → structural smoke without LLM
+        cache_path=tmp_path / "router_cache.json",
     ).to_dict()
     assert "intent" in d and "tools" in d
 

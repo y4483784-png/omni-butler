@@ -34,7 +34,7 @@ from app.core.prompts import (
     max_pool_chars,
     no_evidence_block,
 )
-from app.core.llm import complete_text
+from app.core.llm import Role, Spoken, answer_pair, complete_text
 from app.services.memory import load_memory_prompt
 
 ToolName = Literal["kb", "web", "calendar", "sandbox"]
@@ -71,6 +71,7 @@ class WorkflowState(TypedDict, total=False):
     schedule_card: dict | None
     calendar_reply: str | None
     direct_answer: str | None
+    answer_reasoning: str | None
     pending_calendar: dict | None
     artifact: dict | None
     analysis_ir: dict | None
@@ -89,6 +90,7 @@ class WorkflowResult(TypedDict):
     llm_messages: list[dict]
     schedule_card: dict | None
     direct_answer: str | None
+    answer_reasoning: str | None
     pending_calendar: dict | None
     artifact: dict | None
     analysis_summary: dict | None
@@ -265,6 +267,7 @@ def run_agent_workflow(
             "schedule_card": None,
             "calendar_reply": None,
             "direct_answer": None,
+            "answer_reasoning": None,
             "artifact": None,
             "intent": _sse_intent(
                 forced=bool(state.get("use_kb")),
@@ -407,6 +410,7 @@ def run_agent_workflow(
             from app.core.messages import EMPTY_KB_MESSAGE
 
             direct = EMPTY_KB_MESSAGE
+            state = {**state, **answer_pair(canned=direct)}
         intent = _sse_intent(
             forced=bool(state.get("forced")),
             evidence=evidence,
@@ -433,13 +437,15 @@ def run_agent_workflow(
                 direct = f"证据中未提及或无法计算：{reason}。请确认表格是否包含所需列，或换一种问法。"
                 thinking = list(state.get("thinking_steps") or [])
                 thinking.append("沙箱标明指标不可算，直接拒答")
+                canned = answer_pair(canned=direct)
                 return {
                     "intent": intent,
                     "citations": [],
                     "llm_messages": [],
                     "thinking_steps": thinking,
                     "schedule_card": state.get("schedule_card"),
-                    "direct_answer": direct,
+                    "direct_answer": canned["direct_answer"],
+                    "answer_reasoning": canned["answer_reasoning"],
                     "pending_calendar": state.get("pending_calendar"),
                     "artifact": state.get("artifact"),
                     "context_stats": compose_stats,
@@ -526,7 +532,9 @@ def run_agent_workflow(
             thinking.append("正在根据证据核对结论")
             # Infra failures must surface (eval: infra_error; SSE: the existing
             # error event). A silent "" was scored as an ordinary empty answer.
-            draft = complete_text(llm_messages, raise_on_error=True)
+            draft = complete_text(llm_messages, role=Role.CHAT, raise_on_error=True)
+            if not isinstance(draft, Spoken):
+                draft = Spoken(str(draft or ""), "", None)
             sandbox_gate = should_apply_sandbox_number_gate(
                 evidence=included or evidence,
                 needs_sandbox=bool(state.get("needs_sandbox")),
@@ -539,8 +547,12 @@ def run_agent_workflow(
                 messages=llm_messages,
                 sandbox_gate=sandbox_gate,
             )
+            if not isinstance(final, Spoken):
+                final = Spoken(str(final or ""), draft.reasoning, None)
             thinking.extend(grounding_thinking_steps(critique, repaired=repaired))
-            direct = final
+            paired = answer_pair(spoken=final)
+            direct = paired["direct_answer"]
+            state = {**state, **paired}
             llm_messages = []
 
         return {
@@ -550,6 +562,7 @@ def run_agent_workflow(
             "thinking_steps": thinking,
             "schedule_card": state.get("schedule_card"),
             "direct_answer": direct,
+            "answer_reasoning": state.get("answer_reasoning"),
             "pending_calendar": state.get("pending_calendar"),
             "artifact": state.get("artifact"),
             "context_stats": compose_stats,
@@ -601,6 +614,7 @@ def run_agent_workflow(
         "llm_messages": out.get("llm_messages") or [],
         "schedule_card": out.get("schedule_card"),
         "direct_answer": out.get("direct_answer"),
+        "answer_reasoning": out.get("answer_reasoning"),
         "pending_calendar": out.get("pending_calendar"),
         "artifact": out.get("artifact"),
         "analysis_summary": out.get("analysis_summary"),

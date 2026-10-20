@@ -31,8 +31,10 @@ def _parse_sse(body: str) -> list[dict]:
 
 
 async def _fake_stream(*_args, **_kwargs):
+    from app.core.llm import AnswerDelta
+
     for ch in "你好":
-        yield ch
+        yield AnswerDelta(ch)
 
 
 def _seed_session_with_kb() -> int:

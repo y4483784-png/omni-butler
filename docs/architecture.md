@@ -62,13 +62,13 @@ omni-butler/
 
 | 来源 | 数据库 | 模型地址 |
 | --- | --- | --- |
-| 什么配置都没有，直接跑代码 | `config.py` 默认 SQLite，模型地址默认官方 OpenAI，模型名默认 `gpt-4o-mini` | 模型名以 `glm` 开头、地址仍是官方 OpenAI 时，会自动改到智谱 |
-| 复制了 `.env.example` | Postgres，地址是 `localhost` | 智谱地址，`LLM_MODEL=glm-4-air` |
+| 什么配置都没有，直接跑代码 | `config.py` 默认 SQLite，聊天地址默认 `https://api.deepseek.com`，回答/规划/路由默认 `deepseek-flash`，判分默认 `deepseek-v4-pro` | 不按模型名改写地址 |
+| 复制了 `.env.example` | Postgres，地址是 `localhost` | 同一组 DeepSeek 默认 |
 | Compose 容器里 | 覆盖成 `omni_app@postgres:5432`，迁移用 `omni` | 仍来自 `backend/.env` |
 
 `.env.example` 里的向量模型是 `embedding-3-pro`，视觉模型是 `glm-4v-flash`。`config.py` 在没配环境变量时分别是 `embedding-3` 和 `glm-4.6v`。以你复制出来的 `backend/.env` 为准。
 
-上表的「模型地址」只指聊天。聊天走 `LLM_BASE_URL` 和 `LLM_API_KEY`。向量、OCR、Rerank 各读自己的 `EMBEDDING_*`、`VISION_*`、`RERANK_*` 地址和密钥。`config.py` 里这六项默认是空字符串，不回退到聊天那组，`glm` 自动改写也不碰它们。规则表是 `app/core/config.py` 的 `ZhipuService`：
+上表的「模型地址」只指聊天、规划、路由和判分。它们走 `LLM_BASE_URL` 和 `LLM_API_KEY`。向量、OCR、Rerank 各读自己的 `EMBEDDING_*`、`VISION_*`、`RERANK_*` 地址和密钥。`config.py` 里这六项默认是空字符串，不回退到聊天那组。联网搜索读 `WEB_SEARCH_BASE_URL` 和 `WEB_SEARCH_API_KEY`，空密钥只让那一次搜索失败，不阻止进程启动。规则表是 `app/core/config.py` 的 `ZhipuService`：
 
 | 服务 | 何时算在用 | 关闭开关 |
 | --- | --- | --- |
@@ -108,15 +108,16 @@ docker compose run --rm --name omni-butler-migrate api alembic upgrade head
 
 - **Tier 0**：用户勾选了文档，或请求里 `use_kb=true`，并且库里真有文档。直接走知识库，不调路由模型。库是空的则不会强制。
 - **Tier 1**：整句精确匹配的短问候（「你好」「在吗」「hi」等，去掉空白后不超过 6 个字符）走闲聊。句子里出现「知识库」「文档里」这类明确指代、并且库里有文档，走知识库。
-- **Tier 2**：其余情况让模型按固定 JSON 结构做判断。模型名是 `ROUTER_MODEL`（空则 `PLANNER_MODEL`，再空则 `LLM_MODEL`）。模型返回 json。缺字段算失败，再试一次。`ROUTER_MAX_ATTEMPTS`（默认 1）只限制限流或超时后再请求几次。失败就用 SSE 的 `error` 告诉用户「工具规划失败」，不会改用正则，也不会假装当成闲聊。
+- **Tier 2**：其余情况让模型按固定 JSON 结构做判断。模型名只读 `ROUTER_MODEL`，思考开关只读 `ROUTER_THINKING`。没有跨角色回退。模型返回 json。缺字段算失败，再试一次。`ROUTER_MAX_ATTEMPTS`（默认 1）只限制限流或超时后再请求几次。失败就用 SSE 的 `error` 告诉用户「工具规划失败」，不会改用正则，也不会假装当成闲聊。
 
 | 变量 | 作用 |
 | --- | --- |
-| `ROUTER_MODEL` | 路由判断用的模型。人多时用轻量模型。 |
+| `ROUTER_MODEL` | 路由判断用的模型。默认 `deepseek-flash`。 |
+| `ROUTER_THINKING` | 路由是否开启思考。默认 `off`。 |
 | `ROUTER_MAX_ATTEMPTS` | 限流或超时后，路由再请求的次数上限。默认 1。非法 json 不记在这里。 |
-| `CHAT_MODEL` | 闲聊回答。空则与 `LLM_MODEL` 相同。 |
-| `LLM_MODEL` | 要调工具或比较复杂的回答。 |
-| `PLANNER_MODEL` | 规划用。空则 `LLM_MODEL`。 |
+| `CHAT_MODEL` | 回答。默认 `deepseek-flash`，`CHAT_THINKING=on`。 |
+| `PLANNER_MODEL` | 规划。默认 `deepseek-flash`，`PLANNER_THINKING=off`。 |
+| `JUDGE_MODEL` | 判分。默认 `deepseek-v4-pro`，`JUDGE_THINKING=on`。 |
 
 流式事件的常见顺序是：`ack`（`path` 为 `agent`）→ 有时有 `session_title` → `status`（`phase` 为 `planning`）→ `intent` → 然后才是 `ttft` 和 `token`。`ttft` 在第一段正文之前，不是在全部 token 之后。规划较久时，中间会有注释行形式的心跳。
 
@@ -144,7 +145,7 @@ Redis 是可以丢掉的加速和协调层，不是业务数据的来源。连�
 
 | 用途 | 按什么做键 | 默认 |
 | --- | --- | --- |
-| Tier 2 路由结果 | 消息、历史、库里有没有文档或表格、模型、路由提示词指纹 | 3 天（`ROUTER_CACHE_TTL`） |
+| Tier 2 路由结果 | 消息、历史、库里有没有文档或表格、路由模型、该角色的思考开关、路由提示词指纹 | 3 天（`ROUTER_CACHE_TTL`） |
 | 问题向量 | 归一化后的问题、向量模型、`EMBEDDING_BASE_URL` | 7 天（`EMBEDDING_CACHE_TTL`） |
 | 联网搜索 | 查询、引擎、条数、时效参数 | 5 分钟（`WEB_CACHE_TTL`） |
 | 模型并发槽 | 模型名 | `LLM_MODEL_CONCURRENCY_LIMITS`；任务结束释放，180 秒租约兜底 |

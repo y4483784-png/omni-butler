@@ -69,7 +69,7 @@ def test_tier0_document_ids_force_kb():
 
 
 def test_availability_clamp_no_docs(monkeypatch):
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         return _decision(result_model, reasoning="以为要查库", needs_kb=True, needs_sandbox=True)
 
     monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
@@ -79,7 +79,7 @@ def test_availability_clamp_no_docs(monkeypatch):
 
 
 def test_llm_path_normal_work_hours(monkeypatch):
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         return _decision(result_model, reasoning="制度事实问", needs_kb=True)
 
     monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
@@ -89,7 +89,7 @@ def test_llm_path_normal_work_hours(monkeypatch):
 
 
 def test_llm_path_chat_lib(monkeypatch):
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         return _decision(result_model, reasoning="写诗闲聊")
 
     monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
@@ -99,7 +99,7 @@ def test_llm_path_chat_lib(monkeypatch):
 def test_router_error_after_failures(monkeypatch):
     calls = {"n": 0}
 
-    def boom(messages, result_model, model_name):
+    def boom(messages, result_model, *args, **kwargs):
         calls["n"] += 1
         raise LLMStructuredError("json 对象校验失败")
 
@@ -127,7 +127,13 @@ def _clear_eval_cache_flags(monkeypatch) -> None:
 
 
 def test_router_cache_key_includes_prompt_fingerprint():
-    base = dict(has_kb_docs=True, has_tabular_docs=False, model="glm-test", today="2026-09-19")
+    base = dict(
+        has_kb_docs=True,
+        has_tabular_docs=False,
+        model="glm-test",
+        thinking="off",
+        today="2026-09-19",
+    )
     same = router_cache_key("计划文本", prompt_sha="abc123", **base)
     assert same == router_cache_key("计划文本", prompt_sha="abc123", **base)
     assert same != router_cache_key("计划文本", prompt_sha="def456", **base)
@@ -150,7 +156,7 @@ def test_route_redis_key_uses_live_prompt_sha(monkeypatch):
     monkeypatch.setattr(router_mod, "json_get", lambda _key: None)
     monkeypatch.setattr(router_mod, "json_set", lambda *_a, **_k: True)
 
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         return _decision(result_model, reasoning="制度事实问", needs_kb=True)
 
     monkeypatch.setattr(router_mod, "complete_json_object", fake_schema)
@@ -173,7 +179,7 @@ def test_eval_bootstrap_bypasses_router_redis(monkeypatch):
     monkeypatch.setattr(router_mod, "json_set", boom_set)
     calls = {"n": 0}
 
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         calls["n"] += 1
         return _decision(result_model, reasoning="制度事实问", needs_kb=True)
 
@@ -196,7 +202,7 @@ def test_router_rate_limit_backs_off_then_raises_infra(monkeypatch):
     monkeypatch.setattr(router_mod.settings, "router_max_attempts", 3)
     calls = {"n": 0}
 
-    def boom(messages, result_model, model_name):
+    def boom(messages, result_model, *args, **kwargs):
         calls["n"] += 1
         raise LLMInfraError("RateLimitError: 429")
 
@@ -217,7 +223,7 @@ def test_router_schema_retry_is_not_infra_and_does_not_sleep(monkeypatch):
 
     calls = {"n": 0}
 
-    def boom(messages, result_model, model_name):
+    def boom(messages, result_model, *args, **kwargs):
         calls["n"] += 1
         raise LLMStructuredError("json 对象校验失败")
 
@@ -247,7 +253,7 @@ def test_infra_classification_uses_type_not_message_text():
 
 
 def test_queue_order(monkeypatch):
-    def fake_schema(messages, result_model, model_name):
+    def fake_schema(messages, result_model, *args, **kwargs):
         return _decision(
             result_model,
             reasoning="multi",

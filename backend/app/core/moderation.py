@@ -125,18 +125,33 @@ def redact_text(text: str) -> str:
     return out
 
 
+class RedactBuffer:
+    """Hold back a short tail so a denylist term split across chunks is redacted once."""
+
+    def __init__(self) -> None:
+        self._hold = holdback_chars()
+        self._words = word_list()
+        self._buf = ""
+
+    def push(self, delta: str) -> list[str]:
+        self._buf += delta or ""
+        emit, self._buf = split_holdback(self._buf, self._hold)
+        safe, spill = trim_denylist_prefixes(emit, self._words)
+        self._buf = spill + self._buf
+        redacted = redact_text(safe) if safe else ""
+        return [redacted] if redacted else []
+
+    def finish(self) -> list[str]:
+        tail = redact_text(self._buf)
+        self._buf = ""
+        return [tail] if tail else []
+
+
 async def redact_token_stream(deltas: AsyncIterator[str]) -> AsyncIterator[str]:
     """Yield tokens with a short hold-back so denylist terms are redacted before emit."""
-    hold = holdback_chars()
-    words = word_list()
-    buf = ""
+    buf = RedactBuffer()
     async for delta in deltas:
-        buf += delta or ""
-        emit, buf = split_holdback(buf, hold)
-        safe, spill = trim_denylist_prefixes(emit, words)
-        buf = spill + buf
-        if safe:
-            yield redact_text(safe)
-    tail = redact_text(buf)
-    if tail:
-        yield tail
+        for piece in buf.push(delta):
+            yield piece
+    for piece in buf.finish():
+        yield piece

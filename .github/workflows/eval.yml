@@ -153,7 +153,6 @@ jobs:
           SECRET_KEY: test-secret-key
           ADMIN_PASSWORD: test-admin-pass
           LLM_API_KEY: ""
-          OPENAI_API_KEY: ""
         run: |
           python scripts/eval.py run pytest --profile smoke
           python scripts/eval.py run rag --profile smoke

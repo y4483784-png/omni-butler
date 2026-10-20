@@ -2,7 +2,7 @@
 """Score calendar behavior with the real extractor and a fake Google client.
 
 Smoke replays ``calendar_model_cache.json``. A missing or stale fingerprint
-exits 2. Full refreshes that cache from ``resolved_planner_model()``.
+exits 2. Full refreshes that cache from the planner and chat roles.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from app.eval.env import ensure_bootstrap
 
 ensure_bootstrap(isolate_app_db=True)
 
-from app.core.llm import LLMInfraError, resolved_planner_model  # noqa: E402
+from app.core.llm import LLMInfraError, Role, Spoken, cache_identity, resolve  # noqa: E402
 from app.eval.calendar_behavior import evaluate_case, summarize  # noqa: E402
 from app.eval.report import RunContext, SuiteResult, make_run_dir, write_run  # noqa: E402
 
@@ -65,10 +65,12 @@ def load_cases(path: Path, *, split: str) -> list[dict]:
     return rows
 
 
-def _fingerprint(kind: str, messages: list[dict], model: str | None) -> str:
+def _fingerprint(kind: str, messages: list[dict], role: Role) -> str:
+    identity = cache_identity(role)
     payload = {
         "kind": kind,
-        "model": model or resolved_planner_model(),
+        "model": identity.model,
+        "thinking": identity.thinking,
         "messages": messages,
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
@@ -76,18 +78,15 @@ def _fingerprint(kind: str, messages: list[dict], model: str | None) -> str:
 
 
 def _load_cache(path: Path) -> dict:
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    from app.eval.disk_cache import load_or_drop_entries
+
+    return load_or_drop_entries(path)
 
 
 def _save_cache(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    from app.eval.disk_cache import save_entries
+
+    save_entries(path, data)
 
 
 class _LLMBridge:
@@ -124,16 +123,25 @@ class _LLMBridge:
         if self._text is not None:
             tool.complete_text = self._text
 
-    def _lookup(self, kind: str, messages: list[dict], model: str | None):
+    def _lookup(self, kind: str, messages: list[dict], role: Role):
         """Return ``(hit, payload)``.
 
         Advice text is a string, and a JSON miss is ``None``. Neither can be
         told apart from a cache key by its type, so the hit flag is separate.
         """
-        key = _fingerprint(kind, messages, model)
+        key = _fingerprint(kind, messages, role)
         if not self.refresh and key in self.cache:
             self.hits += 1
-            return True, self.cache[key].get("value")
+            entry = self.cache[key]
+            value = entry.get("value") if isinstance(entry, dict) else entry
+            if (
+                kind == "text"
+                and isinstance(value, dict)
+                and "content" in value
+                and "reasoning" in value
+            ):
+                return True, Spoken(str(value.get("content") or ""), str(value.get("reasoning") or ""), None)
+            return True, value
         if self.require:
             raise CacheMissError(
                 "calendar cache miss/stale (model, prompt, utterance, now, or zone changed); "
@@ -141,13 +149,13 @@ class _LLMBridge:
             )
         return False, key
 
-    def complete_json(self, messages, model=None, *, raise_on_error=False):
-        hit, found = self._lookup("json", messages, model)
+    def complete_json(self, messages, *, role, raise_on_error=False, tools=None):
+        hit, found = self._lookup("json", messages, role)
         if hit:
             return found
         self.live += 1
         try:
-            value = self._json(messages, model, raise_on_error=True)
+            value = self._json(messages, role=role, raise_on_error=True, tools=tools)
         except LLMInfraError:
             self.infra = True
             raise
@@ -157,29 +165,35 @@ class _LLMBridge:
     def complete_text(
         self,
         messages,
-        model=None,
         *,
-        temperature=0.2,
+        role,
         timeout=None,
         retries=0,
         raise_on_error=False,
+        tools=None,
     ):
-        hit, found = self._lookup("text", messages, model)
+        hit, found = self._lookup("text", messages, role)
         if hit:
             return found
         self.live += 1
         try:
             value = self._text(
                 messages,
-                model,
-                temperature=temperature,
+                role=role,
                 timeout=timeout,
                 retries=retries,
                 raise_on_error=True,
+                tools=tools,
             )
         except LLMInfraError:
             self.infra = True
             raise
+        if isinstance(value, Spoken):
+            self.cache[found] = {
+                "kind": "text",
+                "value": {"content": value.content, "reasoning": value.reasoning},
+            }
+            return value
         self.cache[found] = {"kind": "text", "value": value}
         return value
 
@@ -751,7 +765,7 @@ def run_calendar_eval(
     if refresh_cache or bridge.live:
         _save_cache(cache_path, cache)
     mode = "live" if bridge.live else "cache"
-    report = summarize(rows, model=resolved_planner_model(), mode=mode, split=split)
+    report = summarize(rows, model=resolve(Role.PLANNER).model, mode=mode, split=split)
     report["cache_hits"] = bridge.hits
     report["cache_misses"] = bridge.live
     return report
