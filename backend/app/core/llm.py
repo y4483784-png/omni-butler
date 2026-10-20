@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 import weakref
@@ -309,6 +310,17 @@ def answer_pair(
 
 T = TypeVar("T", bound=BaseModel)
 
+# trust_env misses HTTPS_PROXY/HTTP_PROXY in the VMware image, so pass proxy explicitly.
+_PROXY_ENV_KEYS = ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy")
+
+
+def _proxy_from_env() -> str | None:
+    for key in _PROXY_ENV_KEYS:
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    return None
+
 
 def _get_async_client():
     from openai import AsyncOpenAI
@@ -318,6 +330,7 @@ def _get_async_client():
     if client is None:
         http_client = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            proxy=_proxy_from_env(),
         )
         client = AsyncOpenAI(
             api_key=settings.llm_api_key,
@@ -337,6 +350,7 @@ def _get_sync_client():
     if _sync_client is None:
         http_client = httpx.Client(
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+            proxy=_proxy_from_env(),
         )
         _sync_client = OpenAI(
             api_key=settings.llm_api_key,
