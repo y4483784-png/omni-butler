@@ -68,8 +68,8 @@ def test_httpx_clients_use_https_proxy_and_keep_limits(monkeypatch: pytest.Monke
 @pytest.mark.parametrize(
     ("env", "expected"),
     [
-        ({"HTTP_PROXY": "http://b", "https_proxy": "http://c", "http_proxy": "http://d"}, "http://b"),
-        ({"https_proxy": "http://c", "http_proxy": "http://d"}, "http://c"),
+        ({"HTTP_PROXY": "http://b", "https_proxy": "http://c"}, "http://c"),
+        ({"HTTPS_PROXY": "http://a", "http_proxy": "http://d"}, "http://a"),
         ({"http_proxy": "http://d"}, "http://d"),
     ],
 )
