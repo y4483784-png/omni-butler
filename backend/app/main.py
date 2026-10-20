@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import audit, auth, calendar, chat, kb, memory, messages, sessions
 from app.core.bootstrap import ensure_bootstrap_users
-from app.core.config import settings
+from app.core.config import check_zhipu_endpoints, settings
 from app.core.db import SessionLocal, init_db
 from app.core.health import readiness_checks
 from app.core.request_id import (
@@ -53,6 +53,7 @@ app.include_router(audit.router)
 @app.on_event("startup")
 def on_startup():
     check_insecure_secrets()
+    check_zhipu_endpoints()
     init_db()
     get_blob_store()  # verify/create the MinIO/S3 upload bucket
     db = SessionLocal()

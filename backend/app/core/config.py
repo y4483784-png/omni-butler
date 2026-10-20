@@ -1,3 +1,7 @@
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Callable
+
 from pydantic import Field
 from pydantic import AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,9 +40,11 @@ class Settings(BaseSettings):
     # (and measured 0.34 answer_relevancy on this family), so keep it separate.
     judge_model: str = "glm-4-air"
     router_max_attempts: int = 2                     # schema validate + retry bound
-    # Embedding（与 LLM 共用 base_url / API key；智谱必须用 embedding-2 / embedding-3，勿填聊天模型）
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
     embedding_model: str = "embedding-3"
-    # Multimodal OCR（智谱视觉模型，经同一 base_url；默认 glm-4.6v 走专属资源包）
+    vision_base_url: str = ""
+    vision_api_key: str = ""
     vision_model: str = "glm-4.6v"
     vision_ocr_enabled: bool = True
     # PDF：有嵌入图即 OCR；无图时 useful_chars 低于此值才 OCR（兜底）
@@ -125,7 +131,9 @@ class Settings(BaseSettings):
     rag_expand_max_chars: int = 2400
     rag_rerank_enabled: bool = True
     rag_rerank_provider: str = "zhipu"  # zhipu | auto | none（none=仅启发式）
-    rerank_model: str = "rerank"  # 智谱 POST /paas/v4/rerank
+    rerank_base_url: str = ""
+    rerank_api_key: str = ""
+    rerank_model: str = "rerank"
     max_upload_mb: int = 20
 
     # Tabular ingest (csv/xlsx full-table text for RAG)
@@ -191,3 +199,90 @@ settings = Settings()
 _DEFAULT_ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4/"
 if settings.llm_base_url == "https://api.openai.com/v1" and settings.llm_model.lower().startswith("glm"):
     settings.llm_base_url = _DEFAULT_ZHIPU_BASE
+
+
+_ZHIPU_RERANK_PROVIDERS = frozenset({"zhipu", "auto", ""})
+
+
+def _zhipu_rerank_selected(s: Settings) -> bool:
+    return s.rag_rerank_enabled and (s.rag_rerank_provider or "zhipu").strip().lower() in _ZHIPU_RERANK_PROVIDERS
+
+
+@dataclass(frozen=True)
+class _Row:
+    base_url_env: str
+    api_key_env: str
+    in_use: Callable[[Settings], bool]
+    off_switch: str
+
+    @property
+    def base_url_field(self) -> str:
+        return self.base_url_env.lower()
+
+    @property
+    def api_key_field(self) -> str:
+        return self.api_key_env.lower()
+
+
+class ZhipuService(Enum):
+    EMBEDDING = _Row(
+        "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY", lambda s: s.rag_hybrid_enabled, "RAG_HYBRID_ENABLED=false"
+    )
+    VISION = _Row("VISION_BASE_URL", "VISION_API_KEY", lambda s: s.vision_ocr_enabled, "VISION_OCR_ENABLED=false")
+    RERANK = _Row("RERANK_BASE_URL", "RERANK_API_KEY", _zhipu_rerank_selected, "RAG_RERANK_ENABLED=false")
+
+
+@dataclass(frozen=True)
+class Endpoint:
+    base_url: str
+    api_key: str = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.base_url.strip() or not self.api_key.strip():
+            raise ValueError("Endpoint needs base_url and api_key; build it with zhipu_endpoint()")
+
+
+class EndpointConfigError(RuntimeError):
+    """A Zhipu service is in use, or was asked for, and its URL or key is empty.
+
+    ``missing`` holds env var names in ZhipuService order, URL before key.
+    """
+
+    def __init__(self, missing: tuple[str, ...], off_switches: tuple[str, ...]) -> None:
+        self.missing = missing
+        self.off_switches = off_switches
+        super().__init__(
+            f"Zhipu endpoint settings are empty: {', '.join(missing)}. "
+            "Set them in backend/.env (LLM_BASE_URL and LLM_API_KEY are chat-only), "
+            f"or turn the service off with {', '.join(off_switches)}."
+        )
+
+
+def _gaps(service: ZhipuService, s: Settings) -> tuple[str, ...]:
+    row = service.value
+    pairs = ((row.base_url_env, row.base_url_field), (row.api_key_env, row.api_key_field))
+    return tuple(env for env, field_name in pairs if not getattr(s, field_name).strip())
+
+
+def zhipu_endpoint(service: ZhipuService, s: Settings | None = None) -> Endpoint:
+    """Ignores the service's switch: a caller that reaches here intends to call Zhipu."""
+    s = s or settings
+    missing = _gaps(service, s)
+    if missing:
+        raise EndpointConfigError(missing, (service.value.off_switch,))
+    row = service.value
+    return Endpoint(getattr(s, row.base_url_field).strip(), getattr(s, row.api_key_field).strip())
+
+
+def zhipu_in_use(service: ZhipuService, s: Settings | None = None) -> bool:
+    return service.value.in_use(s or settings)
+
+
+def check_zhipu_endpoints(s: Settings | None = None) -> None:
+    s = s or settings
+    bad = [(svc, gaps) for svc in ZhipuService if svc.value.in_use(s) and (gaps := _gaps(svc, s))]
+    if bad:
+        raise EndpointConfigError(
+            tuple(name for _, gaps in bad for name in gaps),
+            tuple(svc.value.off_switch for svc, _ in bad),
+        )

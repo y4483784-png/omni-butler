@@ -84,7 +84,6 @@ def test_production_hybrid_requires_vector_and_rerank_success():
 
 def test_vector_ranked_reports_embedding_failure(monkeypatch):
     monkeypatch.setattr("app.rag.retrieval.settings.rag_hybrid_enabled", True)
-    monkeypatch.setattr("app.rag.retrieval.settings.llm_api_key", "test-key")
     monkeypatch.setattr("app.rag.retrieval.vector_store.is_available", lambda: True)
 
     def boom(_query: str):

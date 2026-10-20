@@ -106,7 +106,6 @@ def test_yz_fullchain_smoke(memory_blob_store, monkeypatch):
     )
     cases = load_cases()[:2]
     with (
-        patch("app.rag.ingestion.settings.llm_api_key", "fake-key"),
         patch("app.rag.ingestion.vector_store.is_available", return_value=False),
         patch("app.rag.ingestion.vector_store.delete_by_document"),
         patch("app.rag.ingestion.vector_store.upsert_chunks"),

@@ -52,7 +52,7 @@ def test_eager_ingest_task_writes_ready_document():
             doc = _make_pending_md(db, p)
             doc_id = doc.id
             with (
-                patch("app.rag.ingestion.settings.llm_api_key", "fake-key"),
+                patch("app.rag.ingestion.settings.rag_hybrid_enabled", True),
                 patch("app.rag.ingestion.vector_store.is_available", return_value=False),
                 patch("app.rag.ingestion.vector_store.delete_by_document"),
             ):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 
-from app.core.config import settings
+from app.core.config import ZhipuService, settings, zhipu_endpoint
 from app.core.redis import model_slot
 
 OCR_PROMPT = (
@@ -15,19 +15,17 @@ OCR_PROMPT = (
 
 
 def ocr_image_bytes(image_bytes: bytes, mime: str = "image/png", model: str | None = None) -> str:
-    """Synchronously OCR one image using the configured vision model."""
-    if not settings.llm_api_key:
-        raise ValueError("未配置 LLM_API_KEY，无法使用多模态 OCR")
     if not settings.vision_ocr_enabled:
         raise ValueError("多模态 OCR 已关闭（VISION_OCR_ENABLED=false）")
+    endpoint = zhipu_endpoint(ZhipuService.VISION)
 
     from openai import OpenAI
 
     b64 = base64.b64encode(image_bytes).decode("ascii")
     data_url = f"data:{mime};base64,{b64}"
     client = OpenAI(
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
+        api_key=endpoint.api_key,
+        base_url=endpoint.base_url,
         timeout=settings.llm_timeout,
         max_retries=1,
     )

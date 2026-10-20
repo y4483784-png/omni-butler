@@ -105,6 +105,8 @@ def test_router_cache_skips_llm(monkeypatch):
 
 
 def test_query_embedding_cache_skips_provider(monkeypatch):
+    monkeypatch.setattr(embeddings.settings, "embedding_base_url", "http://embedding.test/v4/")
+    monkeypatch.setattr(embeddings.settings, "embedding_api_key", "embedding-key")
     monkeypatch.setattr(embeddings, "json_get", lambda _key: [1, 2.5])
 
     def boom(*_args, **_kwargs):

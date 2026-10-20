@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import ZhipuService, settings, zhipu_in_use
 from app.core.messages import ingest_user_error
 from app.core.embeddings import EmbeddingError, embed_texts
 from app.models.models import Chunk, Document
@@ -175,12 +175,10 @@ def ingest_document(db: Session, doc: Document) -> Document:
 
 def _index_vectors(doc: Document, chunks: list[Chunk]) -> str:
     """Embed + upsert; return warning text on soft failure, else empty."""
-    if not settings.rag_hybrid_enabled:
+    if not zhipu_in_use(ZhipuService.EMBEDDING):
         return ""
     if not chunks:
         return ""
-    if not settings.llm_api_key:
-        return "未配置 API Key，已跳过向量化（仅关键词检索）"
     if not vector_store.is_available():
         return "Qdrant 不可达，已跳过向量化（仅关键词检索）"
 

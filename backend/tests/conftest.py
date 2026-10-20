@@ -19,6 +19,9 @@ os.environ.setdefault("SANDBOX_RUNNER_URL", "")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("ADMIN_USERNAME", "admin")
 os.environ.setdefault("ADMIN_PASSWORD", "test-admin-pass")
+os.environ.setdefault("RAG_HYBRID_ENABLED", "false")
+os.environ.setdefault("VISION_OCR_ENABLED", "false")
+os.environ.setdefault("RAG_RERANK_ENABLED", "false")
 
 TEST_ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 

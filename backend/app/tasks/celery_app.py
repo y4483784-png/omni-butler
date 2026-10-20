@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from celery import Celery
 
-from app.core.config import settings
+from app.core.config import EndpointConfigError, check_zhipu_endpoints, settings
 
 broker_url = (settings.celery_broker_url or "").strip() or settings.redis_url
 
@@ -46,7 +46,16 @@ celery_app.conf.update(
 # Register tasks after celery_app exists (avoids circular import on Celery()).
 import app.tasks.ingestion as _ingestion  # noqa: E402,F401
 
-from celery.signals import worker_process_init  # noqa: E402
+from celery.signals import worker_init, worker_process_init  # noqa: E402
+
+
+@worker_init.connect
+def _refuse_misconfigured_worker(**_kwargs) -> None:
+    try:
+        check_zhipu_endpoints()
+    except EndpointConfigError as e:
+        # Celery's Signal.send logs and swallows Exception from receivers; SystemExit escapes it.
+        raise SystemExit(str(e)) from e
 
 
 @worker_process_init.connect
