@@ -3,6 +3,7 @@ import type { ChatMsg, Citation, ScheduleCard, ArtifactPayload } from "../api/cl
 import { useStore, type SessionChatState } from "../store/useStore";
 import { artifactFromPayload } from "../utils/artifact";
 import { foldThinking, type ThinkingFold } from "../thinkingFold";
+import { overlayUnsavedError } from "../unsavedError";
 
 const abortControllers = new Map<number, AbortController>();
 
@@ -252,37 +253,8 @@ async function runStreamLoop(
     try {
       const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
       const synced = withHydratedFold(before, await loadMessages(sessionId));
-      const beforeLast = before.at(-1);
-      const syncedHasAssistantError = synced.some(
-        (m) =>
-          m.role === "assistant" &&
-          (m.content.includes("模型调用失败") || m.content.startsWith("⚠️"))
-      );
-      const keepUiError =
-        !aborted &&
-        beforeLast?.role === "assistant" &&
-        String(beforeLast.content || "").startsWith("⚠️") &&
-        !syncedHasAssistantError;
-      if (keepUiError) {
-        const merged = [...synced];
-        if (merged.at(-1)?.role !== "assistant") {
-          merged.push({
-            role: "assistant",
-            content: beforeLast.content,
-            citations: [],
-            scheduleCard: null,
-            artifact: null,
-          });
-        } else {
-          merged[merged.length - 1] = {
-            ...merged[merged.length - 1],
-            content: beforeLast.content,
-          };
-        }
-        patchSession(sessionId, { messages: merged, hydrated: true });
-      } else {
-        patchSession(sessionId, { messages: synced, hydrated: true });
-      }
+      const messages = aborted ? synced : overlayUnsavedError(before, synced);
+      patchSession(sessionId, { messages, hydrated: true });
     } catch {
       /* keep in-memory partial if sync fails */
     }

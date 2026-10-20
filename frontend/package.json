@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs tests/scheduleCard.test.mjs"
+    "test": "TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs tests/scheduleCard.test.mjs tests/thinkingFold.test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

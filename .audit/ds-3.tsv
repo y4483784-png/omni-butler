@@ -4,3 +4,5 @@ ts	phase	decision	why	evidence	result
 2026-10-20T06:40:00Z	verify	re-ran the offline suite and the fold table	the implementer report is not the proof	backend/tests/test_deepseek_roles.py	tests green, 645 collected, suite exit 0, 18 fold transitions ok
 2026-10-20T06:45:00Z	comments	deleted unread llm_temperature and llm_max_tokens and renamed the cache loader	the settings were never sent, and load hid a file delete	backend/app/eval/disk_cache.py	load_or_drop_entries
 2026-10-20T06:45:00Z	comments	kept the compose env_file comment	the plan requires that list beside env_file	docker-compose.yml	kept
+2026-10-20T07:07:30Z	interrogate	raised stream 429, repair 429, structured finishes, the judge timeout, and ragas exceptions	both reviews showed those failures becoming ordinary answers	review-a bc-a19af19e review-b bc-068940c0	fixed
+2026-10-20T07:07:30Z	interrogate	kept the thinking-mode length wipe and the classifier None fallback	the plan stores the error string and planners still fall back on a parse miss	docs/plans/deepseek-migration.md	unchanged

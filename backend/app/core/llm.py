@@ -88,12 +88,24 @@ def is_llm_infra_exception(exc: BaseException) -> bool:
     name = type(exc).__name__
     if any(marker in name for marker in _INFRA_TYPE_MARKERS):
         return True
+    return _status_code(exc) in _INFRA_STATUS_CODES
+
+
+def _status_code(exc: BaseException) -> int | None:
     status = getattr(exc, "status_code", None)
     try:
-        code = int(status) if status is not None else None
+        return int(status) if status is not None else None
     except (TypeError, ValueError):
-        code = None
-    return code in _INFRA_STATUS_CODES
+        return None
+
+
+def _rejects_stream_options(exc: BaseException) -> bool:
+    """True when a gateway refused the usage option, not when the account is limited."""
+    if is_llm_infra_exception(exc):
+        return False
+    if _status_code(exc) not in (400, 422):
+        return False
+    return "stream_options" in str(exc).lower()
 
 
 def llm_infra_backoff_seconds(attempt: int) -> float:
@@ -391,7 +403,8 @@ async def stream_chat(
     """Yield reasoning and answer deltas for one role.
 
     ``usage_out`` receives ``prompt_tokens`` when the stream includes usage.
-    A gateway that rejects ``stream_options`` is retried once without it.
+    A 400 or 422 that names ``stream_options`` is retried once without it.
+    Rate limits and timeouts raise ``LLMInfraError`` and are not retried here.
     """
     _refuse_outbound(messages, tools)
     if not settings.llm_api_key:
@@ -408,46 +421,60 @@ async def stream_chat(
     async with async_model_slot(call.model):
         try:
             resp = await client.chat.completions.create(**body)
-        except Exception:
-            if usage_out is not None and "stream_options" in body:
+        except Exception as exc:
+            if _rejects_stream_options(exc) and "stream_options" in body:
                 logger.debug("stream_chat retry without stream_options")
                 body.pop("stream_options", None)
-                resp = await client.chat.completions.create(**body)
+                try:
+                    resp = await client.chat.completions.create(**body)
+                except Exception as retry_exc:
+                    if is_llm_infra_exception(retry_exc):
+                        _raise_infra(retry_exc)
+                    raise
+            elif is_llm_infra_exception(exc):
+                _raise_infra(exc)
             else:
                 raise
-        async for chunk in resp:
-            if usage_out is not None:
-                usage = getattr(chunk, "usage", None)
-                pt = _usage_prompt_tokens(usage)
-                if pt is not None:
-                    usage_out["prompt_tokens"] = pt
-                ct = None
-                if usage is not None:
-                    ct = getattr(usage, "completion_tokens", None)
-                    if ct is None and isinstance(usage, dict):
-                        ct = usage.get("completion_tokens")
-                if ct is not None:
-                    try:
-                        usage_out["completion_tokens"] = int(ct)
-                    except (TypeError, ValueError):
-                        pass
-            choices = getattr(chunk, "choices", None) or []
-            if not choices:
-                continue
-            choice = choices[0]
-            finish = getattr(choice, "finish_reason", None)
-            if finish:
-                kind = classify_finish(finish, thinking=call.thinking, role=role)
-                if kind is FinishClass.INFRA:
-                    raise LLMInfraError(f"finish_reason={finish}")
-                if kind is not FinishClass.STOP:
-                    raise LLMStructuredError(f"finish_reason={finish}")
-            delta = getattr(choice, "delta", None)
-            content, reasoning = message_parts(delta)
-            if reasoning:
-                yield ReasoningDelta(reasoning)
-            if content:
-                yield AnswerDelta(content)
+        try:
+            async for chunk in resp:
+                if usage_out is not None:
+                    usage = getattr(chunk, "usage", None)
+                    pt = _usage_prompt_tokens(usage)
+                    if pt is not None:
+                        usage_out["prompt_tokens"] = pt
+                    ct = None
+                    if usage is not None:
+                        ct = getattr(usage, "completion_tokens", None)
+                        if ct is None and isinstance(usage, dict):
+                            ct = usage.get("completion_tokens")
+                    if ct is not None:
+                        try:
+                            usage_out["completion_tokens"] = int(ct)
+                        except (TypeError, ValueError):
+                            pass
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                finish = getattr(choice, "finish_reason", None)
+                if finish:
+                    kind = classify_finish(finish, thinking=call.thinking, role=role)
+                    if kind is FinishClass.INFRA:
+                        raise LLMInfraError(f"finish_reason={finish}")
+                    if kind is not FinishClass.STOP:
+                        raise LLMStructuredError(f"finish_reason={finish}")
+                delta = getattr(choice, "delta", None)
+                content, reasoning = message_parts(delta)
+                if reasoning:
+                    yield ReasoningDelta(reasoning)
+                if content:
+                    yield AnswerDelta(content)
+        except (LLMInfraError, LLMStructuredError):
+            raise
+        except Exception as exc:
+            if is_llm_infra_exception(exc):
+                _raise_infra(exc)
+            raise
 
 
 def complete_text(
@@ -508,6 +535,8 @@ def complete_text(
                 _raise_infra(LLMInfraError(f"finish_reason={reason}"))
             _STATS["infra_errors"] += 1
             return Spoken("", "", None)
+        if raise_on_error:
+            raise LLMStructuredError(f"finish_reason={reason}")
         return Spoken("", "", None)
     return Spoken("", "", None)
 
@@ -529,7 +558,11 @@ def complete_json(
         return None
 
     call = resolve(role)
-    body = _build_request(call, messages, kind="json", stream=False, tools=tools)
+    # The shared sync client is capped at 30s for classifiers. A thinking judge uses the chat timeout.
+    req_timeout = float(settings.llm_timeout) if role is Role.JUDGE else None
+    body = _build_request(
+        call, messages, kind="json", stream=False, tools=tools, timeout=req_timeout
+    )
     client = _get_sync_client()
     try:
         with model_slot(call.model):

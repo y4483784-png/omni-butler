@@ -10,7 +10,7 @@ export function foldThinking(phase: ThinkingFold, event: FoldEvent): ThinkingFol
   if (event.type === "hydrate") {
     if (!event.reasoning.trim()) return "hidden";
     if (phase === "opened" || phase === "collapsed") return phase;
-    return event.content.trim() ? "collapsed" : "streaming";
+    return "collapsed";
   }
   if (event.type === "reasoning") {
     return phase === "hidden" ? "streaming" : phase;

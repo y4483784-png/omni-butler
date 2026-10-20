@@ -252,7 +252,7 @@ pip install -r requirements.txt   # 含 ragas、datasets、langchain-openai
 ```
 
 Judge LLM 走聊天端点（`LLM_BASE_URL` + `LLM_API_KEY`）。ragas 的 Embeddings 走 `EMBEDDING_BASE_URL` + `EMBEDDING_API_KEY`，不跟随聊天那组；留空时评测直接报错并写出变量名。
-答案生成使用 `LLM_TIMEOUT`（默认 120s）；ragas 侧已将 `temperature` 四舍五入到 2 位小数以兼容智谱。
+答案生成和判分使用 `LLM_TIMEOUT`（默认 120s）。判分思考默认开启，请求不送 `temperature`。
 生成阶段较慢，可用 `--limit N` 先小跑，或 `--skip-ragas` 只测检索+规则指标。
 
 ### 指标

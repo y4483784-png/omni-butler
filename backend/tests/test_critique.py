@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from app.agents.harness.critique import (
     CritiqueResult,
     CritiqueVerdict,
@@ -19,7 +21,7 @@ from app.agents.harness.critique import (
     should_apply_sandbox_number_gate,
     should_ground_answer,
 )
-from app.core.llm import LLMStructuredError
+from app.core.llm import LLMInfraError, LLMStructuredError
 
 
 def _verdict(data: dict) -> CritiqueVerdict:
@@ -323,6 +325,35 @@ def test_repair_second_fail_appends_one_disclaimer():
     assert not cr.passed
     assert final.content.count("依据核验说明") == 1
     assert final.content.startswith("住宿仍写 800 元")
+
+
+def test_repair_rate_limit_is_not_a_disclaimer_answer():
+    evidence = [{"source_type": "kb", "index": 1, "content": "住宿上限 500 元"}]
+    messages = [
+        {"role": "system", "content": "【证据池】"},
+        {"role": "user", "content": "标准？"},
+    ]
+    fail = _verdict(
+        {
+            "grounded": False,
+            "addresses_question": True,
+            "unsupported": [{"text": "800 元", "reason": "证据为 500 元"}],
+        }
+    )
+    with patch("app.agents.harness.critique.settings.llm_api_key", "fake"):
+        with patch("app.agents.harness.critique.complete_json_object", return_value=fail):
+            with patch(
+                "app.agents.harness.critique.complete_text",
+                side_effect=LLMInfraError("429"),
+            ):
+                with pytest.raises(LLMInfraError):
+                    ground_and_repair_answer(
+                        question="标准？",
+                        draft="住宿上限 800 元。",
+                        evidence=evidence,
+                        included=evidence,
+                        messages=messages,
+                    )
 
 
 def test_repair_disabled_appends_disclaimer_without_regenerate():

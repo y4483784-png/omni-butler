@@ -459,7 +459,7 @@ def ground_and_repair_answer(
     repair_messages = append_repair_to_messages(messages, critique)
     try:
         draft2 = _as_spoken(
-            complete_text(repair_messages, role=Role.CHAT, raise_on_error=False)
+            complete_text(repair_messages, role=Role.CHAT, raise_on_error=True)
         )
     except LLMInfraError:
         raise

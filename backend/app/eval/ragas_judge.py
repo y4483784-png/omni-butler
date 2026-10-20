@@ -149,6 +149,7 @@ def run_ragas_rows(
             metrics=metric_objs,
             llm=llm,
             embeddings=embeddings,
+            raise_exceptions=True,
         )
         df = result.to_pandas()
     except Exception as exc:

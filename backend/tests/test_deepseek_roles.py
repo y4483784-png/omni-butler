@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.llm import (
     AnswerDelta,
     LLMInfraError,
+    LLMStructuredError,
     ReasoningDelta,
     Role,
     RoleConfigError,
@@ -109,9 +110,12 @@ class _AsyncChunks:
 
     async def __anext__(self):
         try:
-            return next(self._it)
+            item = next(self._it)
         except StopIteration as exc:
             raise StopAsyncIteration from exc
+        if isinstance(item, BaseException):
+            raise item
+        return item
 
 
 def _install_sync(monkeypatch, outputs):
@@ -208,6 +212,8 @@ def test_four_roles_send_their_own_request_bodies(monkeypatch):
     _assert_thinking_off_json(calls[2], "deepseek-flash")
     _assert_thinking_on(calls[3], "deepseek-v4-pro")
     assert calls[3]["response_format"] == {"type": "json_object"}
+    assert "timeout" not in calls[1]
+    assert calls[3]["timeout"] == settings.llm_timeout
     assert calls[3]["stream"] is False
     assert resolve(Role.CHAT).model == "deepseek-flash"
     assert resolve(Role.JUDGE).model == "deepseek-v4-pro"
@@ -400,6 +406,114 @@ def test_judge_length_is_infra_even_when_thinking_is_off(monkeypatch):
     with pytest.raises(LLMInfraError):
         complete_json_object([{"role": "user", "content": "hi"}], _Box, role=Role.JUDGE)
     assert len(calls) == 1
+
+
+class _RejectsStreamOptions(Exception):
+    def __init__(self, message: str, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def test_stream_rate_limit_is_infra_and_is_not_retried(monkeypatch):
+    calls = _install_async(monkeypatch, [_RateLimitError("slow down")])
+    usage: dict = {}
+
+    async def collect():
+        async for _item in stream_chat(
+            [{"role": "user", "content": "q"}], role=Role.CHAT, usage_out=usage
+        ):
+            pass
+
+    with pytest.raises(LLMInfraError):
+        asyncio.run(collect())
+    assert len(calls) == 1
+    assert "stream_options" in calls[0]
+
+
+def test_stream_retries_only_a_stream_options_rejection(monkeypatch):
+    calls = _install_async(
+        monkeypatch,
+        [
+            _RejectsStreamOptions("unknown parameter stream_options"),
+            [_Chunk(_Delta("ans", None), finish_reason="stop")],
+        ],
+    )
+    usage: dict = {}
+
+    async def collect():
+        return [
+            item
+            async for item in stream_chat(
+                [{"role": "user", "content": "q"}], role=Role.CHAT, usage_out=usage
+            )
+        ]
+
+    assert asyncio.run(collect()) == [AnswerDelta("ans")]
+    assert "stream_options" in calls[0]
+    assert "stream_options" not in calls[1]
+
+
+def test_stream_unrelated_client_error_is_not_retried(monkeypatch):
+    calls = _install_async(monkeypatch, [_RejectsStreamOptions("bad request")])
+    usage: dict = {}
+
+    async def collect():
+        async for _item in stream_chat(
+            [{"role": "user", "content": "q"}], role=Role.CHAT, usage_out=usage
+        ):
+            pass
+
+    with pytest.raises(_RejectsStreamOptions):
+        asyncio.run(collect())
+    assert len(calls) == 1
+
+
+def test_stream_midway_rate_limit_is_infra(monkeypatch):
+    _install_async(
+        monkeypatch,
+        [[_Chunk(_Delta("partial", "thought")), _RateLimitError("slow down")]],
+    )
+    got: list = []
+
+    async def collect():
+        async for item in stream_chat([{"role": "user", "content": "q"}], role=Role.CHAT):
+            got.append(item)
+
+    with pytest.raises(LLMInfraError):
+        asyncio.run(collect())
+    assert got == [ReasoningDelta("thought"), AnswerDelta("partial")]
+
+
+def test_structured_finish_with_raise_on_error_is_not_an_empty_answer(monkeypatch):
+    monkeypatch.setattr(settings, "chat_thinking", "off")
+    _install_sync(monkeypatch, [_Resp(_Msg("partial", None), finish_reason="length")])
+    with pytest.raises(LLMStructuredError):
+        complete_text([{"role": "user", "content": "hi"}], role=Role.CHAT, raise_on_error=True)
+
+    _install_sync(monkeypatch, [_Resp(_Msg("partial", None), finish_reason="content_filter")])
+    quiet = complete_text([{"role": "user", "content": "hi"}], role=Role.CHAT, raise_on_error=False)
+    assert quiet == Spoken("", "", None)
+
+
+def test_ragas_raises_judge_infra_instead_of_scoring_it(monkeypatch):
+    from app.eval.ragas_judge import run_ragas_rows
+
+    def boom(*_args, **kwargs):
+        assert kwargs.get("raise_exceptions") is True
+        raise LLMInfraError("finish_reason=length")
+
+    monkeypatch.setattr("app.eval.ragas_judge.settings.llm_api_key", "test-key")
+    monkeypatch.setattr(
+        "app.eval.ragas_judge.build_ragas_llm_embeddings",
+        lambda: (object(), object()),
+    )
+    monkeypatch.setattr("ragas.evaluate", boom)
+    outcome = run_ragas_rows(
+        [{"question": "q", "answer": "a", "contexts": ["c"], "ground_truth": "g"}]
+    )
+    assert outcome.infra_error is True
+    assert outcome.means == {}
+    assert outcome.per_row == []
 
 
 def test_stream_infra_finish_does_not_yield_the_failing_chunk(monkeypatch):
