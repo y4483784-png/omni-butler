@@ -347,7 +347,7 @@ def confirm_google_title_change(
         raise HTTPException(status_code=400, detail="未连接 Google 日历")
     external_id = (body.external_id or "").strip()
     if not external_id:
-        raise HTTPException(status_code=400, detail="需要日程编号")
+        raise HTTPException(status_code=409, detail="需要日程编号，未写入。")
     title = (body.title or "").strip()
     start_at = _parse_dt(body.start_at)
     end_at = _parse_dt(body.end_at)

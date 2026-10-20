@@ -713,6 +713,33 @@ def _mutate_from_selection(
     return _cleared(steps, _create_answer(card, remote_note), card)
 
 
+def _unbound_mutate(
+    steps: list[str],
+    action: str,
+    draft: EventDraft,
+    *,
+    zone_name: str | None,
+) -> ToolResult:
+    if not (draft.title or "").strip():
+        draft.title = (draft.search_title or "").strip()
+    if (
+        action == "update"
+        and isinstance(draft.start_at, datetime)
+        and not isinstance(draft.end_at, datetime)
+    ):
+        draft.end_at = draft.start_at + timedelta(hours=1)
+    card = _base_card(
+        mode=action,
+        action=action,
+        draft=draft,
+        kind=_write_kind(action, draft),
+    )
+    if zone_name:
+        card["timezone"] = zone_name
+    steps.append("没有唯一的日程编号，待确认卡片不会写入")
+    return _cleared(steps, _create_answer(card, ""), card)
+
+
 def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     steps = [f"第 {ctx.iteration} 轮：解析日程并生成确认卡片"]
     explicit = str((args or {}).get("action") or "").strip().lower()
@@ -800,7 +827,8 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     query = (draft.search_title or draft.title or "").strip()
     selected = rank_one_event(events, query)
     if selected is None:
-        # Reply wording for no unique upcoming event is not settled.
+        if action in {"update", "cancel"} and query:
+            return _unbound_mutate(steps, action, draft, zone_name=zone_name)
         steps.append("没有定位到唯一的未结束日程")
         return _cleared(steps, _NOT_FOUND)
     return _mutate_from_selection(
