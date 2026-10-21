@@ -33,6 +33,7 @@ from app.services.calendar_factory import (
     calendar_provider_for,
     calendar_writes_remote,
 )
+from app.services.calendar_provider import parse_invitees
 from app.services.calendar_google import _LIST_LOCAL_ONLY, _LIST_TRUNCATED
 from app.services.calendar_secrets import CalendarTransientError
 
@@ -198,7 +199,8 @@ def _base_card(
     event_id: int | None = None,
     kind: str = "",
 ) -> dict:
-    participants = [] if kind == "block" else list(draft.participants)
+    invitees = [] if kind == "block" else parse_invitees(draft.participants)
+    participants = [item.email or item.name for item in invitees]
     return {
         "mode": mode,
         "phase": "draft",
@@ -210,6 +212,8 @@ def _base_card(
         "start_at": _iso(draft.start_at),
         "end_at": _iso(draft.end_at),
         "participants": participants,
+        "guest_emails": [item.email for item in invitees if item.email],
+        "guest_names": [item.name for item in invitees if item.name and not item.email],
         "location": "" if kind == "block" else (draft.location or ""),
         "description": draft.description or "",
         "timezone": "",

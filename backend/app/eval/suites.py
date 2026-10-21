@@ -221,7 +221,7 @@ SUITES: dict[str, SuiteSpec] = {
         title="日历行为评分",
         kind="eval",
         description=(
-            "150 题。真实 complete_json / complete_text，假 Google。"
+            "152 题。真实 complete_json / complete_text，假 Google。"
             "时间说全时卡片起止必须与金标准相同。"
             "另查确认前不写、会议/时间块、按 id 改删、空档诚实、备注进说明。"
         ),

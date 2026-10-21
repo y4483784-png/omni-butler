@@ -419,6 +419,7 @@ def _google_item(seed: dict, zone: str) -> dict:
 
 def _snap_local(db, user_id: int) -> list[dict]:
     from app.models.models import CalendarEvent
+    from app.services.calendar_provider import invitee_labels
 
     db.expire_all()
     rows = (
@@ -429,12 +430,6 @@ def _snap_local(db, user_id: int) -> list[dict]:
     )
     snapped = []
     for row in rows:
-        try:
-            participants = json.loads(row.participants or "[]")
-        except json.JSONDecodeError:
-            participants = []
-        if not isinstance(participants, list):
-            participants = []
         snapped.append(
             {
                 "id": row.id,
@@ -443,7 +438,7 @@ def _snap_local(db, user_id: int) -> list[dict]:
                 "end_at": row.end_at.replace(microsecond=0).isoformat() if row.end_at else "",
                 "status": row.status or "",
                 "description": row.description or "",
-                "participants": [str(item) for item in participants if str(item).strip()],
+                "participants": invitee_labels(row.participants),
                 "external_id": row.external_id or "",
             }
         )

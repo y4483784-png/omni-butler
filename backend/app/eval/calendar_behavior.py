@@ -313,9 +313,9 @@ def _match_body(match: dict, body: dict, obs: dict) -> bool:
         elif attendees != match.get("attendees"):
             return False
     if "participants" in match or "description" in match or "title" in match:
-        # Participants stay on the local row. When the case asks, the inserted
-        # or updated local row must carry them. Description on the Google body
-        # is checked above; a local description is checked with local_row.
+        # Bare names stay on the local row. Emails are attendees when the case
+        # asks. Description on the Google body is checked above. A local
+        # description is checked with local_row.
         if "participants" in match:
             rows = list(obs.get("local_final") or [])
             wanted = list(match.get("participants") or [])

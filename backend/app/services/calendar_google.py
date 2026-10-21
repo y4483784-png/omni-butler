@@ -27,7 +27,13 @@ from app.services.calendar_local import (
     event_to_dto,
     free_gaps,
 )
-from app.services.calendar_provider import CalendarEventDTO
+from app.services.calendar_provider import (
+    CalendarEventDTO,
+    Invitee,
+    attendee_body,
+    dump_invitees,
+    parse_invitees,
+)
 from app.services.calendar_secrets import (
     CalendarTokenError,
     CalendarTransientError,
@@ -244,7 +250,7 @@ class GoogleCalendarProvider:
         """List primary, refuse overlaps, insert on Google, then store the local row.
 
         Wall-clock values are stored as given. They are not converted to UTC.
-        Participants stay on the local row and are not sent as attendees.
+        Emails are attendees with ``sendUpdates=all``. A bare name stays local.
         """
         start_at = _as_naive(start_at)
         end_at = _as_naive(end_at)
@@ -259,6 +265,7 @@ class GoogleCalendarProvider:
             location=location,
             description=description,
             zone_name=zone_name,
+            participants=participants,
         )
         return self._save_local_row(
             user_id,
@@ -289,7 +296,9 @@ class GoogleCalendarProvider:
         A time change reads the primary calendar and excludes this row by
         ``external_id`` plus ``event_id``. A linked Google row is patched.
         A pre-connect local row is inserted, then marked ``provider='google'``.
-        Participants are stored locally and are not sent as attendees.
+        Participants are stored on the local row. An insert invites emails.
+        A guest-list change reads the event, then patches the full attendee
+        array. A title, time, location, or notes change omits that array.
         """
         event = self.db.get(CalendarEvent, event_id)
         if not event or event.user_id != user_id:
@@ -302,9 +311,10 @@ class GoogleCalendarProvider:
         )
         external_id = (event.external_id or "").strip()
         linked = (event.provider or "") == "google" and bool(external_id)
+        guest_edit = participants is not None and not _same_guests(event.participants, participants)
         if not google_fields and participants is None:
             return event_to_dto(event)
-        if linked and not google_fields:
+        if linked and not google_fields and not guest_edit:
             return self._local.update_event(user_id, event_id, participants=participants)
 
         zone_name = self.timezone_name()
@@ -325,7 +335,14 @@ class GoogleCalendarProvider:
 
         inserted_id = ""
         sent: dict = {}
+        previous_attendees = None
         if linked:
+            attendees = None
+            if guest_edit:
+                current = self._get_google_event(external_id)
+                raw = current.get("attendees")
+                previous_attendees = list(raw) if isinstance(raw, list) else []
+                attendees = merged_attendees(participants, current)
             sent = _patch_body(
                 title=title,
                 start_at=start_at,
@@ -335,6 +352,7 @@ class GoogleCalendarProvider:
                 location=location,
                 description=description,
                 zone_name=zone_name,
+                attendees=attendees,
             )
             self._patch_google_event(external_id, sent)
         else:
@@ -347,6 +365,7 @@ class GoogleCalendarProvider:
                 location=location if location is not None else (event.location or ""),
                 description=description if description is not None else (event.description or ""),
                 zone_name=zone_name,
+                participants=participants if participants is not None else event.participants,
             )
             if self._external_id_taken(user_id, inserted_id):
                 self._delete_google_event(inserted_id)
@@ -363,6 +382,7 @@ class GoogleCalendarProvider:
             inserted_id=inserted_id,
             sent=sent,
             external_id=external_id,
+            previous_attendees=previous_attendees,
         )
         self.db.refresh(event)
         return event_to_dto(event)
@@ -453,6 +473,10 @@ class GoogleCalendarProvider:
         )
         if conflicts:
             raise CalendarOverlapError(conflicts)
+        attendees = None
+        if participants is not None and not _same_guests(_participant_names(match), participants):
+            current = self._get_google_event(gid)
+            attendees = merged_attendees(participants, current)
         sent = _patch_body(
             title=needle,
             start_at=start_at,
@@ -462,6 +486,7 @@ class GoogleCalendarProvider:
             location=location,
             description=description,
             zone_name=zone_name,
+            attendees=attendees,
         )
         self._patch_google_event(gid, sent)
         return _remote_only_dto(
@@ -919,10 +944,17 @@ class GoogleCalendarProvider:
         inserted_id: str,
         sent: dict,
         external_id: str,
+        previous_attendees: list | None = None,
     ) -> None:
         """Apply the confirmed edit after Google has accepted it. One commit."""
         self.db.refresh(event)
-        restore = _restore_body(event, sent, zone_name=zone_name) if sent else {}
+        restore = (
+            _restore_body(
+                event, sent, zone_name=zone_name, previous_attendees=previous_attendees
+            )
+            if sent
+            else {}
+        )
         if title is not None:
             event.title = title
         if start_at is not None:
@@ -930,7 +962,7 @@ class GoogleCalendarProvider:
         if end_at is not None:
             event.end_at = end_at
         if participants is not None:
-            event.participants = json.dumps(list(participants), ensure_ascii=False)
+            event.participants = dump_invitees(participants)
         if location is not None:
             event.location = location
         if description is not None:
@@ -949,13 +981,32 @@ class GoogleCalendarProvider:
                 self._restore_patch(external_id, restore)
             raise CalendarRemoteWriteError(_LOCAL_UPDATE_FAILED) from None
 
+    def _get_google_event(self, event_id: str) -> dict:
+        """One primary event. A failed read does not continue into a patch."""
+        if not event_id:
+            raise CalendarRemoteReadError(_READ_FAILED)
+        url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
+        try:
+            response = self._call("GET", url)
+        except CalendarRemoteReadError:
+            logger.warning("google calendar events get failed status=network")
+            raise CalendarRemoteReadError(_READ_FAILED) from None
+        if response.status_code != 200:
+            logger.warning("google calendar events get failed status=%s", response.status_code)
+            raise CalendarRemoteReadError(_READ_FAILED)
+        body = _json_object(response)
+        if not isinstance(body, dict):
+            raise CalendarRemoteReadError(_READ_FAILED)
+        return body
+
     def _patch_google_event(self, event_id: str, body: dict) -> None:
-        """PATCH one primary event. No attendees and no sendUpdates."""
+        """PATCH one primary event. ``sendUpdates=all`` only when attendees are present."""
         if not event_id or not body:
             return
         url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
+        params = {"sendUpdates": "all"} if "attendees" in body else None
         try:
-            response = self._call("PATCH", url, json=body)
+            response = self._call("PATCH", url, json=body, params=params)
         except CalendarRemoteReadError:
             logger.warning("google calendar events patch failed status=network")
             raise CalendarRemoteWriteError() from None
@@ -979,6 +1030,7 @@ class GoogleCalendarProvider:
         location: str,
         description: str,
         zone_name: str,
+        participants: object = None,
     ) -> str:
         body = {
             "summary": title,
@@ -987,9 +1039,12 @@ class GoogleCalendarProvider:
             "start": {"dateTime": _wall_clock(start_at), "timeZone": zone_name},
             "end": {"dateTime": _wall_clock(end_at), "timeZone": zone_name},
         }
-        # No attendees and no sendUpdates: participants stay local and no mail goes out.
+        attendees = attendee_body(participants)
+        params = {"sendUpdates": "all"} if attendees else None
+        if attendees:
+            body["attendees"] = attendees
         try:
-            response = self._call("POST", _EVENTS_URL, json=body)
+            response = self._call("POST", _EVENTS_URL, json=body, params=params)
         except CalendarRemoteReadError:
             logger.warning("google calendar events insert failed status=network")
             raise CalendarRemoteWriteError() from None
@@ -1027,7 +1082,7 @@ class GoogleCalendarProvider:
                 title=title,
                 start_at=start_at,
                 end_at=end_at,
-                participants=json.dumps(list(participants), ensure_ascii=False),
+                participants=dump_invitees(participants),
                 status="active",
                 timezone=zone_name,
                 location=location or "",
@@ -1240,8 +1295,14 @@ def _patch_body(
     location: str | None,
     description: str | None,
     zone_name: str,
+    attendees: list | None = None,
 ) -> dict:
-    """Fields the user actually sent. Times stay wall-clock. No attendees."""
+    """Fields the user actually sent. Times stay wall-clock.
+
+    ``attendees`` is omitted unless this confirm changes the guest list.
+    An omitted array leaves the existing guests in place. A list, including
+    an empty one, replaces the whole array.
+    """
     body: dict = {}
     if title is not None:
         body["summary"] = title
@@ -1252,10 +1313,57 @@ def _patch_body(
     if start_at is not None or end_at is not None:
         body["start"] = {"dateTime": _wall_clock(effective_start), "timeZone": zone_name}
         body["end"] = {"dateTime": _wall_clock(effective_end), "timeZone": zone_name}
+    if attendees is not None:
+        body["attendees"] = attendees
     return body
 
 
-def _restore_body(event: CalendarEvent, sent: dict, *, zone_name: str) -> dict:
+def _guest_key(invitee: Invitee) -> tuple[str, str]:
+    return (invitee.email.casefold(), invitee.name)
+
+
+def _same_guests(stored: object, new: object) -> bool:
+    return {_guest_key(item) for item in parse_invitees(stored)} == {
+        _guest_key(item) for item in parse_invitees(new)
+    }
+
+
+def merged_attendees(confirmed: object, google_item: dict) -> list[dict]:
+    """The full email list on the card. Remaining guests keep their responseStatus."""
+    previous: dict[str, dict] = {}
+    raw = google_item.get("attendees") if isinstance(google_item, dict) else None
+    if isinstance(raw, list):
+        for person in raw:
+            if not isinstance(person, dict):
+                continue
+            email = str(person.get("email") or "").strip()
+            if email:
+                previous[email.casefold()] = person
+    body: list[dict] = []
+    seen: set[str] = set()
+    for invitee in parse_invitees(confirmed):
+        email = invitee.email.strip()
+        if not email:
+            continue
+        folded = email.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        entry: dict = {"email": email}
+        status = str((previous.get(folded) or {}).get("responseStatus") or "").strip()
+        if status:
+            entry["responseStatus"] = status
+        body.append(entry)
+    return body
+
+
+def _restore_body(
+    event: CalendarEvent,
+    sent: dict,
+    *,
+    zone_name: str,
+    previous_attendees: list | None = None,
+) -> dict:
     """Previous local values for the fields a patch just wrote."""
     body: dict = {}
     if "summary" in sent:
@@ -1268,6 +1376,8 @@ def _restore_body(event: CalendarEvent, sent: dict, *, zone_name: str) -> dict:
         if event.start_at is not None and event.end_at is not None:
             body["start"] = {"dateTime": _wall_clock(event.start_at), "timeZone": zone_name}
             body["end"] = {"dateTime": _wall_clock(event.end_at), "timeZone": zone_name}
+    if "attendees" in sent:
+        body["attendees"] = list(previous_attendees or [])
     return body
 
 
@@ -1530,7 +1640,11 @@ def _slots_in_windows(
 
 
 def _participant_names(item: dict) -> list[str]:
-    """Other people on a Google event. The calendar owner is not a participant."""
+    """Other people on a Google event. The calendar owner is not a participant.
+
+    The email is the label when Google also sent a display name, so the next
+    edit still invites that guest.
+    """
     attendees = item.get("attendees")
     if not isinstance(attendees, list):
         return []
@@ -1540,7 +1654,7 @@ def _participant_names(item: dict) -> list[str]:
             continue
         if str(person.get("responseStatus") or "") == "declined":
             continue
-        name = str(person.get("displayName") or person.get("email") or "").strip()
+        name = str(person.get("email") or person.get("displayName") or "").strip()
         if name and name not in names:
             names.append(name)
     return names

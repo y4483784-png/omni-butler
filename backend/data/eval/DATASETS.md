@@ -12,7 +12,7 @@ L2 主指标套件是 `agent`。`yz` 套件已下线（由 `agent` 取代），�
 | grounding | 120 | ok | `grounding_faithfulness.jsonl` |
 | tabular | 200 | ok | `office_tabular.jsonl` |
 | context | 384 | ok | `context_recall.jsonl` |
-| calendar | 150 | ok | `calendar_behavior.jsonl` |
+| calendar | 152 | ok | `calendar_behavior.jsonl` |
 
 ## Distributions
 
@@ -42,4 +42,4 @@ L2 主指标套件是 `agent`。`yz` 套件已下线（由 `agent` 取代），�
 
 ### calendar
 
-`id_mutate`=22, `confirm_before_write`=20, `free_busy`=20, `meeting_block`=18, `notes_description`=16, `create_meeting`=10, `create_block`=10, `list_schedule`=8, `conflict`=8, `error_paths`=8, `attendees`=6, `wall_clock`=4
+`id_mutate`=22, `confirm_before_write`=20, `free_busy`=20, `meeting_block`=18, `notes_description`=16, `create_meeting`=10, `create_block`=10, `list_schedule`=8, `conflict`=8, `attendees`=8, `error_paths`=8, `wall_clock`=4
