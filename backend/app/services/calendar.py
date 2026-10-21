@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime as _Wall
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, assert_never
 
 from sqlalchemy.orm import Session
 
@@ -1005,13 +1005,93 @@ def _ends_after_now(row, now: datetime) -> bool:
     return end > now
 
 
-def _row_has_identity(row, *, require_google_id: bool) -> bool:
+def _require_event_id(event_id: object) -> None:
+    if isinstance(event_id, bool) or not isinstance(event_id, int):
+        raise ValueError("event_id")
+
+
+@dataclass(frozen=True)
+class GoogleConfirm:
+    external_id: str
+    event_id: int | None = None
+
+    def __post_init__(self) -> None:
+        external_id = self.external_id.strip()
+        if not external_id:
+            raise ValueError("external_id")
+        if self.event_id is not None:
+            _require_event_id(self.event_id)
+        object.__setattr__(self, "external_id", external_id)
+
+
+@dataclass(frozen=True)
+class BindCreate:
+    event_id: int
+
+    def __post_init__(self) -> None:
+        _require_event_id(self.event_id)
+
+
+@dataclass(frozen=True)
+class LocalDraft:
+    event_id: int
+
+    def __post_init__(self) -> None:
+        _require_event_id(self.event_id)
+
+
+@dataclass(frozen=True)
+class _LinkedEvent:
+    external_id: str
+    event_id: int | None
+
+
+@dataclass(frozen=True)
+class _LocalEvent:
+    event_id: int
+
+
+def _confirmable_event(row: object) -> _LinkedEvent | _LocalEvent | None:
     external = str(getattr(row, "external_id", "") or "").strip()
+    raw_id = getattr(row, "id", None)
+    event_id = raw_id if isinstance(raw_id, int) and not isinstance(raw_id, bool) else None
+    if external:
+        return _LinkedEvent(external_id=external, event_id=event_id)
+    if event_id is not None:
+        return _LocalEvent(event_id=event_id)
+    return None
+
+
+def draft_target(
+    row: object,
+    *,
+    writes_remote: bool,
+    action: str,
+) -> GoogleConfirm | BindCreate | LocalDraft | None:
+    if action not in {"update", "cancel"}:
+        return None
+    target = _confirmable_event(row)
+    if target is None:
+        return None
+    if isinstance(target, _LocalEvent):
+        if writes_remote and action == "update":
+            return BindCreate(event_id=target.event_id)
+        return LocalDraft(event_id=target.event_id)
+    if isinstance(target, _LinkedEvent):
+        if not writes_remote:
+            if target.event_id is None:
+                return None
+            return LocalDraft(event_id=target.event_id)
+        return GoogleConfirm(external_id=target.external_id, event_id=target.event_id)
+    assert_never(target)
+
+
+def _row_has_identity(row, *, require_google_id: bool) -> bool:
     if require_google_id:
-        return bool(external)
+        return _confirmable_event(row) is not None
+    external = str(getattr(row, "external_id", "") or "").strip()
     if getattr(row, "id", None) is not None or external:
         return True
-    # A real DTO always has an id field. A display double that omitted it can still be listed.
     fields = getattr(row, "__dataclass_fields__", None)
     if fields is not None and "id" in fields:
         return False

@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from typing import assert_never
 
 from app.agents.harness.types import ToolContext, ToolResult
 from app.agents.tools.registry import ToolSpec, register
 from app.core.llm import Role, Spoken, complete_text
 from app.services.calendar import (
     REMOTE_READ_ERRORS,
+    BindCreate,
     EventDraft,
+    GoogleConfirm,
+    LocalDraft,
     _catalog_text,
     _civil_day,
     calendar_now,
     classify_calendar_action,
     draft_expires_at,
+    draft_target,
     extract_event,
     extract_free_slots,
     extract_list_day,
@@ -218,24 +223,30 @@ def _base_card(
     }
 
 
+def _when_label(card: dict) -> str:
+    start = card.get("start_at") or ""
+    end = card.get("end_at") or ""
+    if not start:
+        return ""
+    try:
+        start_dt = datetime.fromisoformat(start)
+        end_dt = datetime.fromisoformat(end) if end else None
+        when = _clock(start_dt)
+        if end_dt:
+            when = f"{when}–{end_dt:%H:%M}"
+        return when
+    except ValueError:
+        return start
+
+
 def _confirm_text(card: dict, *, full: bool = False) -> str:
     title = card.get("title") or ""
     start = card.get("start_at") or ""
-    end = card.get("end_at") or ""
     if card.get("mode") == "choose":
         return "找到多条日程，请在卡片上选择。未确认不会写入。"
     if full and card.get("conflicts"):
         return "该时段已有日程。请在卡片上改时间或选用建议空隙，确认后才会写入。"
-    when = ""
-    if start:
-        try:
-            start_dt = datetime.fromisoformat(start)
-            end_dt = datetime.fromisoformat(end) if end else None
-            when = _clock(start_dt)
-            if end_dt:
-                when = f"{when}–{end_dt:%H:%M}"
-        except ValueError:
-            when = start
+    when = _when_label(card)
     name = f"「{title}」" if title else "这条日程"
     if card.get("mode") == "cancel":
         return f"请确认删除{name}。还没点确认删除就不会删。"
@@ -244,6 +255,16 @@ def _confirm_text(card: dict, *, full: bool = False) -> str:
     if not title or not start:
         return "请在卡片上补全后再确认。未确认不会写入。"
     return f"请确认日程{name}，时间 {when}。未确认不会写入。"
+
+
+def _bind_create_answer(card: dict) -> str:
+    if card.get("conflicts"):
+        return "该时段已有日程。请在卡片上改时间或选用建议空隙。确认会在 Google 日历创建这场日程。未确认不会写入。"
+    title = card.get("title") or ""
+    name = f"「{title}」" if title else "这条日程"
+    when = _when_label(card)
+    clock = f"，时间 {when}" if when else ""
+    return f"请确认修改{name}{clock}。确认会在 Google 日历创建这场日程。未确认不会写入。"
 
 
 def _cleared(
@@ -672,13 +693,18 @@ def _mutate_from_selection(
     notice: str,
 ) -> ToolResult:
     _apply_matched_fields(draft, _matched_dict(selected), action)
-    event_id = getattr(selected, "id", None)
-    external_id = str(getattr(selected, "external_id", "") or "").strip()
     connected = _writes_remote(ctx)
-    if connected and not external_id:
+    target = draft_target(selected, writes_remote=connected, action=action)
+    if target is None:
         return _cleared(steps, _NOT_FOUND)
-    if not connected and event_id is None:
-        return _cleared(steps, _NOT_FOUND)
+    if isinstance(target, GoogleConfirm):
+        event_id, external_id = target.event_id, target.external_id
+    elif isinstance(target, BindCreate):
+        event_id, external_id = target.event_id, ""
+    elif isinstance(target, LocalDraft):
+        event_id, external_id = target.event_id, ""
+    else:
+        assert_never(target)
     card = _base_card(
         mode=action,
         action=action,
@@ -686,7 +712,7 @@ def _mutate_from_selection(
         event_id=event_id,
         kind=_write_kind(action, draft),
     )
-    card["external_id"] = external_id if connected else ""
+    card["external_id"] = external_id
     if zone_name:
         card["timezone"] = zone_name
     status = str(getattr(selected, "status", "") or "")
@@ -705,12 +731,16 @@ def _mutate_from_selection(
             draft.start_at,
             draft.end_at,
             event_id=event_id,
-            external_id=external_id if connected else "",
+            external_id=external_id,
         )
         if card.get("conflicts") and not card.get("suggested_slots") and not remote_note:
             steps.append("该时段已满")
     steps.append("已生成待确认卡片，尚未写入")
-    return _cleared(steps, _create_answer(card, remote_note), card)
+    if isinstance(target, BindCreate):
+        answer = _bind_create_answer(card)
+    else:
+        answer = _create_answer(card, remote_note)
+    return _cleared(steps, answer, card)
 
 
 def _unbound_mutate(
