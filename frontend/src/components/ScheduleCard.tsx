@@ -438,7 +438,7 @@ export function ScheduleCard({
               {guests.emails.length ? <div className="schedule-note">将邀请：{guests.emails.join("、")}</div> : null}
               {guests.names.length ? <div className="schedule-note">不邀请：{guests.names.join("、")}</div> : null}
               {showMeet ? (
-                <label>
+                <label className="schedule-meet">
                   <input type="checkbox" checked={meetOn} onChange={(event) => setMeetOn(event.target.checked)} disabled={locked || mode === "cancel"} />
                   添加 Google Meet
                 </label>
