@@ -2,7 +2,7 @@
 
 The person who books in chat can create, change, and cancel the signed-in Google calendar only after confirming. Five gaps remain against Claude, Cursor, and Gemini Workspace.
 
-Phase 0 is pull request 55. Do not rewrite it. cal-bind-local finishes the hole it leaves. Phase 1 is cal-invite-create and cal-invite-update. Phase 2 is cal-rsvp. Phase 3 is cal-meet. Phase 4 is cal-freebusy.
+Phase 0 is pull request 55. Do not rewrite it. cal-bind-local then offers a confirm card for a local row that connected chat currently hides. Phase 1 is cal-invite-create and cal-invite-update. Phase 2 is cal-rsvp. Phase 3 is cal-meet. Phase 4 is cal-freebusy.
 
 The operator lands every pull request. This run does not merge and does not deploy.
 
@@ -46,7 +46,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] cal-rsvp after cal-invite-update.
   - [ ] cal-meet after cal-rsvp.
   - [ ] cal-freebusy after cal-meet.
-- [ ] Hold the file boundaries. cal-bind-local touches only `backend/app/agents/tools/calendar_tool.py` and `backend/tests/test_calendar_google.py`. cal-invite-create does not edit `_patch_body`. cal-invite-update does not edit `_insert_google_event`. cal-rsvp does not edit insert. cal-meet does not change who is invited. cal-freebusy does not edit the insert body.
+- [ ] Hold the file boundaries. cal-bind-local touches only `backend/app/services/calendar.py`, `backend/app/agents/tools/calendar_tool.py`, and `backend/tests/test_calendar_google.py`. cal-invite-create does not edit `_patch_body`. cal-invite-update does not edit `_insert_google_event`. cal-rsvp does not edit insert. cal-meet does not change who is invited. cal-freebusy does not edit the insert body.
 - [ ] Hold the review gate. cal-bind-local, cal-invite-create, cal-invite-update, cal-rsvp, cal-meet, and cal-freebusy change the chat card. They wait for the operator's review in chat with screenshots and a video before the operator lands them.
 
 ### PR mechanics, for every PR
@@ -80,12 +80,14 @@ Each live lane runs on its own cloud VM at the pull request head. The product co
 
 **Files.**
 
-- [ ] Edit `backend/app/agents/tools/calendar_tool.py`.
+- [ ] Edit `upcoming_events` and `_row_has_identity` in `backend/app/services/calendar.py`.
+- [ ] Edit `_mutate_from_selection` in `backend/app/agents/tools/calendar_tool.py`.
 - [ ] Edit `backend/tests/test_calendar_google.py`.
 
 **Build.**
 
-- [ ] In `_mutate_from_selection`, when Google writes are on, the unique row has a local event id, and `external_id` is empty, return the draft card. Today that branch returns no card.
+- [ ] When Google writes are on and the read succeeded, keep a row that has a local id and an empty `external_id`. Today `_row_has_identity` drops that row, so chat cannot match it.
+- [ ] In `_mutate_from_selection`, return the draft card for that row. Today that branch returns no card.
 - [ ] Leave `external_id` empty on that card. `ScheduleCard` then calls `updateCalendarEvent`. `GoogleCalendarProvider.update_event` already inserts that row on the first confirmed edit.
 - [ ] Say in the direct answer that confirm creates the Google event. Unconfirmed chat still writes nothing.
 - [ ] Do not change the zero-match or many-match branch. Pull request 55 owns that branch. Do not send attendees. Do not call Google inside `execute_calendar`.
@@ -472,7 +474,7 @@ Always attaching Meet lost. A time block and a meeting that did not ask for a li
 
 Pull request 55 can move. Owners re-read its head SHA before branching cal-bind-local. Measured on 2026-10-20, it was open and ready for review, mergeable, and clean, at `f60a9df82b63ee3e0dd1dd8ec6ee45b05e791e0f`.
 
-cal-bind-local can confirm a local row into a new Google event. The answer text has to say that before the click. A silent insert would surprise the user.
+cal-bind-local can confirm a local row into a new Google event. The answer text has to say that before the click. A silent insert would surprise the user. Editing only `_mutate_from_selection` does nothing, because `upcoming_events` already dropped the row.
 
 cal-invite-create sends mail when `sendUpdates` is `all`. The 将邀请 lines are the warning. A bug that invites on a time block, or before the click, is the failure to watch.
 
@@ -505,7 +507,11 @@ The decision trail for this plan run is the local `decisions.tsv` from `pstack/s
 
 This appendix is the lookup for the five gaps. It describes the release checkout plus pull request 55. It is not the how-to.
 
-Stable id on update and cancel. A unique connected hit already copies `external_id` onto the draft in `_mutate_from_selection`. Confirm requires that id. On release, a missing id is HTTP 400 with detail 需要日程编号. `_event_for_confirm` selects by that id. Pull request 55, when it lands, shows a non-writing draft when no unique event matches, and changes the missing-id confirm to HTTP 409 with detail 需要日程编号，未写入。 The chat tool still returns no card when the unique row is connected and `external_id` is empty. That is the hole cal-bind-local closes. A blank query still returns no card. That is correct.
+Stable id on update and cancel. A connected read keeps a row only when `external_id` is non-empty. That filter is `upcoming_events` and `_row_has_identity`. A unique hit copies that id onto the draft. Confirm posts it to `/api/calendar/google/confirm`. On release, a missing id is HTTP 400 with detail 需要日程编号. `_event_for_confirm` selects by that id and ignores the title. `_event_for_title` has no callers. A visible chat update already targets the Google event.
+
+Pull request 55 changes the miss. When no unique event matches, release returns no card. The pull request returns a draft with an empty `external_id` and changes the missing-id confirm to HTTP 409 with detail 需要日程编号，未写入。 Eval row `CAL-057` already expects that draft, an absent Google id, and HTTP 409. Release tests still expect no card. Landing the pull request is what makes the suite and the code agree. That draft has no local id either, so the card stops at 还没有选中日程 and does not post. The 409 is the API backstop. Leave that card non-writing. A blank query still returns no card. That is correct.
+
+A local row with an empty `external_id` never reaches the match while the Google read succeeded. Direct `PATCH /api/calendar/{id}` on that row inserts a new Google event. cal-bind-local keeps the row in the connected list and returns a confirm card so the person can bind it on purpose. Cancel of that row stays local.
 
 Real invites. `participants` is a JSON list of strings on `calendar_events`. Insert and patch send `summary`, `location`, `description`, `start`, and `end` only. The insert comment says no attendees and no `sendUpdates`. A participants-only update never calls Google. Inbound attendees are flattened to a display name, or to the email only when the display name is empty. The provider contract says an external provider must not turn participants into invitations. The `attendees` eval slice locks an empty Google guest list. Names such as 张三 stay local. There is no people directory.
 
@@ -525,6 +531,6 @@ Outlook, Exchange, and any calendar other than Google are out. Digests and a sec
 
 ## Appendix G. First implement pull request
 
-After the operator approves this plan, the first code pull request is cal-bind-local. Branch it from `cursor/calendar-unbound-mutate-a393` until pull request 55 is on `release`. It is the smallest slice that makes update and cancel of a connected local row target a real Google event id, which is the hole pull request 55 does not close.
+After the operator approves this plan, the first code pull request is cal-bind-local. Branch it from `cursor/calendar-unbound-mutate-a393` until pull request 55 is on `release`. Visible chat updates already target a Google id. This slice is the local row connected chat hides. It keeps that row in `upcoming_events` and returns a confirm card that inserts it on Google. Pull request 55 does not do that.
 
 If the operator wants guest invites first instead, cal-invite-create can branch from `release` after pull request 55 merges. It does not need the local-row card. Say that in plain words and the stack order changes.
