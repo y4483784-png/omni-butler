@@ -624,6 +624,79 @@ a.cite-link:hover {
   border-radius: 8px;
   background: #fff;
 }
+.schedule-form label.schedule-meet {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  width: fit-content;
+}
+.schedule-form label.schedule-meet input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.schedule-guest-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #5b6573;
+}
+.schedule-guests {
+  display: grid;
+  gap: 6px;
+}
+.schedule-guests > .ghost-btn {
+  justify-self: start;
+}
+.schedule-guest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: #3f4752;
+}
+.schedule-guest-email,
+.schedule-guest-decision {
+  font-size: 12px;
+  color: #5b6573;
+}
+.schedule-guest-row .ghost-btn {
+  flex-shrink: 0;
+}
+.schedule-guest-dialog {
+  font: inherit;
+  color: #1f2329;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+}
+.schedule-guest-dialog form {
+  display: grid;
+  gap: 8px;
+}
+.schedule-guest-dialog label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #5b6573;
+}
+.schedule-guest-dialog input {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+}
+.schedule-guest-dialog::backdrop {
+  background: rgba(24, 95, 165, 0.12);
+}
 .schedule-list {
   list-style: none;
   margin: 0;
