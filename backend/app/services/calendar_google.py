@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time, timedelta, tzinfo
@@ -246,6 +247,7 @@ class GoogleCalendarProvider:
         participants: list[str],
         location: str = "",
         description: str = "",
+        meet: bool = False,
     ) -> CalendarEventDTO:
         """List primary, refuse overlaps, insert on Google, then store the local row.
 
@@ -258,7 +260,7 @@ class GoogleCalendarProvider:
         conflicts = self.conflicts_for_create(user_id, start_at, end_at, zone_name=zone_name)
         if conflicts:
             raise CalendarOverlapError(conflicts)
-        google_id = self._insert_google_event(
+        google_id, meet_link, meet_status = self._insert_google_event(
             title=title,
             start_at=start_at,
             end_at=end_at,
@@ -266,8 +268,9 @@ class GoogleCalendarProvider:
             description=description,
             zone_name=zone_name,
             participants=participants,
+            meet=meet,
         )
-        return self._save_local_row(
+        saved = self._save_local_row(
             user_id,
             title=title,
             start_at=start_at,
@@ -278,6 +281,9 @@ class GoogleCalendarProvider:
             zone_name=zone_name,
             google_id=google_id,
         )
+        if meet_link or meet_status:
+            return replace(saved, meet_link=meet_link, meet_status=meet_status)
+        return saved
 
     def update_event(
         self,
@@ -290,6 +296,7 @@ class GoogleCalendarProvider:
         participants: list[str] | None = None,
         location: str | None = None,
         description: str | None = None,
+        meet: bool = False,
     ) -> CalendarEventDTO | None:
         """Change Google first, then the local row.
 
@@ -312,9 +319,9 @@ class GoogleCalendarProvider:
         external_id = (event.external_id or "").strip()
         linked = (event.provider or "") == "google" and bool(external_id)
         guest_edit = participants is not None and not _same_guests(event.participants, participants)
-        if not google_fields and participants is None:
+        if not google_fields and participants is None and not meet:
             return event_to_dto(event)
-        if linked and not google_fields and not guest_edit:
+        if linked and not google_fields and not guest_edit and not meet:
             return self._local.update_event(user_id, event_id, participants=participants)
 
         zone_name = self.timezone_name()
@@ -336,10 +343,14 @@ class GoogleCalendarProvider:
         inserted_id = ""
         sent: dict = {}
         previous_attendees = None
+        meet_link = ""
+        meet_status = ""
         if linked:
             attendees = None
-            if guest_edit:
+            current = None
+            if guest_edit or meet:
                 current = self._get_google_event(external_id)
+            if guest_edit and current is not None:
                 raw = current.get("attendees")
                 previous_attendees = list(raw) if isinstance(raw, list) else []
                 attendees = merged_attendees(participants, current)
@@ -354,11 +365,19 @@ class GoogleCalendarProvider:
                 zone_name=zone_name,
                 attendees=attendees,
             )
-            self._patch_google_event(external_id, sent)
+            if meet and current is not None and not conference_view(current)[0]:
+                sent["conferenceData"] = _meet_request(uuid.uuid4().hex)
+            patched = self._patch_google_event(external_id, sent)
+            if meet:
+                meet_link, meet_status = conference_view(patched)
+                if not meet_link and current is not None:
+                    previous_link, _previous_status = conference_view(current)
+                    if previous_link:
+                        meet_link, meet_status = previous_link, ""
         else:
             if effective_start is None or effective_end is None:
                 raise CalendarRemoteWriteError()
-            inserted_id = self._insert_google_event(
+            inserted_id, meet_link, meet_status = self._insert_google_event(
                 title=title if title is not None else (event.title or ""),
                 start_at=effective_start,
                 end_at=effective_end,
@@ -366,6 +385,7 @@ class GoogleCalendarProvider:
                 description=description if description is not None else (event.description or ""),
                 zone_name=zone_name,
                 participants=participants if participants is not None else event.participants,
+                meet=meet,
             )
             if self._external_id_taken(user_id, inserted_id):
                 self._delete_google_event(inserted_id)
@@ -385,7 +405,10 @@ class GoogleCalendarProvider:
             previous_attendees=previous_attendees,
         )
         self.db.refresh(event)
-        return event_to_dto(event)
+        saved = event_to_dto(event)
+        if meet_link or meet_status:
+            return replace(saved, meet_link=meet_link, meet_status=meet_status)
+        return saved
 
     def cancel_event(self, user_id: int, event_id: int) -> CalendarEventDTO | None:
         """Delete a linked Google event first. Soft-cancel the local row only after that.
@@ -419,6 +442,7 @@ class GoogleCalendarProvider:
         location: str | None = None,
         description: str | None = None,
         external_id: str | None = None,
+        meet: bool = False,
     ) -> CalendarEventDTO:
         """Patch or delete one primary event.
 
@@ -459,6 +483,7 @@ class GoogleCalendarProvider:
                 participants=participants,
                 location=location,
                 description=description,
+                meet=meet,
             )
             if updated is None:
                 raise CalendarRemoteWriteError()
@@ -488,7 +513,12 @@ class GoogleCalendarProvider:
             zone_name=zone_name,
             attendees=attendees,
         )
-        self._patch_google_event(gid, sent)
+        if meet and not conference_view(match)[0]:
+            current = self._get_google_event(gid)
+            if not conference_view(current)[0]:
+                sent["conferenceData"] = _meet_request(uuid.uuid4().hex)
+        patched = self._patch_google_event(gid, sent)
+        link, status = conference_view(patched) if meet else ("", "")
         return _remote_only_dto(
             user_id,
             title=needle,
@@ -498,6 +528,8 @@ class GoogleCalendarProvider:
             external_id=gid,
             location=location or "",
             description=description or "",
+            meet_link=link,
+            meet_status=status,
         )
 
     def _event_for_title(self, title: str, zone_name: str) -> dict:
@@ -1012,20 +1044,25 @@ class GoogleCalendarProvider:
             raise CalendarRemoteReadError(_READ_FAILED)
         return body
 
-    def _patch_google_event(self, event_id: str, body: dict) -> None:
+    def _patch_google_event(self, event_id: str, body: dict) -> dict:
         """PATCH one primary event. ``sendUpdates=all`` only when attendees are present."""
         if not event_id or not body:
-            return
+            return {}
         url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
-        params = {"sendUpdates": "all"} if "attendees" in body else None
+        params: dict[str, str] = {}
+        if "attendees" in body:
+            params["sendUpdates"] = "all"
+        if "conferenceData" in body:
+            params["conferenceDataVersion"] = "1"
         try:
-            response = self._call("PATCH", url, json=body, params=params)
+            response = self._call("PATCH", url, json=body, params=params or None)
         except CalendarRemoteReadError:
             logger.warning("google calendar events patch failed status=network")
             raise CalendarRemoteWriteError() from None
         if response.status_code not in (200, 201):
             logger.warning("google calendar events patch failed status=%s", response.status_code)
             raise CalendarRemoteWriteError()
+        return _json_object(response) or {}
 
     def _restore_patch(self, event_id: str, body: dict) -> None:
         """Best-effort undo of a patch when the local commit fails. Log only the event id."""
@@ -1044,7 +1081,8 @@ class GoogleCalendarProvider:
         description: str,
         zone_name: str,
         participants: object = None,
-    ) -> str:
+        meet: bool = False,
+    ) -> tuple[str, str, str]:
         body = {
             "summary": title,
             "location": location or "",
@@ -1053,11 +1091,16 @@ class GoogleCalendarProvider:
             "end": {"dateTime": _wall_clock(end_at), "timeZone": zone_name},
         }
         attendees = attendee_body(participants)
-        params = {"sendUpdates": "all"} if attendees else None
+        params: dict[str, str] = {}
         if attendees:
             body["attendees"] = attendees
+            params["sendUpdates"] = "all"
+        request_id = uuid.uuid4().hex
+        if meet:
+            body["conferenceData"] = _meet_request(request_id)
+            params["conferenceDataVersion"] = "1"
         try:
-            response = self._call("POST", _EVENTS_URL, json=body, params=params)
+            response = self._call("POST", _EVENTS_URL, json=body, params=params or None)
         except CalendarRemoteReadError:
             logger.warning("google calendar events insert failed status=network")
             raise CalendarRemoteWriteError() from None
@@ -1071,7 +1114,8 @@ class GoogleCalendarProvider:
         if not google_id:
             logger.warning("google calendar events insert failed status=missing-id")
             raise CalendarRemoteWriteError()
-        return google_id
+        link, status = conference_view(payload) if meet else ("", "")
+        return google_id, link, status
 
     def _save_local_row(
         self,
@@ -1243,6 +1287,8 @@ def _remote_only_dto(
     status: str = "active",
     location: str = "",
     description: str = "",
+    meet_link: str = "",
+    meet_status: str = "",
 ) -> CalendarEventDTO:
     """A confirm result with no local id. Nothing is inserted."""
     return CalendarEventDTO(
@@ -1257,6 +1303,8 @@ def _remote_only_dto(
         description=description,
         external_id=external_id,
         provider="google",
+        meet_link=meet_link,
+        meet_status=meet_status,
     )
 
 
@@ -1341,6 +1389,40 @@ def _same_guests(stored: object, new: object) -> bool:
     }
 
 
+def _meet_request(request_id: str) -> dict:
+    return {
+        "createRequest": {
+            "requestId": request_id,
+            "conferenceSolutionKey": {"type": "hangoutsMeet"},
+        }
+    }
+
+
+def conference_view(item: dict) -> tuple[str, str]:
+    """A real Meet URL, or pending when Google has not finished. Never a guessed URL."""
+    if not isinstance(item, dict):
+        return "", ""
+    link = str(item.get("hangoutLink") or "").strip()
+    data = item.get("conferenceData") if isinstance(item.get("conferenceData"), dict) else {}
+    if not link:
+        points = data.get("entryPoints") if isinstance(data.get("entryPoints"), list) else []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            if str(point.get("entryPointType") or "") != "video":
+                continue
+            link = str(point.get("uri") or "").strip()
+            if link:
+                break
+    if link:
+        return link, ""
+    request = data.get("createRequest") if isinstance(data.get("createRequest"), dict) else {}
+    status = request.get("status") if isinstance(request.get("status"), dict) else {}
+    if str(status.get("statusCode") or "").lower() == "pending":
+        return "", "pending"
+    return "", ""
+
+
 def merged_attendees(confirmed: object, google_item: dict) -> list[dict]:
     """The full email list on the card. Remaining guests keep their responseStatus."""
     previous: dict[str, dict] = {}
@@ -1413,6 +1495,7 @@ class _EventView:
     all_day: bool
     busy: bool
     rsvp: str = ""
+    meet_link: str = ""
 
 
 def _hidden_on_list(item: dict) -> bool:
@@ -1440,6 +1523,7 @@ def _event_view(item: dict) -> _EventView | None:
         all_day=all_day,
         busy=str(item.get("transparency") or "") != "transparent",
         rsvp=_self_rsvp(item),
+        meet_link=conference_view(item)[0],
     )
 
 
@@ -1513,6 +1597,7 @@ def _overlay_dto(local: CalendarEventDTO, view: _EventView) -> CalendarEventDTO:
         readonly=False,
         all_day=view.all_day,
         rsvp=view.rsvp,
+        meet_link=view.meet_link,
     )
 
 
@@ -1529,6 +1614,7 @@ def _readonly_dto(user_id: int, view: _EventView) -> CalendarEventDTO:
         readonly=True,
         all_day=view.all_day,
         rsvp=view.rsvp,
+        meet_link=view.meet_link,
     )
 
 

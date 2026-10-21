@@ -102,6 +102,11 @@ def _slot_payload(slots: list[tuple[datetime, datetime]]) -> list[dict]:
     return [{"start_at": _iso(start), "end_at": _iso(end)} for start, end in slots]
 
 
+def _wants_meet(message: str) -> bool:
+    text = message or ""
+    return any(phrase in text for phrase in ("会议链接", "Google Meet", "Meet 链接", "视频链接"))
+
+
 def _write_kind(action: str, draft: EventDraft) -> str:
     """Create and update pick meeting or block. Cancel and choose stay blank."""
     if action not in {"create", "update"}:
@@ -224,6 +229,9 @@ def _base_card(
         "suggested_slots": [],
         "candidates": [],
         "items": [],
+        "meet": False,
+        "meet_link": "",
+        "meet_status": "",
     }
 
 
@@ -318,6 +326,9 @@ def _item_payload(row) -> dict:
         payload["external_id"] = external_id
     if external_id and rsvp:
         payload["rsvp"] = rsvp
+    link = str(getattr(row, "meet_link", "") or "").strip()
+    if link:
+        payload["meet_link"] = link
     return payload
 
 
@@ -724,6 +735,9 @@ def _mutate_from_selection(
         kind=_write_kind(action, draft),
     )
     card["external_id"] = external_id
+    link = str(getattr(selected, "meet_link", "") or "").strip()
+    card["meet_link"] = link
+    card["meet"] = bool(link == "" and card.get("kind") != "block" and _wants_meet(ctx.message))
     if zone_name:
         card["timezone"] = zone_name
     status = str(getattr(selected, "status", "") or "")
@@ -855,6 +869,7 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         card = _base_card(
             mode="create", action="create", draft=draft, kind=_write_kind("create", draft)
         )
+        card["meet"] = bool(card.get("kind") != "block" and _wants_meet(ctx.message))
         remote_note = ""
         if isinstance(draft.start_at, datetime) and isinstance(draft.end_at, datetime):
             remote_note = _fill_conflicts(

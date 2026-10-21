@@ -101,6 +101,9 @@ class CalendarEventDTO:
     all_day: bool = False
     # Set when the signed-in user is an attendee and not the organizer.
     rsvp: str = ""
+    # Filled from a Google response. Not a database column.
+    meet_link: str = ""
+    meet_status: str = ""
 
 
 class CalendarProvider(Protocol):
@@ -136,6 +139,7 @@ class CalendarProvider(Protocol):
         participants: list[str],
         location: str = "",
         description: str = "",
+        meet: bool = False,
     ) -> CalendarEventDTO:
         """Insert an active event and return it.
 
@@ -156,6 +160,7 @@ class CalendarProvider(Protocol):
         participants: list[str] | None = None,
         location: str | None = None,
         description: str | None = None,
+        meet: bool = False,
     ) -> CalendarEventDTO | None:
         """Patch an owned event. None when it is missing or owned by someone else."""
         ...

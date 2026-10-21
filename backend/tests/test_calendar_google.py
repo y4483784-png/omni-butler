@@ -98,6 +98,7 @@ class FakeGoogle:
         self.pages_served = 0
         self.insert_status = 200
         self.insert_id = "evt-created"
+        self.insert_extra: dict = {}
         self.patch_status = 200
         self.get_status = 200
         self.event_bodies: dict[str, dict] = {}
@@ -182,9 +183,9 @@ class FakeGoogle:
         if method == "POST" and collection:
             if self.insert_status not in (200, 201):
                 return httpx.Response(self.insert_status, json={"error": {"message": "insert failed"}})
-            return httpx.Response(
-                self.insert_status, json={"id": self.insert_id, "status": "confirmed"}
-            )
+            payload = {"id": self.insert_id, "status": "confirmed"}
+            payload.update(self.insert_extra)
+            return httpx.Response(self.insert_status, json=payload)
         if method == "GET" and item:
             if self.get_status != 200:
                 return httpx.Response(self.get_status, json={"error": {"message": "get failed"}})
@@ -2193,6 +2194,135 @@ def test_participant_update_replaces_full_attendee_list(
         db.refresh(row)
         assert "z@example.com" not in (row.participants or "")
         assert "a@example.com" in (row.participants or "")
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_meet_insert_sends_conference_and_pending_has_no_url(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Meet rides on the insert. A pending conference does not invent a URL."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+
+    def _extract(message, _history=None, **_kwargs):
+        text = str(message or "")
+        kind = "block" if "时间块" in text else "meeting"
+        return EventDraft(
+            title="视频会",
+            start_at=start,
+            end_at=start + timedelta(hours=1),
+            kind=kind,
+        )
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        asked = execute_calendar(
+            ToolContext(db=db, message="明天下午三点开会，要会议链接", history=[], user_id=user_id),
+            {"action": "create"},
+        )
+        assert asked.schedule_card["meet"] is True
+        assert _insert_calls(fake_google) == []
+        blocked = execute_calendar(
+            ToolContext(db=db, message="下午三点时间块，要会议链接", history=[], user_id=user_id),
+            {"action": "create"},
+        )
+        assert blocked.schedule_card["kind"] == "block"
+        assert blocked.schedule_card["meet"] is False
+
+        fake_google.insert_id = "evt-meet"
+        fake_google.insert_extra = {
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+        }
+        created = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "视频会",
+                "start_at": "2026-12-02T15:00:00",
+                "end_at": "2026-12-02T16:00:00",
+                "participants": [],
+                "meet": True,
+            },
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["meet_link"] == "https://meet.google.com/abc-defg-hij"
+        assert "meet_status" not in created.json()
+        body = _insert_calls(fake_google)[-1]
+        request = body["json"]["conferenceData"]["createRequest"]
+        assert request["conferenceSolutionKey"] == {"type": "hangoutsMeet"}
+        assert request["requestId"]
+        assert body["params"]["conferenceDataVersion"] == "1"
+
+        fake_google.calls.clear()
+        fake_google.insert_id = "evt-off"
+        fake_google.insert_extra = {}
+        quiet = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "普通会",
+                "start_at": "2026-12-02T17:00:00",
+                "end_at": "2026-12-02T18:00:00",
+                "participants": [],
+            },
+        )
+        assert quiet.status_code == 200, quiet.text
+        off = _insert_calls(fake_google)[0]
+        assert "conferenceData" not in off["json"]
+        assert "conferenceDataVersion" not in (off.get("params") or {})
+        assert "meet_link" not in quiet.json()
+
+        fake_google.calls.clear()
+        fake_google.insert_id = "evt-pending"
+        fake_google.insert_extra = {
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": "pending-1",
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                    "status": {"statusCode": "pending"},
+                }
+            }
+        }
+        pending = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "等链接",
+                "start_at": "2026-12-02T19:00:00",
+                "end_at": "2026-12-02T20:00:00",
+                "participants": [],
+                "meet": True,
+            },
+        )
+        assert pending.status_code == 200, pending.text
+        assert pending.json().get("meet_link", "") == ""
+        assert pending.json()["meet_status"] == "pending"
+        assert "meet.google" not in pending.text
+
+        row = _google_row(
+            db,
+            user_id,
+            title="已有链接",
+            start=datetime(2026, 12, 3, 15, 0),
+            external_id="evt-linked-meet",
+        )
+        fake_google.event_bodies["evt-linked-meet"] = {
+            "id": "evt-linked-meet",
+            "hangoutLink": "https://meet.google.com/already-there",
+        }
+        fake_google.calls.clear()
+        again = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"title": "已有链接", "meet": True},
+        )
+        assert again.status_code == 200, again.text
+        patched = _patch_calls(fake_google)
+        assert len(patched) == 1
+        assert "conferenceData" not in patched[0]["json"]
+        assert "conferenceDataVersion" not in (patched[0].get("params") or {})
+        assert again.json()["meet_link"] == "https://meet.google.com/already-there"
     finally:
         _cleanup(user_id)
         db.close()

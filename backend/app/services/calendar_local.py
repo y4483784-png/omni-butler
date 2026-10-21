@@ -145,7 +145,9 @@ class LocalCalendarProvider:
         participants: list[str],
         location: str = "",
         description: str = "",
+        meet: bool = False,
     ) -> CalendarEventDTO:
+        del meet
         event = CalendarEvent(
             user_id=user_id,
             title=title,
@@ -175,7 +177,9 @@ class LocalCalendarProvider:
         participants: list[str] | None = None,
         location: str | None = None,
         description: str | None = None,
+        meet: bool = False,
     ) -> CalendarEventDTO | None:
+        del meet
         event = self.db.get(CalendarEvent, event_id)
         if not event or event.user_id != user_id:
             return None

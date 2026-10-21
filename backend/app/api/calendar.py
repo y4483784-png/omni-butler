@@ -61,6 +61,7 @@ class CalendarWrite(BaseModel):
     participants: list[str] | None = None
     location: str | None = None
     description: str | None = None
+    meet: bool = False
 
 
 def _parse_dt(raw: str | None) -> datetime | None:
@@ -186,6 +187,7 @@ def create_calendar_event(
             participants=participants,
             location=location,
             description=description,
+            meet=body.meet,
         )
     conflicts = check_conflict(db, current_user.id, start_at, end_at)
     if conflicts:
@@ -200,6 +202,7 @@ def create_calendar_event(
         participants=participants,
         location=location,
         description=description,
+        meet=body.meet,
     )
     return serialize_event_card(event)
 
@@ -214,6 +217,7 @@ def _create_connected_event(
     participants: list[str],
     location: str,
     description: str,
+    meet: bool = False,
 ):
     """List primary, then insert on Google, then the local row. List failure writes nothing."""
     try:
@@ -226,6 +230,7 @@ def _create_connected_event(
             participants=participants,
             location=location,
             description=description,
+            meet=meet,
         )
     except CalendarOverlapError as exc:
         _conflict_http(db, user_id, start_at, end_at, exc.conflicts)
@@ -278,6 +283,7 @@ def patch_event(
             participants=body.participants,
             location=body.location,
             description=body.description,
+            meet=body.meet,
         )
     except CalendarReconnectRequired as exc:
         raise HTTPException(status_code=409, detail=exc.message) from None
@@ -367,6 +373,7 @@ class GoogleTitleConfirm(BaseModel):
     location: str | None = None
     description: str | None = None
     external_id: str | None = None
+    meet: bool = False
 
 
 # Connected update and cancel go to Google first. List merges a read-only overlay.
@@ -403,6 +410,7 @@ def confirm_google_title_change(
             location=body.location,
             description=body.description,
             external_id=body.external_id,
+            meet=body.meet,
         )
     except CalendarTitleUnmatched as exc:
         raise HTTPException(status_code=409, detail=exc.message) from None

@@ -774,6 +774,7 @@ def create_event(
     participants: list[str],
     location: str = "",
     description: str = "",
+    meet: bool = False,
 ) -> CalendarEvent:
     provider = calendar_provider_for(db, user_id)
     created = provider.create_event(
@@ -784,11 +785,12 @@ def create_event(
         participants=participants,
         location=location,
         description=description,
+        meet=meet,
     )
     event = provider.get_row(created.id)
     if event is None:
         raise RuntimeError("calendar event missing after insert")
-    return event
+    return _stamp_meet(event, created)
 
 
 def _lookup_window(
@@ -834,6 +836,7 @@ def confirm_titled_change(
     location: str | None = None,
     description: str | None = None,
     external_id: str | None = None,
+    meet: bool = False,
 ):
     """Connected confirm. Prefer the card's Google id, else one exact title."""
     if not calendar_writes_remote(db, user_id):
@@ -852,6 +855,7 @@ def confirm_titled_change(
         location=location,
         description=description,
         external_id=external_id,
+        meet=meet,
     )
 
 
@@ -915,6 +919,7 @@ def update_event(
     participants: list[str] | None = None,
     location: str | None = None,
     description: str | None = None,
+    meet: bool = False,
 ) -> CalendarEvent | None:
     provider = calendar_provider_for(db, user_id)
     current = provider.get_row(event_id)
@@ -930,10 +935,14 @@ def update_event(
         participants=participants,
         location=location,
         description=description,
+        meet=meet,
     )
     if updated is None:
         return None
-    return provider.get_row(event_id)
+    event = provider.get_row(event_id)
+    if event is None:
+        return None
+    return _stamp_meet(event, updated)
 
 
 def cancel_event(db: Session, event_id: int, *, user_id: int) -> CalendarEvent | None:
@@ -946,6 +955,16 @@ def cancel_event(db: Session, event_id: int, *, user_id: int) -> CalendarEvent |
     if cancelled is None:
         return None
     return provider.get_row(event_id)
+
+
+def _stamp_meet(event, created):
+    link = str(getattr(created, "meet_link", "") or "")
+    status = str(getattr(created, "meet_status", "") or "")
+    if link:
+        event.meet_link = link
+    if status:
+        event.meet_status = status
+    return event
 
 
 def _card_text(event: Any, name: str) -> str:
@@ -968,6 +987,12 @@ def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
         "external_id": _card_text(event, "external_id"),
         "provider": _card_text(event, "provider"),
     }
+    link = _card_text(event, "meet_link")
+    status = _card_text(event, "meet_status")
+    if link:
+        card["meet_link"] = link
+    if status:
+        card["meet_status"] = status
     if getattr(event, "all_day", False):
         card["all_day"] = True
     if getattr(event, "readonly", False):

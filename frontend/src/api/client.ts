@@ -52,6 +52,7 @@ export interface ScheduleListItem {
   all_day?: boolean;
   external_id?: string;
   rsvp?: string;
+  meet_link?: string;
 }
 
 export interface ScheduleCard {
@@ -78,6 +79,9 @@ export interface ScheduleCard {
   candidates?: ScheduleCandidate[];
   readonly?: boolean;
   all_day?: boolean;
+  meet?: boolean;
+  meet_link?: string;
+  meet_status?: string;
 }
 
 export interface CalendarEventList {
@@ -448,6 +452,7 @@ export async function createCalendarEvent(payload: {
   participants: string[];
   location?: string;
   description?: string;
+  meet?: boolean;
 }): Promise<ScheduleCard> {
   const r = await apiFetch("/api/calendar", {
     method: "POST",
@@ -480,6 +485,7 @@ export async function confirmGoogleCalendarChange(payload: {
   location?: string;
   description?: string;
   external_id?: string;
+  meet?: boolean;
 }): Promise<ScheduleCard> {
   const r = await apiFetch("/api/calendar/google/confirm", {
     method: "POST",
@@ -498,7 +504,9 @@ export async function cancelCalendarEvent(id: number): Promise<ScheduleCard> {
 
 export async function updateCalendarEvent(
   id: number,
-  payload: Partial<Pick<ScheduleCard, "title" | "start_at" | "end_at" | "participants" | "location" | "description">>
+  payload: Partial<Pick<ScheduleCard, "title" | "start_at" | "end_at" | "participants" | "location" | "description">> & {
+    meet?: boolean;
+  }
 ): Promise<ScheduleCard> {
   const r = await apiFetch(`/api/calendar/${id}`, {
     method: "PATCH",

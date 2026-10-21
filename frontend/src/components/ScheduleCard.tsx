@@ -120,9 +120,12 @@ export function ScheduleCard({
   const [durationMin, setDurationMin] = useState(durationMinutes(toLocalInput(card.start_at), toLocalInput(card.end_at)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [meetOn, setMeetOn] = useState(Boolean(card.meet) && !card.meet_link);
 
   const mode = card.mode || (legacy ? "update" : "create");
   const blockForm = card.kind === "block" && (mode === "create" || mode === "update");
+  const showMeet =
+    !blockForm && !card.meet_link && (mode === "create" || mode === "update");
   const guests = blockForm ? { emails: [], names: [] } : splitGuests(participants);
   const conflicts = card.conflicts || [];
   const slots = card.suggested_slots || [];
@@ -176,6 +179,7 @@ export function ScheduleCard({
       participants: blockForm ? [] : people,
       location: blockForm ? "" : location.trim(),
       description: description.trim(),
+      meet: showMeet && meetOn,
     };
     setBusy(true);
     try {
@@ -206,6 +210,7 @@ export function ScheduleCard({
                 location: payload.location,
                 description: payload.description,
                 external_id: externalId,
+                meet: payload.meet,
               }
         );
         onChange({
@@ -309,6 +314,7 @@ export function ScheduleCard({
               <li key={`${item.start_at}-${item.title}-${index}`}>
                 <span>{formatListWhen(item)}</span>
                 <span>{item.title || "（无标题）"}</span>
+                {item.meet_link ? <span>{item.meet_link}</span> : null}
                 {item.external_id && item.rsvp ? (
                   <span className="schedule-actions">
                     {rsvpLabel(item.rsvp) ? <span className="schedule-status">{rsvpLabel(item.rsvp)}</span> : null}
@@ -431,6 +437,14 @@ export function ScheduleCard({
               </label>
               {guests.emails.length ? <div className="schedule-note">将邀请：{guests.emails.join("、")}</div> : null}
               {guests.names.length ? <div className="schedule-note">不邀请：{guests.names.join("、")}</div> : null}
+              {showMeet ? (
+                <label>
+                  <input type="checkbox" checked={meetOn} onChange={(event) => setMeetOn(event.target.checked)} disabled={locked || mode === "cancel"} />
+                  添加 Google Meet
+                </label>
+              ) : null}
+              {card.meet_link ? <div className="schedule-note">{card.meet_link}</div> : null}
+              {card.meet_status === "pending" ? <div className="schedule-note">会议链接还没准备好</div> : null}
               <label>
                 地点
                 <input value={location} onChange={(event) => setLocation(event.target.value)} disabled={locked || mode === "cancel"} />
