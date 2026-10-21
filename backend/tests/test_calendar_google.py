@@ -108,6 +108,8 @@ class FakeGoogle:
         self.on_event = None
         self.settings_items: list[dict] | None = None
         self.settings_status = 200
+        self.freebusy_status = 200
+        self.freebusy_calendars: dict[str, dict] = {}
 
     def __call__(self, method, url, *, data=None, params=None, headers=None, json=None):
         self.calls.append(
@@ -156,6 +158,19 @@ class FakeGoogle:
                 self.timezone_status,
                 json={"id": "timezone", "value": self.timezone_value},
             )
+        if method == "POST" and str(url).rstrip("/").endswith("/freeBusy"):
+            if self.freebusy_status != 200:
+                return httpx.Response(self.freebusy_status, json={"error": {"message": "freebusy failed"}})
+            requested: list[str] = []
+            if isinstance(json, dict):
+                for item in json.get("items") or []:
+                    if isinstance(item, dict) and item.get("id"):
+                        requested.append(str(item["id"]))
+            calendars = {
+                cal_id: dict(self.freebusy_calendars.get(cal_id) or {"busy": []})
+                for cal_id in requested
+            }
+            return httpx.Response(200, json={"calendars": calendars})
         if url.rstrip("/").endswith("/users/me/settings"):
             if self.settings_items is None:
                 return httpx.Response(404, json={"error": {"message": "not found"}})
@@ -310,7 +325,7 @@ def test_connect_redirects_with_offline_consent_and_exact_scopes(
     assert granted == set(GOOGLE_CALENDAR_SCOPES) | set(GOOGLE_IDENTITY_SCOPES)
     assert set(GOOGLE_CALENDAR_SCOPES) < granted
     assert CLIENT_SECRET not in location
-    assert "calendar.events.freebusy" not in location
+    assert "https://www.googleapis.com/auth/calendar.events.freebusy" in granted
     assert "https://www.googleapis.com/auth/calendar" not in set(query["scope"][0].split())
     assert "https://www.googleapis.com/auth/calendar.readonly" not in set(query["scope"][0].split())
 
@@ -2194,6 +2209,113 @@ def test_participant_update_replaces_full_attendee_list(
         db.refresh(row)
         assert "z@example.com" not in (row.participants or "")
         assert "a@example.com" in (row.participants or "")
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_freebusy_scope_not_found_and_open_slots(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """An old grant does not call freeBusy. A missing calendar is not free."""
+    from app.services.calendar_factory import calendar_provider_for
+
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 9, 0)
+    end = datetime(2026, 12, 2, 18, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        connection = db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).one()
+        connection.scopes = (
+            "https://www.googleapis.com/auth/calendar.events "
+            "https://www.googleapis.com/auth/calendar.settings.readonly"
+        )
+        db.commit()
+        provider = calendar_provider_for(db, user_id)
+        fake_google.calls.clear()
+        denied = provider.find_free_slots(
+            user_id, start, end, timedelta(hours=1), participants=["a@example.com", "张三"]
+        )
+        assert denied == []
+        assert provider.freebusy_note == "重新连接 Google 日历"
+        assert not any("freeBusy" in call["url"] for call in fake_google.calls)
+
+        connection.scopes = " ".join(GOOGLE_CALENDAR_SCOPES)
+        db.commit()
+        provider = calendar_provider_for(db, user_id)
+        fake_google.freebusy_calendars = {
+            "primary": {
+                "busy": [
+                    {"start": "2026-12-02T09:00:00+08:00", "end": "2026-12-02T10:00:00+08:00"}
+                ]
+            },
+            "a@example.com": {"errors": [{"reason": "notFound"}]},
+        }
+        fake_google.calls.clear()
+        hidden = provider.find_free_slots(
+            user_id, start, end, timedelta(hours=1), participants=["a@example.com", "张三"]
+        )
+        assert hidden == []
+        assert "a@example.com的空闲看不到" in provider.freebusy_note
+        assert "没有查张三的空闲" in provider.freebusy_note
+        queried = [call for call in fake_google.calls if "freeBusy" in call["url"]]
+        assert len(queried) == 1
+        assert queried[0]["json"]["items"] == [{"id": "primary"}, {"id": "a@example.com"}]
+
+        fake_google.freebusy_calendars = {
+            "primary": {
+                "busy": [
+                    {"start": "2026-12-02T09:00:00+08:00", "end": "2026-12-02T11:00:00+08:00"}
+                ]
+            },
+            "a@example.com": {
+                "busy": [
+                    {"start": "2026-12-02T11:00:00+08:00", "end": "2026-12-02T12:00:00+08:00"}
+                ]
+            },
+        }
+        fake_google.calls.clear()
+        slots = provider.find_free_slots(
+            user_id, start, end, timedelta(hours=1), participants=["a@example.com"]
+        )
+        busy = [
+            (datetime(2026, 12, 2, 9, 0), datetime(2026, 12, 2, 11, 0)),
+            (datetime(2026, 12, 2, 11, 0), datetime(2026, 12, 2, 12, 0)),
+        ]
+        assert slots
+        assert len(slots) <= 3
+        assert slots[0] == (datetime(2026, 12, 2, 12, 0), datetime(2026, 12, 2, 13, 0))
+        for slot_start, slot_end in slots:
+            for busy_start, busy_end in busy:
+                assert slot_end <= busy_start or slot_start >= busy_end
+        assert _insert_calls(fake_google) == []
+
+        monkeypatch.setattr("app.agents.tools.calendar_tool.extract_list_day", lambda *_a, **_k: "")
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.extract_event",
+            lambda *_a, **_k: EventDraft(
+                title="一起开会",
+                participants=["a@example.com", "张三"],
+                kind="meeting",
+            ),
+        )
+        _freeze_tool_now(monkeypatch, datetime(2026, 12, 2, 8, 0))
+        fake_google.calls.clear()
+        suggested = execute_calendar(
+            ToolContext(
+                db=db,
+                message="明天和 a@example.com、张三 找个空闲",
+                history=[],
+                user_id=user_id,
+            ),
+            {"action": "suggest"},
+        )
+        assert _insert_calls(fake_google) == []
+        assert suggested.schedule_card["suggested_slots"]
+        assert suggested.schedule_card["participants"] == ["a@example.com", "张三"]
+        assert "张三" in suggested.direct_answer
     finally:
         _cleanup(user_id)
         db.close()

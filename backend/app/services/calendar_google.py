@@ -44,6 +44,9 @@ from app.services.calendar_secrets import (
 logger = logging.getLogger(__name__)
 
 _TIMEZONE_URL = "https://www.googleapis.com/calendar/v3/users/me/settings/timezone"
+_FREEBUSY_URL = "https://www.googleapis.com/calendar/v3/freeBusy"
+_FREEBUSY_SCOPE = "https://www.googleapis.com/auth/calendar.events.freebusy"
+_FREEBUSY_CAP = 50
 _SETTINGS_URL = "https://www.googleapis.com/calendar/v3/users/me/settings"
 _EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 _MISSING_TIMEZONE = "Etc/GMT"
@@ -680,6 +683,7 @@ class GoogleCalendarProvider:
         duration: timedelta,
         limit: int = 3,
         exclude_event_id: int | None = None,
+        participants: object = None,
     ) -> list[tuple[datetime, datetime]]:
         """Gaps in the union of local rows and busy ``events.list`` intervals.
 
@@ -691,8 +695,26 @@ class GoogleCalendarProvider:
         window; unspecified weekdays are then closed. Nothing here is
         hard-coded to a daytime range.
         """
+        self.freebusy_note = ""
         if duration <= timedelta(0) or limit <= 0 or end <= start:
             return []
+        invitees = parse_invitees(participants)
+        emails: list[str] = []
+        seen_emails: set[str] = set()
+        skipped: list[str] = []
+        for invitee in invitees:
+            if invitee.email:
+                folded = invitee.email.casefold()
+                if folded in seen_emails:
+                    continue
+                seen_emails.add(folded)
+                emails.append(invitee.email)
+            elif invitee.name:
+                skipped.append(invitee.name)
+        if emails:
+            return self._mutual_slots(start, end, duration, limit, emails, skipped)
+        if skipped:
+            self.freebusy_note = "没有查" + "、".join(skipped) + "的空闲。"
         intervals, _conflicts = self._read_window(
             user_id,
             start,
@@ -705,6 +727,68 @@ class GoogleCalendarProvider:
             return free_gaps(intervals, start, end, duration, limit)
         windows = _intersect_working_hours(start, end, hours)
         return _slots_in_windows(intervals, windows, duration, limit)
+
+    def _grant_has_freebusy(self) -> bool:
+        connection = (
+            self.db.query(CalendarConnection)
+            .filter(CalendarConnection.user_id == self.user_id)
+            .one_or_none()
+        )
+        if connection is None:
+            return False
+        granted = {part for part in (connection.scopes or "").split() if part}
+        return _FREEBUSY_SCOPE in granted
+
+    def _mutual_slots(
+        self,
+        start: datetime,
+        end: datetime,
+        duration: timedelta,
+        limit: int,
+        emails: list[str],
+        skipped: list[str],
+    ) -> list[tuple[datetime, datetime]]:
+        """Open slots for primary plus each email. A hidden calendar is not free."""
+        notes: list[str] = []
+        if skipped:
+            notes.append("没有查" + "、".join(skipped) + "的空闲。")
+        if not self._grant_has_freebusy():
+            self.freebusy_note = "重新连接 Google 日历"
+            return []
+        zone_name = self.timezone_name()
+        zone = ZoneInfo(zone_name)
+        chosen = emails[: _FREEBUSY_CAP - 1]
+        left_out = emails[_FREEBUSY_CAP - 1 :]
+        if left_out:
+            notes.append("没有查" + "、".join(left_out) + "的空闲。")
+        body = {
+            "timeMin": _rfc3339(_as_naive(start), zone),
+            "timeMax": _rfc3339(_as_naive(end), zone),
+            "timeZone": zone_name,
+            "items": [{"id": "primary"}] + [{"id": email} for email in chosen],
+        }
+        try:
+            response = self._call("POST", _FREEBUSY_URL, json=body)
+        except CalendarRemoteReadError:
+            logger.warning("google calendar freebusy failed status=network")
+            raise CalendarRemoteReadError(_READ_FAILED) from None
+        if response.status_code != 200:
+            logger.warning("google calendar freebusy failed status=%s", response.status_code)
+            raise CalendarRemoteReadError(_READ_FAILED)
+        payload = _json_object(response)
+        if payload is None:
+            raise CalendarRemoteReadError(_READ_FAILED)
+        busy, hidden = _busy_from_freebusy(payload)
+        if hidden:
+            notes.append("、".join(hidden) + "的空闲看不到。")
+            self.freebusy_note = "".join(notes)
+            return []
+        self.freebusy_note = "".join(notes)
+        hours = self._working_hours_for_gaps()
+        if not hours:
+            return free_gaps(busy, _as_naive(start), _as_naive(end), duration, limit)
+        windows = _intersect_working_hours(_as_naive(start), _as_naive(end), hours)
+        return _slots_in_windows(busy, windows, duration, limit)
 
     def overlap_rows(
         self,
@@ -1809,6 +1893,33 @@ def rsvp_attendees(google_item: dict, status: str) -> list[dict]:
     if not found:
         raise CalendarRemoteWriteError(_NOT_AN_INVITE)
     return body
+
+
+def _busy_from_freebusy(payload: dict) -> tuple[list[tuple[datetime, datetime]], list[str]]:
+    calendars = payload.get("calendars") if isinstance(payload, dict) else None
+    if not isinstance(calendars, dict):
+        raise CalendarRemoteReadError(_READ_FAILED)
+    busy: list[tuple[datetime, datetime]] = []
+    hidden: list[str] = []
+    for cal_id, info in calendars.items():
+        if not isinstance(info, dict):
+            hidden.append(str(cal_id))
+            continue
+        errors = info.get("errors")
+        if isinstance(errors, list) and any(
+            isinstance(err, dict) and str(err.get("reason") or "") == "notFound" for err in errors
+        ):
+            hidden.append(str(cal_id))
+            continue
+        for block in info.get("busy") or []:
+            if not isinstance(block, dict):
+                continue
+            block_start = _wall_from_google(str(block.get("start") or ""))
+            block_end = _wall_from_google(str(block.get("end") or ""))
+            if block_start is None or block_end is None or block_end <= block_start:
+                continue
+            busy.append((block_start, block_end))
+    return busy, hidden
 
 
 def _self_declined(item: dict) -> bool:

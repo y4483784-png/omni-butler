@@ -277,7 +277,7 @@ export function ScheduleCard({
       start_at: slot.start_at,
       end_at: slot.end_at,
       kind: "meeting",
-      participants: [],
+      participants: card.participants || [],
       location: "",
       description: "",
       status: "",

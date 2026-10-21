@@ -33,7 +33,7 @@ from app.services.calendar_factory import (
     calendar_provider_for,
     calendar_writes_remote,
 )
-from app.services.calendar_provider import parse_invitees
+from app.services.calendar_provider import invitee_labels, parse_invitees
 from app.services.calendar_google import _LIST_LOCAL_ONLY, _LIST_TRUNCATED
 from app.services.calendar_secrets import CalendarTransientError
 
@@ -565,6 +565,45 @@ def _replace_unreliable_free_note(note: str, removed: int) -> str:
     return text
 
 
+def _mutual_guests(ctx: ToolContext, *, now: datetime, zone_name: str | None) -> list[str]:
+    text = ctx.message or ""
+    if not _writes_remote(ctx) or ("@" not in text and "参与人" not in text):
+        return []
+    draft = extract_event(text, ctx.history, now=now, timezone_name=zone_name)
+    return [str(item).strip() for item in (draft.participants or []) if str(item).strip()]
+
+
+def _mutual_suggest(ctx: ToolContext, rows, start: datetime, end: datetime, guests: list[str]):
+    """Up to three shared slots. Picking one does not create the event."""
+    provider = calendar_provider_for(ctx.db, ctx.user_id)
+    try:
+        mutual = provider.find_free_slots(
+            ctx.user_id,
+            start,
+            end,
+            timedelta(hours=1),
+            limit=3,
+            participants=guests,
+        )
+    except REMOTE_READ_ERRORS:
+        return _SUGGEST_UNAVAILABLE, None
+    shown = list(rows[:20])
+    card = _list_card(shown, mutual)
+    if card is None:
+        card = _list_card([], [])
+    if card is not None:
+        parsed = parse_invitees(guests)
+        card["participants"] = invitee_labels(guests)
+        card["guest_emails"] = [item.email for item in parsed if item.email]
+        card["guest_names"] = [item.name for item in parsed if item.name and not item.email]
+    note = str(getattr(provider, "freebusy_note", "") or "")
+    if note:
+        return note, card
+    if mutual:
+        return "可以考虑下面这些时段。", card
+    return "这段时间没有共同的空闲。", card
+
+
 def _suggest_result(
     ctx: ToolContext,
     *,
@@ -597,6 +636,9 @@ def _suggest_result(
     if notice in _SKIP_ADVICE:
         return _SUGGEST_UNAVAILABLE, None
     rows = [row for row in events if _row_overlaps(row, start, end)]
+    guests = _mutual_guests(ctx, now=now, zone_name=zone or None)
+    if guests:
+        return _mutual_suggest(ctx, rows, start, end, guests)
     shown = list(rows[:20])
     listed = _listed_text(shown, header, empty)
     picked = extract_free_slots(

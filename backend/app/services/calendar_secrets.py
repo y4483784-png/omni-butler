@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 GOOGLE_CALENDAR_SCOPES = (
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.settings.readonly",
+    "https://www.googleapis.com/auth/calendar.events.freebusy",
 )
 # Requested with the calendar scopes, but not required when a grant is saved.
 # openid makes the code exchange return an id_token. Without it, access-token
