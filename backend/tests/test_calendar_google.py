@@ -2720,8 +2720,7 @@ def test_connected_list_overlays_google_without_writing(
         assert chat.schedule_card["mode"] == "list"
         assert chat.schedule_card["phase"] == "info"
         titles = [item["title"] for item in chat.schedule_card["items"]]
-        assert titles == ["（无标题）", "透明安排", "新标题", "外面的会", "休息"]
-        assert "本地会" not in titles
+        assert titles == ["本地会", "（无标题）", "透明安排", "新标题", "外面的会", "休息"]
         rest = next(item for item in chat.schedule_card["items"] if item["title"] == "休息")
         assert rest["all_day"] is True
         assert "00:00" not in (chat.direct_answer or "")
@@ -4180,6 +4179,127 @@ def test_confirm_prefers_prefilled_external_id_over_exact_title(
         ]
         assert _patch_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_local_row_offers_bind_card(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    _freeze_tool_now(monkeypatch, datetime(2026, 12, 1, 10, 0))
+
+    def _extract(message, _history=None, **_kwargs):
+        text = str(message or "")
+        if "没有这场" in text:
+            return EventDraft(title="没有这场", search_title="没有这场")
+        end = start + timedelta(hours=1)
+        return EventDraft(
+            title="旧本地会",
+            search_title="旧本地会",
+            start_at=start,
+            end_at=end,
+            specified_end=end,
+        )
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(
+            db,
+            user_id,
+            title="旧本地会",
+            start=start,
+            external_id="",
+            provider="local",
+            timezone="",
+        )
+        updated = execute_calendar(
+            ToolContext(db=db, message="把旧本地会改到原时间", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        card = updated.schedule_card
+        assert card["phase"] == "draft"
+        assert card["mode"] == "update"
+        assert card["event_id"] == row.id
+        assert card["external_id"] == ""
+        assert updated.direct_answer == (
+            "请确认修改「旧本地会」，时间 2026-12-02 15:00–16:00。"
+            "确认会在 Google 日历创建这场日程。未确认不会写入。"
+        )
+        assert _insert_calls(fake_google) == []
+
+        fake_google.events_items = [
+            _google_item(
+                "evt-busy",
+                "2026-12-02T15:30:00+08:00",
+                "2026-12-02T16:30:00+08:00",
+                summary="外面的会",
+            )
+        ]
+        busy = execute_calendar(
+            ToolContext(db=db, message="把旧本地会改到原时间", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        assert busy.schedule_card["event_id"] == row.id
+        assert busy.schedule_card["external_id"] == ""
+        assert busy.schedule_card["conflicts"]
+        assert busy.direct_answer == (
+            "该时段已有日程。请在卡片上改时间或选用建议空隙。"
+            "确认会在 Google 日历创建这场日程。未确认不会写入。"
+        )
+        assert _insert_calls(fake_google) == []
+        fake_google.events_items = []
+
+        cancelled = execute_calendar(
+            ToolContext(db=db, message="取消旧本地会", history=[], user_id=user_id),
+            {"action": "cancel"},
+        )
+        assert cancelled.schedule_card["mode"] == "cancel"
+        assert cancelled.schedule_card["event_id"] == row.id
+        assert cancelled.schedule_card["external_id"] == ""
+        assert "创建" not in (cancelled.direct_answer or "")
+        assert _delete_calls(fake_google) == []
+        assert _insert_calls(fake_google) == []
+
+        missed = execute_calendar(
+            ToolContext(db=db, message="把没有这场改期", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        assert missed.schedule_card["event_id"] is None
+        assert missed.schedule_card["external_id"] == ""
+        assert "确认会在 Google 日历创建这场日程" not in (missed.direct_answer or "")
+
+        fake_google.events_items = [
+            _google_item(
+                "evt-same",
+                "2026-12-02T18:00:00+08:00",
+                "2026-12-02T19:00:00+08:00",
+                summary="旧本地会",
+            )
+        ]
+        tied = execute_calendar(
+            ToolContext(db=db, message="把旧本地会改到原时间", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        assert tied.schedule_card["event_id"] is None
+        assert tied.schedule_card["external_id"] == ""
+        assert "确认会在 Google 日历创建这场日程" not in (tied.direct_answer or "")
+        assert _insert_calls(fake_google) == []
+
+        fake_google.insert_id = "evt-bound"
+        fake_google.calls.clear()
+        saved = auth_client.patch(f"/api/calendar/{row.id}", json={"title": "迁到 Google"})
+        assert saved.status_code == 200, saved.text
+        inserts = _insert_calls(fake_google)
+        assert len(inserts) == 1
+        assert "attendees" not in (inserts[0].get("json") or {})
+        db.refresh(row)
+        assert row.external_id
     finally:
         _cleanup(user_id)
         db.close()
