@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime as _Wall
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, assert_never
 
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.core.llm import Role, complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
+from app.services.calendar_provider import invitee_labels
 from app.services.calendar_google import (
     CalendarReconnectRequired,
     CalendarRemoteReadError,
@@ -773,6 +774,7 @@ def create_event(
     participants: list[str],
     location: str = "",
     description: str = "",
+    meet: bool = False,
 ) -> CalendarEvent:
     provider = calendar_provider_for(db, user_id)
     created = provider.create_event(
@@ -783,11 +785,12 @@ def create_event(
         participants=participants,
         location=location,
         description=description,
+        meet=meet,
     )
     event = provider.get_row(created.id)
     if event is None:
         raise RuntimeError("calendar event missing after insert")
-    return event
+    return _stamp_meet(event, created)
 
 
 def _lookup_window(
@@ -810,6 +813,17 @@ def _block_disconnected_remote(db: Session, user_id: int, event: CalendarEvent) 
         raise CalendarReconnectRequired()
 
 
+def answer_invitation(db: Session, user_id: int, *, external_id: str, status: str) -> dict:
+    """Reply to one Google invitation. Chat does not call this."""
+    if not calendar_writes_remote(db, user_id):
+        raise CalendarReconnectRequired()
+    provider = calendar_provider_for(db, user_id)
+    responder = getattr(provider, "answer_invitation", None)
+    if responder is None:
+        raise CalendarRemoteWriteError()
+    return responder(external_id, status)
+
+
 def confirm_titled_change(
     db: Session,
     user_id: int,
@@ -822,6 +836,7 @@ def confirm_titled_change(
     location: str | None = None,
     description: str | None = None,
     external_id: str | None = None,
+    meet: bool = False,
 ):
     """Connected confirm. Prefer the card's Google id, else one exact title."""
     if not calendar_writes_remote(db, user_id):
@@ -840,6 +855,7 @@ def confirm_titled_change(
         location=location,
         description=description,
         external_id=external_id,
+        meet=meet,
     )
 
 
@@ -903,6 +919,7 @@ def update_event(
     participants: list[str] | None = None,
     location: str | None = None,
     description: str | None = None,
+    meet: bool = False,
 ) -> CalendarEvent | None:
     provider = calendar_provider_for(db, user_id)
     current = provider.get_row(event_id)
@@ -918,10 +935,14 @@ def update_event(
         participants=participants,
         location=location,
         description=description,
+        meet=meet,
     )
     if updated is None:
         return None
-    return provider.get_row(event_id)
+    event = provider.get_row(event_id)
+    if event is None:
+        return None
+    return _stamp_meet(event, updated)
 
 
 def cancel_event(db: Session, event_id: int, *, user_id: int) -> CalendarEvent | None:
@@ -936,21 +957,23 @@ def cancel_event(db: Session, event_id: int, *, user_id: int) -> CalendarEvent |
     return provider.get_row(event_id)
 
 
+def _stamp_meet(event, created):
+    link = str(getattr(created, "meet_link", "") or "")
+    status = str(getattr(created, "meet_status", "") or "")
+    if link:
+        event.meet_link = link
+    if status:
+        event.meet_status = status
+    return event
+
+
 def _card_text(event: Any, name: str) -> str:
     value = getattr(event, name, "")
     return "" if value is None else str(value)
 
 
 def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
-    raw = getattr(event, "participants", None)
-    if isinstance(raw, list):
-        participants = [str(item) for item in raw]
-    else:
-        try:
-            parsed = json.loads(raw or "[]")
-        except json.JSONDecodeError:
-            parsed = []
-        participants = parsed if isinstance(parsed, list) else []
+    participants = invitee_labels(getattr(event, "participants", None))
     card = {
         "id": event.id,
         "title": event.title,
@@ -964,6 +987,12 @@ def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
         "external_id": _card_text(event, "external_id"),
         "provider": _card_text(event, "provider"),
     }
+    link = _card_text(event, "meet_link")
+    status = _card_text(event, "meet_status")
+    if link:
+        card["meet_link"] = link
+    if status:
+        card["meet_status"] = status
     if getattr(event, "all_day", False):
         card["all_day"] = True
     if getattr(event, "readonly", False):
@@ -1005,13 +1034,93 @@ def _ends_after_now(row, now: datetime) -> bool:
     return end > now
 
 
-def _row_has_identity(row, *, require_google_id: bool) -> bool:
+def _require_event_id(event_id: object) -> None:
+    if isinstance(event_id, bool) or not isinstance(event_id, int):
+        raise ValueError("event_id")
+
+
+@dataclass(frozen=True)
+class GoogleConfirm:
+    external_id: str
+    event_id: int | None = None
+
+    def __post_init__(self) -> None:
+        external_id = self.external_id.strip()
+        if not external_id:
+            raise ValueError("external_id")
+        if self.event_id is not None:
+            _require_event_id(self.event_id)
+        object.__setattr__(self, "external_id", external_id)
+
+
+@dataclass(frozen=True)
+class BindCreate:
+    event_id: int
+
+    def __post_init__(self) -> None:
+        _require_event_id(self.event_id)
+
+
+@dataclass(frozen=True)
+class LocalDraft:
+    event_id: int
+
+    def __post_init__(self) -> None:
+        _require_event_id(self.event_id)
+
+
+@dataclass(frozen=True)
+class _LinkedEvent:
+    external_id: str
+    event_id: int | None
+
+
+@dataclass(frozen=True)
+class _LocalEvent:
+    event_id: int
+
+
+def _confirmable_event(row: object) -> _LinkedEvent | _LocalEvent | None:
     external = str(getattr(row, "external_id", "") or "").strip()
+    raw_id = getattr(row, "id", None)
+    event_id = raw_id if isinstance(raw_id, int) and not isinstance(raw_id, bool) else None
+    if external:
+        return _LinkedEvent(external_id=external, event_id=event_id)
+    if event_id is not None:
+        return _LocalEvent(event_id=event_id)
+    return None
+
+
+def draft_target(
+    row: object,
+    *,
+    writes_remote: bool,
+    action: str,
+) -> GoogleConfirm | BindCreate | LocalDraft | None:
+    if action not in {"update", "cancel"}:
+        return None
+    target = _confirmable_event(row)
+    if target is None:
+        return None
+    if isinstance(target, _LocalEvent):
+        if writes_remote and action == "update":
+            return BindCreate(event_id=target.event_id)
+        return LocalDraft(event_id=target.event_id)
+    if isinstance(target, _LinkedEvent):
+        if not writes_remote:
+            if target.event_id is None:
+                return None
+            return LocalDraft(event_id=target.event_id)
+        return GoogleConfirm(external_id=target.external_id, event_id=target.event_id)
+    assert_never(target)
+
+
+def _row_has_identity(row, *, require_google_id: bool) -> bool:
     if require_google_id:
-        return bool(external)
+        return _confirmable_event(row) is not None
+    external = str(getattr(row, "external_id", "") or "").strip()
     if getattr(row, "id", None) is not None or external:
         return True
-    # A real DTO always has an id field. A display double that omitted it can still be listed.
     fields = getattr(row, "__dataclass_fields__", None)
     if fields is not None and "id" in fields:
         return False

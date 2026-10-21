@@ -98,13 +98,18 @@ class FakeGoogle:
         self.pages_served = 0
         self.insert_status = 200
         self.insert_id = "evt-created"
+        self.insert_extra: dict = {}
         self.patch_status = 200
+        self.get_status = 200
+        self.event_bodies: dict[str, dict] = {}
         self.delete_status = 204
         self.deleted_ids: list[str] = []
         self.network_on: set[str] = set()
         self.on_event = None
         self.settings_items: list[dict] | None = None
         self.settings_status = 200
+        self.freebusy_status = 200
+        self.freebusy_calendars: dict[str, dict] = {}
 
     def __call__(self, method, url, *, data=None, params=None, headers=None, json=None):
         self.calls.append(
@@ -153,6 +158,19 @@ class FakeGoogle:
                 self.timezone_status,
                 json={"id": "timezone", "value": self.timezone_value},
             )
+        if method == "POST" and str(url).rstrip("/").endswith("/freeBusy"):
+            if self.freebusy_status != 200:
+                return httpx.Response(self.freebusy_status, json={"error": {"message": "freebusy failed"}})
+            requested: list[str] = []
+            if isinstance(json, dict):
+                for item in json.get("items") or []:
+                    if isinstance(item, dict) and item.get("id"):
+                        requested.append(str(item["id"]))
+            calendars = {
+                cal_id: dict(self.freebusy_calendars.get(cal_id) or {"busy": []})
+                for cal_id in requested
+            }
+            return httpx.Response(200, json={"calendars": calendars})
         if url.rstrip("/").endswith("/users/me/settings"):
             if self.settings_items is None:
                 return httpx.Response(404, json={"error": {"message": "not found"}})
@@ -180,9 +198,16 @@ class FakeGoogle:
         if method == "POST" and collection:
             if self.insert_status not in (200, 201):
                 return httpx.Response(self.insert_status, json={"error": {"message": "insert failed"}})
-            return httpx.Response(
-                self.insert_status, json={"id": self.insert_id, "status": "confirmed"}
-            )
+            payload = {"id": self.insert_id, "status": "confirmed"}
+            payload.update(self.insert_extra)
+            return httpx.Response(self.insert_status, json=payload)
+        if method == "GET" and item:
+            if self.get_status != 200:
+                return httpx.Response(self.get_status, json={"error": {"message": "get failed"}})
+            event_id = path.rstrip("/").rsplit("/", 1)[-1]
+            body = dict(self.event_bodies.get(event_id) or {"id": event_id, "status": "confirmed"})
+            body.setdefault("id", event_id)
+            return httpx.Response(200, json=body)
         if method == "PATCH" and item:
             if self.patch_status not in (200, 201):
                 return httpx.Response(self.patch_status, json={"error": {"message": "patch failed"}})
@@ -300,7 +325,7 @@ def test_connect_redirects_with_offline_consent_and_exact_scopes(
     assert granted == set(GOOGLE_CALENDAR_SCOPES) | set(GOOGLE_IDENTITY_SCOPES)
     assert set(GOOGLE_CALENDAR_SCOPES) < granted
     assert CLIENT_SECRET not in location
-    assert "calendar.events.freebusy" not in location
+    assert "https://www.googleapis.com/auth/calendar.events.freebusy" in granted
     assert "https://www.googleapis.com/auth/calendar" not in set(query["scope"][0].split())
     assert "https://www.googleapis.com/auth/calendar.readonly" not in set(query["scope"][0].split())
 
@@ -1209,6 +1234,14 @@ def _patch_calls(fake: FakeGoogle) -> list[dict]:
     return [call for call in _event_calls(fake) if call["method"] == "PATCH"]
 
 
+def _get_calls(fake: FakeGoogle) -> list[dict]:
+    return [
+        call
+        for call in _event_calls(fake)
+        if call["method"] == "GET" and "/calendars/primary/events/" in call["url"]
+    ]
+
+
 def _delete_calls(fake: FakeGoogle) -> list[dict]:
     return [call for call in _event_calls(fake) if call["method"] == "DELETE"]
 
@@ -1379,6 +1412,108 @@ def test_connected_create_writes_google_then_local_wall_clock(
         provider = calendar_provider_for(db, user_id)
         assert provider.get_event(user_id, body["id"]) is not None
         assert provider.get_event(user_id + 99, body["id"]) is None
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_create_invites_emails_and_keeps_bare_names(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """An email is an attendee. A bare name stays local. A time block invites nobody."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+
+    def _extract(message, _history=None, **_kwargs):
+        text = str(message or "")
+        if "时间块" in text:
+            return EventDraft(
+                title="专注",
+                start_at=start,
+                end_at=start + timedelta(hours=1),
+                participants=["guest@example.com"],
+                kind="block",
+            )
+        return EventDraft(
+            title="邀请会",
+            start_at=start,
+            end_at=start + timedelta(hours=1),
+            participants=["guest@example.com", "张三", "not an email"],
+            kind="meeting",
+        )
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        drafted = execute_calendar(
+            ToolContext(db=db, message="明天下午三点开会，请 guest@example.com 和张三", history=[], user_id=user_id),
+            {"action": "create"},
+        )
+        card = drafted.schedule_card
+        assert card["guest_emails"] == ["guest@example.com"]
+        assert card["guest_names"] == ["张三", "not an email"]
+        assert _insert_calls(fake_google) == []
+
+        blocked = execute_calendar(
+            ToolContext(db=db, message="下午三点时间块", history=[], user_id=user_id),
+            {"action": "create"},
+        )
+        assert blocked.schedule_card["kind"] == "block"
+        assert blocked.schedule_card["participants"] == []
+        assert blocked.schedule_card["guest_emails"] == []
+        assert blocked.schedule_card["guest_names"] == []
+
+        fake_google.insert_id = "evt-invite"
+        created = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "邀请会",
+                "start_at": "2026-12-02T15:00:00",
+                "end_at": "2026-12-02T16:00:00",
+                "participants": ["guest@example.com", "张三", "not an email"],
+            },
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["participants"] == ["guest@example.com", "张三", "not an email"]
+        inserts = _insert_calls(fake_google)
+        assert len(inserts) == 1
+        assert inserts[0]["json"]["attendees"] == [{"email": "guest@example.com"}]
+        assert "responseStatus" not in inserts[0]["json"]["attendees"][0]
+        assert inserts[0]["params"]["sendUpdates"] == "all"
+        assert "张三" not in str(inserts[0]["json"].get("attendees"))
+
+        fake_google.calls.clear()
+        fake_google.insert_id = "evt-empty-guests"
+        empty = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "无人会",
+                "start_at": "2026-12-02T17:00:00",
+                "end_at": "2026-12-02T18:00:00",
+                "participants": [],
+            },
+        )
+        assert empty.status_code == 200, empty.text
+        quiet = _insert_calls(fake_google)
+        assert len(quiet) == 1
+        assert "attendees" not in quiet[0]["json"]
+        assert "sendUpdates" not in (quiet[0].get("params") or {})
+
+        fake_google.calls.clear()
+        fake_google.insert_id = "evt-block-quiet"
+        block = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "专注",
+                "start_at": "2026-12-02T19:00:00",
+                "end_at": "2026-12-02T20:00:00",
+                "participants": [],
+            },
+        )
+        assert block.status_code == 200, block.text
+        assert "attendees" not in _insert_calls(fake_google)[0]["json"]
     finally:
         _cleanup(user_id)
         db.close()
@@ -1907,10 +2042,17 @@ def test_update_patches_google_before_local_and_failure_keeps_row(
         participants = auth_client.patch(f"/api/calendar/{row.id}", json={"participants": ["李四"]})
         assert participants.status_code == 200, participants.text
         assert participants.json()["participants"] == ["李四"]
-        assert _event_calls(fake_google) == []
+        assert len(_get_calls(fake_google)) == 1
+        guest_patches = _patch_calls(fake_google)
+        assert len(guest_patches) == 1
+        assert guest_patches[0]["json"] == {"attendees": []}
+        assert guest_patches[0]["params"]["sendUpdates"] == "all"
+        assert guest_patches[0]["url"].endswith("/evt-self")
+        assert _insert_calls(fake_google) == []
+        assert _list_calls(fake_google) == []
         db.refresh(row)
         assert row.title == "产品评审"
-        assert row.timezone == "America/New_York"
+        assert row.timezone == "Asia/Shanghai"
         assert row.provider == "google"
 
         fake_google.calls.clear()
@@ -1927,7 +2069,7 @@ def test_update_patches_google_before_local_and_failure_keeps_row(
         assert renamed.status_code == 200, renamed.text
         body = renamed.json()
         assert seen["title"] == "产品评审"
-        assert seen["timezone"] == "America/New_York"
+        assert seen["timezone"] == "Asia/Shanghai"
         assert body["title"] == "改过的评审"
         assert body["location"] == "会议室"
         assert body["description"] == "只改说明"
@@ -1940,16 +2082,29 @@ def test_update_patches_google_before_local_and_failure_keeps_row(
         patches = _patch_calls(fake_google)
         assert len(patches) == 1
         payload = patches[0]["json"]
-        assert payload == {"summary": "改过的评审", "location": "会议室", "description": "只改说明"}
+        assert payload["summary"] == "改过的评审"
+        assert payload["location"] == "会议室"
+        assert payload["description"] == "只改说明"
+        assert payload["attendees"] == []
         assert "start" not in payload
-        assert "attendees" not in payload
-        assert "sendUpdates" not in (patches[0].get("params") or {})
+        assert patches[0]["params"]["sendUpdates"] == "all"
+        assert len(_get_calls(fake_google)) == 1
         assert "sendUpdates" not in patches[0]["url"]
         assert "王五" not in str(payload)
         assert "甲" not in str(payload)
         assert _list_calls(fake_google) == []
         assert _insert_calls(fake_google) == []
         assert patches[0]["url"].endswith("/evt-self")
+
+        fake_google.calls.clear()
+        titled = auth_client.patch(f"/api/calendar/{row.id}", json={"title": "只改标题"})
+        assert titled.status_code == 200, titled.text
+        title_patches = _patch_calls(fake_google)
+        assert len(title_patches) == 1
+        assert title_patches[0]["json"] == {"summary": "只改标题"}
+        assert "attendees" not in title_patches[0]["json"]
+        assert "sendUpdates" not in (title_patches[0].get("params") or {})
+        assert _get_calls(fake_google) == []
 
         fake_google.calls.clear()
         fake_google.patch_status = 500
@@ -1970,10 +2125,466 @@ def test_update_patches_google_before_local_and_failure_keeps_row(
             _patch_calls(fake_google)[0]
         )
         db.refresh(row)
-        assert row.title == "改过的评审"
+        assert row.title == "只改标题"
         assert row.start_at == start
         assert row.end_at == start + timedelta(hours=1)
         assert row.status == "active"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_participant_update_replaces_full_attendee_list(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    """A guest confirm reads the event and patches every remaining attendee."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(
+            db,
+            user_id,
+            title="来宾会",
+            start=start,
+            external_id="evt-guests",
+            participants='["a@example.com", "b@example.com"]',
+        )
+        fake_google.event_bodies["evt-guests"] = {
+            "id": "evt-guests",
+            "attendees": [
+                {"email": "a@example.com", "displayName": "甲", "responseStatus": "accepted"},
+                {"email": "b@example.com", "responseStatus": "tentative"},
+                {"email": "c@example.com", "responseStatus": "needsAction"},
+            ],
+        }
+        fake_google.calls.clear()
+        changed = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"participants": ["a@example.com", "d@example.com"]},
+        )
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["participants"] == ["a@example.com", "d@example.com"]
+        assert len(_get_calls(fake_google)) == 1
+        patches = _patch_calls(fake_google)
+        assert len(patches) == 1
+        assert patches[0]["json"]["attendees"] == [
+            {"email": "a@example.com", "responseStatus": "accepted"},
+            {"email": "d@example.com"},
+        ]
+        assert patches[0]["params"]["sendUpdates"] == "all"
+        assert "b@example.com" not in str(patches[0]["json"]["attendees"])
+        assert "c@example.com" not in str(patches[0]["json"]["attendees"])
+        db.refresh(row)
+        assert json.loads(row.participants) == [
+            {"email": "a@example.com", "name": ""},
+            {"email": "d@example.com", "name": ""},
+        ]
+
+        fake_google.calls.clear()
+        titled = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={
+                "title": "只改标题",
+                "participants": ["a@example.com", "d@example.com"],
+            },
+        )
+        assert titled.status_code == 200, titled.text
+        assert len(_patch_calls(fake_google)) == 1
+        assert _patch_calls(fake_google)[0]["json"] == {"summary": "只改标题"}
+        assert "attendees" not in _patch_calls(fake_google)[0]["json"]
+        assert _get_calls(fake_google) == []
+
+        fake_google.calls.clear()
+        fake_google.get_status = 500
+        failed = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"participants": ["z@example.com"]},
+        )
+        assert failed.status_code == 502
+        assert "未写入" in failed.json()["detail"]
+        assert _patch_calls(fake_google) == []
+        db.refresh(row)
+        assert "z@example.com" not in (row.participants or "")
+        assert "a@example.com" in (row.participants or "")
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_freebusy_scope_not_found_and_open_slots(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """An old grant does not call freeBusy. A missing calendar is not free."""
+    from app.services.calendar_factory import calendar_provider_for
+
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 9, 0)
+    end = datetime(2026, 12, 2, 18, 0)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        connection = db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).one()
+        connection.scopes = (
+            "https://www.googleapis.com/auth/calendar.events "
+            "https://www.googleapis.com/auth/calendar.settings.readonly"
+        )
+        db.commit()
+        provider = calendar_provider_for(db, user_id)
+        fake_google.calls.clear()
+        denied = provider.find_free_slots(
+            user_id, start, end, timedelta(hours=1), participants=["a@example.com", "张三"]
+        )
+        assert denied == []
+        assert provider.freebusy_note == "重新连接 Google 日历"
+        assert not any("freeBusy" in call["url"] for call in fake_google.calls)
+
+        connection.scopes = " ".join(GOOGLE_CALENDAR_SCOPES)
+        db.commit()
+        provider = calendar_provider_for(db, user_id)
+        fake_google.freebusy_calendars = {
+            "primary": {
+                "busy": [
+                    {"start": "2026-12-02T09:00:00+08:00", "end": "2026-12-02T10:00:00+08:00"}
+                ]
+            },
+            "a@example.com": {"errors": [{"reason": "notFound"}]},
+        }
+        fake_google.calls.clear()
+        hidden = provider.find_free_slots(
+            user_id, start, end, timedelta(hours=1), participants=["a@example.com", "张三"]
+        )
+        assert hidden == []
+        assert "a@example.com的空闲看不到" in provider.freebusy_note
+        assert "没有查张三的空闲" in provider.freebusy_note
+        queried = [call for call in fake_google.calls if "freeBusy" in call["url"]]
+        assert len(queried) == 1
+        assert queried[0]["json"]["items"] == [{"id": "primary"}, {"id": "a@example.com"}]
+
+        fake_google.freebusy_calendars = {
+            "primary": {
+                "busy": [
+                    {"start": "2026-12-02T09:00:00+08:00", "end": "2026-12-02T11:00:00+08:00"}
+                ]
+            },
+            "a@example.com": {
+                "busy": [
+                    {"start": "2026-12-02T11:00:00+08:00", "end": "2026-12-02T12:00:00+08:00"}
+                ]
+            },
+        }
+        fake_google.calls.clear()
+        slots = provider.find_free_slots(
+            user_id, start, end, timedelta(hours=1), participants=["a@example.com"]
+        )
+        busy = [
+            (datetime(2026, 12, 2, 9, 0), datetime(2026, 12, 2, 11, 0)),
+            (datetime(2026, 12, 2, 11, 0), datetime(2026, 12, 2, 12, 0)),
+        ]
+        assert slots
+        assert len(slots) <= 3
+        assert slots[0] == (datetime(2026, 12, 2, 12, 0), datetime(2026, 12, 2, 13, 0))
+        for slot_start, slot_end in slots:
+            for busy_start, busy_end in busy:
+                assert slot_end <= busy_start or slot_start >= busy_end
+        assert _insert_calls(fake_google) == []
+
+        monkeypatch.setattr("app.agents.tools.calendar_tool.extract_list_day", lambda *_a, **_k: "")
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.extract_event",
+            lambda *_a, **_k: EventDraft(
+                title="一起开会",
+                participants=["a@example.com", "张三"],
+                kind="meeting",
+            ),
+        )
+        _freeze_tool_now(monkeypatch, datetime(2026, 12, 2, 8, 0))
+        fake_google.calls.clear()
+        suggested = execute_calendar(
+            ToolContext(
+                db=db,
+                message="明天和 a@example.com、张三 找个空闲",
+                history=[],
+                user_id=user_id,
+            ),
+            {"action": "suggest"},
+        )
+        assert _insert_calls(fake_google) == []
+        assert suggested.schedule_card["suggested_slots"]
+        assert suggested.schedule_card["participants"] == ["a@example.com", "张三"]
+        assert "张三" in suggested.direct_answer
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_meet_insert_sends_conference_and_pending_has_no_url(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Meet rides on the insert. A pending conference does not invent a URL."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+
+    def _extract(message, _history=None, **_kwargs):
+        text = str(message or "")
+        kind = "block" if "时间块" in text else "meeting"
+        return EventDraft(
+            title="视频会",
+            start_at=start,
+            end_at=start + timedelta(hours=1),
+            kind=kind,
+        )
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        asked = execute_calendar(
+            ToolContext(db=db, message="明天下午三点开会，要会议链接", history=[], user_id=user_id),
+            {"action": "create"},
+        )
+        assert asked.schedule_card["meet"] is True
+        assert _insert_calls(fake_google) == []
+        blocked = execute_calendar(
+            ToolContext(db=db, message="下午三点时间块，要会议链接", history=[], user_id=user_id),
+            {"action": "create"},
+        )
+        assert blocked.schedule_card["kind"] == "block"
+        assert blocked.schedule_card["meet"] is False
+
+        fake_google.insert_id = "evt-meet"
+        fake_google.insert_extra = {
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+        }
+        created = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "视频会",
+                "start_at": "2026-12-02T15:00:00",
+                "end_at": "2026-12-02T16:00:00",
+                "participants": [],
+                "meet": True,
+            },
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["meet_link"] == "https://meet.google.com/abc-defg-hij"
+        assert "meet_status" not in created.json()
+        body = _insert_calls(fake_google)[-1]
+        request = body["json"]["conferenceData"]["createRequest"]
+        assert request["conferenceSolutionKey"] == {"type": "hangoutsMeet"}
+        assert request["requestId"]
+        assert body["params"]["conferenceDataVersion"] == "1"
+
+        fake_google.calls.clear()
+        fake_google.insert_id = "evt-off"
+        fake_google.insert_extra = {}
+        quiet = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "普通会",
+                "start_at": "2026-12-02T17:00:00",
+                "end_at": "2026-12-02T18:00:00",
+                "participants": [],
+            },
+        )
+        assert quiet.status_code == 200, quiet.text
+        off = _insert_calls(fake_google)[0]
+        assert "conferenceData" not in off["json"]
+        assert "conferenceDataVersion" not in (off.get("params") or {})
+        assert "meet_link" not in quiet.json()
+
+        fake_google.calls.clear()
+        fake_google.insert_id = "evt-pending"
+        fake_google.insert_extra = {
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": "pending-1",
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                    "status": {"statusCode": "pending"},
+                }
+            }
+        }
+        pending = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "等链接",
+                "start_at": "2026-12-02T19:00:00",
+                "end_at": "2026-12-02T20:00:00",
+                "participants": [],
+                "meet": True,
+            },
+        )
+        assert pending.status_code == 200, pending.text
+        assert pending.json().get("meet_link", "") == ""
+        assert pending.json()["meet_status"] == "pending"
+        assert "meet.google" not in pending.text
+
+        row = _google_row(
+            db,
+            user_id,
+            title="已有链接",
+            start=datetime(2026, 12, 3, 15, 0),
+            external_id="evt-linked-meet",
+        )
+        fake_google.event_bodies["evt-linked-meet"] = {
+            "id": "evt-linked-meet",
+            "hangoutLink": "https://meet.google.com/already-there",
+        }
+        fake_google.calls.clear()
+        again = auth_client.patch(
+            f"/api/calendar/{row.id}",
+            json={"title": "已有链接", "meet": True},
+        )
+        assert again.status_code == 200, again.text
+        patched = _patch_calls(fake_google)
+        assert len(patched) == 1
+        assert "conferenceData" not in patched[0]["json"]
+        assert "conferenceDataVersion" not in (patched[0].get("params") or {})
+        assert again.json()["meet_link"] == "https://meet.google.com/already-there"
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_rsvp_patches_only_self_and_chat_does_not(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Accept changes only this account's responseStatus. Chat does not patch."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_list_day", lambda *_a, **_k: "")
+    monkeypatch.setattr("app.agents.tools.calendar_tool.complete_text", lambda *_a, **_k: "看看这些安排")
+    guests = [
+        {"email": "owner@example.com", "self": True, "responseStatus": "needsAction"},
+        {"email": "a@example.com", "displayName": "甲", "responseStatus": "accepted"},
+        {"email": "b@example.com", "responseStatus": "tentative"},
+    ]
+    invitation = _google_item(
+        "evt-rsvp",
+        "2026-10-16T15:00:00+08:00",
+        "2026-10-16T16:00:00+08:00",
+        summary="请你参加",
+        attendees=guests,
+    )
+    invitation["organizer"] = {"email": "a@example.com", "self": False}
+    hosted = _google_item(
+        "evt-host",
+        "2026-10-16T17:00:00+08:00",
+        "2026-10-16T18:00:00+08:00",
+        summary="我组织的",
+        attendees=[{"email": "owner@example.com", "self": True, "organizer": True, "responseStatus": "accepted"}],
+    )
+    hosted["organizer"] = {"email": "owner@example.com", "self": True}
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        _google_row(
+            db,
+            user_id,
+            title="本地会",
+            start=datetime(2026, 10, 16, 11, 0),
+            external_id="",
+            provider="local",
+            timezone="",
+        )
+        fake_google.events_items = [invitation, hosted]
+        fake_google.event_bodies["evt-rsvp"] = invitation
+        fake_google.event_bodies["evt-host"] = hosted
+        fake_google.calls.clear()
+        listed = execute_calendar(
+            ToolContext(db=db, message="看看日程", history=[], user_id=user_id),
+            {"action": "list"},
+        )
+        items = listed.schedule_card["items"]
+        invite = next(item for item in items if item["title"] == "请你参加")
+        host = next(item for item in items if item["title"] == "我组织的")
+        local = next(item for item in items if item["title"] == "本地会")
+        assert invite["external_id"] == "evt-rsvp"
+        assert invite["rsvp"] == "needsAction"
+        assert "rsvp" not in host
+        assert "rsvp" not in local
+        assert "external_id" not in local
+        assert _patch_calls(fake_google) == []
+
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.classify_calendar_action", lambda *_a, **_k: "update"
+        )
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.extract_event",
+            lambda *_a, **_k: EventDraft(title="请你参加", search_title="请你参加"),
+        )
+        fake_google.calls.clear()
+        chatted = execute_calendar(
+            ToolContext(db=db, message="接受", history=[], user_id=user_id)
+        )
+        assert chatted.schedule_card is None or chatted.schedule_card.get("phase") == "draft"
+        assert _patch_calls(fake_google) == []
+
+        accepted = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "accepted"},
+        )
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["rsvp"] == "accepted"
+        assert len(_get_calls(fake_google)) == 1
+        patches = _patch_calls(fake_google)
+        assert len(patches) == 1
+        assert patches[0]["params"]["sendUpdates"] == "all"
+        assert patches[0]["json"]["attendees"] == [
+            {"email": "owner@example.com", "self": True, "responseStatus": "accepted"},
+            {"email": "a@example.com", "displayName": "甲", "responseStatus": "accepted"},
+            {"email": "b@example.com", "responseStatus": "tentative"},
+        ]
+        assert _insert_calls(fake_google) == []
+
+        fake_google.calls.clear()
+        again = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "accepted"},
+        )
+        assert again.status_code == 200, again.text
+        assert again.json()["rsvp"] == "accepted"
+        assert len(_patch_calls(fake_google)) == 1
+        assert _insert_calls(fake_google) == []
+
+        fake_google.calls.clear()
+        declined = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "declined"},
+        )
+        assert declined.status_code == 200, declined.text
+        assert declined.json()["rsvp"] == "declined"
+        invitation["attendees"][0]["responseStatus"] = "declined"
+        hidden = execute_calendar(
+            ToolContext(db=db, message="看看日程", history=[], user_id=user_id),
+            {"action": "list"},
+        )
+        titles = [item["title"] for item in (hidden.schedule_card or {}).get("items") or []]
+        assert "请你参加" not in titles
+
+        fake_google.calls.clear()
+        fake_google.get_status = 500
+        failed = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "tentative"},
+        )
+        assert failed.status_code == 502
+        assert "未写入" in failed.json()["detail"]
+        assert _patch_calls(fake_google) == []
+
+        fake_google.get_status = 200
+        fake_google.calls.clear()
+        refused = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-host", "response": "accepted"},
+        )
+        assert refused.status_code == 502
+        assert _patch_calls(fake_google) == []
     finally:
         _cleanup(user_id)
         db.close()
@@ -2720,8 +3331,7 @@ def test_connected_list_overlays_google_without_writing(
         assert chat.schedule_card["mode"] == "list"
         assert chat.schedule_card["phase"] == "info"
         titles = [item["title"] for item in chat.schedule_card["items"]]
-        assert titles == ["（无标题）", "透明安排", "新标题", "外面的会", "休息"]
-        assert "本地会" not in titles
+        assert titles == ["本地会", "（无标题）", "透明安排", "新标题", "外面的会", "休息"]
         rest = next(item for item in chat.schedule_card["items"] if item["title"] == "休息")
         assert rest["all_day"] is True
         assert "00:00" not in (chat.direct_answer or "")
@@ -3718,7 +4328,7 @@ def test_create_notes_are_written_to_google_description(
             if expected_kind == "block":
                 assert people == []
             else:
-                assert people == ["小李"]
+                assert people == [{"email": "", "name": "小李"}]
             assert payload["description"] == "带上大纲"
             assert payload["start"]["dateTime"] == card["start_at"]
             assert "Z" not in payload["start"]["dateTime"]
@@ -3879,7 +4489,7 @@ def test_connected_update_prefills_live_event_fields(
         assert card["phase"] == "draft"
         assert card["title"] == "测试会议"
         assert card["kind"] == "meeting"
-        assert card["participants"] == ["小李"]
+        assert card["participants"] == ["li@example.com"]
         assert card["location"] == "会议室"
         assert card["description"] == "带上大纲"
         assert card["start_at"] == "2026-10-17T16:00:00"
@@ -3901,7 +4511,7 @@ def test_connected_update_prefills_live_event_fields(
         )
         moved = shortened.schedule_card
         assert moved["kind"] == "meeting"
-        assert moved["participants"] == ["小李"]
+        assert moved["participants"] == ["li@example.com"]
         assert moved["location"] == "会议室"
         assert moved["description"] == "改成简短"
         assert moved["start_at"] == "2026-10-17T16:00:00"
@@ -3917,7 +4527,7 @@ def test_connected_update_prefills_live_event_fields(
         assert cancel_card["start_at"] == "2026-10-16T15:00:00"
         assert cancel_card["end_at"] == "2026-10-16T17:00:00"
         assert cancel_card["description"] == "带上大纲"
-        assert cancel_card["participants"] == ["小李"]
+        assert cancel_card["participants"] == ["li@example.com"]
         assert cancel_card["location"] == "会议室"
         _assert_offset_free(cancel_card)
         assert _delete_calls(fake_google) == []
@@ -4180,6 +4790,127 @@ def test_confirm_prefers_prefilled_external_id_over_exact_title(
         ]
         assert _patch_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_connected_local_row_offers_bind_card(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+    _freeze_tool_now(monkeypatch, datetime(2026, 12, 1, 10, 0))
+
+    def _extract(message, _history=None, **_kwargs):
+        text = str(message or "")
+        if "没有这场" in text:
+            return EventDraft(title="没有这场", search_title="没有这场")
+        end = start + timedelta(hours=1)
+        return EventDraft(
+            title="旧本地会",
+            search_title="旧本地会",
+            start_at=start,
+            end_at=end,
+            specified_end=end,
+        )
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = _google_row(
+            db,
+            user_id,
+            title="旧本地会",
+            start=start,
+            external_id="",
+            provider="local",
+            timezone="",
+        )
+        updated = execute_calendar(
+            ToolContext(db=db, message="把旧本地会改到原时间", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        card = updated.schedule_card
+        assert card["phase"] == "draft"
+        assert card["mode"] == "update"
+        assert card["event_id"] == row.id
+        assert card["external_id"] == ""
+        assert updated.direct_answer == (
+            "请确认修改「旧本地会」，时间 2026-12-02 15:00–16:00。"
+            "确认会在 Google 日历创建这场日程。未确认不会写入。"
+        )
+        assert _insert_calls(fake_google) == []
+
+        fake_google.events_items = [
+            _google_item(
+                "evt-busy",
+                "2026-12-02T15:30:00+08:00",
+                "2026-12-02T16:30:00+08:00",
+                summary="外面的会",
+            )
+        ]
+        busy = execute_calendar(
+            ToolContext(db=db, message="把旧本地会改到原时间", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        assert busy.schedule_card["event_id"] == row.id
+        assert busy.schedule_card["external_id"] == ""
+        assert busy.schedule_card["conflicts"]
+        assert busy.direct_answer == (
+            "该时段已有日程。请在卡片上改时间或选用建议空隙。"
+            "确认会在 Google 日历创建这场日程。未确认不会写入。"
+        )
+        assert _insert_calls(fake_google) == []
+        fake_google.events_items = []
+
+        cancelled = execute_calendar(
+            ToolContext(db=db, message="取消旧本地会", history=[], user_id=user_id),
+            {"action": "cancel"},
+        )
+        assert cancelled.schedule_card["mode"] == "cancel"
+        assert cancelled.schedule_card["event_id"] == row.id
+        assert cancelled.schedule_card["external_id"] == ""
+        assert "创建" not in (cancelled.direct_answer or "")
+        assert _delete_calls(fake_google) == []
+        assert _insert_calls(fake_google) == []
+
+        missed = execute_calendar(
+            ToolContext(db=db, message="把没有这场改期", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        assert missed.schedule_card["event_id"] is None
+        assert missed.schedule_card["external_id"] == ""
+        assert "确认会在 Google 日历创建这场日程" not in (missed.direct_answer or "")
+
+        fake_google.events_items = [
+            _google_item(
+                "evt-same",
+                "2026-12-02T18:00:00+08:00",
+                "2026-12-02T19:00:00+08:00",
+                summary="旧本地会",
+            )
+        ]
+        tied = execute_calendar(
+            ToolContext(db=db, message="把旧本地会改到原时间", history=[], user_id=user_id),
+            {"action": "update"},
+        )
+        assert tied.schedule_card["event_id"] is None
+        assert tied.schedule_card["external_id"] == ""
+        assert "确认会在 Google 日历创建这场日程" not in (tied.direct_answer or "")
+        assert _insert_calls(fake_google) == []
+
+        fake_google.insert_id = "evt-bound"
+        fake_google.calls.clear()
+        saved = auth_client.patch(f"/api/calendar/{row.id}", json={"title": "迁到 Google"})
+        assert saved.status_code == 200, saved.text
+        inserts = _insert_calls(fake_google)
+        assert len(inserts) == 1
+        assert "attendees" not in (inserts[0].get("json") or {})
+        db.refresh(row)
+        assert row.external_id
     finally:
         _cleanup(user_id)
         db.close()

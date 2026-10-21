@@ -27,6 +27,7 @@ from app.services.calendar_secrets import (
 )
 from app.services.calendar import (
     REMOTE_READ_ERRORS,
+    answer_invitation,
     calendar_now,
     cancel_event,
     check_conflict,
@@ -60,6 +61,7 @@ class CalendarWrite(BaseModel):
     participants: list[str] | None = None
     location: str | None = None
     description: str | None = None
+    meet: bool = False
 
 
 def _parse_dt(raw: str | None) -> datetime | None:
@@ -185,6 +187,7 @@ def create_calendar_event(
             participants=participants,
             location=location,
             description=description,
+            meet=body.meet,
         )
     conflicts = check_conflict(db, current_user.id, start_at, end_at)
     if conflicts:
@@ -199,6 +202,7 @@ def create_calendar_event(
         participants=participants,
         location=location,
         description=description,
+        meet=body.meet,
     )
     return serialize_event_card(event)
 
@@ -213,6 +217,7 @@ def _create_connected_event(
     participants: list[str],
     location: str,
     description: str,
+    meet: bool = False,
 ):
     """List primary, then insert on Google, then the local row. List failure writes nothing."""
     try:
@@ -225,6 +230,7 @@ def _create_connected_event(
             participants=participants,
             location=location,
             description=description,
+            meet=meet,
         )
     except CalendarOverlapError as exc:
         _conflict_http(db, user_id, start_at, end_at, exc.conflicts)
@@ -277,6 +283,7 @@ def patch_event(
             participants=body.participants,
             location=body.location,
             description=body.description,
+            meet=body.meet,
         )
     except CalendarReconnectRequired as exc:
         raise HTTPException(status_code=409, detail=exc.message) from None
@@ -321,6 +328,42 @@ def delete_event(
     return serialize_event_card(event)
 
 
+class GoogleRsvp(BaseModel):
+    external_id: str
+    response: str
+
+
+@router.post("/google/rsvp")
+def rsvp_google_event(
+    body: GoogleRsvp,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    """The button is the write. Chat does not call this route."""
+    external_id = (body.external_id or "").strip()
+    status = (body.response or "").strip()
+    if not external_id:
+        raise HTTPException(status_code=409, detail="需要日程编号，未写入。")
+    if status not in {"accepted", "declined", "tentative"}:
+        raise HTTPException(status_code=400, detail="需要接受、拒绝或暂定")
+    if not calendar_writes_remote(db, current_user.id):
+        raise HTTPException(status_code=400, detail="未连接 Google 日历")
+    try:
+        return answer_invitation(
+            db, current_user.id, external_id=external_id, status=status
+        )
+    except CalendarReconnectRequired as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from None
+    except CalendarRemoteReadError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
+    except CalendarRemoteWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    except CalendarTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+
+
 class GoogleTitleConfirm(BaseModel):
     action: str
     title: str | None = None
@@ -330,6 +373,7 @@ class GoogleTitleConfirm(BaseModel):
     location: str | None = None
     description: str | None = None
     external_id: str | None = None
+    meet: bool = False
 
 
 # Connected update and cancel go to Google first. List merges a read-only overlay.
@@ -366,6 +410,7 @@ def confirm_google_title_change(
             location=body.location,
             description=body.description,
             external_id=body.external_id,
+            meet=body.meet,
         )
     except CalendarTitleUnmatched as exc:
         raise HTTPException(status_code=409, detail=exc.message) from None

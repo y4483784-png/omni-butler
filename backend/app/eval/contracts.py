@@ -230,8 +230,12 @@ class CalendarFields(StrictModel):
     external_id: str | None = None
 
 
+class CalendarAttendee(StrictModel):
+    email: str = Field(min_length=1)
+
+
 class CalendarMatch(CalendarFields):
-    attendees: list[str] | None = None
+    attendees: list[CalendarAttendee | str] | None = None
 
 
 class CalendarSpan(StrictModel):
@@ -697,7 +701,7 @@ _CALENDAR_QUOTAS = {
     "create_block": (10, 2),
     "list_schedule": (8, 2),
     "conflict": (8, 1),
-    "attendees": (6, 1),
+    "attendees": (8, 1),
     "error_paths": (8, 2),
 }
 _CALENDAR_GATED = frozenset(
@@ -721,14 +725,14 @@ def _wall_ok(value: str) -> bool:
 
 
 def _calendar_check(rows: list[dict[str, Any]], errors: list[str]) -> None:
-    if len(rows) != 150:
-        errors.append(f"calendar rows: {len(rows)}, expected 150")
-    want_ids = {f"CAL-{index:03d}" for index in range(1, 151)}
+    if len(rows) != 152:
+        errors.append(f"calendar rows: {len(rows)}, expected 152")
+    want_ids = {f"CAL-{index:03d}" for index in range(1, 153)}
     have_ids = {row["id"] for row in rows}
     if have_ids != want_ids:
         missing = sorted(want_ids - have_ids)[:8]
         extra = sorted(have_ids - want_ids)[:8]
-        errors.append(f"calendar ids must be CAL-001..CAL-150 missing={missing} extra={extra}")
+        errors.append(f"calendar ids must be CAL-001..CAL-152 missing={missing} extra={extra}")
     counts: Counter[str] = Counter(row["category"] for row in rows)
     smoke_counts: Counter[str] = Counter(row["category"] for row in rows if row["split"] == "smoke")
     if sum(smoke_counts.values()) != 30:
@@ -894,8 +898,8 @@ CONTRACTS: dict[str, DatasetContract] = {
         "calendar",
         "calendar_behavior.jsonl",
         CalendarCase,
-        150,
-        150,
+        152,
+        152,
         None,
         _calendar_check,
     ),

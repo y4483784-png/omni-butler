@@ -4,6 +4,7 @@ import {
   cancelCalendarEvent,
   confirmGoogleCalendarChange,
   createCalendarEvent,
+  rsvpCalendarEvent,
   updateCalendarEvent,
   type ScheduleCandidate,
   type ScheduleCard as Card,
@@ -76,6 +77,24 @@ function formatWhen(startAt: string, endAt: string): string {
   return `${day} - ${pad(end.getHours())}:${pad(end.getMinutes())}`;
 }
 
+function rsvpLabel(status: string): string {
+  if (status === "accepted") return "已接受";
+  if (status === "declined") return "已拒绝";
+  if (status === "tentative") return "已暂定";
+  return "";
+}
+
+function splitGuests(text: string): { emails: string[]; names: string[] } {
+  const people = text
+    .split(/[、,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return {
+    emails: people.filter((item) => item.includes("@")),
+    names: people.filter((item) => !item.includes("@")),
+  };
+}
+
 function savedEventId(card: Card): number | null {
   const id = card.event_id ?? card.id;
   return typeof id === "number" ? id : null;
@@ -101,9 +120,13 @@ export function ScheduleCard({
   const [durationMin, setDurationMin] = useState(durationMinutes(toLocalInput(card.start_at), toLocalInput(card.end_at)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [meetOn, setMeetOn] = useState(Boolean(card.meet) && !card.meet_link);
 
   const mode = card.mode || (legacy ? "update" : "create");
   const blockForm = card.kind === "block" && (mode === "create" || mode === "update");
+  const showMeet =
+    !blockForm && !card.meet_link && (mode === "create" || mode === "update");
+  const guests = blockForm ? { emails: [], names: [] } : splitGuests(participants);
   const conflicts = card.conflicts || [];
   const slots = card.suggested_slots || [];
   const candidates = card.candidates || [];
@@ -156,6 +179,7 @@ export function ScheduleCard({
       participants: blockForm ? [] : people,
       location: blockForm ? "" : location.trim(),
       description: description.trim(),
+      meet: showMeet && meetOn,
     };
     setBusy(true);
     try {
@@ -186,6 +210,7 @@ export function ScheduleCard({
                 location: payload.location,
                 description: payload.description,
                 external_id: externalId,
+                meet: payload.meet,
               }
         );
         onChange({
@@ -226,6 +251,22 @@ export function ScheduleCard({
     }
   }
 
+  async function reply(externalId: string, status: "accepted" | "declined" | "tentative") {
+    setError("");
+    setBusy(true);
+    try {
+      const saved = await rsvpCalendarEvent(externalId, status);
+      const next = (card.items || []).map((item) =>
+        item.external_id === externalId ? { ...item, rsvp: saved.rsvp || status } : item
+      );
+      onChange({ ...card, items: next });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "回复邀请失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function useSlot(slot: ScheduleSlot) {
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     onChange({
@@ -236,7 +277,7 @@ export function ScheduleCard({
       start_at: slot.start_at,
       end_at: slot.end_at,
       kind: "meeting",
-      participants: [],
+      participants: card.participants || [],
       location: "",
       description: "",
       status: "",
@@ -273,8 +314,24 @@ export function ScheduleCard({
               <li key={`${item.start_at}-${item.title}-${index}`}>
                 <span>{formatListWhen(item)}</span>
                 <span>{item.title || "（无标题）"}</span>
+                {item.meet_link ? <span>{item.meet_link}</span> : null}
+                {item.external_id && item.rsvp ? (
+                  <span className="schedule-actions">
+                    {rsvpLabel(item.rsvp) ? <span className="schedule-status">{rsvpLabel(item.rsvp)}</span> : null}
+                    <button type="button" className="ghost-btn" disabled={busy} onClick={() => void reply(item.external_id || "", "accepted")}>
+                      接受
+                    </button>
+                    <button type="button" className="ghost-btn" disabled={busy} onClick={() => void reply(item.external_id || "", "declined")}>
+                      拒绝
+                    </button>
+                    <button type="button" className="ghost-btn" disabled={busy} onClick={() => void reply(item.external_id || "", "tentative")}>
+                      暂定
+                    </button>
+                  </span>
+                ) : null}
               </li>
             ))}
+            {error ? <div className="schedule-note">{error}</div> : null}
           </ul>
         ) : null}
         {slots.length ? (
@@ -378,6 +435,16 @@ export function ScheduleCard({
                 参与人
                 <input value={participants} onChange={(event) => setParticipants(event.target.value)} placeholder="用顿号分隔，可留空" disabled={locked || mode === "cancel"} />
               </label>
+              {guests.emails.length ? <div className="schedule-note">将邀请：{guests.emails.join("、")}</div> : null}
+              {guests.names.length ? <div className="schedule-note">不邀请：{guests.names.join("、")}</div> : null}
+              {showMeet ? (
+                <label>
+                  <input type="checkbox" checked={meetOn} onChange={(event) => setMeetOn(event.target.checked)} disabled={locked || mode === "cancel"} />
+                  添加 Google Meet
+                </label>
+              ) : null}
+              {card.meet_link ? <div className="schedule-note">{card.meet_link}</div> : null}
+              {card.meet_status === "pending" ? <div className="schedule-note">会议链接还没准备好</div> : null}
               <label>
                 地点
                 <input value={location} onChange={(event) => setLocation(event.target.value)} disabled={locked || mode === "cancel"} />

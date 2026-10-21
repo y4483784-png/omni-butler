@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.models.models import CalendarEvent
-from app.services.calendar_provider import CalendarEventDTO
+from app.services.calendar_provider import CalendarEventDTO, dump_invitees, invitee_labels
 
 
 def _participants_from_row(raw: str | None) -> list[str]:
-    try:
-        parsed = json.loads(raw or "[]")
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed]
+    return invitee_labels(raw)
 
 
 def free_gaps(
@@ -152,13 +145,15 @@ class LocalCalendarProvider:
         participants: list[str],
         location: str = "",
         description: str = "",
+        meet: bool = False,
     ) -> CalendarEventDTO:
+        del meet
         event = CalendarEvent(
             user_id=user_id,
             title=title,
             start_at=start_at,
             end_at=end_at,
-            participants=json.dumps(participants, ensure_ascii=False),
+            participants=dump_invitees(participants),
             status="active",
             timezone="",
             location=location or "",
@@ -182,7 +177,9 @@ class LocalCalendarProvider:
         participants: list[str] | None = None,
         location: str | None = None,
         description: str | None = None,
+        meet: bool = False,
     ) -> CalendarEventDTO | None:
+        del meet
         event = self.db.get(CalendarEvent, event_id)
         if not event or event.user_id != user_id:
             return None
@@ -193,7 +190,7 @@ class LocalCalendarProvider:
         if end_at is not None:
             event.end_at = end_at
         if participants is not None:
-            event.participants = json.dumps(participants, ensure_ascii=False)
+            event.participants = dump_invitees(participants)
         if location is not None:
             event.location = location
         if description is not None:

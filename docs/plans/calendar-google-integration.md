@@ -174,7 +174,7 @@ Google 事件与本地 DTO：
 | `location` | `location` |
 | `description` | `description` |
 | `start_at` / `end_at` | `start` / `end` 的 `dateTime` 使用墙钟字符串，不带 `Z`、不带偏移；同时带 `timeZone` 为账户 IANA 时区 |
-| `participants` | 只留在本地列。不写 Google `attendees`，也不要 `sendUpdates`，避免发出邀请 |
+| `participants` | 含 `@` 的字符串是邮箱，创建时写入 `attendees`，并在名单非空时带 `sendUpdates=all`。不含 `@` 的名字只留在本地列。时间块不发邀请。 |
 | `status='active'` | 创建出来是 Google 的 `confirmed`。不要把本地 `status` 改名为 `confirmed` |
 | `status='cancelled'` | 见第 6 节，对应 Google 删除 |
 | `external_id` | Google 返回的事件 `id` |
@@ -374,7 +374,7 @@ cd backend && python -m pytest \
 
 - Outlook，以及其他供应商。
 - Webhook、同步令牌、把 Google 上的改动写回 `calendar_events`、双向同步。列表上临时显示 Google 的时间不算写回。
-- 邀请邮件、参与人写成 Google attendees、会议室、资源日历。
+- 会议室、资源日历。含 `@` 的参与人会写成 Google attendees，并在名单非空时 `sendUpdates=all`。不含 `@` 的名字不发邀请。
 - 在这里创建重复日程或全天事件。读取时会把重复展开，全天只作只读展示。
 - 提醒，以及创建专注时段、外出、办公地点。
 - 多账户界面、日历选择器、产品内时区设置。
