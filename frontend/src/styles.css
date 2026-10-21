@@ -639,9 +639,18 @@ a.cite-link:hover {
   border-radius: 0;
   background: transparent;
 }
+.schedule-guest-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #5b6573;
+}
 .schedule-guests {
   display: grid;
   gap: 6px;
+}
+.schedule-guests > .ghost-btn {
+  justify-self: start;
 }
 .schedule-guest-row {
   display: flex;

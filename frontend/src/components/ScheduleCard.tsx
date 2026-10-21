@@ -594,31 +594,34 @@ export function ScheduleCard({
                 结束
                 <input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} disabled={locked || mode === "cancel"} />
               </label>
-              <div className="schedule-guests">
-                {guests.map((guest) => {
-                  const row = guestRow(guest);
-                  return (
-                    <div className="schedule-guest-row" key={row.key}>
-                      <span>{row.primary}</span>
-                      {row.email ? <span className="schedule-guest-email">{row.email}</span> : null}
-                      <span className="schedule-guest-decision">{row.decision}</span>
-                      <button
-                        type="button"
-                        className="ghost-btn"
-                        disabled={!canEdit}
-                        onClick={() => {
-                          if (!canEdit) return;
-                          setGuests((current) => removeGuest(current, guest));
-                        }}
-                      >
-                        移除
-                      </button>
-                    </div>
-                  );
-                })}
-                <button type="button" className="ghost-btn" disabled={!canEdit} onClick={openGuestEditor}>
-                  添加
-                </button>
+              <div className="schedule-guest-field">
+                <span>参与人</span>
+                <div className="schedule-guests">
+                  {guests.map((guest) => {
+                    const row = guestRow(guest);
+                    return (
+                      <div className="schedule-guest-row" key={row.key}>
+                        <span>{row.primary}</span>
+                        {row.email ? <span className="schedule-guest-email">{row.email}</span> : null}
+                        <span className="schedule-guest-decision">{row.decision}</span>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          disabled={!canEdit}
+                          onClick={() => {
+                            if (!canEdit) return;
+                            setGuests((current) => removeGuest(current, guest));
+                          }}
+                        >
+                          移除
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button type="button" className="ghost-btn" disabled={!canEdit} onClick={openGuestEditor}>
+                    添加
+                  </button>
+                </div>
               </div>
               {showMeet ? (
                 <label className="schedule-meet">
