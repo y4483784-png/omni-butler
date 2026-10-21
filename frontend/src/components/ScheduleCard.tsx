@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import {
   CalendarConflictError,
   cancelCalendarEvent,
@@ -84,15 +84,158 @@ function rsvpLabel(status: string): string {
   return "";
 }
 
-function splitGuests(text: string): { emails: string[]; names: string[] } {
-  const people = text
-    .split(/[、,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return {
-    emails: people.filter((item) => item.includes("@")),
-    names: people.filter((item) => !item.includes("@")),
-  };
+type EmailAddress = string & { readonly __brand: "EmailAddress" };
+type PersonName = string & { readonly __brand: "PersonName" };
+
+type Guest =
+  | { readonly kind: "named-invite"; readonly name: PersonName; readonly email: EmailAddress }
+  | { readonly kind: "email-only"; readonly email: EmailAddress }
+  | { readonly kind: "name-only"; readonly name: PersonName };
+
+type DialogGuest = Extract<Guest, { kind: "named-invite" | "name-only" }>;
+
+type GuestEditor =
+  | { readonly open: false }
+  | {
+      readonly open: true;
+      readonly name: string;
+      readonly email: string;
+      readonly error: GuestEditorError | null;
+    };
+
+type GuestEditorError = "name-required" | "name-has-at" | "email-invalid" | "duplicate";
+
+type GuestRow = {
+  readonly key: string;
+  readonly primary: string;
+  readonly email: string;
+  readonly decision: "将邀请" | "不邀请";
+};
+
+function isPersonName(value: string): value is PersonName {
+  return value.length > 0 && !value.includes("@");
+}
+
+function isWireEmail(value: string): value is EmailAddress {
+  return value.includes("@");
+}
+
+function isDialogEmail(value: string): value is EmailAddress {
+  if (/[\s<>、,，]/.test(value)) return false;
+  const at = value.indexOf("@");
+  return at > 0 && at === value.lastIndexOf("@") && at < value.length - 1;
+}
+
+function guestsFromWire(participants: readonly string[] | null | undefined): readonly Guest[] {
+  let guests: readonly Guest[] = [];
+  for (const token of participants ?? []) {
+    const trimmed = token.trim();
+    if (trimmed.length === 0) continue;
+    if (isWireEmail(trimmed)) {
+      guests = appendGuest(guests, { kind: "email-only", email: trimmed });
+    } else if (isPersonName(trimmed)) {
+      guests = appendGuest(guests, { kind: "name-only", name: trimmed });
+    }
+  }
+  return guests;
+}
+
+function commitGuest(
+  input: { readonly name: string; readonly email: string },
+  existing: readonly Guest[],
+): { ok: true; guest: DialogGuest } | { ok: false; error: GuestEditorError } {
+  const name = input.name.trim();
+  const email = input.email.trim();
+  if (!isPersonName(name)) {
+    return { ok: false, error: name.includes("@") ? "name-has-at" : "name-required" };
+  }
+  let guest: DialogGuest;
+  if (email.length === 0) {
+    guest = { kind: "name-only", name };
+  } else if (isDialogEmail(email)) {
+    guest = { kind: "named-invite", name, email };
+  } else {
+    return { ok: false, error: "email-invalid" };
+  }
+  if (existing.some((item) => sameGuest(item, guest))) return { ok: false, error: "duplicate" };
+  return { ok: true, guest };
+}
+
+function guestToWire(guest: Guest): string {
+  switch (guest.kind) {
+    case "named-invite":
+    case "email-only":
+      return guest.email;
+    case "name-only":
+      return guest.name;
+    default: {
+      const _exhaustive: never = guest;
+      return _exhaustive;
+    }
+  }
+}
+
+function participantsForSubmit(blockForm: boolean, guests: readonly Guest[]): string[] {
+  if (blockForm) return [];
+  return guests.map(guestToWire);
+}
+
+function sameGuest(a: Guest, b: Guest): boolean {
+  if (a.kind === "name-only" || b.kind === "name-only") {
+    return a.kind === "name-only" && b.kind === "name-only" && a.name === b.name;
+  }
+  return a.email.toLowerCase() === b.email.toLowerCase();
+}
+
+function appendGuest(guests: readonly Guest[], guest: Guest): readonly Guest[] {
+  if (guests.some((item) => sameGuest(item, guest))) return guests;
+  return [...guests, guest];
+}
+
+function removeGuest(guests: readonly Guest[], guest: Guest): readonly Guest[] {
+  if (!guests.some((item) => sameGuest(item, guest))) return guests;
+  return guests.filter((item) => !sameGuest(item, guest));
+}
+
+function guestRow(guest: Guest): GuestRow {
+  switch (guest.kind) {
+    case "named-invite":
+      return {
+        key: `email:${guest.email.toLowerCase()}`,
+        primary: guest.name,
+        email: guest.email,
+        decision: "将邀请",
+      };
+    case "email-only":
+      return {
+        key: `email:${guest.email.toLowerCase()}`,
+        primary: guest.email,
+        email: "",
+        decision: "将邀请",
+      };
+    case "name-only":
+      return {
+        key: `name:${guest.name}`,
+        primary: guest.name,
+        email: "",
+        decision: "不邀请",
+      };
+    default: {
+      const _exhaustive: never = guest;
+      return _exhaustive;
+    }
+  }
+}
+
+const guestEditorErrorTextByKind = {
+  "name-required": "请填写姓名",
+  "name-has-at": "姓名不要写成邮箱",
+  "email-invalid": "邮箱格式不对",
+  duplicate: "已经添加过",
+} satisfies Record<GuestEditorError, string>;
+
+function guestEditorErrorText(error: GuestEditorError): string {
+  return guestEditorErrorTextByKind[error];
 }
 
 function savedEventId(card: Card): number | null {
@@ -114,7 +257,9 @@ export function ScheduleCard({
   const [title, setTitle] = useState(card.title || "");
   const [startAt, setStartAt] = useState(toLocalInput(card.start_at));
   const [endAt, setEndAt] = useState(toLocalInput(card.end_at));
-  const [participants, setParticipants] = useState((card.participants || []).join("、"));
+  const [guests, setGuests] = useState<readonly Guest[]>(() => guestsFromWire(card.participants));
+  const [editor, setEditor] = useState<GuestEditor>({ open: false });
+  const guestDialogRef = useRef<HTMLDialogElement>(null);
   const [location, setLocation] = useState(card.location || "");
   const [description, setDescription] = useState(card.description || "");
   const [durationMin, setDurationMin] = useState(durationMinutes(toLocalInput(card.start_at), toLocalInput(card.end_at)));
@@ -123,10 +268,10 @@ export function ScheduleCard({
   const [meetOn, setMeetOn] = useState(Boolean(card.meet) && !card.meet_link);
 
   const mode = card.mode || (legacy ? "update" : "create");
+  const canEdit = !locked && mode !== "cancel";
   const blockForm = card.kind === "block" && (mode === "create" || mode === "update");
   const showMeet =
     !blockForm && !card.meet_link && (mode === "create" || mode === "update");
-  const guests = blockForm ? { emails: [], names: [] } : splitGuests(participants);
   const conflicts = card.conflicts || [];
   const slots = card.suggested_slots || [];
   const candidates = card.candidates || [];
@@ -166,17 +311,34 @@ export function ScheduleCard({
     setEndAt(toLocalInput(candidate.end_at));
   }
 
+  function openGuestEditor() {
+    if (!canEdit || editor.open) return;
+    const dialog = guestDialogRef.current;
+    if (dialog == null || dialog.open) return;
+    setEditor({ open: true, name: "", email: "", error: null });
+    dialog.showModal();
+  }
+
+  function submitGuestEditor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canEdit || !editor.open) return;
+    const committed = commitGuest({ name: editor.name, email: editor.email }, guests);
+    if (!committed.ok) {
+      setEditor({ open: true, name: editor.name, email: editor.email, error: committed.error });
+      return;
+    }
+    setGuests((current) => appendGuest(current, committed.guest));
+    setEditor({ open: false });
+    guestDialogRef.current?.close();
+  }
+
   async function confirm() {
     setError("");
-    const people = participants
-      .split(/[、,，]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
     const payload = {
       title: title.trim(),
       start_at: fromLocalInput(startAt),
       end_at: fromLocalInput(endAt),
-      participants: blockForm ? [] : people,
+      participants: participantsForSubmit(blockForm, guests),
       location: blockForm ? "" : location.trim(),
       description: description.trim(),
       meet: showMeet && meetOn,
@@ -385,6 +547,7 @@ export function ScheduleCard({
         <span className="schedule-status">{statusLabel}</span>
       </div>
       {showForm ? (
+        <>
         <form
           className="schedule-form"
           onSubmit={(event) => {
@@ -431,12 +594,32 @@ export function ScheduleCard({
                 结束
                 <input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} disabled={locked || mode === "cancel"} />
               </label>
-              <label>
-                参与人
-                <input value={participants} onChange={(event) => setParticipants(event.target.value)} placeholder="用顿号分隔，可留空" disabled={locked || mode === "cancel"} />
-              </label>
-              {guests.emails.length ? <div className="schedule-note">将邀请：{guests.emails.join("、")}</div> : null}
-              {guests.names.length ? <div className="schedule-note">不邀请：{guests.names.join("、")}</div> : null}
+              <div className="schedule-guests">
+                {guests.map((guest) => {
+                  const row = guestRow(guest);
+                  return (
+                    <div className="schedule-guest-row" key={row.key}>
+                      <span>{row.primary}</span>
+                      {row.email ? <span className="schedule-guest-email">{row.email}</span> : null}
+                      <span className="schedule-guest-decision">{row.decision}</span>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        disabled={!canEdit}
+                        onClick={() => {
+                          if (!canEdit) return;
+                          setGuests((current) => removeGuest(current, guest));
+                        }}
+                      >
+                        移除
+                      </button>
+                    </div>
+                  );
+                })}
+                <button type="button" className="ghost-btn" disabled={!canEdit} onClick={openGuestEditor}>
+                  添加
+                </button>
+              </div>
               {showMeet ? (
                 <label className="schedule-meet">
                   <input type="checkbox" checked={meetOn} onChange={(event) => setMeetOn(event.target.checked)} disabled={locked || mode === "cancel"} />
@@ -486,6 +669,44 @@ export function ScheduleCard({
             </button>
           </div>
         </form>
+        <dialog
+          ref={guestDialogRef}
+          className="schedule-guest-dialog"
+          onClose={() => setEditor({ open: false })}
+        >
+          <form onSubmit={submitGuestEditor}>
+            <label>
+              参与人（姓名）
+              <input
+                value={editor.open ? editor.name : ""}
+                onChange={(event) => {
+                  const name = event.target.value;
+                  setEditor((current) => (current.open ? { ...current, name } : current));
+                }}
+              />
+            </label>
+            <label>
+              邮箱
+              <input
+                value={editor.open ? editor.email : ""}
+                onChange={(event) => {
+                  const email = event.target.value;
+                  setEditor((current) => (current.open ? { ...current, email } : current));
+                }}
+              />
+            </label>
+            {editor.open && editor.error ? <div className="schedule-note">{guestEditorErrorText(editor.error)}</div> : null}
+            <div className="schedule-actions">
+              <button type="button" className="ghost-btn" onClick={() => guestDialogRef.current?.close()}>
+                取消
+              </button>
+              <button type="submit" className="ghost-btn">
+                确定
+              </button>
+            </div>
+          </form>
+        </dialog>
+        </>
       ) : (
         <div className="schedule-slots">
           {candidates.map((candidate) => (

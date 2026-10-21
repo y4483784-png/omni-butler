@@ -56,7 +56,29 @@ test("google confirm submits the card external id", () => {
   assert.match(guard, /!externalId && id == null/);
   assert.match(cancelPayload, /external_id: externalId/);
   assert.match(updatePayload, /external_id: externalId/);
+  assert.match(cancelPayload, /participants: \[\]/);
   assert.doesNotMatch(cancelPayload, /description/);
+});
+
+test("non-block form adds guests beside the schedule form", () => {
+  const source = readFileSync(new URL("../src/components/ScheduleCard.tsx", import.meta.url), "utf8");
+  const formAt = source.indexOf('className="schedule-form"');
+  const formEnd = source.indexOf("</form>", formAt);
+  const form = source.slice(formAt, formEnd);
+  assert.doesNotMatch(form, /<dialog/);
+  const elseAt = source.indexOf(") : (", source.indexOf("{blockForm ? ("));
+  const dialogEnd = source.indexOf("</dialog>", formEnd);
+  const nonBlock = source.slice(elseAt, dialogEnd);
+  assert.match(nonBlock, /添加/);
+  assert.match(nonBlock, /参与人（姓名）/);
+  assert.match(nonBlock, /schedule-meet/);
+  assert.match(source, /participantsForSubmit\(blockForm, guests\)/);
+  assert.doesNotMatch(source, /splitGuests/);
+  assert.doesNotMatch(source, /用顿号分隔/);
+  assert.doesNotMatch(source, /将邀请：/);
+  assert.doesNotMatch(source, /不邀请：/);
+  const fromWire = source.slice(source.indexOf("function guestsFromWire"), source.indexOf("function commitGuest"));
+  assert.doesNotMatch(fromWire, /\.split\(/);
 });
 
 test("list card renders above the advice text", () => {
