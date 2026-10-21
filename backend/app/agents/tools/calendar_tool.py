@@ -306,12 +306,19 @@ def _list_span(day: str, now: datetime) -> tuple[datetime, datetime, str, str]:
 
 
 def _item_payload(row) -> dict:
-    return {
+    payload = {
         "title": row.title or "（无标题）",
         "start_at": _iso(getattr(row, "start_at", None)),
         "end_at": _iso(getattr(row, "end_at", None)),
         "all_day": bool(getattr(row, "all_day", False)),
     }
+    external_id = str(getattr(row, "external_id", "") or "").strip()
+    rsvp = str(getattr(row, "rsvp", "") or "").strip()
+    if external_id:
+        payload["external_id"] = external_id
+    if external_id and rsvp:
+        payload["rsvp"] = rsvp
+    return payload
 
 
 def _list_card(rows, slots: list[tuple[datetime, datetime]] | None = None) -> dict | None:

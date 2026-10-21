@@ -811,6 +811,17 @@ def _block_disconnected_remote(db: Session, user_id: int, event: CalendarEvent) 
         raise CalendarReconnectRequired()
 
 
+def answer_invitation(db: Session, user_id: int, *, external_id: str, status: str) -> dict:
+    """Reply to one Google invitation. Chat does not call this."""
+    if not calendar_writes_remote(db, user_id):
+        raise CalendarReconnectRequired()
+    provider = calendar_provider_for(db, user_id)
+    responder = getattr(provider, "answer_invitation", None)
+    if responder is None:
+        raise CalendarRemoteWriteError()
+    return responder(external_id, status)
+
+
 def confirm_titled_change(
     db: Session,
     user_id: int,

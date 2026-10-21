@@ -27,6 +27,7 @@ from app.services.calendar_secrets import (
 )
 from app.services.calendar import (
     REMOTE_READ_ERRORS,
+    answer_invitation,
     calendar_now,
     cancel_event,
     check_conflict,
@@ -319,6 +320,42 @@ def delete_event(
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
     return serialize_event_card(event)
+
+
+class GoogleRsvp(BaseModel):
+    external_id: str
+    response: str
+
+
+@router.post("/google/rsvp")
+def rsvp_google_event(
+    body: GoogleRsvp,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    """The button is the write. Chat does not call this route."""
+    external_id = (body.external_id or "").strip()
+    status = (body.response or "").strip()
+    if not external_id:
+        raise HTTPException(status_code=409, detail="需要日程编号，未写入。")
+    if status not in {"accepted", "declined", "tentative"}:
+        raise HTTPException(status_code=400, detail="需要接受、拒绝或暂定")
+    if not calendar_writes_remote(db, current_user.id):
+        raise HTTPException(status_code=400, detail="未连接 Google 日历")
+    try:
+        return answer_invitation(
+            db, current_user.id, external_id=external_id, status=status
+        )
+    except CalendarReconnectRequired as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from None
+    except CalendarRemoteReadError as exc:
+        raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
+    except CalendarRemoteWriteError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+    except CalendarTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from None
+    except CalendarTransientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
 
 
 class GoogleTitleConfirm(BaseModel):

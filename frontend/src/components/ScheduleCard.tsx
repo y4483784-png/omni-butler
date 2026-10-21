@@ -4,6 +4,7 @@ import {
   cancelCalendarEvent,
   confirmGoogleCalendarChange,
   createCalendarEvent,
+  rsvpCalendarEvent,
   updateCalendarEvent,
   type ScheduleCandidate,
   type ScheduleCard as Card,
@@ -74,6 +75,13 @@ function formatWhen(startAt: string, endAt: string): string {
   const day = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())} ${pad(start.getHours())}:${pad(start.getMinutes())}`;
   if (!end || Number.isNaN(end.getTime())) return day;
   return `${day} - ${pad(end.getHours())}:${pad(end.getMinutes())}`;
+}
+
+function rsvpLabel(status: string): string {
+  if (status === "accepted") return "已接受";
+  if (status === "declined") return "已拒绝";
+  if (status === "tentative") return "已暂定";
+  return "";
 }
 
 function splitGuests(text: string): { emails: string[]; names: string[] } {
@@ -238,6 +246,22 @@ export function ScheduleCard({
     }
   }
 
+  async function reply(externalId: string, status: "accepted" | "declined" | "tentative") {
+    setError("");
+    setBusy(true);
+    try {
+      const saved = await rsvpCalendarEvent(externalId, status);
+      const next = (card.items || []).map((item) =>
+        item.external_id === externalId ? { ...item, rsvp: saved.rsvp || status } : item
+      );
+      onChange({ ...card, items: next });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "回复邀请失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function useSlot(slot: ScheduleSlot) {
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     onChange({
@@ -285,8 +309,23 @@ export function ScheduleCard({
               <li key={`${item.start_at}-${item.title}-${index}`}>
                 <span>{formatListWhen(item)}</span>
                 <span>{item.title || "（无标题）"}</span>
+                {item.external_id && item.rsvp ? (
+                  <span className="schedule-actions">
+                    {rsvpLabel(item.rsvp) ? <span className="schedule-status">{rsvpLabel(item.rsvp)}</span> : null}
+                    <button type="button" className="ghost-btn" disabled={busy} onClick={() => void reply(item.external_id || "", "accepted")}>
+                      接受
+                    </button>
+                    <button type="button" className="ghost-btn" disabled={busy} onClick={() => void reply(item.external_id || "", "declined")}>
+                      拒绝
+                    </button>
+                    <button type="button" className="ghost-btn" disabled={busy} onClick={() => void reply(item.external_id || "", "tentative")}>
+                      暂定
+                    </button>
+                  </span>
+                ) : null}
               </li>
             ))}
+            {error ? <div className="schedule-note">{error}</div> : null}
           </ul>
         ) : null}
         {slots.length ? (

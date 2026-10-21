@@ -50,6 +50,8 @@ export interface ScheduleListItem {
   start_at: string;
   end_at: string;
   all_day?: boolean;
+  external_id?: string;
+  rsvp?: string;
 }
 
 export interface ScheduleCard {
@@ -453,6 +455,19 @@ export async function createCalendarEvent(payload: {
     body: JSON.stringify(payload),
   });
   if (!r.ok) await readCalendarError(r, "创建日程失败");
+  return r.json();
+}
+
+export async function rsvpCalendarEvent(
+  externalId: string,
+  response: "accepted" | "declined" | "tentative"
+): Promise<ScheduleCard & { rsvp?: string }> {
+  const r = await apiFetch("/api/calendar/google/rsvp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ external_id: externalId, response }),
+  });
+  if (!r.ok) await readCalendarError(r, "回复邀请失败");
   return r.json();
 }
 

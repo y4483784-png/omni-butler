@@ -99,6 +99,8 @@ class CalendarEventDTO:
     # Google-only list rows set these. Local rows leave them false.
     readonly: bool = False
     all_day: bool = False
+    # Set when the signed-in user is an attendee and not the organizer.
+    rsvp: str = ""
 
 
 class CalendarProvider(Protocol):

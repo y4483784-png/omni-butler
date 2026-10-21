@@ -2198,6 +2198,146 @@ def test_participant_update_replaces_full_attendee_list(
         db.close()
 
 
+def test_rsvp_patches_only_self_and_chat_does_not(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """Accept changes only this account's responseStatus. Chat does not patch."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    _freeze_tool_now(monkeypatch, datetime(2026, 10, 15, 10, 0))
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_list_day", lambda *_a, **_k: "")
+    monkeypatch.setattr("app.agents.tools.calendar_tool.complete_text", lambda *_a, **_k: "看看这些安排")
+    guests = [
+        {"email": "owner@example.com", "self": True, "responseStatus": "needsAction"},
+        {"email": "a@example.com", "displayName": "甲", "responseStatus": "accepted"},
+        {"email": "b@example.com", "responseStatus": "tentative"},
+    ]
+    invitation = _google_item(
+        "evt-rsvp",
+        "2026-10-16T15:00:00+08:00",
+        "2026-10-16T16:00:00+08:00",
+        summary="请你参加",
+        attendees=guests,
+    )
+    invitation["organizer"] = {"email": "a@example.com", "self": False}
+    hosted = _google_item(
+        "evt-host",
+        "2026-10-16T17:00:00+08:00",
+        "2026-10-16T18:00:00+08:00",
+        summary="我组织的",
+        attendees=[{"email": "owner@example.com", "self": True, "organizer": True, "responseStatus": "accepted"}],
+    )
+    hosted["organizer"] = {"email": "owner@example.com", "self": True}
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        _google_row(
+            db,
+            user_id,
+            title="本地会",
+            start=datetime(2026, 10, 16, 11, 0),
+            external_id="",
+            provider="local",
+            timezone="",
+        )
+        fake_google.events_items = [invitation, hosted]
+        fake_google.event_bodies["evt-rsvp"] = invitation
+        fake_google.event_bodies["evt-host"] = hosted
+        fake_google.calls.clear()
+        listed = execute_calendar(
+            ToolContext(db=db, message="看看日程", history=[], user_id=user_id),
+            {"action": "list"},
+        )
+        items = listed.schedule_card["items"]
+        invite = next(item for item in items if item["title"] == "请你参加")
+        host = next(item for item in items if item["title"] == "我组织的")
+        local = next(item for item in items if item["title"] == "本地会")
+        assert invite["external_id"] == "evt-rsvp"
+        assert invite["rsvp"] == "needsAction"
+        assert "rsvp" not in host
+        assert "rsvp" not in local
+        assert "external_id" not in local
+        assert _patch_calls(fake_google) == []
+
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.classify_calendar_action", lambda *_a, **_k: "update"
+        )
+        monkeypatch.setattr(
+            "app.agents.tools.calendar_tool.extract_event",
+            lambda *_a, **_k: EventDraft(title="请你参加", search_title="请你参加"),
+        )
+        fake_google.calls.clear()
+        chatted = execute_calendar(
+            ToolContext(db=db, message="接受", history=[], user_id=user_id)
+        )
+        assert chatted.schedule_card is None or chatted.schedule_card.get("phase") == "draft"
+        assert _patch_calls(fake_google) == []
+
+        accepted = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "accepted"},
+        )
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["rsvp"] == "accepted"
+        assert len(_get_calls(fake_google)) == 1
+        patches = _patch_calls(fake_google)
+        assert len(patches) == 1
+        assert patches[0]["params"]["sendUpdates"] == "all"
+        assert patches[0]["json"]["attendees"] == [
+            {"email": "owner@example.com", "self": True, "responseStatus": "accepted"},
+            {"email": "a@example.com", "displayName": "甲", "responseStatus": "accepted"},
+            {"email": "b@example.com", "responseStatus": "tentative"},
+        ]
+        assert _insert_calls(fake_google) == []
+
+        fake_google.calls.clear()
+        again = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "accepted"},
+        )
+        assert again.status_code == 200, again.text
+        assert again.json()["rsvp"] == "accepted"
+        assert len(_patch_calls(fake_google)) == 1
+        assert _insert_calls(fake_google) == []
+
+        fake_google.calls.clear()
+        declined = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "declined"},
+        )
+        assert declined.status_code == 200, declined.text
+        assert declined.json()["rsvp"] == "declined"
+        invitation["attendees"][0]["responseStatus"] = "declined"
+        hidden = execute_calendar(
+            ToolContext(db=db, message="看看日程", history=[], user_id=user_id),
+            {"action": "list"},
+        )
+        titles = [item["title"] for item in (hidden.schedule_card or {}).get("items") or []]
+        assert "请你参加" not in titles
+
+        fake_google.calls.clear()
+        fake_google.get_status = 500
+        failed = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-rsvp", "response": "tentative"},
+        )
+        assert failed.status_code == 502
+        assert "未写入" in failed.json()["detail"]
+        assert _patch_calls(fake_google) == []
+
+        fake_google.get_status = 200
+        fake_google.calls.clear()
+        refused = auth_client.post(
+            "/api/calendar/google/rsvp",
+            json={"external_id": "evt-host", "response": "accepted"},
+        )
+        assert refused.status_code == 502
+        assert _patch_calls(fake_google) == []
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
 def test_local_row_inserts_on_first_confirmed_update(
     auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
 ):

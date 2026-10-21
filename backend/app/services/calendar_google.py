@@ -981,6 +981,19 @@ class GoogleCalendarProvider:
                 self._restore_patch(external_id, restore)
             raise CalendarRemoteWriteError(_LOCAL_UPDATE_FAILED) from None
 
+    def answer_invitation(self, external_id: str, status: str) -> dict:
+        """Set this account's response. The click is the only writer."""
+        gid = (external_id or "").strip()
+        current = self._get_google_event(gid)
+        attendees = rsvp_attendees(current, status)
+        self._patch_google_event(gid, {"attendees": attendees})
+        return {
+            "external_id": gid,
+            "title": str(current.get("summary") or ""),
+            "rsvp": status,
+            "phase": "confirmed",
+        }
+
     def _get_google_event(self, event_id: str) -> dict:
         """One primary event. A failed read does not continue into a patch."""
         if not event_id:
@@ -1399,6 +1412,7 @@ class _EventView:
     end: datetime
     all_day: bool
     busy: bool
+    rsvp: str = ""
 
 
 def _hidden_on_list(item: dict) -> bool:
@@ -1425,6 +1439,7 @@ def _event_view(item: dict) -> _EventView | None:
         end=end,
         all_day=all_day,
         busy=str(item.get("transparency") or "") != "transparent",
+        rsvp=_self_rsvp(item),
     )
 
 
@@ -1497,6 +1512,7 @@ def _overlay_dto(local: CalendarEventDTO, view: _EventView) -> CalendarEventDTO:
         provider=local.provider or "local",
         readonly=False,
         all_day=view.all_day,
+        rsvp=view.rsvp,
     )
 
 
@@ -1512,6 +1528,7 @@ def _readonly_dto(user_id: int, view: _EventView) -> CalendarEventDTO:
         provider="google",
         readonly=True,
         all_day=view.all_day,
+        rsvp=view.rsvp,
     )
 
 
@@ -1658,6 +1675,54 @@ def _participant_names(item: dict) -> list[str]:
         if name and name not in names:
             names.append(name)
     return names
+
+
+def _self_rsvp(item: dict) -> str:
+    """The signed-in user's response, or empty when they organize the event."""
+    organizer = item.get("organizer")
+    if isinstance(organizer, dict) and organizer.get("self"):
+        return ""
+    attendees = item.get("attendees")
+    if not isinstance(attendees, list):
+        return ""
+    for person in attendees:
+        if not isinstance(person, dict) or not person.get("self"):
+            continue
+        if person.get("organizer"):
+            return ""
+        return str(person.get("responseStatus") or "needsAction")
+    return ""
+
+
+_RSVP_STATUS = frozenset({"accepted", "declined", "tentative"})
+_NOT_AN_INVITE = "这不是需要回复的邀请，未写入。"
+
+
+def rsvp_attendees(google_item: dict, status: str) -> list[dict]:
+    """Full attendee array with only the self responseStatus changed."""
+    if status not in _RSVP_STATUS:
+        raise CalendarRemoteWriteError(_NOT_AN_INVITE)
+    raw = google_item.get("attendees") if isinstance(google_item, dict) else None
+    if not isinstance(raw, list):
+        raise CalendarRemoteWriteError(_NOT_AN_INVITE)
+    organizer = google_item.get("organizer")
+    if isinstance(organizer, dict) and organizer.get("self"):
+        raise CalendarRemoteWriteError(_NOT_AN_INVITE)
+    found = False
+    body: list[dict] = []
+    for person in raw:
+        if not isinstance(person, dict):
+            continue
+        copied = dict(person)
+        if person.get("self"):
+            if person.get("organizer"):
+                raise CalendarRemoteWriteError(_NOT_AN_INVITE)
+            copied["responseStatus"] = status
+            found = True
+        body.append(copied)
+    if not found:
+        raise CalendarRemoteWriteError(_NOT_AN_INVITE)
+    return body
 
 
 def _self_declined(item: dict) -> bool:
