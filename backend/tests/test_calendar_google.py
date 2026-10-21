@@ -3356,8 +3356,8 @@ def test_connected_reschedule_and_cancel_write_google_only_after_confirm(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "测试会议"},
         )
-        assert missed.status_code == 400
-        assert missed.json()["detail"] == "需要日程编号"
+        assert missed.status_code == 409
+        assert missed.json()["detail"] == "需要日程编号，未写入。"
         assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
         db.refresh(row)
@@ -3471,8 +3471,8 @@ def test_connected_prefill_soft_aligns_one_live_title(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "Grok测试会议"},
         )
-        assert missed.status_code == 400
-        assert missed.json()["detail"] == "需要日程编号"
+        assert missed.status_code == 409
+        assert missed.json()["detail"] == "需要日程编号，未写入。"
         assert _delete_calls(fake_google) == []
         assert _patch_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
@@ -3481,7 +3481,8 @@ def test_connected_prefill_soft_aligns_one_live_title(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "测试会议"},
         )
-        assert confirmed.status_code == 400
+        assert confirmed.status_code == 409
+        assert confirmed.json()["detail"] == "需要日程编号，未写入。"
         assert _delete_calls(fake_google) == []
         assert _patch_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
@@ -3567,7 +3568,12 @@ def test_connected_prefill_leaves_zero_or_many_soft_hits(
             ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
         )
         assert titles_match("Grok测试会议", "牙医") is False
-        assert none.schedule_card is None
+        assert none.schedule_card["mode"] == "cancel"
+        assert none.schedule_card["phase"] == "draft"
+        assert none.schedule_card["title"] == "Grok测试会议"
+        assert none.schedule_card["start_at"] == "2026-10-18T09:00:00"
+        assert none.schedule_card["end_at"] == "2026-10-18T10:00:00"
+        assert none.schedule_card["external_id"] == ""
         assert _patch_calls(fake_google) == []
         assert _delete_calls(fake_google) == []
 
@@ -3590,8 +3596,10 @@ def test_connected_prefill_leaves_zero_or_many_soft_hits(
         many = execute_calendar(
             ToolContext(db=db, message="取消Grok测试会议", history=[], user_id=user_id)
         )
-        assert many.schedule_card is None or many.schedule_card.get("mode") != "choose"
-        assert many.schedule_card is None
+        assert many.schedule_card["mode"] == "cancel"
+        assert many.schedule_card["mode"] != "choose"
+        assert many.schedule_card["title"] == "Grok测试会议"
+        assert many.schedule_card["external_id"] == ""
         assert _delete_calls(fake_google) == []
         assert _patch_calls(fake_google) == []
     finally:
@@ -4124,8 +4132,8 @@ def test_confirm_prefers_prefilled_external_id_over_exact_title(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "PR34忙"},
         )
-        assert missed.status_code == 400
-        assert missed.json()["detail"] == "需要日程编号"
+        assert missed.status_code == 409
+        assert missed.json()["detail"] == "需要日程编号，未写入。"
         assert _delete_calls(fake_google) == []
 
         unknown = auth_client.post(
@@ -4216,6 +4224,7 @@ def test_connected_chat_never_writes_google_before_confirm(
         "app.agents.tools.calendar_tool.complete_text",
         lambda *_args, **_kwargs: "这一天已列出。",
     )
+    _freeze_calendar_clock(monkeypatch)
     try:
         user_id = _connect_admin(auth_client, db, fake_google, zone="Asia/Singapore")
         before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
@@ -4295,8 +4304,8 @@ def test_confirm_duplicate_title_deletes_only_the_given_id(
             "/api/calendar/google/confirm",
             json={"action": "cancel", "title": "测试会议"},
         )
-        assert untitled.status_code == 400
-        assert untitled.json()["detail"] == "需要日程编号"
+        assert untitled.status_code == 409
+        assert untitled.json()["detail"] == "需要日程编号，未写入。"
         assert _delete_calls(fake_google) == []
         assert {item["id"] for item in fake_google.events_items} == {"evt-a", "evt-b"}
         assert fake_google.deleted_ids == []
