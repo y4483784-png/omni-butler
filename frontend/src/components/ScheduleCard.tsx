@@ -625,7 +625,7 @@ export function ScheduleCard({
               </div>
               {showMeet ? (
                 <label className="schedule-meet">
-                  <input type="checkbox" checked={meetOn} onChange={(event) => setMeetOn(event.target.checked)} disabled={locked || mode === "cancel"} />
+                  <input type="checkbox" checked={meetOn} onChange={(event) => setMeetOn(event.target.checked)} disabled={locked} />
                   添加 Google Meet
                 </label>
               ) : null}
