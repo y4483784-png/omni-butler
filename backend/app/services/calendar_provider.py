@@ -99,6 +99,14 @@ def dump_invitees(values: object) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+@dataclass(frozen=True)
+class CalendarAttachment:
+    file_id: str
+    title: str
+    mime_type: str
+    file_url: str
+
+
 def attendee_body(values: object) -> list[dict[str, str]]:
     """Emails only. A name travels as displayName. No responseStatus, so Google treats them as needsAction.
 
@@ -138,6 +146,8 @@ class CalendarEventDTO:
     meet_link: str = ""
     meet_status: str = ""
     attachment_ids: tuple[str, ...] = ()
+    attachments: tuple[CalendarAttachment, ...] = ()
+    meeting_code: str = ""
 
 
 class CalendarProvider(Protocol):

@@ -43,6 +43,7 @@ export interface ScheduleCandidate {
   start_at: string;
   end_at: string;
   readonly?: boolean;
+  all_day?: boolean;
 }
 
 export interface ScheduleListItem {
@@ -106,7 +107,9 @@ export interface ScheduleCard {
   points?: string[];
   actions?: FollowAction[];
   mail?: FollowMailDraft;
-  source?: { kind?: string };
+  source?: { kind?: string; title?: string; url?: string };
+  checked?: string[];
+  consent?: string;
 }
 
 export interface CalendarEventList {
@@ -443,6 +446,7 @@ export interface GoogleCalendarStatus {
   timezone?: string;
   mail_access?: boolean;
   drive_access?: boolean;
+  meet_access?: boolean;
 }
 
 export interface BriefMeeting {

@@ -868,7 +868,7 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
             rows, notice = _load_upcoming(ctx, when)
             if notice:
                 rows = []
-        outcome = follow_up(ctx.message, rows, when)
+        outcome = follow_up(ctx.message, rows, when, ctx.db, ctx.user_id)
         return _cleared(steps, outcome.caption, outcome.card)
 
     if clock_error is not None:

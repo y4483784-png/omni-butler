@@ -1,9 +1,14 @@
 import { useRef, useState } from "react";
-import { createCalendarEvent, type FollowAction, type ScheduleCard } from "../api/client";
+import { connectGoogle, createCalendarEvent, type FollowAction, type ScheduleCard } from "../api/client";
 import { isExpired } from "../utils/scheduleExpiry";
-import { claimFollowRows, mailtoHref } from "../utils/followMail";
+import { claimFollowRows, formatFollowUtterance, mailtoHref } from "../utils/followMail";
 
 const NEEDS_PASTE = "把纪要或转写贴在这条消息里。这次没有整理待办，也没有编造纪要。";
+const OFFICIAL_PASTE = "这场会还没有官方纪要。把会议记录或转写贴过来。不会编造不存在的纪要。";
+const ATTACHMENT_CONSENT = "日历上有纪要附件。要打开它，需要授权读取云端硬盘。不会把它当成没有纪要。";
+const MEET_CONSENT = "这场会有 Meet 智能纪要。要打开它，需要授权读取云端硬盘。不会把它当成没有纪要。";
+const UNAVAILABLE = "暂时读不到这场会的官方纪要。可以把记录贴过来。不会编造官方纪要。";
+const NOT_FOUND = "没有找到这场会。这次没有读官方纪要，也没有编造纪要。";
 
 function copyFollowMail(mail: { subject: string; body: string }): void {
   const text = [mail.subject, mail.body].filter((part) => part.length > 0).join("\n");
@@ -14,7 +19,7 @@ function ownerLabel(owner: string): string {
   return owner || "未指定";
 }
 
-export function FollowupCard({ card }: { card: ScheduleCard }) {
+export function FollowupCard({ card, onAsk }: { card: ScheduleCard; onAsk?: (text: string) => void }) {
   const expired = isExpired(card);
   const actions = card.actions ?? [];
   const points = card.points ?? [];
@@ -26,9 +31,58 @@ export function FollowupCard({ card }: { card: ScheduleCard }) {
   const done = useRef(new Set<string>());
 
   if (card.status === "needs_paste") {
+    const text = Array.isArray(card.checked) ? OFFICIAL_PASTE : NEEDS_PASTE;
     return (
       <div className="schedule-card">
-        <p>{NEEDS_PASTE}</p>
+        <p>{text}</p>
+      </div>
+    );
+  }
+
+  if (card.status === "needs_consent") {
+    const text = card.consent === "meet" ? MEET_CONSENT : ATTACHMENT_CONSENT;
+    return (
+      <div className="schedule-card">
+        <p>{text}</p>
+        <button type="button" className="ghost-btn" onClick={() => connectGoogle()}>
+          授权读取 Drive
+        </button>
+      </div>
+    );
+  }
+
+  if (card.status === "unavailable") {
+    return (
+      <div className="schedule-card">
+        <p>{UNAVAILABLE}</p>
+      </div>
+    );
+  }
+
+  if (card.status === "not_found") {
+    return (
+      <div className="schedule-card">
+        <p>{NOT_FOUND}</p>
+      </div>
+    );
+  }
+
+  if (card.status === "choose") {
+    const candidates = card.candidates ?? [];
+    return (
+      <div className="schedule-card">
+        <div className="schedule-slots">
+          {candidates.map((item) => (
+            <button
+              key={`${item.title}-${item.start_at}`}
+              type="button"
+              className="ghost-btn"
+              onClick={() => onAsk?.(formatFollowUtterance(item))}
+            >
+              {item.title}
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
@@ -69,6 +123,7 @@ export function FollowupCard({ card }: { card: ScheduleCard }) {
 
   return (
     <div className="schedule-card">
+      {sourceLine(card.source)}
       {expired ? <div className="schedule-status">已过期</div> : null}
       {points.length ? (
         <ul className="schedule-list">
@@ -120,6 +175,25 @@ export function FollowupCard({ card }: { card: ScheduleCard }) {
       ) : null}
       {error ? <div className="schedule-note">{error}</div> : null}
     </div>
+  );
+}
+
+function sourceLine(source: ScheduleCard["source"]) {
+  const label =
+    source?.kind === "meet_smart_notes" ? "来自 Meet" : source?.kind === "attachment_notes" ? "来自日程附件" : "";
+  if (!label) return null;
+  const title = source?.title || "";
+  return (
+    <p className="schedule-meta">
+      {label}{" "}
+      {source?.url ? (
+        <a href={source.url} target="_blank" rel="noreferrer">
+          {title}
+        </a>
+      ) : (
+        <span>{title}</span>
+      )}
+    </p>
   );
 }
 

@@ -1229,13 +1229,7 @@ def _row_start(row) -> datetime | None:
     return start if isinstance(start, datetime) else None
 
 
-def pick_event(events, hint: EventHint):
-    """One row, or None when the pool is empty or tied.
-
-    Day, then clock, narrow the pool. A title then uses exact equality before
-    ``titles_match``. A title-only hint matches the old title rule, including
-    an empty title returning None. With no title, one remaining row is that row.
-    """
+def match_events(events, hint: EventHint) -> list:
     pool = list(events or [])
     if hint.day is not None:
         pool = [row for row in pool if (start := _row_start(row)) is not None and start.date() == hint.day]
@@ -1249,16 +1243,24 @@ def pick_event(events, hint: EventHint):
     needle = (hint.title or "").strip()
     if not needle:
         if hint.day is None and hint.clock is None:
-            return None
-        return pool[0] if len(pool) == 1 else None
+            return []
+        return pool
     exact = [row for row in pool if str(getattr(row, "title", "") or "").strip() == needle]
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
-        return None
-    soft = [row for row in pool if titles_match(needle, str(getattr(row, "title", "") or ""))]
-    if len(soft) == 1:
-        return soft[0]
+    if exact:
+        return exact
+    return [row for row in pool if titles_match(needle, str(getattr(row, "title", "") or ""))]
+
+
+def pick_event(events, hint: EventHint):
+    """One row, or None when the pool is empty or tied.
+
+    Day, then clock, narrow the pool. A title then uses exact equality before
+    ``titles_match``. A title-only hint matches the old title rule, including
+    an empty title returning None. With no title, one remaining row is that row.
+    """
+    matched = match_events(events, hint)
+    if len(matched) == 1:
+        return matched[0]
     return None
 
 

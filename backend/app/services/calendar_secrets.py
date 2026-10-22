@@ -41,8 +41,14 @@ GOOGLE_IDENTITY_SCOPES = ("openid", "email")
 GOOGLE_MAIL_SCOPES = ("https://www.googleapis.com/auth/gmail.readonly",)
 # Requested on the same consent screen. Not required to save a calendar grant.
 GOOGLE_DRIVE_SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
+# Requested on the same consent screen. Not required to save a calendar grant.
+GOOGLE_MEET_SCOPES = ("https://www.googleapis.com/auth/meetings.space.readonly",)
 GOOGLE_REQUESTED_SCOPES = (
-    GOOGLE_CALENDAR_SCOPES + GOOGLE_MAIL_SCOPES + GOOGLE_DRIVE_SCOPES + GOOGLE_IDENTITY_SCOPES
+    GOOGLE_CALENDAR_SCOPES
+    + GOOGLE_MAIL_SCOPES
+    + GOOGLE_DRIVE_SCOPES
+    + GOOGLE_MEET_SCOPES
+    + GOOGLE_IDENTITY_SCOPES
 )
 OAUTH_STATE_MAX_AGE = 10 * 60
 _STATE_SALT = "omni-calendar-google-oauth"
@@ -195,6 +201,10 @@ def _drive_access(scopes: str) -> bool:
     return _scope_granted(scopes, GOOGLE_DRIVE_SCOPES)
 
 
+def _meet_access(scopes: str) -> bool:
+    return _scope_granted(scopes, GOOGLE_MEET_SCOPES)
+
+
 def _status_body(*, connected: bool, account_email: str, timezone: str, scopes: str) -> dict:
     return {
         "connected": connected,
@@ -202,6 +212,7 @@ def _status_body(*, connected: bool, account_email: str, timezone: str, scopes: 
         "timezone": timezone,
         "mail_access": _mail_access(scopes) if connected else False,
         "drive_access": _drive_access(scopes) if connected else False,
+        "meet_access": _meet_access(scopes) if connected else False,
     }
 
 

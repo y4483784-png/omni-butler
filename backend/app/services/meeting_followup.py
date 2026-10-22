@@ -3,13 +3,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from typing import Literal
 
 from app.core.llm import Role, complete_json
-from app.services.calendar import EventHint, draft_expires_at, pick_event
+from app.services.calendar import EventHint, _catalog_text, draft_expires_at, match_events, pick_event
 from app.services.calendar_provider import Invitee, invitee_wire, parse_invitees
+from app.services.drive import OfficialRead, read_official_minutes
 
 _MIN_PASTE = 80
-_NEEDS_PASTE = "把纪要或转写贴在这条消息里。这次没有整理待办，也没有编造纪要。"
+_OFFICIAL_PASTE = "这场会还没有官方纪要。把会议记录或转写贴过来。不会编造不存在的纪要。"
+_ATTACHMENT_CONSENT = "日历上有纪要附件。要打开它，需要授权读取云端硬盘。不会把它当成没有纪要。"
+_MEET_CONSENT = "这场会有 Meet 智能纪要。要打开它，需要授权读取云端硬盘。不会把它当成没有纪要。"
+_UNAVAILABLE = "暂时读不到这场会的官方纪要。可以把记录贴过来。不会编造官方纪要。"
+_NOT_FOUND = "没有找到这场会。这次没有读官方纪要，也没有编造纪要。"
 _POINTED = re.compile(
     r"^帮我整理这场会的纪要：(?P<title>.+?)，(?P<day>\d{4}-\d{2}-\d{2})"
     r"(?: (?P<clock>\d{2}:\d{2}) 开始| 全天)"
@@ -63,10 +69,41 @@ class PastedMinutes:
 
 @dataclass(frozen=True)
 class NeedsPaste:
+    checked: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class NeedsConsent:
+    consent: Literal["attachment", "meet"]
+    checked: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Unavailable:
+    checked: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class NotFound:
     pass
 
 
-FollowOutcome = PastedMinutes | NeedsPaste
+@dataclass(frozen=True)
+class ChooseFollow:
+    candidates: tuple[dict, ...]
+
+
+@dataclass(frozen=True)
+class SourcedMinutes:
+    minutes: PastedMinutes
+    kind: Literal["meet_smart_notes", "attachment_notes"]
+    title: str
+    url: str
+
+
+FollowOutcome = (
+    PastedMinutes | SourcedMinutes | NeedsPaste | NeedsConsent | Unavailable | NotFound | ChooseFollow
+)
 
 
 @dataclass(frozen=True)
@@ -90,17 +127,133 @@ def follow_utterance(title: str, start_at: str, *, all_day: bool = False) -> str
     return f"帮我整理这场会的纪要：{title}，{day} {start_at[11:16]} 开始"
 
 
-def follow_up(message: str, events, now: datetime) -> FollowResult:
+def follow_up(message: str, events, now: datetime, db=None, user_id: int | None = None) -> FollowResult:
     text = (message or "").strip()
     match = _POINTED.match(text)
     if match:
         body = text[match.end() :].strip()
-        title, invitees = _meeting(match, events)
+        hint = _hint_from_pointed(match)
     else:
         body = text
-        title, invitees = "", ()
-    if len(body) < _MIN_PASTE:
-        return FollowResult(NeedsPaste(), now)
+        hint = None
+    if len(body) >= _MIN_PASTE:
+        title, invitees = _meeting(match, events) if match else ("", ())
+        return FollowResult(_draft_minutes(body, title, invitees, now), now)
+    if hint is None:
+        hint = _hint_from_model(text, events, now)
+    row = pick_event(events, hint)
+    if row is None:
+        matched = match_events(events, hint)
+        if len(matched) > 1:
+            return FollowResult(ChooseFollow(tuple(_candidate(item) for item in matched)), now)
+        return FollowResult(NotFound(), now)
+    title = str(getattr(row, "title", "") or "").strip()
+    invitees = tuple(parse_invitees(getattr(row, "participants", None)))
+    read = read_official_minutes(
+        db,
+        user_id,
+        meeting_code=str(getattr(row, "meeting_code", "") or ""),
+        attachments=tuple(getattr(row, "attachments", ()) or ()),
+    )
+    return _from_read(read, title, invitees, now)
+
+
+def caption(outcome: FollowOutcome) -> str:
+    minutes = _pasted(outcome)
+    if minutes is not None:
+        if any(item.start_at for item in minutes.actions):
+            return "纪要在卡片上。勾选待办并确认之后，才会写入日历。邮件需要你自己复制或打开。"
+        if minutes.actions or minutes.points:
+            return "纪要在卡片上。这次没有可写入日历的日期。邮件需要你自己复制或打开。"
+        return "这段纪要里没有抄出待办。没有编造。"
+    if isinstance(outcome, NeedsPaste):
+        return _OFFICIAL_PASTE
+    if isinstance(outcome, NeedsConsent):
+        return _MEET_CONSENT if outcome.consent == "meet" else _ATTACHMENT_CONSENT
+    if isinstance(outcome, Unavailable):
+        return _UNAVAILABLE
+    if isinstance(outcome, NotFound):
+        return _NOT_FOUND
+    return ""
+
+
+def to_wire(outcome: FollowOutcome, now: datetime) -> dict:
+    if isinstance(outcome, NeedsPaste):
+        card: dict = {"mode": "followup", "phase": "info", "status": "needs_paste"}
+        if outcome.checked:
+            card["checked"] = list(outcome.checked)
+        return card
+    if isinstance(outcome, NeedsConsent):
+        return {
+            "mode": "followup",
+            "phase": "info",
+            "status": "needs_consent",
+            "consent": outcome.consent,
+            "checked": list(outcome.checked),
+        }
+    if isinstance(outcome, Unavailable):
+        return {
+            "mode": "followup",
+            "phase": "info",
+            "status": "unavailable",
+            "checked": list(outcome.checked),
+        }
+    if isinstance(outcome, NotFound):
+        return {"mode": "followup", "phase": "info", "status": "not_found"}
+    if isinstance(outcome, ChooseFollow):
+        return {
+            "mode": "followup",
+            "phase": "info",
+            "status": "choose",
+            "candidates": list(outcome.candidates),
+        }
+    minutes = _pasted(outcome)
+    assert minutes is not None
+    phase = "draft" if any(item.start_at for item in minutes.actions) else "info"
+    card = {
+        "mode": "followup",
+        "phase": phase,
+        "status": "ready",
+        "source": _source(outcome),
+        "points": list(minutes.points),
+        "actions": [
+            {
+                "id": item.id,
+                "text": item.text,
+                "owner": item.owner,
+                "due_said": item.due_said,
+                "evidence": item.evidence,
+                "start_at": item.start_at,
+                "end_at": item.end_at,
+            }
+            for item in minutes.actions
+        ],
+        "mail": {
+            "to": [invitee_wire(person) for person in minutes.mail.to],
+            "subject": minutes.mail.subject,
+            "body": minutes.mail.body,
+        },
+    }
+    if phase == "draft":
+        card["expires_at"] = draft_expires_at(now)
+    return card
+
+
+def _pasted(outcome: FollowOutcome) -> PastedMinutes | None:
+    if isinstance(outcome, PastedMinutes):
+        return outcome
+    if isinstance(outcome, SourcedMinutes):
+        return outcome.minutes
+    return None
+
+
+def _source(outcome: FollowOutcome) -> dict:
+    if isinstance(outcome, SourcedMinutes):
+        return {"kind": outcome.kind, "title": outcome.title, "url": outcome.url}
+    return {"kind": "pasted"}
+
+
+def _draft_minutes(body: str, title: str, invitees: tuple[Invitee, ...], now: datetime) -> PastedMinutes:
     parsed = complete_json(
         [
             {
@@ -123,50 +276,94 @@ def follow_up(message: str, events, now: datetime) -> FollowResult:
         subject=_subject(title),
         body="\n".join(item.text for item in actions),
     )
-    return FollowResult(PastedMinutes(body, points, actions, mail), now)
+    return PastedMinutes(body, points, actions, mail)
 
 
-def caption(outcome: FollowOutcome) -> str:
-    if isinstance(outcome, NeedsPaste):
-        return _NEEDS_PASTE
-    if any(item.start_at for item in outcome.actions):
-        return "纪要在卡片上。勾选待办并确认之后，才会写入日历。邮件需要你自己复制或打开。"
-    if outcome.actions or outcome.points:
-        return "纪要在卡片上。这次没有可写入日历的日期。邮件需要你自己复制或打开。"
-    return "这段纪要里没有抄出待办。没有编造。"
+def _from_read(read: OfficialRead, title: str, invitees: tuple[Invitee, ...], now: datetime) -> FollowResult:
+    if read.status == "found" and read.minutes is not None:
+        minutes = _draft_minutes(read.minutes.text, title, invitees, now)
+        return FollowResult(
+            SourcedMinutes(minutes, read.minutes.source, read.minutes.title, read.minutes.url),
+            now,
+        )
+    if read.status == "needs_consent" and read.consent in ("attachment", "meet"):
+        return FollowResult(NeedsConsent(read.consent, read.checked), now)
+    if read.status == "unavailable":
+        return FollowResult(Unavailable(read.checked), now)
+    return FollowResult(NeedsPaste(read.checked), now)
 
 
-def to_wire(outcome: FollowOutcome, now: datetime) -> dict:
-    if isinstance(outcome, NeedsPaste):
-        return {"mode": "followup", "phase": "info", "status": "needs_paste"}
-    phase = "draft" if any(item.start_at for item in outcome.actions) else "info"
-    card: dict = {
-        "mode": "followup",
-        "phase": phase,
-        "status": "ready",
-        "source": {"kind": "pasted"},
-        "points": list(outcome.points),
-        "actions": [
+def _hint_from_pointed(match: re.Match[str]) -> EventHint:
+    clock = match.group("clock")
+    return EventHint(
+        title=match.group("title").strip(),
+        day=date.fromisoformat(match.group("day")),
+        clock=time.fromisoformat(clock) if clock else None,
+    )
+
+
+def _hint_from_model(message: str, events, now: datetime) -> EventHint:
+    if not list(events or []):
+        return EventHint()
+    parsed = complete_json(
+        [
             {
-                "id": item.id,
-                "text": item.text,
-                "owner": item.owner,
-                "due_said": item.due_said,
-                "evidence": item.evidence,
-                "start_at": item.start_at,
-                "end_at": item.end_at,
-            }
-            for item in outcome.actions
+                "role": "system",
+                "content": (
+                    "你从用户的话里找出要整理纪要的那一场已有会议。只输出 JSON："
+                    '{"title":str,"day":str,"clock":str}。'
+                    " day 是 YYYY-MM-DD，不知道就空字符串。clock 是 HH:MM，不知道就空字符串。"
+                    " title 必须来自用户的话或日程目录，不要编会议名称。"
+                    f" 今天是 {now.date().isoformat()}。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"日程目录：{_catalog_text(events)}\n当前消息：{message}",
+            },
         ],
-        "mail": {
-            "to": [invitee_wire(person) for person in outcome.mail.to],
-            "subject": outcome.mail.subject,
-            "body": outcome.mail.body,
-        },
+        role=Role.PLANNER,
+    )
+    if not isinstance(parsed, dict):
+        return EventHint()
+    title = _accepted_title(str(parsed.get("title") or ""), message, events)
+    day_text = str(parsed.get("day") or "").strip()
+    clock_text = str(parsed.get("clock") or "").strip()
+    try:
+        day = date.fromisoformat(day_text) if day_text else None
+    except ValueError:
+        day = None
+    try:
+        clock = time.fromisoformat(clock_text) if clock_text else None
+    except ValueError:
+        clock = None
+    if clock is not None:
+        clock = clock.replace(second=0, microsecond=0)
+    return EventHint(title=title, day=day, clock=clock)
+
+
+def _accepted_title(title: str, message: str, events) -> str:
+    cleaned = title.strip()
+    if not cleaned:
+        return ""
+    if cleaned in (message or ""):
+        return cleaned
+    for row in events or []:
+        catalog = str(getattr(row, "title", "") or "").strip()
+        if catalog and cleaned == catalog:
+            return cleaned
+    return ""
+
+
+def _candidate(row) -> dict:
+    start = getattr(row, "start_at", None)
+    end = getattr(row, "end_at", None)
+    return {
+        "title": str(getattr(row, "title", "") or "").strip() or "（无标题）",
+        "start_at": start.replace(microsecond=0).isoformat() if isinstance(start, datetime) else "",
+        "end_at": end.replace(microsecond=0).isoformat() if isinstance(end, datetime) else "",
+        "all_day": bool(getattr(row, "all_day", False)),
     }
-    if phase == "draft":
-        card["expires_at"] = draft_expires_at(now)
-    return card
 
 
 def _meeting(match: re.Match[str], events) -> tuple[str, tuple[Invitee, ...]]:
