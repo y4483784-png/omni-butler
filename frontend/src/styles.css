@@ -708,6 +708,20 @@ a.cite-link:hover {
   padding: 4px 0;
   font-size: 13px;
 }
+.brief-mail {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid #dbe3ef;
+}
+.brief-mail a {
+  color: #185fa5;
+}
+.brief-focus {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
 .schedule-slots {
   display: flex;
   flex-wrap: wrap;

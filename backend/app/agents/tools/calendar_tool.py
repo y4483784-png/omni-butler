@@ -13,6 +13,7 @@ from app.services.calendar import (
     REMOTE_READ_ERRORS,
     BindCreate,
     EventDraft,
+    EventHint,
     GoogleConfirm,
     LocalDraft,
     _catalog_text,
@@ -24,7 +25,9 @@ from app.services.calendar import (
     extract_event,
     extract_free_slots,
     extract_list_day,
-    rank_one_event,
+    parse_action,
+    pick_event,
+    unclear_action_reply,
     upcoming_events,
 )
 from app.services.calendar_local import free_gaps
@@ -36,6 +39,7 @@ from app.services.calendar_factory import (
 from app.services.calendar_provider import invitee_labels, parse_invitees
 from app.services.calendar_google import _LIST_LOCAL_ONLY, _LIST_TRUNCATED
 from app.services.calendar_secrets import CalendarTransientError
+from app.services.meeting_prep import prepare_meeting
 
 _GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不到就不会写入。"
 _ADVICE_UNAVAILABLE = "暂时给不出建议"
@@ -45,8 +49,6 @@ _SAFE_SLOT_NOTE = "请以上面的列表为准，已有安排的时段不是空�
 _FREE_CLAIM = ("有空", "空闲", "方便", "可以")
 _BUSY_ACK = ("重叠", "占用", "已有安排", "不是空", "没空", "忙")
 _NOT_FOUND = "没有找到对应日程。"
-_UNCLEAR_ACTION = "没有听清要新建、改期、删除、查看还是看空闲，这次没有改动日历。"
-_ACTIONS = frozenset({"create", "update", "cancel", "list", "suggest"})
 
 
 def resolve_action(
@@ -57,13 +59,13 @@ def resolve_action(
     now: datetime | None = None,
     timezone_name: str | None = None,
 ) -> str:
-    """Use a passed action when it is one of the five. Otherwise ask the model.
+    """Use a passed action when it is one this tool knows. Otherwise ask the model.
 
     Anything else in ``args`` is ignored. Keywords in the sentence do not decide.
     An empty return means the model did not name one action.
     """
-    action = str((args or {}).get("action") or "").strip().lower()
-    if action in _ACTIONS:
+    action = parse_action((args or {}).get("action"))
+    if action:
         return action
     return classify_calendar_action(
         message, history, now=now, timezone_name=timezone_name
@@ -839,8 +841,7 @@ def _unbound_mutate(
 
 def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
     steps = [f"第 {ctx.iteration} 轮：解析日程并生成确认卡片"]
-    explicit = str((args or {}).get("action") or "").strip().lower()
-    passed = explicit if explicit in _ACTIONS else ""
+    passed = parse_action((args or {}).get("action"))
     now: datetime | None = None
     zone_name: str | None = None
     clock_error: CalendarTransientError | None = None
@@ -863,7 +864,7 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
             if clock_error is not None:
                 steps.append("暂时连不上 Google 日历")
                 return _cleared(steps, str(clock_error))
-            return _cleared(steps, _UNCLEAR_ACTION)
+            return _cleared(steps, unclear_action_reply())
 
     if clock_error is not None:
         if action == "list":
@@ -894,6 +895,21 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
             ctx, now=now, zone_name=zone_name or "", events=events, notice=notice
         )
         return _cleared(steps, text, card)
+    if action == "prep":
+        if notice:
+            steps.append("没有读完日程，未生成卡片")
+            return _cleared(steps, _read_failure_reply(notice))
+        steps.append("只读会前准备，不写入")
+        outcome = prepare_meeting(
+            ctx.db,
+            ctx.user_id,
+            ctx.message,
+            ctx.history,
+            events,
+            now,
+            zone_name or "",
+        )
+        return _cleared(steps, outcome.caption, outcome.card)
 
     if action in {"update", "cancel"} and notice:
         steps.append("没有读完日程，未生成卡片")
@@ -923,7 +939,7 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
         return _cleared(steps, _create_answer(card, remote_note), card)
 
     query = (draft.search_title or draft.title or "").strip()
-    selected = rank_one_event(events, query)
+    selected = pick_event(events, EventHint(title=query))
     if selected is None:
         if action in {"update", "cancel"} and query:
             return _unbound_mutate(steps, action, draft, zone_name=zone_name)

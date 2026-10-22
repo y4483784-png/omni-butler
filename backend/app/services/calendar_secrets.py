@@ -12,7 +12,9 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from urllib.parse import urlencode
 
 import httpx
@@ -35,6 +37,9 @@ GOOGLE_CALENDAR_SCOPES = (
 # openid makes the code exchange return an id_token. Without it, access-token
 # tokeninfo often has no sub, and the connect is dropped after consent.
 GOOGLE_IDENTITY_SCOPES = ("openid", "email")
+# Requested on the same consent screen. Not required to save a calendar grant.
+GOOGLE_MAIL_SCOPES = ("https://www.googleapis.com/auth/gmail.readonly",)
+GOOGLE_REQUESTED_SCOPES = GOOGLE_CALENDAR_SCOPES + GOOGLE_MAIL_SCOPES + GOOGLE_IDENTITY_SCOPES
 OAUTH_STATE_MAX_AGE = 10 * 60
 _STATE_SALT = "omni-calendar-google-oauth"
 _AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -163,7 +168,7 @@ def build_authorize_url(state: str) -> str:
             "client_id": (settings.google_oauth_client_id or "").strip(),
             "redirect_uri": (settings.google_oauth_redirect_uri or "").strip(),
             "response_type": "code",
-            "scope": " ".join(GOOGLE_CALENDAR_SCOPES + GOOGLE_IDENTITY_SCOPES),
+            "scope": " ".join(GOOGLE_REQUESTED_SCOPES),
             "state": state,
             "access_type": "offline",
             "prompt": "consent",
@@ -173,22 +178,58 @@ def build_authorize_url(state: str) -> str:
     return f"{_AUTHORIZE_URL}?{query}"
 
 
+def _mail_access(scopes: str) -> bool:
+    granted = {part for part in (scopes or "").split() if part}
+    return all(scope in granted for scope in GOOGLE_MAIL_SCOPES)
+
+
 def connection_status(db: Session, user_id: int) -> dict:
     row = _connection_for(db, user_id)
     if row is None:
-        return {"connected": False, "account_email": "", "timezone": ""}
+        return {"connected": False, "account_email": "", "timezone": "", "mail_access": False}
     return {
         "connected": True,
         "account_email": row.account_email or "",
         "timezone": "",
+        "mail_access": _mail_access(row.scopes or ""),
     }
+
+
+@dataclass(frozen=True)
+class GoogleAccess:
+    """A reader for one granted scope. Callers never see the token."""
+
+    account_email: str
+    _token: str
+
+    def get(self, url: str, *, params: dict | None = None) -> httpx.Response:
+        return _http_request(
+            "GET",
+            url,
+            params=params,
+            headers={"Authorization": f"Bearer {self._token}"},
+        )
+
+
+def scoped_access(
+    db: Session, user_id: int, scope: str
+) -> GoogleAccess | Literal["not_connected", "scope_missing"]:
+    """A reader only when the stored grant has scope. No HTTP when it does not."""
+    row = _connection_for(db, user_id)
+    if row is None:
+        return "not_connected"
+    granted = {part for part in (row.scopes or "").split() if part}
+    if scope not in granted:
+        return "scope_missing"
+    token = refresh_access_token(db, row)
+    return GoogleAccess(account_email=row.account_email or "", _token=token)
 
 
 def disconnect_google(db: Session, user_id: int) -> dict:
     """Delete the token row only. Local events and Google events stay."""
     db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).delete()
     db.commit()
-    return {"connected": False, "account_email": "", "timezone": ""}
+    return {"connected": False, "account_email": "", "timezone": "", "mail_access": False}
 
 
 def connect_google_account(db: Session, *, user_id: int, code: str) -> CalendarConnection:

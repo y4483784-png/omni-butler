@@ -8,6 +8,7 @@ import {
   logout,
   googleCalendarStatus,
   disconnectGoogleCalendar,
+  connectGoogle,
   type AuthUser,
   type GoogleCalendarStatus,
 } from "../api/client";
@@ -105,7 +106,7 @@ export function SessionSidebar({ user, onLogout }: Props) {
   }
 
   function onConnectCalendar() {
-    window.location.assign("/api/calendar/google/connect");
+    connectGoogle();
   }
 
   async function onDisconnectCalendar() {
@@ -217,6 +218,11 @@ export function SessionSidebar({ user, onLogout }: Props) {
                 <span className="sidebar-calendar-email" title={calendarStatus.account_email}>
                   {calendarStatus.account_email}
                 </span>
+                {calendarStatus.mail_access === false ? (
+                  <button type="button" className="sidebar-link" onClick={onConnectCalendar}>
+                    授权读取 Gmail
+                  </button>
+                ) : null}
                 <button type="button" className="sidebar-link" onClick={() => void onDisconnectCalendar()}>
                   断开
                 </button>

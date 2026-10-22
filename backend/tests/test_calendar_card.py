@@ -71,7 +71,7 @@ def test_classifier_does_not_use_keywords_when_the_model_misses(monkeypatch):
     finally:
         db.close()
     assert result.schedule_card is None
-    assert result.direct_answer == "没有听清要新建、改期、删除、查看还是看空闲，这次没有改动日历。"
+    assert result.direct_answer == "没有听清要新建、改期、删除、查看、看空闲还是准备会议，这次没有改动日历。"
     for word in ("改期", "删除", "修改"):
         assert word in seen["prompt"]
 

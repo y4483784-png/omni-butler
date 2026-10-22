@@ -4,6 +4,7 @@ import {
   cancelCalendarEvent,
   confirmGoogleCalendarChange,
   createCalendarEvent,
+  formatPointedUtterance,
   rsvpCalendarEvent,
   updateCalendarEvent,
   type ScheduleCandidate,
@@ -246,9 +247,11 @@ function savedEventId(card: Card): number | null {
 export function ScheduleCard({
   card,
   onChange,
+  onAsk,
 }: {
   card: Card;
   onChange: (next: Card) => void;
+  onAsk?: (text: string) => void;
 }) {
   const expired = isExpired(card);
   const legacy = !card.phase && !card.mode;
@@ -476,6 +479,11 @@ export function ScheduleCard({
               <li key={`${item.start_at}-${item.title}-${index}`}>
                 <span>{formatListWhen(item)}</span>
                 <span>{item.title || "（无标题）"}</span>
+                {onAsk && item.title ? (
+                  <button type="button" className="ghost-btn" onClick={() => onAsk(formatPointedUtterance(item))}>
+                    会前准备
+                  </button>
+                ) : null}
                 {item.meet_link ? <span>{item.meet_link}</span> : null}
                 {item.external_id && item.rsvp ? (
                   <span className="schedule-actions">
@@ -536,6 +544,9 @@ export function ScheduleCard({
       </div>
     );
   }
+
+  const writeModes = new Set(["create", "update", "cancel", "choose"]);
+  if (!legacy && !writeModes.has(mode)) return null;
 
   const confirmLabel = mode === "cancel" ? "确认删除" : mode === "update" || legacy ? "确认修改" : "确认创建";
   const showForm = mode !== "choose";
