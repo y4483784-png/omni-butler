@@ -8,7 +8,7 @@ L2 主指标套件是 `agent`。`yz` 套件已下线（由 `agent` 取代），�
 |---|---:|---|---|
 | rag | 400 | ok | `rag_retrieval.jsonl` |
 | agent | 174 | ok | `agent_tasks.jsonl` |
-| routing | 420 | ok | `office_tool_routing.jsonl` |
+| routing | 423 | ok | `office_tool_routing.jsonl` |
 | grounding | 120 | ok | `grounding_faithfulness.jsonl` |
 | tabular | 200 | ok | `office_tabular.jsonl` |
 | context | 384 | ok | `context_recall.jsonl` |
@@ -26,7 +26,7 @@ L2 主指标套件是 `agent`。`yz` 套件已下线（由 `agent` 取代），�
 
 ### routing
 
-`rag`=130, `chat`=91, `data_analysis`=69, `calendar`=66, `web_search`=64
+`rag`=130, `chat`=91, `calendar`=69, `data_analysis`=69, `web_search`=64
 
 ### grounding
 

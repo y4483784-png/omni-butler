@@ -30,6 +30,7 @@ CARD_TYPES = frozenset(
         "block_update",
         "cancel",
         "list",
+        "followup",
         "none",
     }
 )
@@ -55,6 +56,8 @@ def card_type(card: dict | None) -> str:
         return "block_create" if kind == "block" else "meeting_create"
     if mode == "update":
         return "block_update" if kind == "block" else "meeting_update"
+    if mode == "followup":
+        return "followup"
     return "none"
 
 

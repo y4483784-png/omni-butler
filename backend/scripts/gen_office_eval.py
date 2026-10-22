@@ -30,8 +30,8 @@ def build_cases() -> list[dict]:
 
     base = _load(SEED)
     extra = _load(SEED_EXTRA)  # real anaphora multi-turn cases (history is required to answer)
-    if len(base) != 400 or len(extra) != 20:
-        raise ValueError(f"expected 400 base + 20 multiturn seeds, got {len(base)} + {len(extra)}")
+    if len(base) != 403 or len(extra) != 20:
+        raise ValueError(f"expected 403 base + 20 multiturn seeds, got {len(base)} + {len(extra)}")
     seeds = base + extra
     # Availability flags must match the gold tools, otherwise route() zeroes the tool
     # (router._apply_availability) and the case can never be answered correctly.

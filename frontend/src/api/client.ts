@@ -55,6 +55,22 @@ export interface ScheduleListItem {
   meet_link?: string;
 }
 
+export interface FollowAction {
+  id: string;
+  text: string;
+  owner: string;
+  due_said: string;
+  evidence: string;
+  start_at: string;
+  end_at: string;
+}
+
+export interface FollowMailDraft {
+  to: WireInvitee[];
+  subject: string;
+  body: string;
+}
+
 export interface WireInvitee {
   email: string;
   name: string;
@@ -87,6 +103,10 @@ export interface ScheduleCard {
   meet?: boolean;
   meet_link?: string;
   meet_status?: string;
+  points?: string[];
+  actions?: FollowAction[];
+  mail?: FollowMailDraft;
+  source?: { kind?: string };
 }
 
 export interface CalendarEventList {
