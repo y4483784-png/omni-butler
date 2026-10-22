@@ -1,0 +1,5 @@
+Round-trip a guest name with the email, cal-invitee-roundtrip  boxes=41  files=6 build=9 you-see=3 verify-unit=2 verify-live=10 verify-perf=4 review-gate=3 merge=4
+Add Drive docs to the meeting brief, cal-prep-drive  boxes=46  files=8 build=12 you-see=3 verify-unit=2 verify-live=10 verify-perf=4 review-gate=3 merge=4
+Confirm pasted minutes before any write, cal-follow-paste  boxes=45  files=8 build=11 you-see=3 verify-unit=2 verify-live=10 verify-perf=4 review-gate=3 merge=4
+Read official minutes or ask for a paste, cal-follow-official  boxes=41  files=5 build=10 you-see=3 verify-unit=2 verify-live=10 verify-perf=4 review-gate=3 merge=4
+4 PR sections, 0 problems

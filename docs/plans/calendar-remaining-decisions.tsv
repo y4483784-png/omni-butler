@@ -1,0 +1,10 @@
+ts	phase	decision	why	evidence	result
+2026-10-22T13:28:57Z	start	started the remaining calendar plan on release 4a26d5f	the operator asked for a docs plan and forbade feature code	docs/plans/calendar-remaining-prep-followup.md	open
+2026-10-22T13:28:57Z	frame	skipped prototypes and surveyed release	the brief already locked the product choices, so a throwaway UI would not decide them	docs/plans/calendar-remaining-prep-followup.md	no prototype branch
+2026-10-22T13:28:57Z	ground	surveyed prep, writes, oauth, and routing, then wrote one architecture note	the how skill asks for a synthesis before a design	backend/app/services/meeting_prep.py	anchors checked
+2026-10-22T13:28:57Z	arena	picked the no-send follow-up and rejected gmail.send	a second send route would be a second confirm pattern beside calendar clicks	docs/plans/calendar-remaining-prep-followup.md	base chosen
+2026-10-22T13:28:57Z	model	used Claude only at medium for the explainer, one design seat, and the cross-judge	pstack-models.mdc pins every role to grok-4.7-high and this run allowed Claude at medium for a second family	.cursor/rules/pstack-models.mdc	override recorded
+2026-10-22T13:28:57Z	verify	plan checker reported 0 problems and 4 pull request sections	the multi-phase plan script is the structural gate	docs/plans/calendar-remaining-prep-followup.md	0 problems
+2026-10-22T13:30:18Z	verify	re-ran the plan checker and saved its output	the earlier verify row cited the plan file and not the command output	docs/plans/calendar-remaining-check.txt	0 problems
+2026-10-22T13:30:18Z	model	kept Claude at medium for this plan run only	the operator mission granted that cap, and the knife program stays on grok-4.7-high	docs/plans/calendar-remaining-prep-followup.md	override stays in the plan
+2026-10-22T13:30:18Z	trail	the first six rows share one timestamp because they were appended together after the work	the order of those rows is the real sequence	docs/plans/calendar-remaining-decisions.tsv	batch noted
