@@ -4,13 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.services.gmail import (
-    _asks,
-    _compile,
-    _people,
-    _topic_terms,
-    search_meeting_mail,
-)
+from app.services.gmail import _queries, search_meeting_mail
 
 _DAY = date(2026, 10, 22)
 _SUFFIX_120 = (
@@ -34,9 +28,7 @@ _EMAIL = (
 
 
 def _compiled(attendees: tuple[str, ...], title: str, days: int = 120) -> tuple[str, ...]:
-    people = _people(attendees)
-    terms = _topic_terms(title)
-    return tuple(_compile(group, phrases, days, _DAY) for group, phrases in _asks(people, terms))
+    return _queries(attendees, title, days, _DAY)
 
 
 def test_labeled_attendee_ors_email_name_and_title():
