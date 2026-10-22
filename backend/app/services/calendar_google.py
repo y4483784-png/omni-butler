@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time, timedelta, tzinfo
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -29,6 +30,7 @@ from app.services.calendar_local import (
     free_gaps,
 )
 from app.services.calendar_provider import (
+    CalendarAttachment,
     CalendarEventDTO,
     Invitee,
     attendee_body,
@@ -1597,6 +1599,8 @@ class _EventView:
     rsvp: str = ""
     meet_link: str = ""
     attachment_ids: tuple[str, ...] = ()
+    attachments: tuple[CalendarAttachment, ...] = ()
+    meeting_code: str = ""
 
 
 def _hidden_on_list(item: dict) -> bool:
@@ -1616,6 +1620,7 @@ def _event_view(item: dict) -> _EventView | None:
         return None
     start, end, all_day = span
     summary = str(item.get("summary") or "").strip()
+    attachments = _attachments(item)
     return _EventView(
         gid=str(item.get("id") or ""),
         title=summary or _UNTITLED,
@@ -1625,7 +1630,9 @@ def _event_view(item: dict) -> _EventView | None:
         busy=str(item.get("transparency") or "") != "transparent",
         rsvp=_self_rsvp(item),
         meet_link=conference_view(item)[0],
-        attachment_ids=_attachment_ids(item),
+        attachment_ids=tuple(entry.file_id for entry in attachments),
+        attachments=attachments,
+        meeting_code=_meeting_code(item),
     )
 
 
@@ -1701,6 +1708,8 @@ def _overlay_dto(local: CalendarEventDTO, view: _EventView) -> CalendarEventDTO:
         rsvp=view.rsvp,
         meet_link=view.meet_link,
         attachment_ids=view.attachment_ids,
+        attachments=view.attachments,
+        meeting_code=view.meeting_code,
     )
 
 
@@ -1719,23 +1728,71 @@ def _readonly_dto(user_id: int, view: _EventView) -> CalendarEventDTO:
         rsvp=view.rsvp,
         meet_link=view.meet_link,
         attachment_ids=view.attachment_ids,
+        attachments=view.attachments,
+        meeting_code=view.meeting_code,
     )
 
 
-def _attachment_ids(item: dict) -> tuple[str, ...]:
+_MEETING_CODE = re.compile(r"^[a-z]{3}-[a-z]{4}-[a-z]{3}$")
+
+
+def _meeting_code_text(value: str) -> str:
+    text = (value or "").strip().lower()
+    if _MEETING_CODE.fullmatch(text):
+        return text
+    return ""
+
+
+def _code_from_meet_url(url: str) -> str:
+    text = (url or "").strip()
+    if not text:
+        return ""
+    parsed = urlparse(text)
+    if (parsed.hostname or "").lower() != "meet.google.com":
+        return ""
+    segment = (parsed.path or "").rstrip("/").split("/")[-1]
+    return _meeting_code_text(segment)
+
+
+def _meeting_code(item: dict) -> str:
+    data = item.get("conferenceData") if isinstance(item.get("conferenceData"), dict) else {}
+    raw = data.get("entryPoints") if isinstance(data.get("entryPoints"), list) else []
+    points = [point for point in raw if isinstance(point, dict)]
+    for point in points:
+        code = _meeting_code_text(str(point.get("meetingCode") or ""))
+        if code:
+            return code
+    for point in points:
+        code = _code_from_meet_url(str(point.get("uri") or ""))
+        if code:
+            return code
+    return _code_from_meet_url(str(item.get("hangoutLink") or ""))
+
+
+def _attachments(item: dict) -> tuple[CalendarAttachment, ...]:
     raw = item.get("attachments")
     if not isinstance(raw, list):
         return ()
-    ids: list[str] = []
+    kept: list[CalendarAttachment] = []
+    seen: set[str] = set()
     for entry in raw:
         if not isinstance(entry, dict):
             continue
         file_id = str(entry.get("fileId") or "").strip()
-        if file_id and file_id not in ids:
-            ids.append(file_id)
-        if len(ids) == 5:
+        if not file_id or file_id in seen:
+            continue
+        seen.add(file_id)
+        kept.append(
+            CalendarAttachment(
+                file_id=file_id,
+                title=str(entry.get("title") or "").strip(),
+                mime_type=str(entry.get("mimeType") or "").strip(),
+                file_url=str(entry.get("fileUrl") or "").strip(),
+            )
+        )
+        if len(kept) == 5:
             break
-    return tuple(ids)
+    return tuple(kept)
 
 
 def _busy_span(item: dict) -> tuple[datetime, datetime] | None:

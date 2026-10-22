@@ -1,7 +1,6 @@
-"""Read-only Drive lookup for one meeting. Official minutes stay out of this module."""
-
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.services.calendar_secrets import (
     GOOGLE_DRIVE_SCOPES,
+    GOOGLE_MEET_SCOPES,
     CalendarTokenError,
     CalendarTransientError,
     scoped_access,
@@ -20,6 +20,9 @@ from app.services.meeting_signals import MeetingSignals, capped_mail_people
 
 _FILES_URL = "https://www.googleapis.com/drive/v3/files"
 _DOC_MIME = "application/vnd.google-apps.document"
+_MEET_RECORDS = "https://meet.googleapis.com/v2/conferenceRecords"
+_NOTES_MARKERS: tuple[str, ...] = ()
+_MEETING_CODE = re.compile(r"^[a-z]{3}-[a-z]{4}-[a-z]{3}$")
 _GET_FIELDS = "id,name,mimeType,webViewLink"
 _LIST_FIELDS = "files(id,name,mimeType,webViewLink)"
 _PAGE_SIZE = 5
@@ -216,3 +219,267 @@ def _export_text(access, file_id: str) -> str:
     if response.status_code != 200:
         return ""
     return str(getattr(response, "text", "") or "")
+
+
+@dataclass(frozen=True)
+class OfficialMinutes:
+    source: Literal["meet_smart_notes", "attachment_notes"]
+    title: str
+    url: str
+    text: str
+
+    def __post_init__(self) -> None:
+        if self.source not in ("meet_smart_notes", "attachment_notes"):
+            raise ValueError("official source")
+        if not str(self.text or "").strip():
+            raise ValueError("official minutes text is empty")
+
+
+@dataclass(frozen=True)
+class OfficialRead:
+    status: Literal["found", "needs_paste", "needs_consent", "unavailable"]
+    minutes: OfficialMinutes | None = None
+    checked: tuple[str, ...] = ()
+    consent: Literal["", "attachment", "meet"] = ""
+
+    def __post_init__(self) -> None:
+        if self.status == "found" and self.minutes is None:
+            raise ValueError("found minutes are missing")
+        if self.status != "found" and self.minutes is not None:
+            raise ValueError("only a found read carries minutes")
+        if self.status == "needs_consent" and self.consent not in ("attachment", "meet"):
+            raise ValueError("consent source")
+        if self.status != "needs_consent" and self.consent:
+            raise ValueError("consent source")
+
+
+@dataclass(frozen=True)
+class _MeetDoc:
+    document_id: str
+    export_uri: str
+
+
+def read_official_minutes(db: Session | None, user_id: int | None, *, meeting_code: str, attachments) -> OfficialRead:
+    checked: list[str] = []
+    meet_down = False
+    code = _meeting_code_text(meeting_code)
+    if code:
+        meet = _open_scope(db, user_id, GOOGLE_MEET_SCOPES[0])
+        if meet == "down":
+            meet_down = True
+        elif _usable(meet):
+            found = _smart_note(meet, code)
+            if found == "down":
+                checked.append("meet_smart_notes")
+                meet_down = True
+            elif found != "skip":
+                checked.append("meet_smart_notes")
+                if isinstance(found, _MeetDoc):
+                    opened = _export_found(
+                        db,
+                        user_id,
+                        found.document_id,
+                        title="智能纪要",
+                        url=found.export_uri,
+                        source="meet_smart_notes",
+                        checked=tuple(checked),
+                        consent="meet",
+                    )
+                    if opened is not None:
+                        return opened
+    notes = _notes_files(attachments)
+    checked.append("attachment_notes")
+    if notes:
+        drive = _open_scope(db, user_id, GOOGLE_DRIVE_SCOPES[0])
+        if drive == "down":
+            return OfficialRead("unavailable", checked=tuple(checked))
+        if not _usable(drive):
+            return OfficialRead("needs_consent", checked=tuple(checked), consent="attachment")
+        for note in notes:
+            opened = _open_with_access(
+                drive,
+                str(getattr(note, "file_id", "") or "").strip(),
+                title=str(getattr(note, "title", "") or "").strip() or "纪要",
+                url=str(getattr(note, "file_url", "") or "").strip(),
+                source="attachment_notes",
+                checked=tuple(checked),
+                consent="attachment",
+            )
+            if opened is not None:
+                return opened
+    if meet_down:
+        return OfficialRead("unavailable", checked=tuple(checked))
+    return OfficialRead("needs_paste", checked=tuple(checked))
+
+
+def _meeting_code_text(value: str) -> str:
+    text = (value or "").strip().lower()
+    if _MEETING_CODE.fullmatch(text):
+        return text
+    return ""
+
+
+def _open_scope(db: Session | None, user_id: int | None, scope: str):
+    if db is None or user_id is None:
+        return "scope_missing"
+    try:
+        return scoped_access(db, user_id, scope)
+    except CalendarTokenError:
+        return "token"
+    except CalendarTransientError:
+        return "down"
+
+
+def _usable(access) -> bool:
+    return access not in ("not_connected", "scope_missing", "token", "down")
+
+
+def _notes_files(attachments) -> list:
+    kept = []
+    for item in attachments or ():
+        file_id = str(getattr(item, "file_id", "") or "").strip()
+        title = str(getattr(item, "title", "") or "")
+        mime = str(getattr(item, "mime_type", "") or "")
+        if not file_id or mime != _DOC_MIME:
+            continue
+        if any(marker and marker in title for marker in _NOTES_MARKERS):
+            kept.append(item)
+    return kept
+
+
+def _export_found(
+    db,
+    user_id,
+    file_id: str,
+    *,
+    title: str,
+    url: str,
+    source: Literal["meet_smart_notes", "attachment_notes"],
+    checked: tuple[str, ...],
+    consent: Literal["attachment", "meet"],
+) -> OfficialRead | None:
+    drive = _open_scope(db, user_id, GOOGLE_DRIVE_SCOPES[0])
+    if drive == "down":
+        return OfficialRead("unavailable", checked=checked)
+    if not _usable(drive):
+        return OfficialRead("needs_consent", checked=checked, consent=consent)
+    return _open_with_access(
+        drive,
+        file_id,
+        title=title,
+        url=url,
+        source=source,
+        checked=checked,
+        consent=consent,
+    )
+
+
+def _open_with_access(
+    access,
+    file_id: str,
+    *,
+    title: str,
+    url: str,
+    source: Literal["meet_smart_notes", "attachment_notes"],
+    checked: tuple[str, ...],
+    consent: Literal["attachment", "meet"],
+) -> OfficialRead | None:
+    outcome = _open_doc(access, file_id, title=title, url=url, source=source)
+    if isinstance(outcome, OfficialMinutes):
+        return OfficialRead("found", minutes=outcome, checked=checked)
+    if outcome == "consent":
+        return OfficialRead("needs_consent", checked=checked, consent=consent)
+    if outcome == "down":
+        return OfficialRead("unavailable", checked=checked)
+    return None
+
+
+def _open_doc(access, file_id: str, *, title: str, url: str, source: Literal["meet_smart_notes", "attachment_notes"]):
+    meta = _optional_meta(access, file_id)
+    if meta == "consent":
+        return "consent"
+    if isinstance(meta, dict):
+        name = str(meta.get("name") or "").strip()
+        if name:
+            title = name
+        link = str(meta.get("webViewLink") or "").strip()
+        if not url and link:
+            url = link
+    kind, text = _export_outcome(access, file_id)
+    if kind != "text":
+        return kind
+    if not url:
+        url = f"https://drive.google.com/open?id={quote(file_id, safe='')}"
+    return OfficialMinutes(source, title or "纪要", url, text)
+
+
+def _optional_meta(access, file_id: str):
+    try:
+        return _get_file(access, file_id)
+    except _Rejected:
+        return "consent"
+    except _Down:
+        return None
+
+
+def _export_outcome(access, file_id: str) -> tuple[str, str]:
+    try:
+        text = _export_text(access, file_id)
+    except _Rejected:
+        return "consent", ""
+    except _Down:
+        return "down", ""
+    if not text.strip():
+        return "empty", ""
+    return "text", text
+
+
+def _smart_note(access, code: str):
+    response = access.get(
+        _MEET_RECORDS,
+        params={"pageSize": 1, "filter": f'space.meeting_code="{code}"'},
+    )
+    parsed = _meet_body(response)
+    if parsed in ("skip", "down") or not isinstance(parsed, dict):
+        return parsed
+    records = parsed.get("conferenceRecords")
+    if not isinstance(records, list) or not records or not isinstance(records[0], dict):
+        return None
+    name = str(records[0].get("name") or "").strip().strip("/")
+    if not name.startswith("conferenceRecords/") or ".." in name or "://" in name:
+        return None
+    response = access.get(
+        f"https://meet.googleapis.com/v2/{name}/smartNotes",
+        params={"pageSize": 1},
+    )
+    parsed = _meet_body(response)
+    if parsed in ("skip", "down") or not isinstance(parsed, dict):
+        return parsed
+    notes = parsed.get("smartNotes")
+    if not isinstance(notes, list) or not notes or not isinstance(notes[0], dict):
+        return None
+    note = notes[0]
+    if str(note.get("state") or "") != "FILE_GENERATED":
+        return None
+    dest = note.get("docsDestination") if isinstance(note.get("docsDestination"), dict) else {}
+    document_id = str(dest.get("document") or dest.get("documentId") or "").strip()
+    export_uri = str(dest.get("exportUri") or "").strip()
+    if not document_id or not export_uri:
+        return None
+    return _MeetDoc(document_id, export_uri)
+
+
+def _meet_body(response):
+    if response.status_code in (401, 403):
+        return "skip"
+    if response.status_code == 404:
+        return None
+    if response.status_code != 200:
+        return "down"
+    try:
+        body = response.json() if getattr(response, "content", b"") else {}
+    except ValueError:
+        return "down"
+    if not isinstance(body, dict):
+        return None
+    return body

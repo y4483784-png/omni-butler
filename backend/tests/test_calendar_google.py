@@ -376,6 +376,8 @@ def test_connect_redirects_with_offline_consent_and_exact_scopes(
     assert "https://www.googleapis.com/auth/gmail.readonly" in granted
     assert "https://www.googleapis.com/auth/drive.readonly" in granted
     assert "https://www.googleapis.com/auth/drive.readonly" not in GOOGLE_CALENDAR_SCOPES
+    assert "https://www.googleapis.com/auth/meetings.space.readonly" in granted
+    assert "https://www.googleapis.com/auth/meetings.space.readonly" not in GOOGLE_CALENDAR_SCOPES
     assert "https://www.googleapis.com/auth/gmail.send" not in granted
     assert "https://www.googleapis.com/auth/gmail.modify" not in granted
     assert "https://www.googleapis.com/auth/gmail.compose" not in granted
@@ -704,6 +706,7 @@ def test_second_row_and_different_sub_rejected_disconnect_clears_status(
             "timezone": "Etc/GMT",
             "mail_access": False,
             "drive_access": False,
+            "meet_access": False,
         }
         assert any(call["url"].endswith("/users/me/settings/timezone") for call in fake_google.calls)
         assert all("/events" not in call["url"] for call in fake_google.calls)

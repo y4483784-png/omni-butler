@@ -209,7 +209,7 @@ function MessageRow({
             ) : m.scheduleCard?.mode === "brief" ? (
               <MeetingBriefCard card={m.scheduleCard as MeetingBrief} onAsk={onAsk} />
             ) : m.scheduleCard?.mode === "followup" ? (
-              <FollowupCard card={m.scheduleCard} />
+              <FollowupCard card={m.scheduleCard} onAsk={onAsk} />
             ) : null}
             {m.content ? (
               <Markdown content={m.content} citations={m.citations} />

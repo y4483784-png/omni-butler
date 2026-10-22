@@ -105,7 +105,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 容器里没有这份命令时，在已安装依赖的开发机上生成，再贴进 `backend/.env`。配了 `GOOGLE_OAUTH_CLIENT_ID` 却把这项空着：没开强制检查时，点「连接 Google 日历」会失败；`ENFORCE_SECURE_SECRETS=true` 时，进程直接拒绝启动。
 
-请求的范围是 `calendar.events`、`calendar.settings.readonly`、`calendar.events.freebusy`、`gmail.readonly`、`drive.readonly`，以及确认账户用的 `openid` 和 `email`。保存连接只要求日历范围。没有 Gmail 或 Drive 时，会前简报仍给出日历，并在卡片上要求重新授权。同意屏幕上要加上 `openid`、`email`（控制台里的 `userinfo.email`）、`gmail.readonly` 和 `drive.readonly`。只勾日历范围时，授权回来可能确认不了 Google 账户。手测步骤见 [docs/plans/calendar-google-manual-acceptance.md](docs/plans/calendar-google-manual-acceptance.md)。
+请求的范围是 `calendar.events`、`calendar.settings.readonly`、`calendar.events.freebusy`、`gmail.readonly`、`drive.readonly`、`meetings.space.readonly`，以及确认账户用的 `openid` 和 `email`。保存连接只要求日历范围。没有 Gmail 或 Drive 时，会前简报仍给出日历，并在卡片上要求重新授权。没有 `meetings.space.readonly` 时，会后跟进跳过 Meet 智能纪要，不要求为 Meet 重新连接。同意屏幕上要加上 `openid`、`email`（控制台里的 `userinfo.email`）、`gmail.readonly`、`drive.readonly` 和 `meetings.space.readonly`。只勾日历范围时，授权回来可能确认不了 Google 账户。手测步骤见 [docs/plans/calendar-google-manual-acceptance.md](docs/plans/calendar-google-manual-acceptance.md)。
 
 其余开关在 `.env.example` 里有注释，默认就能跑。含义见 [docs/architecture.md](docs/architecture.md)。
 
