@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
 from typing import assert_never
 
@@ -36,7 +35,7 @@ from app.services.calendar_factory import (
     calendar_provider_for,
     calendar_writes_remote,
 )
-from app.services.calendar_provider import invitee_labels, parse_invitees
+from app.services.calendar_provider import invitee_wire, parse_invitees
 from app.services.calendar_google import _LIST_LOCAL_ONLY, _LIST_TRUNCATED
 from app.services.calendar_secrets import CalendarTransientError
 from app.services.meeting_prep import prepare_meeting
@@ -116,17 +115,8 @@ def _write_kind(action: str, draft: EventDraft) -> str:
     return "block" if (draft.kind or "").strip().lower() == "block" else "meeting"
 
 
-def _people(raw) -> list[str]:
-    if isinstance(raw, list):
-        return [str(item).strip() for item in raw if str(item).strip()]
-    if isinstance(raw, str) and raw.strip():
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
-        if isinstance(parsed, list):
-            return [str(item).strip() for item in parsed if str(item).strip()]
-    return []
+def _people(raw) -> list[dict[str, str]]:
+    return [invitee_wire(item) for item in parse_invitees(raw)]
 
 
 def _infer_kind(participants: list[str], location: str) -> str:
@@ -207,7 +197,6 @@ def _base_card(
     kind: str = "",
 ) -> dict:
     invitees = [] if kind == "block" else parse_invitees(draft.participants)
-    participants = [item.email or item.name for item in invitees]
     return {
         "mode": mode,
         "phase": "draft",
@@ -218,9 +207,7 @@ def _base_card(
         "title": draft.title or "",
         "start_at": _iso(draft.start_at),
         "end_at": _iso(draft.end_at),
-        "participants": participants,
-        "guest_emails": [item.email for item in invitees if item.email],
-        "guest_names": [item.name for item in invitees if item.name and not item.email],
+        "participants": [invitee_wire(item) for item in invitees],
         "location": "" if kind == "block" else (draft.location or ""),
         "description": draft.description or "",
         "timezone": "",
@@ -321,6 +308,9 @@ def _item_payload(row) -> dict:
         "start_at": _iso(getattr(row, "start_at", None)),
         "end_at": _iso(getattr(row, "end_at", None)),
         "all_day": bool(getattr(row, "all_day", False)),
+        "participants": [
+            invitee_wire(item) for item in parse_invitees(getattr(row, "participants", None))
+        ],
     }
     external_id = str(getattr(row, "external_id", "") or "").strip()
     rsvp = str(getattr(row, "rsvp", "") or "").strip()
@@ -594,10 +584,7 @@ def _mutual_suggest(ctx: ToolContext, rows, start: datetime, end: datetime, gues
     if card is None:
         card = _list_card([], [])
     if card is not None:
-        parsed = parse_invitees(guests)
-        card["participants"] = invitee_labels(guests)
-        card["guest_emails"] = [item.email for item in parsed if item.email]
-        card["guest_names"] = [item.name for item in parsed if item.name and not item.email]
+        card["participants"] = [invitee_wire(item) for item in parse_invitees(guests)]
     note = str(getattr(provider, "freebusy_note", "") or "")
     if note:
         return note, card

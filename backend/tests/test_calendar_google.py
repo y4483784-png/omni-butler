@@ -1397,7 +1397,7 @@ def test_connected_create_writes_google_then_local_wall_clock(
         assert body["start_at"].startswith("2026-08-06T15:00:00")
         assert body["end_at"].startswith("2026-08-06T16:00:00")
         assert "+08:00" not in body["start_at"]
-        assert body["participants"] == ["张三"]
+        assert body["participants"] == [{"email": "", "name": "张三"}]
         assert body["location"] == "会议室"
         assert body["description"] == "只留在本地的说明"
 
@@ -1446,6 +1446,73 @@ def test_connected_create_writes_google_then_local_wall_clock(
         db.close()
 
 
+def test_display_name_round_trips_through_create_and_list(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """A name typed beside an email survives the card, the Google body, and the next list."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    start = datetime(2026, 12, 2, 15, 0)
+
+    def _extract(_message, _history=None, **_kwargs):
+        return EventDraft(
+            title="姓名往返",
+            start_at=start,
+            end_at=start + timedelta(hours=1),
+            participants=["张三 <zhangsan@example.com>"],
+            kind="meeting",
+        )
+
+    monkeypatch.setattr("app.agents.tools.calendar_tool.extract_event", _extract)
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        before = db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count()
+        drafted = execute_calendar(
+            ToolContext(db=db, message="明天下午开会，请张三", history=[], user_id=user_id),
+            {"action": "create"},
+        )
+        card = drafted.schedule_card
+        assert card["participants"] == [{"email": "zhangsan@example.com", "name": "张三"}]
+        assert "guest_emails" not in card
+        assert "guest_names" not in card
+        assert _insert_calls(fake_google) == []
+        assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
+        assert "drive.readonly" not in GOOGLE_REQUESTED_SCOPES
+        assert "gmail.send" not in " ".join(GOOGLE_REQUESTED_SCOPES)
+
+        fake_google.insert_id = "evt-named"
+        created = auth_client.post(
+            "/api/calendar",
+            json={
+                "title": "姓名往返",
+                "start_at": "2026-12-02T15:00:00",
+                "end_at": "2026-12-02T16:00:00",
+                "participants": [{"email": "zhangsan@example.com", "name": "张三"}],
+            },
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["participants"] == [{"email": "zhangsan@example.com", "name": "张三"}]
+        inserts = _insert_calls(fake_google)
+        assert len(inserts) == 1
+        assert inserts[0]["json"]["attendees"] == [
+            {"email": "zhangsan@example.com", "displayName": "张三"}
+        ]
+
+        listed = auth_client.get(
+            "/api/calendar",
+            params={"start": "2026-12-02T00:00:00", "end": "2026-12-03T00:00:00"},
+        )
+        assert listed.status_code == 200, listed.text
+        body = listed.json()
+        events = body["events"] if isinstance(body, dict) else body
+        match = next(item for item in events if item["title"] == "姓名往返")
+        assert match["participants"] == [{"email": "zhangsan@example.com", "name": "张三"}]
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
 def test_create_invites_emails_and_keeps_bare_names(
     auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
 ):
@@ -1481,8 +1548,13 @@ def test_create_invites_emails_and_keeps_bare_names(
             {"action": "create"},
         )
         card = drafted.schedule_card
-        assert card["guest_emails"] == ["guest@example.com"]
-        assert card["guest_names"] == ["张三", "not an email"]
+        assert card["participants"] == [
+            {"email": "guest@example.com", "name": ""},
+            {"email": "", "name": "张三"},
+            {"email": "", "name": "not an email"},
+        ]
+        assert "guest_emails" not in card
+        assert "guest_names" not in card
         assert _insert_calls(fake_google) == []
 
         blocked = execute_calendar(
@@ -1491,8 +1563,8 @@ def test_create_invites_emails_and_keeps_bare_names(
         )
         assert blocked.schedule_card["kind"] == "block"
         assert blocked.schedule_card["participants"] == []
-        assert blocked.schedule_card["guest_emails"] == []
-        assert blocked.schedule_card["guest_names"] == []
+        assert "guest_emails" not in blocked.schedule_card
+        assert "guest_names" not in blocked.schedule_card
 
         fake_google.insert_id = "evt-invite"
         created = auth_client.post(
@@ -1505,7 +1577,11 @@ def test_create_invites_emails_and_keeps_bare_names(
             },
         )
         assert created.status_code == 200, created.text
-        assert created.json()["participants"] == ["guest@example.com", "张三", "not an email"]
+        assert created.json()["participants"] == [
+            {"email": "guest@example.com", "name": ""},
+            {"email": "", "name": "张三"},
+            {"email": "", "name": "not an email"},
+        ]
         inserts = _insert_calls(fake_google)
         assert len(inserts) == 1
         assert inserts[0]["json"]["attendees"] == [{"email": "guest@example.com"}]
@@ -2070,7 +2146,7 @@ def test_update_patches_google_before_local_and_failure_keeps_row(
         fake_google.calls.clear()
         participants = auth_client.patch(f"/api/calendar/{row.id}", json={"participants": ["李四"]})
         assert participants.status_code == 200, participants.text
-        assert participants.json()["participants"] == ["李四"]
+        assert participants.json()["participants"] == [{"email": "", "name": "李四"}]
         assert len(_get_calls(fake_google)) == 1
         guest_patches = _patch_calls(fake_google)
         assert len(guest_patches) == 1
@@ -2102,7 +2178,7 @@ def test_update_patches_google_before_local_and_failure_keeps_row(
         assert body["title"] == "改过的评审"
         assert body["location"] == "会议室"
         assert body["description"] == "只改说明"
-        assert body["participants"] == ["王五"]
+        assert body["participants"] == [{"email": "", "name": "王五"}]
         assert body["timezone"] == "Asia/Shanghai"
         assert body["start_at"].startswith("2026-12-02T15:00:00")
         db.refresh(row)
@@ -2195,12 +2271,15 @@ def test_participant_update_replaces_full_attendee_list(
             json={"participants": ["a@example.com", "d@example.com"]},
         )
         assert changed.status_code == 200, changed.text
-        assert changed.json()["participants"] == ["a@example.com", "d@example.com"]
+        assert changed.json()["participants"] == [
+            {"email": "a@example.com", "name": ""},
+            {"email": "d@example.com", "name": ""},
+        ]
         assert len(_get_calls(fake_google)) == 1
         patches = _patch_calls(fake_google)
         assert len(patches) == 1
         assert patches[0]["json"]["attendees"] == [
-            {"email": "a@example.com", "responseStatus": "accepted"},
+            {"email": "a@example.com", "displayName": "甲", "responseStatus": "accepted"},
             {"email": "d@example.com"},
         ]
         assert patches[0]["params"]["sendUpdates"] == "all"
@@ -2343,7 +2422,10 @@ def test_freebusy_scope_not_found_and_open_slots(
         )
         assert _insert_calls(fake_google) == []
         assert suggested.schedule_card["suggested_slots"]
-        assert suggested.schedule_card["participants"] == ["a@example.com", "张三"]
+        assert suggested.schedule_card["participants"] == [
+            {"email": "a@example.com", "name": ""},
+            {"email": "", "name": "张三"},
+        ]
         assert "张三" in suggested.direct_answer
     finally:
         _cleanup(user_id)
@@ -2730,7 +2812,7 @@ def test_local_row_inserts_on_first_confirmed_update(
         assert body["timezone"] == "Asia/Shanghai"
         assert body["title"] == "迁到 Google"
         assert body["start_at"].startswith("2026-12-02T19:30:00")
-        assert body["participants"] == ["甲"]
+        assert body["participants"] == [{"email": "", "name": "甲"}]
         listed = _list_calls(fake_google)
         inserts = _insert_calls(fake_google)
         assert listed and inserts
@@ -3283,7 +3365,7 @@ def test_connected_list_overlays_google_without_writing(
         assert live.get("readonly") is not True
         assert live["start_at"].startswith("2026-06-03T14:00:00")
         assert live["end_at"].startswith("2026-06-03T15:30:00")
-        assert live["participants"] == ["甲"]
+        assert live["participants"] == [{"email": "", "name": "甲"}]
         assert live["location"] == "旧地点"
         assert "10:00" not in live["start_at"]
         google_only = by_title["外面的会"]
@@ -4518,7 +4600,7 @@ def test_connected_update_prefills_live_event_fields(
         assert card["phase"] == "draft"
         assert card["title"] == "测试会议"
         assert card["kind"] == "meeting"
-        assert card["participants"] == ["li@example.com"]
+        assert card["participants"] == [{"email": "li@example.com", "name": "小李"}]
         assert card["location"] == "会议室"
         assert card["description"] == "带上大纲"
         assert card["start_at"] == "2026-10-17T16:00:00"
@@ -4540,7 +4622,7 @@ def test_connected_update_prefills_live_event_fields(
         )
         moved = shortened.schedule_card
         assert moved["kind"] == "meeting"
-        assert moved["participants"] == ["li@example.com"]
+        assert moved["participants"] == [{"email": "li@example.com", "name": "小李"}]
         assert moved["location"] == "会议室"
         assert moved["description"] == "改成简短"
         assert moved["start_at"] == "2026-10-17T16:00:00"
@@ -4556,7 +4638,7 @@ def test_connected_update_prefills_live_event_fields(
         assert cancel_card["start_at"] == "2026-10-16T15:00:00"
         assert cancel_card["end_at"] == "2026-10-16T17:00:00"
         assert cancel_card["description"] == "带上大纲"
-        assert cancel_card["participants"] == ["li@example.com"]
+        assert cancel_card["participants"] == [{"email": "li@example.com", "name": "小李"}]
         assert cancel_card["location"] == "会议室"
         _assert_offset_free(cancel_card)
         assert _delete_calls(fake_google) == []
@@ -4635,7 +4717,7 @@ def test_connected_prefill_uses_local_participants_when_google_has_none(
         card = result.schedule_card
         assert card["mode"] == "update"
         assert card["kind"] == "meeting"
-        assert card["participants"] == ["小王"]
+        assert card["participants"] == [{"email": "", "name": "小王"}]
         assert card["location"] == ""
         assert card["description"] == "议程"
         assert card["start_at"] == "2026-10-17T16:00:00"

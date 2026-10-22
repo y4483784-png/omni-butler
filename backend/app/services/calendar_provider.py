@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo
 from typing import Protocol
+
+_NAMED_EMAIL = re.compile(r"^(.+?)\s*<([^<>]+)>\s*$")
 
 
 @dataclass(frozen=True)
@@ -15,9 +18,19 @@ class Invitee:
     email: str
     name: str
 
+    def __post_init__(self) -> None:
+        email = self.email.strip()
+        name = self.name.strip()
+        if email and "@" not in email:
+            raise ValueError("invitee email needs @")
+        if not email and not name:
+            raise ValueError("invitee needs an email or a name")
+        object.__setattr__(self, "email", email)
+        object.__setattr__(self, "name", name)
+
 
 def parse_invitee(value: object) -> Invitee | None:
-    """A stored object, or a legacy string. `@` marks an email."""
+    """A stored object, a `Name <email>` string, or a legacy string. `@` marks an email."""
     email = ""
     name = ""
     if isinstance(value, Invitee):
@@ -29,7 +42,11 @@ def parse_invitee(value: object) -> Invitee | None:
     else:
         text = str(value or "").strip()
         if text and text != "None":
-            if "@" in text:
+            named = _NAMED_EMAIL.fullmatch(text)
+            if named and "@" in named.group(2):
+                name = named.group(1).strip()
+                email = named.group(2).strip()
+            elif "@" in text:
                 email = text
             else:
                 name = text
@@ -67,19 +84,35 @@ def invitee_label(invitee: Invitee) -> str:
     return invitee.email or invitee.name
 
 
+def invitee_wire(invitee: Invitee) -> dict[str, str]:
+    """The card and HTTP shape. Both keys are always present."""
+    return {"email": invitee.email, "name": invitee.name}
+
+
 def invitee_labels(values: object) -> list[str]:
     return [invitee_label(item) for item in parse_invitees(values)]
 
 
 def dump_invitees(values: object) -> str:
     """The only stored shape. Each item is an email and a name."""
-    payload = [{"email": item.email, "name": item.name} for item in parse_invitees(values)]
+    payload = [invitee_wire(item) for item in parse_invitees(values)]
     return json.dumps(payload, ensure_ascii=False)
 
 
 def attendee_body(values: object) -> list[dict[str, str]]:
-    """Emails only. No responseStatus, so Google treats them as needsAction."""
-    return [{"email": item.email} for item in parse_invitees(values) if item.email]
+    """Emails only. A name travels as displayName. No responseStatus, so Google treats them as needsAction.
+
+    A name-only person is omitted. Google has no address to invite.
+    """
+    body: list[dict[str, str]] = []
+    for item in parse_invitees(values):
+        if not item.email:
+            continue
+        entry = {"email": item.email}
+        if item.name:
+            entry["displayName"] = item.name
+        body.append(entry)
+    return body
 
 
 @dataclass

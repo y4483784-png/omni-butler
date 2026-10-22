@@ -7,11 +7,11 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.models import CalendarEvent
-from app.services.calendar_provider import CalendarEventDTO, dump_invitees, invitee_labels
+from app.services.calendar_provider import CalendarEventDTO, dump_invitees, invitee_wire, parse_invitees
 
 
-def _participants_from_row(raw: str | None) -> list[str]:
-    return invitee_labels(raw)
+def _participants_from_row(raw: str | None) -> list[dict[str, str]]:
+    return [invitee_wire(item) for item in parse_invitees(raw)]
 
 
 def free_gaps(

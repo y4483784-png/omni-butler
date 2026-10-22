@@ -5,12 +5,28 @@ from __future__ import annotations
 import inspect
 from datetime import datetime, timedelta
 
+import pytest
+
 from app.agents.tools import calendar_tool
 from app.core.auth import hash_password
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarEvent, User
 from app.services.calendar import check_conflict, create_event, serialize_event_card
 from app.services.calendar_local import LocalCalendarProvider
+from app.services.calendar_provider import Invitee, attendee_body, parse_invitee
+
+
+def test_parse_invitee_keeps_a_name_beside_an_email():
+    parsed = parse_invitee("张三 <zhangsan@example.com>")
+    assert parsed == Invitee(email="zhangsan@example.com", name="张三")
+    assert attendee_body([parsed]) == [{"email": "zhangsan@example.com", "displayName": "张三"}]
+    assert attendee_body([Invitee(email="", name="张三")]) == []
+    bare = parse_invitee("plain@example.com")
+    assert bare is not None and bare.email == "plain@example.com" and bare.name == ""
+    with pytest.raises(ValueError):
+        Invitee(email="", name="  ")
+    with pytest.raises(ValueError):
+        Invitee(email="not-an-email", name="")
 
 
 def _user(db, *, username: str, user_id: int) -> User:
@@ -75,7 +91,7 @@ def test_provider_roundtrip_defaults_and_ownership():
         assert created.location == ""
         assert created.description == ""
         assert created.external_id == ""
-        assert created.participants == ["张三"]
+        assert created.participants == [{"email": "", "name": "张三"}]
         assert created.status == "active"
 
         own = provider.get_event(alice.id, created.id)
@@ -165,7 +181,7 @@ def test_facade_create_event_keeps_orm_row_and_card_keys():
         assert event.timezone == ""
         card = serialize_event_card(event)
         assert card["id"] == event.id
-        assert card["participants"] == ["张三"]
+        assert card["participants"] == [{"email": "", "name": "张三"}]
         assert card["provider"] == "local"
         assert card["external_id"] == ""
     finally:

@@ -12,6 +12,7 @@ import {
   type ScheduleSlot,
 } from "../api/client";
 import { isExpired } from "../utils/scheduleExpiry";
+import { guestsFromWire, participantsForSubmit, type Guest } from "../utils/guestWire";
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -88,11 +89,6 @@ function rsvpLabel(status: string): string {
 type EmailAddress = string & { readonly __brand: "EmailAddress" };
 type PersonName = string & { readonly __brand: "PersonName" };
 
-type Guest =
-  | { readonly kind: "named-invite"; readonly name: PersonName; readonly email: EmailAddress }
-  | { readonly kind: "email-only"; readonly email: EmailAddress }
-  | { readonly kind: "name-only"; readonly name: PersonName };
-
 type DialogGuest = Extract<Guest, { kind: "named-invite" | "name-only" }>;
 
 type GuestEditor =
@@ -117,28 +113,10 @@ function isPersonName(value: string): value is PersonName {
   return value.length > 0 && !value.includes("@");
 }
 
-function isWireEmail(value: string): value is EmailAddress {
-  return value.includes("@");
-}
-
 function isDialogEmail(value: string): value is EmailAddress {
   if (/[\s<>、,，]/.test(value)) return false;
   const at = value.indexOf("@");
   return at > 0 && at === value.lastIndexOf("@") && at < value.length - 1;
-}
-
-function guestsFromWire(participants: readonly string[] | null | undefined): readonly Guest[] {
-  let guests: readonly Guest[] = [];
-  for (const token of participants ?? []) {
-    const trimmed = token.trim();
-    if (trimmed.length === 0) continue;
-    if (isWireEmail(trimmed)) {
-      guests = appendGuest(guests, { kind: "email-only", email: trimmed });
-    } else if (isPersonName(trimmed)) {
-      guests = appendGuest(guests, { kind: "name-only", name: trimmed });
-    }
-  }
-  return guests;
 }
 
 function commitGuest(
@@ -160,25 +138,6 @@ function commitGuest(
   }
   if (existing.some((item) => sameGuest(item, guest))) return { ok: false, error: "duplicate" };
   return { ok: true, guest };
-}
-
-function guestToWire(guest: Guest): string {
-  switch (guest.kind) {
-    case "named-invite":
-    case "email-only":
-      return guest.email;
-    case "name-only":
-      return guest.name;
-    default: {
-      const _exhaustive: never = guest;
-      return _exhaustive;
-    }
-  }
-}
-
-function participantsForSubmit(blockForm: boolean, guests: readonly Guest[]): string[] {
-  if (blockForm) return [];
-  return guests.map(guestToWire);
 }
 
 function sameGuest(a: Guest, b: Guest): boolean {
