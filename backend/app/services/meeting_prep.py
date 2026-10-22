@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from app.agents.context import clip_history_for_prompt
 from app.core.llm import Role, complete_json
 from app.services.calendar import EventHint, _catalog_text, pick_event
-from app.services.calendar_provider import invitee_labels
+from app.services.calendar_provider import Invitee, invitee_wire, parse_invitees
+from app.services.drive import DriveDocs, search_meeting_docs
 from app.services.gmail import MailDown, MailMessage, NoGrant, search_meeting_mail
+from app.services.meeting_signals import MeetingSignals
 
 _POINTED = re.compile(
     r"^帮我准备这场会：(?P<title>.+?)，(?P<day>\d{4}-\d{2}-\d{2})(?: (?P<clock>\d{2}:\d{2}) 开始| 全天)$"
@@ -29,7 +31,8 @@ class MeetingFace:
     end_at: str
     all_day: bool
     timezone: str
-    attendees: tuple[str, ...]
+    invitees: tuple[Invitee, ...]
+    attachment_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -50,37 +53,35 @@ class FocusRef:
 
 
 @dataclass(frozen=True)
-class Ready:
-    meeting: MeetingFace
-    emails: tuple[BriefEmail, ...]
-    focus: tuple[FocusRef, ...]
+class MailSection:
+    state: str
+    emails: tuple[BriefEmail, ...] = ()
+    focus: tuple[FocusRef, ...] = ()
 
     def __post_init__(self) -> None:
-        if not 1 <= len(self.emails) <= 5:
-            raise ValueError("ready brief needs 1 to 5 emails")
-        if len(self.focus) > 4:
-            raise ValueError("at most 4 focus lines")
-        by_id = {email.message_id: email for email in self.emails}
-        for ref in self.focus:
-            email = by_id.get(ref.message_id)
-            if email is None or ref.sentence_index < 0 or ref.sentence_index >= len(email.sentences):
-                raise ValueError("focus ref is outside the fetched mail")
+        if self.state not in {"found", "empty", "needs_consent", "unavailable"}:
+            raise ValueError(self.state)
+        if self.state == "found":
+            if not 1 <= len(self.emails) <= 5:
+                raise ValueError("found mail needs 1 to 5 emails")
+            if len(self.focus) > 4:
+                raise ValueError("at most 4 focus lines")
+            by_id = {email.message_id: email for email in self.emails}
+            for ref in self.focus:
+                email = by_id.get(ref.message_id)
+                if email is None or ref.sentence_index < 0 or ref.sentence_index >= len(email.sentences):
+                    raise ValueError("focus ref is outside the fetched mail")
+            return
+        if self.emails or self.focus:
+            raise ValueError("only found mail carries messages")
 
 
 @dataclass(frozen=True)
-class EmptyMail:
+class PickedBrief:
     meeting: MeetingFace
-
-
-@dataclass(frozen=True)
-class NeedsConsent:
-    meeting: MeetingFace
+    mail: MailSection
+    docs: DriveDocs
     connected: bool
-
-
-@dataclass(frozen=True)
-class MailUnavailable:
-    meeting: MeetingFace
 
 
 @dataclass(frozen=True)
@@ -93,7 +94,7 @@ class MeetingNotFound:
     said: str
 
 
-Prep = Ready | EmptyMail | NeedsConsent | MailUnavailable | ChooseMeeting | MeetingNotFound
+Prep = PickedBrief | ChooseMeeting | MeetingNotFound
 
 
 @dataclass(frozen=True)
@@ -130,22 +131,15 @@ def prepare_meeting(
         return PrepResult(MeetingNotFound(hint.title.strip()))
     meeting = _face(picked, zone_name)
     start = _row_start(picked)
-    found = search_meeting_mail(
-        db,
-        user_id,
+    signals = MeetingSignals(
         title=meeting.title,
-        attendees=meeting.attendees,
+        invitees=meeting.invitees,
+        attachment_ids=meeting.attachment_ids,
         start_day=start.date() if start is not None else now.date(),
     )
-    if isinstance(found, NoGrant):
-        connected = found.why != "not_connected"
-        return PrepResult(NeedsConsent(meeting, connected))
-    if isinstance(found, MailDown):
-        return PrepResult(MailUnavailable(meeting))
-    emails = tuple(_email(item) for item in found if item.sentences)
-    if not emails:
-        return PrepResult(EmptyMail(meeting))
-    return PrepResult(Ready(meeting, emails[:5], _focus(emails[:5])))
+    found = search_meeting_mail(db, user_id, signals)
+    docs = search_meeting_docs(db, user_id, signals)
+    return PrepResult(PickedBrief(meeting, _mail_section(found), docs, _connected(found, docs)))
 
 
 def pointed_utterance(title: str, start_at: str, *, all_day: bool) -> str:
@@ -155,42 +149,90 @@ def pointed_utterance(title: str, start_at: str, *, all_day: bool) -> str:
     return f"帮我准备这场会：{title}，{day} {start_at[11:16]} 开始"
 
 
+def _mail_section(found: tuple[MailMessage, ...] | NoGrant | MailDown) -> MailSection:
+    if isinstance(found, NoGrant):
+        return MailSection("needs_consent")
+    if isinstance(found, MailDown):
+        return MailSection("unavailable")
+    emails = tuple(_email(item) for item in found if item.sentences)[:5]
+    if not emails:
+        return MailSection("empty")
+    return MailSection("found", emails, _focus(emails))
+
+
+def _connected(found: tuple[MailMessage, ...] | NoGrant | MailDown, docs: DriveDocs) -> bool:
+    if isinstance(found, NoGrant) and found.why == "not_connected":
+        return False
+    return bool(docs.connected) or not isinstance(found, NoGrant)
+
+
 def caption(prep: Prep) -> str:
-    if isinstance(prep, Ready):
-        return f"会前简报在卡片上。「{prep.meeting.title}」。"
-    if isinstance(prep, EmptyMail):
-        return f"找到了「{prep.meeting.title}」，没有和这场会相关的邮件。"
-    if isinstance(prep, NeedsConsent):
-        if prep.connected:
-            return f"找到了「{prep.meeting.title}」。要搜邮件，需要授权读取 Gmail。日历连接会保留。"
-        return "要整理相关邮件，需要先连接 Google 账户并授权读取 Gmail。"
-    if isinstance(prep, MailUnavailable):
-        return f"找到了「{prep.meeting.title}」，暂时读不到 Gmail。这次没有邮件内容。"
     if isinstance(prep, ChooseMeeting):
         return "找到多场会，请在卡片上点要准备的那一场。"
-    if prep.said:
-        return f"没有找到「{prep.said}」这场会，这次没有搜邮件。"
-    return "要准备哪一场会？请点卡片上的会前准备，或说出会议名称。"
+    if isinstance(prep, MeetingNotFound):
+        if prep.said:
+            return f"没有找到「{prep.said}」这场会，这次没有搜邮件。"
+        return "要准备哪一场会？请点卡片上的会前准备，或说出会议名称。"
+    title = prep.meeting.title
+    mail = prep.mail.state
+    docs = prep.docs.state
+    if mail == "empty" and docs == "empty":
+        return f"找到了「{title}」，没有相关邮件，也没有相关云端文档。"
+    parts: list[str] = []
+    if mail == "found":
+        parts.append(f"会前简报在卡片上。「{title}」。")
+    elif mail == "empty":
+        parts.append(f"找到了「{title}」，没有和这场会相关的邮件。")
+    elif mail == "unavailable":
+        parts.append(f"找到了「{title}」，暂时读不到 Gmail。这次没有邮件内容。")
+    elif mail == "needs_consent" and docs == "needs_consent":
+        if prep.connected:
+            parts.append(f"找到了「{title}」。要搜邮件和查文档，需要授权读取 Gmail 和云端硬盘。日历连接会保留。")
+        else:
+            parts.append("要整理相关邮件和云端文档，需要先连接 Google 账户并授权读取 Gmail 和云端硬盘。")
+    elif mail == "needs_consent":
+        if prep.connected:
+            parts.append(f"找到了「{title}」。要搜邮件，需要授权读取 Gmail。日历连接会保留。")
+        else:
+            parts.append("要整理相关邮件，需要先连接 Google 账户并授权读取 Gmail。")
+    if docs == "empty" and mail != "empty":
+        parts.append("没有找到相关文档。")
+    elif docs == "needs_consent" and mail != "needs_consent":
+        parts.append("要查相关文档，需要授权读取云端硬盘。日历连接会保留。")
+    elif docs == "unavailable":
+        parts.append("暂时读不到云端硬盘。这次没有文档。")
+    return "".join(parts)
 
 
 def to_wire(prep: Prep) -> dict:
     card: dict = {"mode": "brief", "phase": "info"}
-    if isinstance(prep, Ready):
+    if isinstance(prep, PickedBrief):
         card.update(
             status="ready",
+            connected=prep.connected,
             meeting=_meeting_wire(prep.meeting),
-            emails=[_email_wire(email) for email in prep.emails],
-            focus=[{"message_id": ref.message_id, "sentence_index": ref.sentence_index} for ref in prep.focus],
+            mail={
+                "state": prep.mail.state,
+                "emails": [_email_wire(email) for email in prep.mail.emails],
+                "focus": [
+                    {"message_id": ref.message_id, "sentence_index": ref.sentence_index}
+                    for ref in prep.mail.focus
+                ],
+            },
+            docs={
+                "state": prep.docs.state,
+                "docs": [
+                    {
+                        "file_id": item.file_id,
+                        "title": item.title,
+                        "url": item.url,
+                        "via": item.via,
+                        "sentences": list(item.sentences),
+                    }
+                    for item in prep.docs.docs
+                ],
+            },
         )
-        return card
-    if isinstance(prep, EmptyMail):
-        card.update(status="empty", meeting=_meeting_wire(prep.meeting))
-        return card
-    if isinstance(prep, NeedsConsent):
-        card.update(status="needs_consent", connected=prep.connected, meeting=_meeting_wire(prep.meeting))
-        return card
-    if isinstance(prep, MailUnavailable):
-        card.update(status="unavailable", meeting=_meeting_wire(prep.meeting))
         return card
     if isinstance(prep, ChooseMeeting):
         card.update(status="choose", candidates=[_meeting_wire(item) for item in prep.candidates])
@@ -283,7 +325,8 @@ def _face(row, zone_name: str) -> MeetingFace:
         end_at=_iso(end if isinstance(end, datetime) else None),
         all_day=bool(getattr(row, "all_day", False)),
         timezone=zone_name or "",
-        attendees=tuple(invitee_labels(getattr(row, "participants", None))),
+        invitees=tuple(parse_invitees(getattr(row, "participants", None))),
+        attachment_ids=tuple(getattr(row, "attachment_ids", ()) or ()),
     )
 
 
@@ -339,7 +382,7 @@ def _meeting_wire(meeting: MeetingFace) -> dict:
         "end_at": meeting.end_at,
         "all_day": meeting.all_day,
         "timezone": meeting.timezone,
-        "attendees": list(meeting.attendees),
+        "attendees": [invitee_wire(person) for person in meeting.invitees],
     }
 
 

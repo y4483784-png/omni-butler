@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from app.services.gmail import _queries, search_meeting_mail
+from app.services.meeting_signals import MeetingSignals, invitees_from_text
 
 _DAY = date(2026, 10, 22)
 _SUFFIX_120 = (
@@ -27,8 +28,17 @@ _EMAIL = (
 )
 
 
+def _signals(attendees: tuple[str, ...], title: str) -> MeetingSignals:
+    return MeetingSignals(
+        title=title,
+        invitees=invitees_from_text(attendees),
+        attachment_ids=(),
+        start_day=_DAY,
+    )
+
+
 def _compiled(attendees: tuple[str, ...], title: str, days: int = 120) -> tuple[str, ...]:
-    return _queries(attendees, title, days, _DAY)
+    return _queries(_signals(attendees, title), days)
 
 
 def test_labeled_attendee_ors_email_name_and_title():
@@ -101,13 +111,7 @@ class _Access:
 def test_blank_signals_return_empty_without_listing_mail(monkeypatch):
     access = _Access()
     monkeypatch.setattr("app.services.gmail.scoped_access", lambda *args, **kwargs: access)
-    found = search_meeting_mail(
-        None,
-        1,
-        title="会议",
-        attendees=(),
-        start_day=_DAY,
-    )
+    found = search_meeting_mail(None, 1, _signals((), "会议"))
     assert found == ()
     assert access.queries == []
 
@@ -115,13 +119,7 @@ def test_blank_signals_return_empty_without_listing_mail(monkeypatch):
 def test_one_window_lists_the_same_or_then_widens(monkeypatch):
     access = _Access()
     monkeypatch.setattr("app.services.gmail.scoped_access", lambda *args, **kwargs: access)
-    found = search_meeting_mail(
-        None,
-        1,
-        title="会前准备手测-1852",
-        attendees=("张三 <zhangsan@example.com>",),
-        start_day=_DAY,
-    )
+    found = search_meeting_mail(None, 1, _signals(("张三 <zhangsan@example.com>",), "会前准备手测-1852"))
     assert found == ()
     assert access.queries == [
         _COMBINED,
