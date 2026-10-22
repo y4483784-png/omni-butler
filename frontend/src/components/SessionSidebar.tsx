@@ -218,9 +218,13 @@ export function SessionSidebar({ user, onLogout }: Props) {
                 <span className="sidebar-calendar-email" title={calendarStatus.account_email}>
                   {calendarStatus.account_email}
                 </span>
-                {calendarStatus.mail_access === false ? (
+                {calendarStatus.mail_access === false || calendarStatus.drive_access === false ? (
                   <button type="button" className="sidebar-link" onClick={onConnectCalendar}>
-                    授权读取 Gmail
+                    {calendarStatus.mail_access === false && calendarStatus.drive_access === false
+                      ? "授权读取 Gmail 和 Drive"
+                      : calendarStatus.drive_access === false
+                        ? "授权读取 Drive"
+                        : "授权读取 Gmail"}
                   </button>
                 ) : null}
                 <button type="button" className="sidebar-link" onClick={() => void onDisconnectCalendar()}>

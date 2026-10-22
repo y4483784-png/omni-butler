@@ -114,6 +114,9 @@ class FakeGoogle:
         self.freebusy_calendars: dict[str, dict] = {}
         self.gmail_status = 200
         self.gmail_messages: list[dict] = []
+        self.drive_status = 200
+        self.drive_files: list[dict] = []
+        self.drive_exports: dict[str, str] = {}
 
     def __call__(self, method, url, *, data=None, params=None, headers=None, json=None):
         self.calls.append(
@@ -178,6 +181,9 @@ class FakeGoogle:
         gmail = self._gmail_response(method, url)
         if gmail is not None:
             return gmail
+        drive = self._drive_response(method, url, params)
+        if drive is not None:
+            return drive
         if url.rstrip("/").endswith("/users/me/settings"):
             if self.settings_items is None:
                 return httpx.Response(404, json={"error": {"message": "not found"}})
@@ -200,6 +206,26 @@ class FakeGoogle:
         for item in self.gmail_messages:
             if str(item.get("id") or "") == message_id:
                 return httpx.Response(200, json=item)
+        return httpx.Response(404, json={"error": {"message": "not found"}})
+
+    def _drive_response(self, method, url, params):
+        text = str(url or "")
+        if "/drive/v3/" not in text or method != "GET":
+            return None
+        if self.drive_status != 200:
+            return httpx.Response(self.drive_status, json={"error": {"message": "drive failed"}})
+        path = text.split("?", 1)[0].rstrip("/")
+        if path.endswith("/files"):
+            return httpx.Response(200, json={"files": list(self.drive_files)})
+        if path.endswith("/export"):
+            file_id = path.split("/files/")[1].split("/")[0]
+            return httpx.Response(200, text=self.drive_exports.get(file_id, ""))
+        if "/files/" in path:
+            file_id = path.rsplit("/", 1)[-1]
+            for item in self.drive_files:
+                if str(item.get("id") or "") == file_id:
+                    return httpx.Response(200, json=item)
+            return httpx.Response(404, json={"error": {"message": "not found"}})
         return httpx.Response(404, json={"error": {"message": "not found"}})
 
     def _events_response(self, method, url, body):
@@ -348,6 +374,8 @@ def test_connect_redirects_with_offline_consent_and_exact_scopes(
     assert granted == set(GOOGLE_REQUESTED_SCOPES)
     assert set(GOOGLE_MAIL_SCOPES) < granted
     assert "https://www.googleapis.com/auth/gmail.readonly" in granted
+    assert "https://www.googleapis.com/auth/drive.readonly" in granted
+    assert "https://www.googleapis.com/auth/drive.readonly" not in GOOGLE_CALENDAR_SCOPES
     assert "https://www.googleapis.com/auth/gmail.send" not in granted
     assert "https://www.googleapis.com/auth/gmail.modify" not in granted
     assert "https://www.googleapis.com/auth/gmail.compose" not in granted
@@ -675,6 +703,7 @@ def test_second_row_and_different_sub_rejected_disconnect_clears_status(
             "account_email": "owner@example.com",
             "timezone": "Etc/GMT",
             "mail_access": False,
+            "drive_access": False,
         }
         assert any(call["url"].endswith("/users/me/settings/timezone") for call in fake_google.calls)
         assert all("/events" not in call["url"] for call in fake_google.calls)
@@ -1478,7 +1507,6 @@ def test_display_name_round_trips_through_create_and_list(
         assert "guest_names" not in card
         assert _insert_calls(fake_google) == []
         assert db.query(CalendarEvent).filter(CalendarEvent.user_id == user_id).count() == before
-        assert "drive.readonly" not in GOOGLE_REQUESTED_SCOPES
         assert "gmail.send" not in " ".join(GOOGLE_REQUESTED_SCOPES)
 
         fake_google.insert_id = "evt-named"
@@ -5310,17 +5338,18 @@ def test_prep_reads_one_gmail_message_and_does_not_write(
         assert card["mode"] == "brief"
         assert card["phase"] == "info"
         assert card["status"] == "ready"
-        assert card["emails"][0]["message_id"] == "msgPrep1"
-        assert "threadPrep1" in card["emails"][0]["url"]
-        for email in card["emails"]:
+        assert card["mail"]["state"] == "found"
+        assert card["mail"]["emails"][0]["message_id"] == "msgPrep1"
+        assert "threadPrep1" in card["mail"]["emails"][0]["url"]
+        for email in card["mail"]["emails"]:
             for sentence in email["sentences"]:
                 assert sentence in _MAIL_BODY or sentence in _MAIL_SUBJECT
         blob = json.dumps(card, ensure_ascii=False)
         assert _INVENTED not in blob
         assert "这句不在正文里" not in blob
-        by_id = {email["message_id"]: email for email in card["emails"]}
-        assert card["focus"]
-        for ref in card["focus"]:
+        by_id = {email["message_id"]: email for email in card["mail"]["emails"]}
+        assert card["mail"]["focus"]
+        for ref in card["mail"]["focus"]:
             sentence = by_id[ref["message_id"]]["sentences"][ref["sentence_index"]]
             assert sentence
         for key in ("event_id", "external_id", "action", "rsvp", "suggested_slots"):
@@ -5349,7 +5378,9 @@ def test_prep_empty_gmail_names_the_meeting_and_invents_nothing(
         fake_google.gmail_messages = []
         result = _run_prep(db, user_id, monkeypatch)
         card = result.schedule_card
-        assert card["status"] == "empty"
+        assert card["status"] == "ready"
+        assert card["mail"]["state"] == "empty"
+        assert card["docs"]["state"] == "empty"
         assert "emails" not in card
         assert "focus" not in card
         text = result.direct_answer or ""
@@ -5373,7 +5404,9 @@ def test_prep_without_gmail_scope_asks_consent_and_skips_gmail(
         fake_google.calls.clear()
         result = _run_prep(db, user_id, monkeypatch)
         card = result.schedule_card
-        assert card["status"] == "needs_consent"
+        assert card["status"] == "ready"
+        assert card["mail"]["state"] == "needs_consent"
+        assert card["docs"]["state"] == "needs_consent"
         assert card["connected"] is True
         assert card["meeting"]["title"] == "客户周会"
         assert not any("gmail.googleapis.com" in call["url"] for call in fake_google.calls)
@@ -5405,7 +5438,9 @@ def test_prep_without_a_connection_asks_to_connect(
         result = _run_prep(db, user_id, monkeypatch)
         card = result.schedule_card
         text = result.direct_answer or ""
-        assert card["status"] == "needs_consent"
+        assert card["status"] == "ready"
+        assert card["mail"]["state"] == "needs_consent"
+        assert card["docs"]["state"] == "needs_consent"
         assert card["connected"] is False
         assert "日历连接会保留" not in text
         assert not any("gmail.googleapis.com" in call["url"] for call in fake_google.calls)
@@ -5428,7 +5463,8 @@ def test_prep_gmail_503_does_not_ask_to_reconnect(
         result = _run_prep(db, user_id, monkeypatch)
         card = result.schedule_card
         text = result.direct_answer or ""
-        assert card["status"] == "unavailable"
+        assert card["status"] == "ready"
+        assert card["mail"]["state"] == "unavailable"
         assert "重新授权" not in text
         assert "重新连接" not in text
         assert "message_id" not in card
@@ -5451,9 +5487,104 @@ def test_prep_gmail_401_needs_consent_without_a_message(
         fake_google.gmail_status = 401
         result = _run_prep(db, user_id, monkeypatch)
         card = result.schedule_card
-        assert card["status"] == "needs_consent"
+        assert card["mail"]["state"] == "needs_consent"
         assert "msgPrep1" not in json.dumps(card, ensure_ascii=False)
         assert "message_id" not in card
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_refresh_keeps_drive_scope_when_google_returns_a_narrower_scope(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    """A refresh body that lists only calendar scopes must not erase drive.readonly."""
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        row = db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).one()
+        row.scopes = " ".join(GOOGLE_CALENDAR_SCOPES) + " https://www.googleapis.com/auth/drive.readonly"
+        db.commit()
+        row = _expire_token(db, user_id)
+        fake_google.scope = " ".join(GOOGLE_CALENDAR_SCOPES)
+        monkeypatch.setattr("app.services.calendar_secrets._http_request", fake_google)
+        refresh_access_token(db, row)
+        db.refresh(row)
+        assert "https://www.googleapis.com/auth/drive.readonly" in (row.scopes or "").split()
+        assert set(GOOGLE_CALENDAR_SCOPES) <= set((row.scopes or "").split())
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_prep_drive_empty_invents_nothing(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        _grant_gmail(db, user_id)
+        row = db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).one()
+        row.scopes = (row.scopes or "") + " https://www.googleapis.com/auth/drive.readonly"
+        db.commit()
+        fake_google.events_items = [_prep_event()]
+        fake_google.gmail_messages = []
+        fake_google.calls.clear()
+        result = _run_prep(db, user_id, monkeypatch)
+        card = result.schedule_card
+        text = result.direct_answer or ""
+        assert card["status"] == "ready"
+        assert card["docs"]["state"] == "empty"
+        assert card["docs"]["docs"] == []
+        assert "客户周会" in text
+        assert "没有找到相关文档" in text or "没有相关云端文档" in text
+        assert _INVENTED not in text
+        listed = [
+            call
+            for call in fake_google.calls
+            if "/drive/v3/files" in call["url"] and call["url"].split("?", 1)[0].rstrip("/").endswith("/files")
+        ]
+        assert all((call.get("params") or {}).get("q") for call in listed)
+        assert not any(
+            "/drive/v3/files" in call["url"]
+            and call["url"].split("?", 1)[0].rstrip("/").endswith("/files")
+            and not (call.get("params") or {}).get("q")
+            for call in fake_google.calls
+        )
+    finally:
+        _cleanup(user_id)
+        db.close()
+
+
+def test_prep_drive_consent_skips_http(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    db = SessionLocal()
+    user_id = 0
+    try:
+        user_id = _connect_admin(auth_client, db, fake_google)
+        _grant_gmail(db, user_id)
+        row = db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).one()
+        scopes = [part for part in (row.scopes or "").split() if "drive" not in part]
+        row.scopes = " ".join(scopes)
+        db.commit()
+        fake_google.events_items = [_prep_event()]
+        fake_google.gmail_messages = [_gmail_resource()]
+        fake_google.calls.clear()
+        result = _run_prep(db, user_id, monkeypatch)
+        card = result.schedule_card
+        text = result.direct_answer or ""
+        assert card["docs"]["state"] == "needs_consent"
+        assert card["mail"]["state"] == "found"
+        assert "要查相关文档，需要授权读取云端硬盘" in text
+        assert "日历连接会保留" in text
+        assert not any("/drive/v3/" in call["url"] for call in fake_google.calls)
+        assert any("gmail.googleapis.com" in call["url"] for call in fake_google.calls)
     finally:
         _cleanup(user_id)
         db.close()

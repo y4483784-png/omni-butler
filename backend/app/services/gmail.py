@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from urllib.parse import quote
 
@@ -17,35 +17,12 @@ from app.services.calendar_secrets import (
     CalendarTransientError,
     scoped_access,
 )
+from app.services.meeting_signals import MeetingSignals, capped_mail_people
 
 _MESSAGES_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
-_GENERIC_TERMS = frozenset(
-    {
-        "会议",
-        "例会",
-        "周会",
-        "月会",
-        "沟通",
-        "讨论",
-        "同步",
-        "电话",
-        "视频会",
-        "meeting",
-        "sync",
-        "call",
-        "weekly",
-        "1:1",
-        "1on1",
-    }
-)
 _THREAD_ID = re.compile(r"[A-Za-z0-9]+")
 _FROM = re.compile(r"\s*(.*?)\s*<([^>]+)>")
-_EMAIL_RE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,}$"
-)
-_ANGLE_RE = re.compile(r"""^\s*(?:"([^"]*)"|([^<"]*?))?\s*<([^<>"]+)>\s*([^<>]*)$""")
 _FIELDS = ("from", "to", "cc")
-_ATTENDEE_CAP = 10
 
 
 class _Rejected(Exception):
@@ -80,10 +57,7 @@ class MailDown:
 def search_meeting_mail(
     db: Session,
     user_id: int,
-    *,
-    title: str,
-    attendees: tuple[str, ...],
-    start_day: date,
+    signals: MeetingSignals,
 ) -> tuple[MailMessage, ...] | NoGrant | MailDown:
     """Up to five threads. An empty tuple means Gmail answered and nothing matched."""
     try:
@@ -96,13 +70,13 @@ def search_meeting_mail(
         return NoGrant("not_connected")
     if access == "scope_missing":
         return NoGrant("scope_missing")
-    queries = _queries(attendees, title, 120, start_day)
+    queries = _queries(signals, 120)
     if not queries:
         return ()
     try:
         kept = _collect(access, queries)
         if len(kept) < 3:
-            wider = _collect(access, _queries(attendees, title, 365, start_day))
+            wider = _collect(access, _queries(signals, 365))
             kept = _merge(kept, wider)[:5]
         return tuple(_read(access, kept, access.account_email))
     except _Rejected:
@@ -111,110 +85,18 @@ def search_meeting_mail(
         return MailDown()
 
 
-def _topic_terms(title: str) -> tuple[str, ...]:
-    parts = re.split(r"[\s,，。、；;:：/|+]+", (title or "").strip())
-    kept: list[str] = []
-    for part in parts:
-        token = part.strip()
-        if not token or token.casefold() in _GENERIC_TERMS:
-            continue
-        if re.fullmatch(r"\d{1,4}([:：]\d{2})?", token):
-            continue
-        kept.append(token)
-    return tuple(kept)
-
-
-@dataclass(frozen=True)
-class _Email:
-    value: str
-
-    def __post_init__(self) -> None:
-        if _EMAIL_RE.fullmatch(self.value) is None:
-            raise ValueError(self.value)
-
-
-@dataclass(frozen=True)
-class _Name:
-    value: str
-
-    def __post_init__(self) -> None:
-        if not _name_ok(self.value):
-            raise ValueError(self.value)
-
-
-def _name_ok(value: str) -> bool:
-    return len(value) >= 2 and not any(mark in value for mark in '@<>"\\')
-
-
-def _email_or_none(value: str) -> _Email | None:
-    text = value.strip()
-    if _EMAIL_RE.fullmatch(text) is None:
-        return None
-    return _Email(text)
-
-
-def _name_or_none(value: str) -> _Name | None:
-    text = value.strip()
-    if len(text) >= 2 and text[0] == text[-1] == '"':
-        text = text[1:-1].strip()
-    if not _name_ok(text):
-        return None
-    return _Name(text)
-
-
-def _parse_attendee(raw: str) -> tuple[_Email | None, _Name | None]:
-    text = str(raw or "").strip()
-    if not text:
-        return None, None
-    match = _ANGLE_RE.fullmatch(text)
-    if match:
-        raw_name = match.group(1) if match.group(1) is not None else (match.group(2) or "")
-        return _email_or_none(match.group(3)), _name_or_none(raw_name)
-    if "<" in text or ">" in text:
-        return None, None
-    email = _email_or_none(text)
-    if email is not None:
-        return email, None
-    return None, _name_or_none(text)
-
-
-def _signals(attendees: tuple[str, ...]) -> tuple[tuple[_Email, ...], tuple[_Name, ...]]:
-    emails: list[_Email] = []
-    names: list[_Name] = []
-    seen_emails: set[str] = set()
-    seen_names: set[str] = set()
-    added = 0
-    for raw in attendees:
-        email, name = _parse_attendee(raw)
-        contributed = False
-        if email is not None and email.value.casefold() not in seen_emails:
-            seen_emails.add(email.value.casefold())
-            emails.append(email)
-            contributed = True
-        if name is not None and name.value.casefold() not in seen_names:
-            seen_names.add(name.value.casefold())
-            names.append(name)
-            contributed = True
-        if not contributed:
-            continue
-        added += 1
-        if added == _ATTENDEE_CAP:
-            break
-    return tuple(emails), tuple(names)
-
-
-def _queries(attendees: tuple[str, ...], title: str, days: int, start_day: date) -> tuple[str, ...]:
-    emails, names = _signals(attendees)
-    terms = tuple(term for term in _topic_terms(title) if "<" not in term and ">" not in term)
+def _queries(signals: MeetingSignals, days: int) -> tuple[str, ...]:
+    emails, names = capped_mail_people(signals.invitees)
+    terms = tuple(term for term in signals.topic_terms() if "<" not in term and ">" not in term)
     atoms: list[str] = []
     for email in emails:
-        atoms.extend(f"{field}:{email.value}" for field in _FIELDS)
+        atoms.extend(f"{field}:{email}" for field in _FIELDS)
     for name in names:
-        atoms.extend(f'{field}:"{name.value}"' for field in _FIELDS)
+        atoms.extend(f'{field}:"{name}"' for field in _FIELDS)
     atoms.extend(f'"{term}"' for term in terms)
     if not atoms:
         return ()
-    before = (start_day + timedelta(days=1)).strftime("%Y/%m/%d")
+    before = (signals.start_day + timedelta(days=1)).strftime("%Y/%m/%d")
     suffix = f"newer_than:{days}d before:{before} -filename:ics -in:spam -in:trash -in:drafts -in:chats"
     return (f"({' OR '.join(atoms)}) {suffix}",)
 

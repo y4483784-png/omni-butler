@@ -1596,6 +1596,7 @@ class _EventView:
     busy: bool
     rsvp: str = ""
     meet_link: str = ""
+    attachment_ids: tuple[str, ...] = ()
 
 
 def _hidden_on_list(item: dict) -> bool:
@@ -1624,6 +1625,7 @@ def _event_view(item: dict) -> _EventView | None:
         busy=str(item.get("transparency") or "") != "transparent",
         rsvp=_self_rsvp(item),
         meet_link=conference_view(item)[0],
+        attachment_ids=_attachment_ids(item),
     )
 
 
@@ -1698,6 +1700,7 @@ def _overlay_dto(local: CalendarEventDTO, view: _EventView) -> CalendarEventDTO:
         all_day=view.all_day,
         rsvp=view.rsvp,
         meet_link=view.meet_link,
+        attachment_ids=view.attachment_ids,
     )
 
 
@@ -1715,7 +1718,24 @@ def _readonly_dto(user_id: int, view: _EventView) -> CalendarEventDTO:
         all_day=view.all_day,
         rsvp=view.rsvp,
         meet_link=view.meet_link,
+        attachment_ids=view.attachment_ids,
     )
+
+
+def _attachment_ids(item: dict) -> tuple[str, ...]:
+    raw = item.get("attachments")
+    if not isinstance(raw, list):
+        return ()
+    ids: list[str] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        file_id = str(entry.get("fileId") or "").strip()
+        if file_id and file_id not in ids:
+            ids.append(file_id)
+        if len(ids) == 5:
+            break
+    return tuple(ids)
 
 
 def _busy_span(item: dict) -> tuple[datetime, datetime] | None:

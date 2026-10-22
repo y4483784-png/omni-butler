@@ -137,6 +137,7 @@ class CalendarEventDTO:
     # Filled from a Google response. Not a database column.
     meet_link: str = ""
     meet_status: str = ""
+    attachment_ids: tuple[str, ...] = ()
 
 
 class CalendarProvider(Protocol):

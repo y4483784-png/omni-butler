@@ -39,7 +39,11 @@ GOOGLE_CALENDAR_SCOPES = (
 GOOGLE_IDENTITY_SCOPES = ("openid", "email")
 # Requested on the same consent screen. Not required to save a calendar grant.
 GOOGLE_MAIL_SCOPES = ("https://www.googleapis.com/auth/gmail.readonly",)
-GOOGLE_REQUESTED_SCOPES = GOOGLE_CALENDAR_SCOPES + GOOGLE_MAIL_SCOPES + GOOGLE_IDENTITY_SCOPES
+# Requested on the same consent screen. Not required to save a calendar grant.
+GOOGLE_DRIVE_SCOPES = ("https://www.googleapis.com/auth/drive.readonly",)
+GOOGLE_REQUESTED_SCOPES = (
+    GOOGLE_CALENDAR_SCOPES + GOOGLE_MAIL_SCOPES + GOOGLE_DRIVE_SCOPES + GOOGLE_IDENTITY_SCOPES
+)
 OAUTH_STATE_MAX_AGE = 10 * 60
 _STATE_SALT = "omni-calendar-google-oauth"
 _AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -178,21 +182,39 @@ def build_authorize_url(state: str) -> str:
     return f"{_AUTHORIZE_URL}?{query}"
 
 
-def _mail_access(scopes: str) -> bool:
+def _scope_granted(scopes: str, required: tuple[str, ...]) -> bool:
     granted = {part for part in (scopes or "").split() if part}
-    return all(scope in granted for scope in GOOGLE_MAIL_SCOPES)
+    return all(scope in granted for scope in required)
+
+
+def _mail_access(scopes: str) -> bool:
+    return _scope_granted(scopes, GOOGLE_MAIL_SCOPES)
+
+
+def _drive_access(scopes: str) -> bool:
+    return _scope_granted(scopes, GOOGLE_DRIVE_SCOPES)
+
+
+def _status_body(*, connected: bool, account_email: str, timezone: str, scopes: str) -> dict:
+    return {
+        "connected": connected,
+        "account_email": account_email,
+        "timezone": timezone,
+        "mail_access": _mail_access(scopes) if connected else False,
+        "drive_access": _drive_access(scopes) if connected else False,
+    }
 
 
 def connection_status(db: Session, user_id: int) -> dict:
     row = _connection_for(db, user_id)
     if row is None:
-        return {"connected": False, "account_email": "", "timezone": "", "mail_access": False}
-    return {
-        "connected": True,
-        "account_email": row.account_email or "",
-        "timezone": "",
-        "mail_access": _mail_access(row.scopes or ""),
-    }
+        return _status_body(connected=False, account_email="", timezone="", scopes="")
+    return _status_body(
+        connected=True,
+        account_email=row.account_email or "",
+        timezone="",
+        scopes=row.scopes or "",
+    )
 
 
 @dataclass(frozen=True)
@@ -229,7 +251,7 @@ def disconnect_google(db: Session, user_id: int) -> dict:
     """Delete the token row only. Local events and Google events stay."""
     db.query(CalendarConnection).filter(CalendarConnection.user_id == user_id).delete()
     db.commit()
-    return {"connected": False, "account_email": "", "timezone": "", "mail_access": False}
+    return _status_body(connected=False, account_email="", timezone="", scopes="")
 
 
 def connect_google_account(db: Session, *, user_id: int, code: str) -> CalendarConnection:
@@ -256,6 +278,22 @@ def connect_google_account(db: Session, *, user_id: int, code: str) -> CalendarC
         expires_in=expires_in,
         scopes=scopes,
     )
+
+
+def _keep_granted_scopes(stored: str, incoming: str) -> str:
+    """A refresh body may list fewer scopes than the user already granted.
+
+    Dropping drive.readonly here would hide docs after the access token expires
+    even though the refresh token still carries that grant. A later 403 is the
+    signal that the user actually revoked it.
+    """
+    parts = [part for part in stored.split() if part]
+    seen = set(parts)
+    for part in incoming.split():
+        if part and part not in seen:
+            parts.append(part)
+            seen.add(part)
+    return " ".join(parts)
 
 
 def refresh_access_token(db: Session, connection: CalendarConnection) -> str:
@@ -298,7 +336,7 @@ def refresh_access_token(db: Session, connection: CalendarConnection) -> str:
     if new_refresh:
         connection.refresh_token = encrypt_token(new_refresh)
     if payload.get("scope"):
-        connection.scopes = str(payload["scope"])
+        connection.scopes = _keep_granted_scopes(connection.scopes or "", str(payload["scope"]))
     try:
         expires_in = int(payload.get("expires_in") or 3600)
     except (TypeError, ValueError):

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.services.calendar import EventDraft, serialize_event_card, suggest_next_slot
+from app.services.calendar import EventDraft, _classify_prompt, serialize_event_card, suggest_next_slot
 
 
 def test_serialize_event_card_reads_participants():
@@ -55,6 +55,12 @@ def test_suggest_next_slot_keeps_duration():
     next_start, next_end = suggest_next_slot(start, end)
     assert next_start == end
     assert (next_end - next_start).seconds == 5400
+
+
+def test_classify_prompt_names_the_short_prepare_phrase():
+    prompt = _classify_prompt(datetime(2026, 10, 22), "Asia/Shanghai")
+    assert "帮我准备一下" in prompt
+    assert "prep" in prompt
 
 
 if __name__ == "__main__":

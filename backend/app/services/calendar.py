@@ -195,7 +195,7 @@ _GUIDES: dict[CalendarAction, _Guide] = {
     CalendarAction.SUGGEST: _Guide("看空闲", "suggest 是看空闲，例如「有空」「空闲」「什么时候方便」。"),
     CalendarAction.PREP: _Guide(
         "准备会议",
-        "prep 是为一场已有的会做会前准备，只读，例如「帮我准备这场会」「准备一下周一的客户会」「开会前帮我看看相关邮件」。",
+        "prep 是为一场已有的会做会前准备，只读，例如「帮我准备一下」「帮我准备这场会」「准备一下周一的客户会」「开会前帮我看看相关邮件」。",
     ),
 }
 if set(_GUIDES) != set(CalendarAction):

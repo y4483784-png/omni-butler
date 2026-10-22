@@ -422,6 +422,7 @@ export interface GoogleCalendarStatus {
   account_email: string;
   timezone?: string;
   mail_access?: boolean;
+  drive_access?: boolean;
 }
 
 export interface BriefMeeting {
@@ -430,7 +431,26 @@ export interface BriefMeeting {
   end_at: string;
   all_day?: boolean;
   timezone?: string;
-  attendees?: string[];
+  attendees?: (string | { email: string; name: string })[];
+}
+
+export interface BriefDoc {
+  file_id: string;
+  title: string;
+  url: string;
+  via: string;
+  sentences: string[];
+}
+
+export interface BriefMailSection {
+  state: "found" | "empty" | "needs_consent" | "unavailable" | string;
+  emails?: BriefEmail[];
+  focus?: BriefFocus[];
+}
+
+export interface BriefDocsSection {
+  state: "found" | "empty" | "needs_consent" | "unavailable" | string;
+  docs?: BriefDoc[];
 }
 
 export interface BriefEmail {
@@ -455,6 +475,8 @@ export interface MeetingBrief {
   meeting?: BriefMeeting | null;
   emails?: BriefEmail[];
   focus?: BriefFocus[];
+  mail?: BriefMailSection;
+  docs?: BriefDocsSection;
   candidates?: BriefMeeting[];
   connected?: boolean;
   said?: string;
