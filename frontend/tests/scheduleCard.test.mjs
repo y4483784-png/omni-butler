@@ -77,8 +77,19 @@ test("non-block form adds guests beside the schedule form", () => {
   assert.doesNotMatch(source, /用顿号分隔/);
   assert.doesNotMatch(source, /将邀请：/);
   assert.doesNotMatch(source, /不邀请：/);
-  const fromWire = source.slice(source.indexOf("function guestsFromWire"), source.indexOf("function commitGuest"));
-  assert.doesNotMatch(fromWire, /\.split\(/);
+  const wire = readFileSync(new URL("../src/utils/guestWire.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(wire, /\.split\(/);
+});
+
+test("named guest round-trips as email and name", async () => {
+  const { guestToWire, guestsFromWire } = await import("../src/utils/guestWire.ts");
+  const wire = guestToWire({ kind: "named-invite", name: "张三", email: "zhangsan@example.com" });
+  assert.deepEqual(wire, { email: "zhangsan@example.com", name: "张三" });
+  assert.deepEqual(Object.keys(wire).sort(), ["email", "name"]);
+  const legacy = guestsFromWire(["guest@example.com"]);
+  assert.deepEqual(legacy, [{ kind: "email-only", email: "guest@example.com" }]);
+  const named = guestsFromWire([{ email: "zhangsan@example.com", name: "张三" }]);
+  assert.deepEqual(named, [{ kind: "named-invite", name: "张三", email: "zhangsan@example.com" }]);
 });
 
 test("list card renders above the advice text", () => {

@@ -16,7 +16,7 @@ from app.core.llm import Role, complete_json
 from app.agents.context import clip_history_for_prompt
 from app.models.models import CalendarEvent
 from app.services.calendar_factory import calendar_provider_for, calendar_writes_remote
-from app.services.calendar_provider import invitee_labels
+from app.services.calendar_provider import invitee_wire, parse_invitees
 from app.services.calendar_google import (
     CalendarReconnectRequired,
     CalendarRemoteReadError,
@@ -1015,7 +1015,9 @@ def _card_text(event: Any, name: str) -> str:
 
 
 def serialize_event_card(event: CalendarEvent) -> dict[str, Any]:
-    participants = invitee_labels(getattr(event, "participants", None))
+    participants = [
+        invitee_wire(item) for item in parse_invitees(getattr(event, "participants", None))
+    ]
     card = {
         "id": event.id,
         "title": event.title,

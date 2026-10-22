@@ -55,12 +55,17 @@ export interface ScheduleListItem {
   meet_link?: string;
 }
 
+export interface WireInvitee {
+  email: string;
+  name: string;
+}
+
 export interface ScheduleCard {
   id?: number | null;
   title: string;
   start_at: string;
   end_at: string;
-  participants: string[];
+  participants: (string | WireInvitee)[];
   status?: "active" | "cancelled" | string;
   mode?: "create" | "update" | "cancel" | "choose" | "suggest" | "list" | string;
   kind?: "meeting" | "block" | "" | string;
@@ -497,7 +502,7 @@ export async function createCalendarEvent(payload: {
   title: string;
   start_at: string;
   end_at: string;
-  participants: string[];
+  participants: WireInvitee[];
   location?: string;
   description?: string;
   meet?: boolean;
@@ -529,7 +534,7 @@ export async function confirmGoogleCalendarChange(payload: {
   title: string;
   start_at: string;
   end_at: string;
-  participants?: string[];
+  participants?: WireInvitee[];
   location?: string;
   description?: string;
   external_id?: string;

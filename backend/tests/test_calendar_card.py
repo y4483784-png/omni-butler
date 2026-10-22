@@ -396,7 +396,7 @@ def test_confirm_api_creates_conflicts_and_clears_participants(auth_client: Test
 
         renamed = auth_client.patch(f"/api/calendar/{body['id']}", json={"title": "改名会"})
         assert renamed.status_code == 200
-        assert renamed.json()["participants"] == ["张三"]
+        assert renamed.json()["participants"] == [{"email": "", "name": "张三"}]
         cleared = auth_client.patch(f"/api/calendar/{body['id']}", json={"participants": []})
         assert cleared.status_code == 200
         assert cleared.json()["participants"] == []
@@ -596,7 +596,7 @@ def test_draft_confirm_conflict_patch_and_delete(auth_client: TestClient):
         )
         assert patched.status_code == 200, patched.text
         assert patched.json()["title"] == "往返会改期"
-        assert patched.json()["participants"] == ["张三"]
+        assert patched.json()["participants"] == [{"email": "", "name": "张三"}]
 
         removed = auth_client.delete(f"/api/calendar/{event_id}")
         assert removed.status_code == 200, removed.text
@@ -859,7 +859,7 @@ def test_connected_extract_prompt_names_today_and_iana_zone(monkeypatch):
     assert "Asia/Singapore" in prompt
     card = result.schedule_card
     assert card["title"] == "测试会议"
-    assert card["participants"] == ["Grok测试"]
+    assert card["participants"] == [{"email": "", "name": "Grok测试"}]
     assert card["start_at"] == "2026-10-16T15:00:00"
     assert card["end_at"] == "2026-10-16T16:00:00"
     assert "+" not in card["start_at"] and "Z" not in card["start_at"]
@@ -1700,7 +1700,7 @@ def test_create_kind_splits_meeting_and_block(monkeypatch):
             ToolContext(db=db, message="明早十点开周会，参与人小李", history=[], user_id=1)
         )
         assert meeting.schedule_card["kind"] == "meeting"
-        assert meeting.schedule_card["participants"] == ["小李"]
+        assert meeting.schedule_card["participants"] == [{"email": "", "name": "小李"}]
         assert meeting.schedule_card["location"] == "会议室"
 
         monkeypatch.setattr(
@@ -1758,7 +1758,7 @@ def test_update_kind_follows_the_matched_event_and_cancel_does_not(monkeypatch):
         )
         assert updated.schedule_card["mode"] == "update"
         assert updated.schedule_card["kind"] == "meeting"
-        assert updated.schedule_card["participants"] == ["小李"]
+        assert updated.schedule_card["participants"] == [{"email": "", "name": "小李"}]
         db.refresh(event)
         assert event.start_at == datetime(2026, 10, 16, 15, 0)
 
@@ -1775,7 +1775,7 @@ def test_update_kind_follows_the_matched_event_and_cancel_does_not(monkeypatch):
             ToolContext(db=db, message="把写报告改到后天下午", history=[], user_id=owner_id)
         )
         assert plain.schedule_card["kind"] == "meeting"
-        assert plain.schedule_card["participants"] == ["小李"]
+        assert plain.schedule_card["participants"] == [{"email": "", "name": "小李"}]
 
         monkeypatch.setattr(
             "app.services.calendar.complete_json",
@@ -1925,7 +1925,7 @@ def test_update_keeps_matched_duration_and_notes_unless_asked(monkeypatch):
         assert moved["phase"] == "draft"
         assert moved["event_id"] == meeting.id
         assert moved["kind"] == "meeting"
-        assert moved["participants"] == ["小李"]
+        assert moved["participants"] == [{"email": "", "name": "小李"}]
         assert moved["location"] == "会议室"
         assert moved["description"] == "新备注"
         assert moved["start_at"] == "2026-10-17T16:00:00"
@@ -2062,7 +2062,7 @@ def test_cancel_card_uses_the_matched_event_times(monkeypatch):
         assert card["event_id"] == event.id
         assert card["start_at"] == "2026-10-16T15:00:00"
         assert card["end_at"] == "2026-10-16T17:00:00"
-        assert card["participants"] == ["小李"]
+        assert card["participants"] == [{"email": "", "name": "小李"}]
         assert card["location"] == "会议室"
         assert card["description"] == "带上大纲"
         assert "+" not in card["start_at"] and "Z" not in card["end_at"]

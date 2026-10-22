@@ -4,7 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -50,18 +50,30 @@ from app.services.calendar_factory import (
     calendar_provider_for,
     calendar_writes_remote,
 )
+from app.services.calendar_provider import invitee_wire, parse_invitees
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+
+
+def _wire_participants(value: object) -> list[dict[str, str]] | None:
+    if value is None:
+        return None
+    return [invitee_wire(item) for item in parse_invitees(value)]
 
 
 class CalendarWrite(BaseModel):
     title: str | None = None
     start_at: str | None = None
     end_at: str | None = None
-    participants: list[str] | None = None
+    participants: list[dict[str, str]] | None = None
     location: str | None = None
     description: str | None = None
     meet: bool = False
+
+    @field_validator("participants", mode="before")
+    @classmethod
+    def _participants(cls, value: object) -> list[dict[str, str]] | None:
+        return _wire_participants(value)
 
 
 def _parse_dt(raw: str | None) -> datetime | None:
@@ -369,11 +381,16 @@ class GoogleTitleConfirm(BaseModel):
     title: str | None = None
     start_at: str | None = None
     end_at: str | None = None
-    participants: list[str] | None = None
+    participants: list[dict[str, str]] | None = None
     location: str | None = None
     description: str | None = None
     external_id: str | None = None
     meet: bool = False
+
+    @field_validator("participants", mode="before")
+    @classmethod
+    def _participants(cls, value: object) -> list[dict[str, str]] | None:
+        return _wire_participants(value)
 
 
 # Connected update and cancel go to Google first. List merges a read-only overlay.

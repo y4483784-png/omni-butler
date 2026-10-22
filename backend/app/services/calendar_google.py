@@ -33,6 +33,8 @@ from app.services.calendar_provider import (
     Invitee,
     attendee_body,
     dump_invitees,
+    invitee_wire,
+    parse_invitee,
     parse_invitees,
 )
 from app.services.calendar_secrets import (
@@ -1463,14 +1465,23 @@ def _patch_body(
     return body
 
 
-def _guest_key(invitee: Invitee) -> tuple[str, str]:
-    return (invitee.email.casefold(), invitee.name)
+def _guest_identity(invitee: Invitee) -> tuple[str, str]:
+    if invitee.email:
+        return ("email", invitee.email.casefold())
+    return ("name", invitee.name)
 
 
 def _same_guests(stored: object, new: object) -> bool:
-    return {_guest_key(item) for item in parse_invitees(stored)} == {
-        _guest_key(item) for item in parse_invitees(new)
-    }
+    """Same people. A newly typed name is a change. An empty name is not a different person."""
+    left = parse_invitees(stored)
+    right = parse_invitees(new)
+    if {_guest_identity(item) for item in left} != {_guest_identity(item) for item in right}:
+        return False
+    stored_names = {item.email.casefold(): item.name for item in left if item.email}
+    for item in right:
+        if item.email and item.name and stored_names.get(item.email.casefold(), "") != item.name:
+            return False
+    return True
 
 
 def _meet_request(request_id: str) -> dict:
@@ -1529,6 +1540,11 @@ def merged_attendees(confirmed: object, google_item: dict) -> list[dict]:
             continue
         seen.add(folded)
         entry: dict = {"email": email}
+        display = invitee.name.strip()
+        if not display:
+            display = str((previous.get(folded) or {}).get("displayName") or "").strip()
+        if display:
+            entry["displayName"] = display
         status = str((previous.get(folded) or {}).get("responseStatus") or "").strip()
         if status:
             entry["responseStatus"] = status
@@ -1826,25 +1842,35 @@ def _slots_in_windows(
     return slots
 
 
-def _participant_names(item: dict) -> list[str]:
+def _participant_names(item: dict) -> list[dict[str, str]]:
     """Other people on a Google event. The calendar owner is not a participant.
 
-    The email is the label when Google also sent a display name, so the next
-    edit still invites that guest.
+    Email and displayName stay together. A declined guest is skipped.
     """
     attendees = item.get("attendees")
     if not isinstance(attendees, list):
         return []
-    names: list[str] = []
+    people: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
     for person in attendees:
         if not isinstance(person, dict) or person.get("self"):
             continue
         if str(person.get("responseStatus") or "") == "declined":
             continue
-        name = str(person.get("email") or person.get("displayName") or "").strip()
-        if name and name not in names:
-            names.append(name)
-    return names
+        invitee = parse_invitee(
+            {
+                "email": str(person.get("email") or "").strip(),
+                "name": str(person.get("displayName") or "").strip(),
+            }
+        )
+        if invitee is None:
+            continue
+        key = (invitee.email.casefold(), invitee.name)
+        if key in seen:
+            continue
+        seen.add(key)
+        people.append(invitee_wire(invitee))
+    return people
 
 
 def _self_rsvp(item: dict) -> str:
