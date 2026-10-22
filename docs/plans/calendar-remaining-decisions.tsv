@@ -8,3 +8,4 @@ ts	phase	decision	why	evidence	result
 2026-10-22T13:30:18Z	verify	re-ran the plan checker and saved its output	the earlier verify row cited the plan file and not the command output	docs/plans/calendar-remaining-check.txt	0 problems
 2026-10-22T13:30:18Z	model	kept Claude at medium for this plan run only	the operator mission granted that cap, and the knife program stays on grok-4.7-high	docs/plans/calendar-remaining-prep-followup.md	override stays in the plan
 2026-10-22T13:30:18Z	trail	the first six rows share one timestamp because they were appended together after the work	the order of those rows is the real sequence	docs/plans/calendar-remaining-decisions.tsv	batch noted
+2026-10-22T13:30:45Z	commit	committed the plan, the trail, and the checker output	the reviewer asked for a commit pointer	3b0f3ed2d3f5a260c9722691f2cf208f28ae7588	committed
