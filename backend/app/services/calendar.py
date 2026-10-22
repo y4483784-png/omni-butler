@@ -6,7 +6,8 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime as _Wall
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from enum import StrEnum
 from typing import Any, assert_never
 
 from sqlalchemy.orm import Session
@@ -168,12 +169,58 @@ def is_calendar_cancel(message: str) -> bool:
     return bool(_CANCEL_PAT.search(message or ""))
 
 
-_CALENDAR_ACTIONS = frozenset({"create", "update", "cancel", "list", "suggest"})
+class CalendarAction(StrEnum):
+    CREATE = "create"
+    UPDATE = "update"
+    CANCEL = "cancel"
+    LIST = "list"
+    SUGGEST = "suggest"
+    PREP = "prep"
+
+
+@dataclass(frozen=True)
+class _Guide:
+    label: str
+    gloss: str
+
+
+_GUIDES: dict[CalendarAction, _Guide] = {
+    CalendarAction.CREATE: _Guide("新建", "create 是新建一条日程，例如「新建」「安排」「约一场会」。"),
+    CalendarAction.UPDATE: _Guide(
+        "改期",
+        "update 是改已有日程，例如「改期」「修改」「推迟」「提前」「改成」「改为」「换到」「挪到」「延后」。",
+    ),
+    CalendarAction.CANCEL: _Guide("删除", "cancel 是删掉已有日程，例如「删除」「取消」「撤销」「删掉」。"),
+    CalendarAction.LIST: _Guide("查看", "list 是查看已有日程，例如「查日程」「有哪些」「我的日程」。"),
+    CalendarAction.SUGGEST: _Guide("看空闲", "suggest 是看空闲，例如「有空」「空闲」「什么时候方便」。"),
+    CalendarAction.PREP: _Guide(
+        "准备会议",
+        "prep 是为一场已有的会做会前准备，只读，例如「帮我准备这场会」「准备一下周一的客户会」「开会前帮我看看相关邮件」。",
+    ),
+}
+if set(_GUIDES) != set(CalendarAction):
+    raise RuntimeError("every CalendarAction needs a guide")
+
 _HORIZON_END = datetime(2100, 1, 1)
 
 
+def parse_action(raw: object) -> str:
+    """The one parser for an action string. Empty when it is not a calendar action."""
+    text = str(raw or "").strip().lower()
+    try:
+        return CalendarAction(text).value
+    except ValueError:
+        return ""
+
+
+def unclear_action_reply() -> str:
+    labels = [guide.label for guide in _GUIDES.values()]
+    joined = "、".join(labels[:-1]) + "还是" + labels[-1]
+    return f"没有听清要{joined}，这次没有改动日历。"
+
+
 def _classify_prompt(now: datetime | None, timezone_name: str | None) -> str:
-    """Five actions, one JSON field. Examples name the words the old keywords missed."""
+    """One JSON field. Examples name the words the old keywords missed."""
     clock = now or datetime.now()
     day = clock.date().isoformat()
     zone = (timezone_name or "").strip()
@@ -181,17 +228,15 @@ def _classify_prompt(now: datetime | None, timezone_name: str | None) -> str:
         today = f"今天是 {day}，账户时区是 {zone}。"
     else:
         today = f"今天是 {day}。"
+    names = "、".join(action.value for action in CalendarAction)
+    glosses = "".join(" " + guide.gloss for guide in _GUIDES.values())
     return (
         "你是日程动作分类器。只输出 JSON："
         '{"action":str}。'
         f" {today}"
-        " action 必须正好是 create、update、cancel、list、suggest 之一。"
+        f" action 必须正好是 {names} 之一。"
         " 不要输出把握程度，不要输出第二个动作。"
-        " create 是新建一条日程，例如「新建」「安排」「约一场会」。"
-        " update 是改已有日程，例如「改期」「修改」「推迟」「提前」「改成」「改为」「换到」「挪到」「延后」。"
-        " cancel 是删掉已有日程，例如「删除」「取消」「撤销」「删掉」。"
-        " list 是查看已有日程，例如「查日程」「有哪些」「我的日程」。"
-        " suggest 是看空闲，例如「有空」「空闲」「什么时候方便」。"
+        f"{glosses}"
     )
 
 
@@ -202,7 +247,7 @@ def classify_calendar_action(
     now: datetime | None = None,
     timezone_name: str | None = None,
 ) -> str:
-    """One of the five actions, or empty when the model did not name one.
+    """One calendar action, or empty when the model did not name one.
 
     Transport failures propagate from ``complete_json`` when the caller asks
     it to raise. A missing or unexpected action is empty. This function does
@@ -223,10 +268,7 @@ def classify_calendar_action(
     )
     if not isinstance(parsed, dict):
         return ""
-    action = str(parsed.get("action") or "").strip().lower()
-    if action in _CALENDAR_ACTIONS:
-        return action
-    return ""
+    return parse_action(parsed.get("action"))
 
 
 def _extract_system_prompt(
@@ -1162,30 +1204,52 @@ def upcoming_events(
     return kept, str(notice or "")
 
 
-def rank_one_event(events, query: str):
-    """The one event whose title is the unique exact hit, else the unique soft hit.
+@dataclass(frozen=True)
+class EventHint:
+    """How the user named an existing event. Day and clock are account wall time."""
 
-    Exact equality wins over ``titles_match``. Several equally good titles are
-    not reduced to the first row. What else to rank on is not settled, so a
-    tie returns None.
+    title: str = ""
+    day: date | None = None
+    clock: time | None = None
+
+    @property
+    def blank(self) -> bool:
+        return not self.title.strip() and self.day is None and self.clock is None
+
+
+def _row_start(row) -> datetime | None:
+    start = getattr(row, "start_at", None)
+    return start if isinstance(start, datetime) else None
+
+
+def pick_event(events, hint: EventHint):
+    """One row, or None when the pool is empty or tied.
+
+    Day, then clock, narrow the pool. A title then uses exact equality before
+    ``titles_match``. A title-only hint matches the old title rule, including
+    an empty title returning None. With no title, one remaining row is that row.
     """
-    needle = (query or "").strip()
+    pool = list(events or [])
+    if hint.day is not None:
+        pool = [row for row in pool if (start := _row_start(row)) is not None and start.date() == hint.day]
+    if hint.clock is not None:
+        pool = [
+            row
+            for row in pool
+            if (start := _row_start(row)) is not None
+            and start.time().replace(second=0, microsecond=0) == hint.clock.replace(second=0, microsecond=0)
+        ]
+    needle = (hint.title or "").strip()
     if not needle:
-        return None
-    exact = [
-        row
-        for row in events
-        if str(getattr(row, "title", "") or "").strip() == needle
-    ]
+        if hint.day is None and hint.clock is None:
+            return None
+        return pool[0] if len(pool) == 1 else None
+    exact = [row for row in pool if str(getattr(row, "title", "") or "").strip() == needle]
     if len(exact) == 1:
         return exact[0]
     if len(exact) > 1:
         return None
-    soft = [
-        row
-        for row in events
-        if titles_match(needle, str(getattr(row, "title", "") or ""))
-    ]
+    soft = [row for row in pool if titles_match(needle, str(getattr(row, "title", "") or ""))]
     if len(soft) == 1:
         return soft[0]
     return None

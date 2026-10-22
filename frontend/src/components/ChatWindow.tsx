@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store/useStore";
 import { hydrateSessionMessages, startChatStream, stopChatStream } from "../services/chatStream";
-import type { ChatMsg } from "../api/client";
+import type { ChatMsg, MeetingBrief } from "../api/client";
 import { Markdown } from "./Markdown";
+import { MeetingBriefCard } from "./MeetingBriefCard";
 import { ScheduleCard } from "./ScheduleCard";
 import { UpcomingEvents } from "./UpcomingEvents";
 import { MessageActions } from "./MessageActions";
@@ -102,6 +103,14 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
             }}
             onTitle={updateSessionTitle}
             onOpenArtifact={(a) => openArtifact(artifactFromPayload(a, `msg-${i}`))}
+            onAsk={(text) => {
+              if (!text || busy) return;
+              void startChatStream(sessionId, text, {
+                useKb,
+                kbFocusIds,
+                onTitle: updateSessionTitle,
+              });
+            }}
           />
         ))}
         <div ref={endRef} />
@@ -153,6 +162,7 @@ function MessageRow({
   onFeedbackChange,
   onOpenArtifact,
   onTitle,
+  onAsk,
 }: {
   sessionId: number;
   m: ChatMsg;
@@ -167,6 +177,7 @@ function MessageRow({
   onFeedbackChange: (rating: "up" | "down" | null) => void;
   onOpenArtifact: (a: NonNullable<ChatMsg["artifact"]>) => void;
   onTitle: (sessionId: number, title: string) => void;
+  onAsk: (text: string) => void;
 }) {
   const isStreaming = m.role === "assistant" && isLast && thinking && !m.content;
 
@@ -193,7 +204,9 @@ function MessageRow({
               </div>
             ) : null}
             {m.scheduleCard?.mode === "list" ? (
-              <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} />
+              <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} onAsk={onAsk} />
+            ) : m.scheduleCard?.mode === "brief" ? (
+              <MeetingBriefCard card={m.scheduleCard as MeetingBrief} onAsk={onAsk} />
             ) : null}
             {m.content ? (
               <Markdown content={m.content} citations={m.citations} />
@@ -213,7 +226,7 @@ function MessageRow({
                 {artifactButtonLabel(m.artifact)}
               </button>
             ) : null}
-            {m.scheduleCard && m.scheduleCard.mode !== "list" ? (
+            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "brief" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} />
             ) : null}
             <MessageActions

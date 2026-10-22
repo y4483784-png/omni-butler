@@ -416,6 +416,54 @@ export interface GoogleCalendarStatus {
   connected: boolean;
   account_email: string;
   timezone?: string;
+  mail_access?: boolean;
+}
+
+export interface BriefMeeting {
+  title: string;
+  start_at: string;
+  end_at: string;
+  all_day?: boolean;
+  timezone?: string;
+  attendees?: string[];
+}
+
+export interface BriefEmail {
+  message_id: string;
+  thread_id: string;
+  sender: string;
+  sent_at: string;
+  subject: string;
+  sentences: string[];
+  url: string;
+}
+
+export interface BriefFocus {
+  message_id: string;
+  sentence_index: number;
+}
+
+export interface MeetingBrief {
+  mode: "brief";
+  phase: "info";
+  status: "ready" | "empty" | "needs_consent" | "unavailable" | "choose" | "not_found" | string;
+  meeting?: BriefMeeting | null;
+  emails?: BriefEmail[];
+  focus?: BriefFocus[];
+  candidates?: BriefMeeting[];
+  connected?: boolean;
+  said?: string;
+}
+
+export function connectGoogle(): void {
+  window.location.assign("/api/calendar/google/connect");
+}
+
+export function formatPointedUtterance(event: { title: string; start_at: string; all_day?: boolean }): string {
+  const start = event.start_at || "";
+  const day = start.slice(0, 10);
+  if (event.all_day || start.length < 16) return `帮我准备这场会：${event.title}，${day} 全天`;
+  return `帮我准备这场会：${event.title}，${day} ${start.slice(11, 16)} 开始`;
 }
 
 export async function googleCalendarStatus(): Promise<GoogleCalendarStatus> {

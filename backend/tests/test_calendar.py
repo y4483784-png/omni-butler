@@ -25,6 +25,27 @@ def test_serialize_event_card_reads_participants():
     assert card["provider"] == ""
 
 
+def test_pick_event_title_only_matches_the_old_rule():
+    from types import SimpleNamespace
+
+    from app.services.calendar import EventHint, pick_event
+
+    monday = datetime(2026, 10, 19, 10, 0)
+    later = datetime(2026, 10, 19, 15, 0)
+    rows = [
+        SimpleNamespace(title="客户周会", start_at=monday),
+        SimpleNamespace(title="客户周会", start_at=later),
+        SimpleNamespace(title="内部同步", start_at=monday),
+    ]
+    assert pick_event(rows, EventHint(title="")) is None
+    assert pick_event(rows, EventHint(title="客户周会")) is None
+    assert pick_event(rows, EventHint(title="内部同步")).title == "内部同步"
+    assert pick_event(rows, EventHint(title="周会")) is None
+    only = [rows[0], rows[2]]
+    assert pick_event(only, EventHint(title="周会")).title == "客户周会"
+    assert pick_event(rows, EventHint(day=later.date(), clock=later.time())).title == "客户周会"
+
+
 def test_suggest_next_slot_keeps_duration():
     start = datetime(2026, 8, 6, 10, 0)
     end = datetime(2026, 8, 6, 11, 30)
