@@ -40,6 +40,12 @@ _GENERIC_TERMS = frozenset(
 )
 _THREAD_ID = re.compile(r"[A-Za-z0-9]+")
 _FROM = re.compile(r"\s*(.*?)\s*<([^>]+)>")
+_EMAIL_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9][A-Za-z0-9.\-]*\.[A-Za-z]{2,}$"
+)
+_ANGLE_RE = re.compile(r"""^\s*(?:"([^"]*)"|([^<"]*?))?\s*<([^<>"]+)>\s*([^<>]*)$""")
+_FIELDS = ("from", "to", "cc")
+_ATTENDEE_CAP = 10
 
 
 class _Rejected(Exception):
@@ -90,34 +96,19 @@ def search_meeting_mail(
         return NoGrant("not_connected")
     if access == "scope_missing":
         return NoGrant("scope_missing")
-    people = _people(attendees)
-    terms = _topic_terms(title)
-    if not people and not terms:
+    queries = _queries(attendees, title, 120, start_day)
+    if not queries:
         return ()
     try:
-        kept = _collect(access, people, terms, 120, start_day)
+        kept = _collect(access, queries)
         if len(kept) < 3:
-            wider = _collect(access, people, terms, 365, start_day)
+            wider = _collect(access, _queries(attendees, title, 365, start_day))
             kept = _merge(kept, wider)[:5]
         return tuple(_read(access, kept, access.account_email))
     except _Rejected:
         return NoGrant("rejected")
     except _Down:
         return MailDown()
-
-
-def _people(attendees: tuple[str, ...]) -> tuple[str, ...]:
-    people: list[str] = []
-    for raw in attendees:
-        text = str(raw or "").strip()
-        if not text:
-            continue
-        if "@" not in text and len(text) < 2:
-            continue
-        people.append(text)
-        if len(people) == 10:
-            break
-    return tuple(people)
 
 
 def _topic_terms(title: str) -> tuple[str, ...]:
@@ -133,28 +124,99 @@ def _topic_terms(title: str) -> tuple[str, ...]:
     return tuple(kept)
 
 
-def _asks(people: tuple[str, ...], terms: tuple[str, ...]) -> tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]:
-    asks: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
-    if people and terms:
-        asks.append((people, terms))
-    if people:
-        asks.append((people, ()))
-    elif terms:
-        asks.append(((), terms))
-    return tuple(asks)
+@dataclass(frozen=True)
+class _Email:
+    value: str
+
+    def __post_init__(self) -> None:
+        if _EMAIL_RE.fullmatch(self.value) is None:
+            raise ValueError(self.value)
 
 
-def _compile(people: tuple[str, ...], terms: tuple[str, ...], days: int, start_day: date) -> str:
-    chunks: list[str] = []
-    if people:
-        person = " OR ".join(f"from:{item} OR to:{item} OR cc:{item}" for item in people)
-        chunks.append(f"({person})")
-    if terms:
-        phrase = " OR ".join(f'"{item}"' for item in terms)
-        chunks.append(f"({phrase})")
+@dataclass(frozen=True)
+class _Name:
+    value: str
+
+    def __post_init__(self) -> None:
+        if not _name_ok(self.value):
+            raise ValueError(self.value)
+
+
+def _name_ok(value: str) -> bool:
+    return len(value) >= 2 and not any(mark in value for mark in '@<>"\\')
+
+
+def _email_or_none(value: str) -> _Email | None:
+    text = value.strip()
+    if _EMAIL_RE.fullmatch(text) is None:
+        return None
+    return _Email(text)
+
+
+def _name_or_none(value: str) -> _Name | None:
+    text = value.strip()
+    if len(text) >= 2 and text[0] == text[-1] == '"':
+        text = text[1:-1].strip()
+    if not _name_ok(text):
+        return None
+    return _Name(text)
+
+
+def _parse_attendee(raw: str) -> tuple[_Email | None, _Name | None]:
+    text = str(raw or "").strip()
+    if not text:
+        return None, None
+    match = _ANGLE_RE.fullmatch(text)
+    if match:
+        raw_name = match.group(1) if match.group(1) is not None else (match.group(2) or "")
+        return _email_or_none(match.group(3)), _name_or_none(raw_name)
+    if "<" in text or ">" in text:
+        return None, None
+    email = _email_or_none(text)
+    if email is not None:
+        return email, None
+    return None, _name_or_none(text)
+
+
+def _signals(attendees: tuple[str, ...]) -> tuple[tuple[_Email, ...], tuple[_Name, ...]]:
+    emails: list[_Email] = []
+    names: list[_Name] = []
+    seen_emails: set[str] = set()
+    seen_names: set[str] = set()
+    added = 0
+    for raw in attendees:
+        email, name = _parse_attendee(raw)
+        contributed = False
+        if email is not None and email.value.casefold() not in seen_emails:
+            seen_emails.add(email.value.casefold())
+            emails.append(email)
+            contributed = True
+        if name is not None and name.value.casefold() not in seen_names:
+            seen_names.add(name.value.casefold())
+            names.append(name)
+            contributed = True
+        if not contributed:
+            continue
+        added += 1
+        if added == _ATTENDEE_CAP:
+            break
+    return tuple(emails), tuple(names)
+
+
+def _queries(attendees: tuple[str, ...], title: str, days: int, start_day: date) -> tuple[str, ...]:
+    emails, names = _signals(attendees)
+    terms = tuple(term for term in _topic_terms(title) if "<" not in term and ">" not in term)
+    atoms: list[str] = []
+    for email in emails:
+        atoms.extend(f"{field}:{email.value}" for field in _FIELDS)
+    for name in names:
+        atoms.extend(f'{field}:"{name.value}"' for field in _FIELDS)
+    atoms.extend(f'"{term}"' for term in terms)
+    if not atoms:
+        return ()
     before = (start_day + timedelta(days=1)).strftime("%Y/%m/%d")
-    chunks.append(f"newer_than:{days}d before:{before} -filename:ics -in:spam -in:trash -in:drafts -in:chats")
-    return " ".join(chunks)
+    suffix = f"newer_than:{days}d before:{before} -filename:ics -in:spam -in:trash -in:drafts -in:chats"
+    return (f"({' OR '.join(atoms)}) {suffix}",)
 
 
 def _status(response) -> None:
@@ -164,13 +226,13 @@ def _status(response) -> None:
         raise _Down()
 
 
-def _collect(access, people, terms, days: int, start_day: date) -> list[tuple[str, str]]:
+def _collect(access, queries: tuple[str, ...]) -> list[tuple[str, str]]:
     kept: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for ask_people, ask_terms in _asks(people, terms):
+    for query in queries:
         response = access.get(
             _MESSAGES_URL,
-            params={"q": _compile(ask_people, ask_terms, days, start_day), "maxResults": 10},
+            params={"q": query, "maxResults": 10},
         )
         _status(response)
         body = response.json() if response.content else {}
