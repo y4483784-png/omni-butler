@@ -11,7 +11,7 @@ stable IDs, and serialize them; they do not call an LLM or create paraphrases.
   Recalculate it with `python scripts/gen_yz_eval.py
   --refresh-attendance-seed` only on a machine that has
   `tests/YZ测试文档/测试用例.csv`.
-- `routing_utterances.jsonl`: 400 intent/tool examples, including multi-turn,
+- `routing_utterances.jsonl`: 403 intent/tool examples, including multi-turn,
   pending-calendar, and multi-tool cases.
 - `grounding_cases.jsonl`: 120 questions with fixed KB references or frozen
   web/sandbox evidence.

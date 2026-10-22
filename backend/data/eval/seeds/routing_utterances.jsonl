@@ -398,3 +398,6 @@
 {"message": "查清数据销毁周期，创建到期复核提醒。", "history": [{"role": "user", "content": "这次请把内部材料和后续操作一起处理。"}, {"role": "assistant", "content": "收到，我会按你的下一条具体要求组合工具。"}], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "calendar"]}, "tags": ["multi_tool", "multiturn", "retention"]}
 {"message": "根据会议室预约规则帮我安排四小时以内的会议。", "history": [{"role": "user", "content": "这次请把内部材料和后续操作一起处理。"}, {"role": "assistant", "content": "收到，我会按你的下一条具体要求组合工具。"}], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "calendar"]}, "tags": ["multi_tool", "multiturn", "office"]}
 {"message": "先看离职交接要求，再约一次交接会议。", "history": [{"role": "user", "content": "这次请把内部材料和后续操作一起处理。"}, {"role": "assistant", "content": "收到，我会按你的下一条具体要求组合工具。"}], "context": {"has_kb_docs": true}, "gold": {"intent": "rag", "tools": ["kb", "calendar"]}, "tags": ["multi_tool", "multiturn", "hr"]}
+{"message": "帮我整理一下这段会议纪要", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar", "meeting", "single_tool"]}
+{"message": "会后跟进一下昨天的客户会", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar", "meeting", "single_tool"]}
+{"message": "把这段转写整理成待办", "history": [], "context": {}, "gold": {"intent": "calendar", "tools": ["calendar"]}, "tags": ["calendar", "meeting", "single_tool"]}

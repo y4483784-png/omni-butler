@@ -863,7 +863,7 @@ CONTRACTS: dict[str, DatasetContract] = {
         "office_tool_routing.jsonl",
         RoutingCase,
         380,
-        420,
+        423,
         "message",
         _routing_check,
     ),

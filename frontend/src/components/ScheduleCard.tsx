@@ -11,6 +11,7 @@ import {
   type ScheduleCard as Card,
   type ScheduleSlot,
 } from "../api/client";
+import { formatFollowUtterance } from "../utils/followMail";
 import { isExpired } from "../utils/scheduleExpiry";
 import { guestsFromWire, participantsForSubmit, type Guest } from "../utils/guestWire";
 
@@ -439,9 +440,14 @@ export function ScheduleCard({
                 <span>{formatListWhen(item)}</span>
                 <span>{item.title || "（无标题）"}</span>
                 {onAsk && item.title ? (
-                  <button type="button" className="ghost-btn" onClick={() => onAsk(formatPointedUtterance(item))}>
-                    会前准备
-                  </button>
+                  <>
+                    <button type="button" className="ghost-btn" onClick={() => onAsk(formatPointedUtterance(item))}>
+                      会前准备
+                    </button>
+                    <button type="button" className="ghost-btn" onClick={() => onAsk(formatFollowUtterance(item))}>
+                      会后跟进
+                    </button>
+                  </>
                 ) : null}
                 {item.meet_link ? <span>{item.meet_link}</span> : null}
                 {item.external_id && item.rsvp ? (

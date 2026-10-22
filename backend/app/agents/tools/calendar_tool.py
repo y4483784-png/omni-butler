@@ -38,6 +38,7 @@ from app.services.calendar_factory import (
 from app.services.calendar_provider import invitee_wire, parse_invitees
 from app.services.calendar_google import _LIST_LOCAL_ONLY, _LIST_TRUNCATED
 from app.services.calendar_secrets import CalendarTransientError
+from app.services.meeting_followup import follow_up
 from app.services.meeting_prep import prepare_meeting
 
 _GOOGLE_UNCHECKED = "暂时没读到 Google 日历，确认时会再查；查不到就不会写入。"
@@ -726,6 +727,12 @@ def _create_answer(card: dict, remote_note: str) -> str:
     return f"{remote_note}{confirm}"
 
 
+def _paste_clock(now: datetime | None) -> datetime:
+    if now is not None:
+        return now
+    return datetime.now().replace(microsecond=0)
+
+
 def _account_clock(ctx: ToolContext) -> tuple[datetime, str | None]:
     now = calendar_now(ctx.db, ctx.user_id)
     zone_name = None
@@ -852,6 +859,17 @@ def execute_calendar(ctx: ToolContext, args: dict | None = None) -> ToolResult:
                 steps.append("暂时连不上 Google 日历")
                 return _cleared(steps, str(clock_error))
             return _cleared(steps, unclear_action_reply())
+
+    if action == "followup":
+        steps.append("只读会后跟进，不写入")
+        when = _paste_clock(now)
+        rows: list = []
+        if clock_error is None:
+            rows, notice = _load_upcoming(ctx, when)
+            if notice:
+                rows = []
+        outcome = follow_up(ctx.message, rows, when)
+        return _cleared(steps, outcome.caption, outcome.card)
 
     if clock_error is not None:
         if action == "list":

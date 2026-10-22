@@ -176,6 +176,7 @@ class CalendarAction(StrEnum):
     LIST = "list"
     SUGGEST = "suggest"
     PREP = "prep"
+    FOLLOWUP = "followup"
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,10 @@ _GUIDES: dict[CalendarAction, _Guide] = {
     CalendarAction.PREP: _Guide(
         "准备会议",
         "prep 是为一场已有的会做会前准备，只读，例如「帮我准备一下」「帮我准备这场会」「准备一下周一的客户会」「开会前帮我看看相关邮件」。",
+    ),
+    CalendarAction.FOLLOWUP: _Guide(
+        "会后跟进",
+        "followup 是根据贴上的会议纪要整理待办，确认前不写入，例如「帮我整理一下这段会议纪要」「会后跟进一下昨天的客户会」「把这段转写整理成待办」。",
     ),
 }
 if set(_GUIDES) != set(CalendarAction):

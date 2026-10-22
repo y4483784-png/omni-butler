@@ -101,3 +101,61 @@ test("list card renders above the advice text", () => {
   assert.ok(listAt < textAt);
   assert.ok(textAt < otherAt);
 });
+
+test("formatFollowUtterance matches the pointed minutes sentence", async () => {
+  const { claimFollowRows, formatFollowUtterance, mailtoHref } = await import(
+    "../src/utils/followMail.ts"
+  );
+  assert.equal(
+    formatFollowUtterance({ title: "客户会", start_at: "2026-10-22T15:00:00" }),
+    "帮我整理这场会的纪要：客户会，2026-10-22 15:00 开始",
+  );
+  assert.equal(
+    formatFollowUtterance({ title: "客户会", start_at: "2026-10-22", all_day: true }),
+    "帮我整理这场会的纪要：客户会，2026-10-22 全天",
+  );
+  const inflight = { current: false };
+  assert.deepEqual(claimFollowRows(["a1", "a2"], new Set(["a1"]), inflight), ["a2"]);
+  assert.equal(inflight.current, true);
+  assert.deepEqual(claimFollowRows(["a2"], new Set(), inflight), []);
+  const href = mailtoHref({
+    to: [{ email: "a@b.com", name: "张三" }],
+    subject: "跟进：客户会",
+    body: "张三周五前发报价",
+  });
+  assert.equal(href.startsWith("mailto:a@b.com?"), true);
+});
+
+test("follow mail buttons stay in the browser", () => {
+  const source = readFileSync(new URL("../src/components/FollowupCard.tsx", import.meta.url), "utf8");
+  assert.match(source, /复制邮件/);
+  assert.match(source, /用邮件应用打开/);
+  const copyAt = source.indexOf("function copyFollowMail");
+  const nextFn = source.indexOf("\nfunction ", copyAt + 1);
+  const copyFn = source.slice(copyAt, nextFn);
+  assert.doesNotMatch(copyFn, /fetch\(/);
+  assert.doesNotMatch(copyFn, /createCalendarEvent/);
+  const openAt = source.indexOf("用邮件应用打开");
+  const anchor = source.slice(source.lastIndexOf("<a", openAt), source.indexOf("</a>", openAt));
+  assert.match(anchor, /mailtoHref/);
+  assert.doesNotMatch(anchor, /fetch\(/);
+  assert.doesNotMatch(anchor, /createCalendarEvent/);
+});
+
+test("chat renders followup outside the schedule card", () => {
+  const source = readFileSync(new URL("../src/components/ChatWindow.tsx", import.meta.url), "utf8");
+  assert.match(source, /FollowupCard/);
+  const lowerAt = source.lastIndexOf("<ScheduleCard");
+  const gate = source.slice(Math.max(0, lowerAt - 220), lowerAt);
+  assert.match(gate, /!== "followup"/);
+});
+
+test("list rows offer follow-up beside prep", () => {
+  const source = readFileSync(new URL("../src/components/ScheduleCard.tsx", import.meta.url), "utf8");
+  const listAt = source.indexOf('if (mode === "list")');
+  const suggestAt = source.indexOf('if (mode === "suggest")');
+  const branch = source.slice(listAt, suggestAt);
+  assert.match(branch, /会前准备/);
+  assert.match(branch, /会后跟进/);
+  assert.match(branch, /formatFollowUtterance/);
+});

@@ -3,6 +3,7 @@ import { useStore } from "../store/useStore";
 import { hydrateSessionMessages, startChatStream, stopChatStream } from "../services/chatStream";
 import type { ChatMsg, MeetingBrief } from "../api/client";
 import { Markdown } from "./Markdown";
+import { FollowupCard } from "./FollowupCard";
 import { MeetingBriefCard } from "./MeetingBriefCard";
 import { ScheduleCard } from "./ScheduleCard";
 import { UpcomingEvents } from "./UpcomingEvents";
@@ -207,6 +208,8 @@ function MessageRow({
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} onAsk={onAsk} />
             ) : m.scheduleCard?.mode === "brief" ? (
               <MeetingBriefCard card={m.scheduleCard as MeetingBrief} onAsk={onAsk} />
+            ) : m.scheduleCard?.mode === "followup" ? (
+              <FollowupCard card={m.scheduleCard} />
             ) : null}
             {m.content ? (
               <Markdown content={m.content} citations={m.citations} />
@@ -226,7 +229,7 @@ function MessageRow({
                 {artifactButtonLabel(m.artifact)}
               </button>
             ) : null}
-            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "brief" ? (
+            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "brief" && m.scheduleCard.mode !== "followup" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} />
             ) : null}
             <MessageActions
