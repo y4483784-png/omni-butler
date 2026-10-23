@@ -5,7 +5,8 @@ description: >
   and only once, when confirm is submitted twice and POST /api/calendar
   ignores phase. Use when editing follow_up, to_wire, FollowupCard, confirm,
   postFollowAction, claimFollowRows, isExpired, voidOpenDrafts,
-  void_draft_schedule_cards, CalendarWrite, or create_calendar_event.
+  void_draft_schedule_cards, CalendarWrite, create_calendar_event, or
+  GoogleCalendarProvider.create_event.
 ---
 
 # Verify follow-up confirm
@@ -24,7 +25,7 @@ python3 verification/followup-confirm/check.py
 
 The script downloads TLC 1.8.0 from the pinned `tla2tools.jar` on first use, checks sha256 `5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2`, checks the source anchors, and runs TLC with one worker. A pass prints `pass: follow-up confirm holds`.
 
-CI runs that command, then `python3 verification/followup-confirm/check.py --break-claim`, in `.github/workflows/followup-confirm-tla.yml`.
+CI runs that command, then `--break-claim`, then `--drop-overlap`, in `.github/workflows/followup-confirm-tla.yml`.
 
 To show the property failing without editing product code:
 
@@ -32,9 +33,17 @@ To show the property failing without editing product code:
 python3 verification/followup-confirm/check.py --break-claim
 ```
 
-That command exits 0 only when TLC violates `AtMostOneEvent`. The trace has two `Confirm` steps, two `ConflictCheck` steps, and two `InsertEvent` steps, and `events` becomes 2.
+That command exits 0 only when TLC violates `AtMostOneEvent`. The trace has two `Confirm` steps, two `ConflictCheck` steps, and two `InsertEvent` steps, and `events` becomes 2. It forces the flag in the model. The default command is what notices a deleted line. It strips `if (inflight.current) return [];` from the source in memory and exits 2 if that edit would leave `ATOMIC_CLAIM` true.
 
-You can also run TLC on the committed config, which keeps `ATOMIC_CLAIM = TRUE`:
+To show the lost-response retry writing twice when the overlap check is gone:
+
+```
+python3 verification/followup-confirm/check.py --drop-overlap
+```
+
+That command exits 0 only when TLC violates `AtMostOneEvent`. The default command also strips `check_conflict(` and `conflicts_for_create(` in memory and exits 2 if `OVERLAP_CHECK` stays true.
+
+You can also run TLC on the committed config, which keeps `ATOMIC_CLAIM` and `OVERLAP_CHECK` true:
 
 ```
 java -XX:+UseParallelGC -cp verification/followup-confirm/.tools/tla2tools.jar tlc2.TLC -workers 1 -nowarning -config FollowupConfirm.cfg FollowupConfirm.tla
@@ -54,7 +63,7 @@ Move that commit forward only after the diff of the covered files has been read,
 | `Tick` path and the draft button in `frontend/src/components/FollowupCard.tsx` | `Tick`, `Untick`, `Confirm` |
 | `claimFollowRows` in `frontend/src/utils/followMail.ts` | the `ATOMIC_CLAIM` guard inside `Confirm` |
 | `postFollowAction` in `FollowupCard.tsx` | `PostFollowAction` |
-| `create_calendar_event` and `CalendarWrite` in `backend/app/api/calendar.py` | `ConflictCheck`, `RejectOverlap`, `InsertEvent` |
+| `create_calendar_event` and `CalendarWrite` in `backend/app/api/calendar.py`, and `GoogleCalendarProvider.create_event` in `backend/app/services/calendar_google.py` | `ConflictCheck`, `RejectOverlap`, `InsertEvent` |
 | `done.current.add` after `await postFollowAction` | `ObserveSuccess` |
 | the `catch` in `confirm` | `ObserveLostResponse` |
 | `isExpired` in `frontend/src/utils/scheduleExpiry.ts` | `ExpireDraft` |
@@ -78,7 +87,7 @@ Drive consent, the Meet probe, and sending mail are out of scope. Follow-up mail
 
 Exit 1 is a property failure. Read the trace as steps of `confirm` and `create_calendar_event`. If every step can happen in the current code, it is a bug in the product. Leave `AtMostOneEvent`, `NoWriteBeforeConfirm`, and `NeedsPasteWritesNothing` as they are. Do not change product code unless the operator asked for a fix.
 
-Exit 2 is a modeling error. The anchors no longer match, TLC violated `TypeOK` or `OneRequestPerLoop`, the jar or Java did not run, or the inflight guard is gone and TLC still passed. Update the spec from the code, or fix the tool, and say which one you did. Do not report exit 2 as a product bug.
+Exit 2 is a modeling error. A renamed call, a missing anchor, TLC violating `TypeOK` or `OneRequestPerLoop`, a jar or Java failure, or a deleted guard that TLC does not notice, all exit 2. A missing name is not a product bug. Update the spec from the code, or fix the tool, and say which one you did.
 
 A pass only covers this model and these bounds. If a covered file changed after the sync commit, read that diff before you trust the pass. The old pass can describe code that is no longer there.
 

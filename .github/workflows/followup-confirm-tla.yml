@@ -25,3 +25,4 @@ jobs:
         run: |
           python3 verification/followup-confirm/check.py
           python3 verification/followup-confirm/check.py --break-claim
+          python3 verification/followup-confirm/check.py --drop-overlap

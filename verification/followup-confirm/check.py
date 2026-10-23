@@ -42,14 +42,28 @@ def py_block(source: str, signature: str) -> str:
     lines = source.splitlines(keepends=True)
     start = None
     for index, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith(signature):
+        if line.lstrip().startswith(signature):
             start = index
             break
     if start is None:
         fail_model(f"missing {signature}")
+    header = start
+    paren = 0
+    started = False
+    while header < len(lines):
+        for char in lines[header]:
+            if char == "(":
+                paren += 1
+                started = True
+            elif char == ")":
+                paren -= 1
+        if started and paren <= 0 and ":" in lines[header]:
+            break
+        header += 1
+    else:
+        fail_model(f"missing body for {signature}")
     indent = len(lines[start]) - len(lines[start].lstrip())
-    end = start + 1
+    end = header + 1
     while end < len(lines):
         line = lines[end]
         if line.strip() == "":
@@ -114,6 +128,17 @@ def require(condition: bool, message: str) -> None:
         fail_model(message)
 
 
+def has_before(text: str, earlier: str, later: str) -> bool:
+    if earlier not in text or later not in text:
+        return False
+    return text.index(earlier) < text.index(later)
+
+
+def require_before(text: str, earlier: str, later: str, message: str) -> None:
+    if earlier not in text or later not in text or text.index(earlier) > text.index(later):
+        fail_model(message)
+
+
 def claim_is_atomic(claim_src: str) -> bool:
     require("await" not in claim_src, "claimFollowRows now awaits. It is no longer one step.")
     require(
@@ -123,7 +148,7 @@ def claim_is_atomic(claim_src: str) -> bool:
     return CLAIM_GUARD.search(claim_src) is not None
 
 
-def check_anchors() -> bool:
+def check_anchors() -> tuple[bool, bool]:
     follow_mail = read("frontend/src/utils/followMail.ts")
     card = read("frontend/src/components/FollowupCard.tsx")
     expiry = read("frontend/src/utils/scheduleExpiry.ts")
@@ -139,12 +164,16 @@ def check_anchors() -> bool:
     card_fn = brace_slice(card, "export function FollowupCard")
 
     require("if (expired) return;" in confirm, "confirm no longer returns on expired.")
-    require(
-        confirm.index("claimFollowRows") < confirm.index("postFollowAction"),
+    require_before(
+        confirm,
+        "claimFollowRows",
+        "postFollowAction",
         "confirm no longer claims before postFollowAction.",
     )
-    require(
-        confirm.index("await postFollowAction") < confirm.index("done.current.add"),
+    require_before(
+        confirm,
+        "await postFollowAction",
+        "done.current.add",
         "done.current.add is no longer after a successful postFollowAction.",
     )
     require(
@@ -179,7 +208,23 @@ def check_anchors() -> bool:
     )
     create = py_block(api, "def create_calendar_event")
     require("phase" not in create and "expires_at" not in create, "create_calendar_event now reads phase or expires_at.")
-    return claim_is_atomic(claim)
+    google = py_block(read("backend/app/services/calendar_google.py"), "def create_event(")
+    atomic = claim_is_atomic(claim)
+    if atomic:
+        stripped = CLAIM_GUARD.sub("", claim, count=1)
+        if stripped == claim or claim_is_atomic(stripped):
+            fail_model("removing the inflight return did not flip the model.")
+    overlap = has_before(create, "check_conflict(", "create_event(") and has_before(
+        google, "conflicts_for_create(", "_insert_google_event("
+    )
+    if overlap:
+        route_without_check = create.replace("check_conflict(", "", 1)
+        google_without_check = google.replace("conflicts_for_create(", "", 1)
+        if has_before(route_without_check, "check_conflict(", "create_event(") and has_before(
+            google_without_check, "conflicts_for_create(", "_insert_google_event("
+        ):
+            fail_model("removing the overlap checks did not flip the model.")
+    return atomic, overlap
 
 
 def sha256(path: Path) -> str:
@@ -201,15 +246,15 @@ def jar_path() -> Path:
     return JAR_CACHE
 
 
-def write_cfg(directory: Path, atomic: bool) -> Path:
-    value = "TRUE" if atomic else "FALSE"
+def write_cfg(directory: Path, atomic: bool, overlap: bool) -> Path:
     path = directory / "FollowupConfirm.cfg"
     path.write_text(
         "\n".join(
             [
                 "SPECIFICATION Spec",
                 "CONSTANT",
-                f"  ATOMIC_CLAIM = {value}",
+                f"  ATOMIC_CLAIM = {'TRUE' if atomic else 'FALSE'}",
+                f"  OVERLAP_CHECK = {'TRUE' if overlap else 'FALSE'}",
                 "INVARIANT TypeOK",
                 "INVARIANT OneRequestPerLoop",
                 "INVARIANT AtMostOneEvent",
@@ -227,12 +272,12 @@ def violated(output: str) -> list[str]:
     return re.findall(r"Invariant (\w+) is violated", output)
 
 
-def run_tlc(atomic: bool) -> subprocess.CompletedProcess[str]:
+def run_tlc(atomic: bool, overlap: bool) -> subprocess.CompletedProcess[str]:
     if shutil.which("java") is None:
         fail_model("java is not on PATH. Install a JDK 21 and rerun.")
     with tempfile.TemporaryDirectory(prefix="followup-confirm-tlc-") as tmp:
         meta = Path(tmp)
-        cfg = write_cfg(meta, atomic)
+        cfg = write_cfg(meta, atomic, overlap)
         return subprocess.run(
             [
                 "java",
@@ -285,12 +330,21 @@ def main() -> None:
         action="store_true",
         help="Treat claimFollowRows as if it did not return while inflight is set.",
     )
+    parser.add_argument(
+        "--drop-overlap",
+        action="store_true",
+        help="Treat create as if it inserted without an overlap check.",
+    )
     args = parser.parse_args()
-    atomic = check_anchors()
+    if args.break_claim and args.drop_overlap:
+        fail_model("pass only one of --break-claim and --drop-overlap.")
+    atomic, overlap = check_anchors()
     if args.break_claim:
         atomic = False
+    if args.drop_overlap:
+        overlap = False
     try:
-        result = run_tlc(atomic)
+        result = run_tlc(atomic, overlap)
     except subprocess.TimeoutExpired:
         fail_model("TLC exceeded 120 seconds.")
     output = tlc_text(result)
@@ -303,18 +357,27 @@ def main() -> None:
     if result.returncode != 0 and not props and "No error has been found" not in output:
         print(output)
         fail_model(f"TLC exited {result.returncode} without a property violation.")
-    if args.break_claim:
+    demo = args.break_claim or args.drop_overlap
+    if demo:
         if not props:
             print(output)
-            fail_model("the removed inflight guard did not violate a property. The model is too weak.")
+            fail_model("the weakened model did not violate a property. The model is too weak.")
         print(behavior(output))
-        print(f"break-claim: {props[0]} violated, as required. {state_count(output)} states generated.")
+        label = "break-claim" if args.break_claim else "drop-overlap"
+        print(f"{label}: {props[0]} violated, as required. {state_count(output)} states generated.")
         return
     if props:
         print(behavior(output))
-        if atomic:
+        if not overlap:
             print(
-                "property failed on code that still has the inflight guard. "
+                "property failed: the overlap check no longer sits before the insert. "
+                "A lost response then lets confirm post the same row again. "
+                "If the check still runs under another name, this is a modeling error.",
+                file=sys.stderr,
+            )
+        elif atomic:
+            print(
+                "property failed on code that still has the inflight guard and the overlap check. "
                 "Replay the trace against FollowupCard.confirm and create_calendar_event. "
                 "If a step cannot happen, this is a modeling error.",
                 file=sys.stderr,
@@ -329,6 +392,9 @@ def main() -> None:
     if not atomic:
         print(output)
         fail_model("the inflight guard is gone and TLC still passed. The model is too weak.")
+    if not overlap:
+        print(output)
+        fail_model("the overlap check is gone and TLC still passed. The model is too weak.")
     print(f"pass: follow-up confirm holds. {state_count(output)} states generated. TLC {TLA_VERSION}.")
 
 

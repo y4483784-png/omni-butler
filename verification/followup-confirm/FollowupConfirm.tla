@@ -2,7 +2,7 @@
 
 EXTENDS Integers
 
-CONSTANT ATOMIC_CLAIM
+CONSTANTS ATOMIC_CLAIM, OVERLAP_CHECK
 
 VARIABLES
   phase,
@@ -102,12 +102,14 @@ PostFollowAction ==
 
 ConflictCheck ==
   /\ checking > 0
-  /\ events = 0
+  /\ \/ ~OVERLAP_CHECK
+     \/ events = 0
   /\ checking' = checking - 1
   /\ checked' = checked + 1
   /\ UNCHANGED <<phase, expired, ticked, done, inflight, loops, toSend, unacked, events, confirms>>
 
 RejectOverlap ==
+  /\ OVERLAP_CHECK
   /\ checking > 0
   /\ events >= 1
   /\ checking' = checking - 1
