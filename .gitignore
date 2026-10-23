@@ -55,5 +55,9 @@ backend/tests/YZ测试文档/*.pdf
 backend/tests/YZ测试文档/*.docx
 backend/tests/YZ测试文档/~$*
 
-# Cursor debug dumps
-.cursor/
+verification/followup-confirm/.tools/
+verification/followup-confirm/FollowupConfirm_TTrace_*
+
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
