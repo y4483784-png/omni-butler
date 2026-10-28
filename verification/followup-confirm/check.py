@@ -17,7 +17,8 @@ SPEC_DIR = Path(__file__).resolve().parent
 
 TLA_VERSION = "1.8.0"
 JAR_URL = f"https://github.com/tlaplus/tlaplus/releases/download/v{TLA_VERSION}/tla2tools.jar"
-JAR_SHA256 = "5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2"
+# GitHub replaces v1.8.0/tla2tools.jar without moving the tag. Pin the release asset digest.
+JAR_SHA256 = "fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e"
 JAR_CACHE = SPEC_DIR / ".tools" / "tla2tools.jar"
 
 PROPERTY = ("AtMostOneEvent", "NoWriteBeforeConfirm", "NeedsPasteWritesNothing")
