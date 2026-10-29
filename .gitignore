@@ -57,6 +57,8 @@ backend/tests/YZ测试文档/~$*
 
 verification/followup-confirm/.tools/
 verification/followup-confirm/FollowupConfirm_TTrace_*
+verification/schedule-confirm/.tools/
+verification/schedule-confirm/ScheduleConfirm_TTrace_*
 
 .cursor/*
 !.cursor/skills/
