@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Static read-only lock for the 会前准备 slices."""
 
 from __future__ import annotations
 
@@ -33,7 +32,7 @@ STOP = frozenset({
     "complete_json", "clip_history_for_prompt", "scoped_access", "refresh_access_token",
     "startChatStream", "write_audit", "_persist_turn", "voidOpenDrafts", "mailtoHref",
 })
-# Classify at the call site. Entering `_call` would also enter writers that share it.
+# `_call` and `_http_request` take the verb as a parameter, so their bodies have no literal to judge.
 HTTP = frozenset({"_call", "_http_request", "fetch", "apiFetch"})
 VISIBLE = (
     ("backend/app/services/calendar.py", "create_event", "py"),
@@ -122,9 +121,9 @@ def call_dotted(func: ast.expr) -> str:
     return ".".join(parts)
 
 
-def string_folds(tree: ast.AST) -> dict[str, str]:
+def string_folds(tree: ast.Module) -> dict[str, str]:
     folds: dict[str, str] = {}
-    for node in tree.body:  # type: ignore[attr-defined]
+    for node in tree.body:
         name, value = "", None
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             name, value = node.targets[0].id, node.value
@@ -135,7 +134,7 @@ def string_folds(tree: ast.AST) -> dict[str, str]:
     return folds
 
 
-def index_py(tree: ast.AST) -> tuple[dict[str, ast.AST], dict[tuple[str, str], ast.AST]]:
+def index_py(tree: ast.Module) -> tuple[dict[str, ast.AST], dict[tuple[str, str], ast.AST]]:
     funcs: dict[str, ast.AST] = {}
     methods: dict[tuple[str, str], ast.AST] = {}
 
@@ -145,7 +144,7 @@ def index_py(tree: ast.AST) -> tuple[dict[str, ast.AST], dict[tuple[str, str], a
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 walk_func(child)
 
-    for node in tree.body:  # type: ignore[attr-defined]
+    for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             walk_func(node)
         elif isinstance(node, ast.ClassDef):
@@ -175,9 +174,9 @@ def resolve_py_module(module: str | None, level: int, frm: str) -> str | None:
     return None
 
 
-def py_imports(tree: ast.AST, frm: str) -> dict[str, tuple[str, str]]:
+def py_imports(tree: ast.Module, frm: str) -> dict[str, tuple[str, str]]:
     table: dict[str, tuple[str, str]] = {}
-    for node in tree.body:  # type: ignore[attr-defined]
+    for node in tree.body:
         if not isinstance(node, ast.ImportFrom):
             continue
         mod = resolve_py_module(node.module, node.level or 0, frm)
@@ -377,7 +376,6 @@ def _scan_string(source: str, i: int) -> int:
 
 
 def atom(source: str, i: int) -> tuple[str, int, str]:
-    """One code token. Templates stay a single backtick so the caller can enter them."""
     n = len(source)
     if i >= n:
         return ("end", i, "")
@@ -790,7 +788,7 @@ def _source(state: dict, path: str) -> str:
     return state["sources"][path]
 
 
-def _py_tree(state: dict, path: str) -> ast.AST:
+def _py_tree(state: dict, path: str) -> ast.Module:
     source = _source(state, path)
     cached = state["py"].get(path)
     if cached and cached[0] == source:
@@ -808,7 +806,7 @@ def _py_symbol(state: dict, path: str, name: str) -> str:
     funcs, _methods = index_py(tree)
     if name in funcs:
         return "func"
-    for node in tree.body:  # type: ignore[attr-defined]
+    for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == name:
             return "class"
     return "missing"
@@ -984,7 +982,7 @@ def _consider_ts(state: dict, path: str, qual: str, body: str, base_line: int, f
         _enqueue(state, "ts", mod, orig)
 
 
-def _py_body(tree: ast.AST, qual: str) -> tuple[list[ast.stmt] | None, str]:
+def _py_body(tree: ast.Module, qual: str) -> tuple[list[ast.stmt] | None, str]:
     funcs, methods = index_py(tree)
     if "." in qual:
         cls, name = qual.split(".", 1)
@@ -1027,7 +1025,7 @@ def _load_roots(state: dict) -> None:
     _enqueue(state, "py", PREP_PY, "prepare_meeting")
 
 
-def walk(overlays: dict) -> list[tuple[str, int, str, str]]:
+def walk(overlays: dict, *, load_roots: bool = True) -> list[tuple[str, int, str, str]]:
     state: dict = {
         "overlays": overlays,
         "sources": {},
@@ -1040,7 +1038,8 @@ def walk(overlays: dict) -> list[tuple[str, int, str, str]]:
         "cuts": {},
         "spans": {},
     }
-    _load_roots(state)
+    if load_roots:
+        _load_roots(state)
     while state["queue"]:
         kind, path, qual = state["queue"].pop(0)
         if kind == "py":
@@ -1084,10 +1083,15 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     try:
         mode = parse_mode(list(argv))
+        check_visible()
         if mode == "--strip-lock":
+            hits = walk({}, load_roots=False)
+            if hits:
+                for path, line, qual, symbol in hits:
+                    print(f"violation: {qual} {symbol} {path}:{line}")
+                return 1
             print("blind: no roots")
             return 2
-        check_visible()
         overlays = {}
         if mode == "--inject-write":
             overlays[PREP_PY] = lambda text: splice_prepare(text, "create_event()")
