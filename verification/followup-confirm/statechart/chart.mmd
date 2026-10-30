@@ -1,0 +1,49 @@
+---
+title: "会后确认写回"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 空闲
+    lg1: 草稿
+    lg2: 忙碌
+    lg3: 成功
+    lg4: 结束
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 yellow
+  class lg4 pink
+  s0: 无卡片
+  s1: 草稿未勾选
+  s2: 需粘贴只读
+  s3: 已取消或过期
+  s4: 草稿已勾选
+  s5: 确认中
+  s6: 写入待回执
+  s7: 已写入#183;回执丢失后
+  s8: 已写入成功
+  [*] --> s0
+  s0 --> s1: 出草稿卡片
+  s0 --> s2: needs_paste
+  s1 --> s3: 作废 or 过期
+  s1 --> s4: 勾选待办
+  s4 --> s3: 作废 or 过期
+  s4 --> s5: 确认
+  s5 --> s3: 作废 or 过期
+  s5 --> s6: 写入
+  s6 --> s3: 作废 or 过期
+  s6 --> s7: 回执丢失 or 冲突拒绝
+  s6 --> s8: 成功回执
+  s3 --> s8: 成功回执
+  s7 --> s3: 作废 or 过期
+  s7 --> s6: 确认
+  class s0 blue
+  class s1 teal
+  class s2 teal
+  class s3 pink
+  class s4 teal
+  class s5 orange
+  class s6 orange
+  class s7 teal
+  class s8 yellow
