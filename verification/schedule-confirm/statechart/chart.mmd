@@ -1,0 +1,57 @@
+---
+title: "确认写日历"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 草稿
+    lg1: 忙碌
+    lg2: 成功
+    lg3: 结束
+    lg4: Breaks AtMostOneSuccessfulWrite or NoWriteAfterRetire
+    lg5: Path to the AtMostOneSuccessfulWrite or NoWriteAfterRetire bug
+  }
+  class lg0 teal
+  class lg1 orange
+  class lg2 yellow
+  class lg3 pink
+  class lg4 breaks
+  class lg5 bugPath
+  s0: 草稿待确认
+  s1: 已点确认忙碌中
+  s2: 已取消或过期
+  s3: 写入待回执
+  s4: 已取消#183;曾写入
+  s5: 已确认锁定
+  s6: 已写入#183;空闲
+  s7: 再确认中#183;已写过
+  s8: 写入待回执#183;第二次
+  [*] --> s0
+  s0 --> s1: 点确认
+  s1 --> s2: 作废草稿
+  s1 --> s3: 写入日历
+  s2 --> s4: 写入日历
+  s3 --> s5: 写入成功回执
+  s5 --> s6: 流式刷新恢复草稿
+  s6 --> s7: 点确认
+  s7 --> s8: 写入日历
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 teal
+  class s0 bugPath
+  class s1 orange
+  class s1 bugPath
+  class s2 pink
+  class s2 bugPath
+  class s3 orange
+  class s3 bugPath
+  class s4 pink
+  class s4 breaks
+  class s4 bugPath
+  class s5 yellow
+  class s5 bugPath
+  class s6 teal
+  class s6 bugPath
+  class s7 orange
+  class s7 bugPath
+  class s8 orange
+  class s8 breaks
+  class s8 bugPath
