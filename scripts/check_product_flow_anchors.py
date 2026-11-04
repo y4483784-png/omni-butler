@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Grep each 引用锚点 row in docs/current-product-flows.md."""
 
 from __future__ import annotations
 
