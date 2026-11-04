@@ -1,9 +1,10 @@
-"""A confirm card writes once, and not after it is voided or expired."""
-
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
 from app.core.db import SessionLocal, init_db
-from app.models.models import CalendarEvent, Session as ChatSession
+from app.models.models import CalendarEvent, ScheduleConfirmClaim, Session as ChatSession
 from app.services.calendar import void_draft_schedule_cards
 from fastapi.testclient import TestClient
 
@@ -97,6 +98,29 @@ def test_one_claim_writes_once(auth_client: TestClient):
         assert _count(title) == 1
     finally:
         _delete_title(title)
+
+
+def test_expired_claim_does_not_create(auth_client: TestClient):
+    title = "确认门禁过期"
+    token = str(uuid4())
+    session_id = _session()
+    db = SessionLocal()
+    try:
+        db.add(
+            ScheduleConfirmClaim(
+                token=token,
+                user_id=1,
+                session_id=session_id,
+                status="open",
+                expires_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=1),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    saved = auth_client.post("/api/calendar", json=_body(title, token))
+    assert saved.status_code == 409, saved.text
+    assert _count(title) == 0
 
 
 def test_patch_and_delete_honor_a_closed_token(auth_client: TestClient):

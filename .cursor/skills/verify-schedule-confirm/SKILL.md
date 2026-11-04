@@ -2,8 +2,8 @@
 name: verify-schedule-confirm
 description: >
   Check that a ScheduleCard create, reschedule, or cancel writes only after
-  confirm is entered, and that the check still finds the two breaks this card
-  allows. Use when editing ScheduleCard, confirm, chooseCandidate, applySlot,
+  confirm is entered, that one success stays one write, and that a voided or
+  expired card cannot still write. Use when editing ScheduleCard, confirm, chooseCandidate, applySlot,
   useSlot, isExpired, voidOpenDrafts, void_draft_schedule_cards, runStreamLoop,
   updateLastAssistant, createCalendarEvent, updateCalendarEvent,
   cancelCalendarEvent, confirmGoogleCalendarChange, CalendarWrite,
@@ -13,7 +13,7 @@ description: >
 
 # Verify schedule confirm
 
-A create, patch, or delete for this card runs only after `confirm` is entered. The card keeps that promise. A second successful patch, local delete, Google update, or create on a newly free window can still happen after the stream puts the draft back. An in-flight handler can still commit after void or expiry. Exit 0 means the first promise holds and the check still finds the other two breaks.
+A create, patch, or delete for this card runs only after `confirm` is entered. The card keeps that promise. A successful write locks the card, and a stream refresh does not turn it back into a draft. A voided or expired claim does not let an in-flight handler commit. Exit 0 means every invariant holds.
 
 ## Run the check
 
@@ -23,7 +23,7 @@ Run these commands from the repo root. Java 21 must be on `PATH`.
 python3 verification/schedule-confirm/check.py
 ```
 
-Exit 0. The run still prints two counterexamples, one for `AtMostOneSuccessfulWrite` and one for `NoWriteAfterRetire`.
+Exit 0. `AtMostOneSuccessfulWrite` and `NoWriteAfterRetire` hold, along with the older invariants.
 
 ```
 python3 verification/schedule-confirm/check.py --break-submit-gate
@@ -37,7 +37,7 @@ python3 verification/schedule-confirm/check.py --break-confirmed-lock
 
 Exit 1 when `writes` becomes 2 without a stream restore. The violated invariant is `SecondWriteImpliesRestore`.
 
-The script downloads TLC 1.8.0, checks the pinned jar sha256, checks the source anchors, and runs TLC with one worker. A deleted submit `disabled` expression makes the default command exit 1. A missing file, a TLC timeout, a deadlock, or a gap property that starts holding exits 2.
+The script downloads the pinned `tla2tools.jar` from the v1.8.0 release URL, checks sha256 `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf`, checks the source anchors, and runs TLC with one worker. GitHub replaced that asset on 2026-11-03. The jar reports Implementation-Version 2.0, revision 309e489. A deleted submit `disabled` expression makes the default command exit 1. A missing file, a TLC timeout, a deadlock, or an anchor that no longer matches the code exits 2.
 
 CI runs the same three commands in `.github/workflows/schedule-confirm-tla.yml` and requires the two flag statuses to be 1.
 
@@ -68,6 +68,8 @@ Sync commit d5472ff2c985cc40428ff81e50c0c9254b5ef66c.
 | `voidOpenDrafts` in `frontend/src/services/chatStream.ts` and `void_draft_schedule_cards` in `backend/app/services/calendar.py` | `VoidOpenDrafts` |
 | the 先不删 button in `ScheduleCard.tsx` | `DeclineCancel` |
 | `isExpired` in `frontend/src/utils/scheduleExpiry.ts` | `ExpireDraft` |
+| `consume_schedule_claim` refusing a claim that is not open | `~retired` on each write step |
+| `mergeStreamScheduleCard` and `overlaySettledScheduleCards` | `UpdateLastAssistant` leaving a settled card in place |
 
 `useSlot`, `reply`, and `execute_calendar` are anchors that must not call a calendar writer. The model has no step for them.
 
@@ -83,9 +85,9 @@ A second mounted card, RSVP, list, suggest, readonly, mailto, prep, OAuth, free-
 
 Exit 1 on the default command is a held property TLC violated. Replay the trace as clicks and handler calls. If every step can happen, it is a product bug. Leave the formula.
 
-Exit 2 is a modeling or tool failure. A renamed call, a missing anchor, TLC violating `TypeOK` or `WritesFollowConfirm`, a jar or Java failure, a timeout, a deadlock, or a gap property that holds all exit 2. A gap property that starts holding means a reachable write was dropped, or the code changed. Do not delete the action to make the run green.
+Exit 2 is a modeling or tool failure. A renamed call, a missing anchor, TLC violating `TypeOK` or `WritesFollowConfirm`, a jar or Java failure, a timeout, or a deadlock exits 2. Do not delete an action to make the run green.
 
-Do not change product code. Do not weaken `NoWriteBeforeConfirm`, `WritesFollowConfirm`, `NoReentryWhileBusy`, `SecondWriteImpliesRestore`, `AtMostOneSuccessfulWrite`, or `NoWriteAfterRetire`.
+Do not weaken `NoWriteBeforeConfirm`, `WritesFollowConfirm`, `NoReentryWhileBusy`, `SecondWriteImpliesRestore`, `AtMostOneSuccessfulWrite`, or `NoWriteAfterRetire`. A product change that removes the claim check or lets a refresh reopen a settled card has to update the model in the same change. If TLC then reports a violation, replay the trace before editing a formula.
 
 ## Prove the check can fail
 

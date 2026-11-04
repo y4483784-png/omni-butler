@@ -27,6 +27,11 @@ from app.services.message_format import model_turn
 from app.services.session import auto_name, generate_session_title
 from app.services.data_analysis import has_tabular_docs
 from app.services.memory import load_memory_prompt, remember_from_turn
+from app.services.schedule_confirm import (
+    cancel_open_schedule_claims,
+    phase_for_stored_card,
+    publish_schedule_claim,
+)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -105,6 +110,7 @@ def _apply_regenerate(
         return None
 
     user_content = prior_user.content
+    cancel_open_schedule_claims(db, req.session_id)
     db.query(Message).filter(
         Message.session_id == req.session_id,
         Message.id >= target.id,
@@ -227,6 +233,7 @@ def _save_assistant_turn(
     stored_reasoning = reasoning.strip() if isinstance(reasoning, str) else ""
     if not content and not stored_reasoning:
         return
+    schedule_card = phase_for_stored_card(db, schedule_card)
     db.add(
         Message(
             session_id=session_id,
@@ -523,6 +530,8 @@ async def chat(
             if citations_payload:
                 yield _sse({"type": "citations", "citations": citations_payload})
             if schedule_card:
+                schedule_card = publish_schedule_claim(uid, session.id, schedule_card)
+                wf["schedule_card"] = schedule_card
                 yield _sse({"type": "schedule_card", "card": schedule_card})
             if artifact_stored:
                 yield _sse({"type": "artifact", "artifact": artifact_stored})

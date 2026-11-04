@@ -57,6 +57,16 @@ class Message(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class ScheduleConfirmClaim(Base):
+    __tablename__ = "schedule_confirm_claims"
+    token = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
+    status = Column(String, default="open")
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class Document(Base):
     """Knowledge-base file metadata (Phase 2 min slice)."""
 

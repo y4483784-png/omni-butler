@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   mergeStreamScheduleCard,
   overlaySettledScheduleCards,
-} from "../src/services/scheduleCardMerge.ts";
+} from "../src/utils/scheduleExpiry.ts";
 
 const draft = {
   phase: "draft",

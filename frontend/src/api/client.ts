@@ -110,6 +110,7 @@ export interface ScheduleCard {
   source?: { kind?: string; title?: string; url?: string };
   checked?: string[];
   consent?: string;
+  confirm_token?: string;
 }
 
 export interface CalendarEventList {
@@ -544,6 +545,23 @@ export function localStampFromDate(date: Date): string {
   return localStamp(date);
 }
 
+export async function openConfirmClaim(sessionId: number): Promise<{ confirm_token: string; expires_at: string }> {
+  const r = await apiFetch("/api/calendar/confirm-claims", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!r.ok) throw new Error(await parseError(r, "无法打开确认"));
+  return r.json();
+}
+
+export async function releaseConfirmClaim(token: string): Promise<void> {
+  const r = await apiFetch(`/api/calendar/confirm-claims/${encodeURIComponent(token)}/release`, {
+    method: "POST",
+  });
+  if (!r.ok) await readCalendarError(r, "无法关闭确认");
+}
+
 export async function createCalendarEvent(payload: {
   title: string;
   start_at: string;
@@ -552,6 +570,7 @@ export async function createCalendarEvent(payload: {
   location?: string;
   description?: string;
   meet?: boolean;
+  confirm_token?: string;
 }): Promise<ScheduleCard> {
   const r = await apiFetch("/api/calendar", {
     method: "POST",
@@ -585,6 +604,7 @@ export async function confirmGoogleCalendarChange(payload: {
   description?: string;
   external_id?: string;
   meet?: boolean;
+  confirm_token?: string;
 }): Promise<ScheduleCard> {
   const r = await apiFetch("/api/calendar/google/confirm", {
     method: "POST",
@@ -595,8 +615,9 @@ export async function confirmGoogleCalendarChange(payload: {
   return r.json();
 }
 
-export async function cancelCalendarEvent(id: number): Promise<ScheduleCard> {
-  const r = await apiFetch(`/api/calendar/${id}`, { method: "DELETE" });
+export async function cancelCalendarEvent(id: number, confirmToken?: string): Promise<ScheduleCard> {
+  const query = confirmToken ? `?confirm_token=${encodeURIComponent(confirmToken)}` : "";
+  const r = await apiFetch(`/api/calendar/${id}${query}`, { method: "DELETE" });
   if (!r.ok) await readCalendarError(r, "撤销日程失败");
   return r.json();
 }
@@ -605,6 +626,7 @@ export async function updateCalendarEvent(
   id: number,
   payload: Partial<Pick<ScheduleCard, "title" | "start_at" | "end_at" | "participants" | "location" | "description">> & {
     meet?: boolean;
+    confirm_token?: string;
   }
 ): Promise<ScheduleCard> {
   const r = await apiFetch(`/api/calendar/${id}`, {

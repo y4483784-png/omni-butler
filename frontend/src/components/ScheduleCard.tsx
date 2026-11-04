@@ -5,6 +5,8 @@ import {
   confirmGoogleCalendarChange,
   createCalendarEvent,
   formatPointedUtterance,
+  openConfirmClaim,
+  releaseConfirmClaim,
   rsvpCalendarEvent,
   updateCalendarEvent,
   type ScheduleCandidate,
@@ -208,10 +210,12 @@ export function ScheduleCard({
   card,
   onChange,
   onAsk,
+  sessionId,
 }: {
   card: Card;
   onChange: (next: Card) => void;
   onAsk?: (text: string) => void;
+  sessionId?: number;
 }) {
   const expired = isExpired(card);
   const legacy = !card.phase && !card.mode;
@@ -307,9 +311,10 @@ export function ScheduleCard({
       meet: showMeet && meetOn,
     };
     setBusy(true);
+    const claim = card.confirm_token ? { confirm_token: card.confirm_token } : {};
     try {
       if (mode === "create") {
-        const saved = await createCalendarEvent(payload);
+        const saved = await createCalendarEvent({ ...payload, ...claim });
         onChange({ ...card, ...saved, mode: "create", phase: "confirmed", conflicts: [], suggested_slots: [], candidates: [] });
         return;
       }
@@ -325,6 +330,7 @@ export function ScheduleCard({
                 end_at: payload.end_at,
                 participants: [],
                 external_id: externalId,
+                ...claim,
               }
             : {
                 action: "update",
@@ -336,6 +342,7 @@ export function ScheduleCard({
                 description: payload.description,
                 external_id: externalId,
                 meet: payload.meet,
+                ...claim,
               }
         );
         onChange({
@@ -358,11 +365,11 @@ export function ScheduleCard({
         return;
       }
       if (mode === "cancel") {
-        const saved = await cancelCalendarEvent(id);
+        const saved = await cancelCalendarEvent(id, card.confirm_token);
         onChange({ ...card, ...saved, mode: "cancel", phase: "confirmed" });
         return;
       }
-      const saved = await updateCalendarEvent(id, payload);
+      const saved = await updateCalendarEvent(id, { ...payload, ...claim });
       onChange({ ...card, ...saved, mode: "update", phase: "confirmed", conflicts: [], suggested_slots: [] });
     } catch (err) {
       if (err instanceof CalendarConflictError) {
@@ -392,8 +399,31 @@ export function ScheduleCard({
     }
   }
 
-  function useSlot(slot: ScheduleSlot) {
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  async function declineCancel() {
+    if (card.confirm_token) {
+      try {
+        await releaseConfirmClaim(card.confirm_token);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "无法关闭确认");
+        return;
+      }
+    }
+    onChange({ ...card, phase: "cancelled" });
+  }
+
+  async function useSlot(slot: ScheduleSlot) {
+    let expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    let confirmToken = "";
+    if (sessionId != null) {
+      try {
+        const claim = await openConfirmClaim(sessionId);
+        confirmToken = claim.confirm_token;
+        expiresAt = claim.expires_at;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "无法打开确认");
+        return;
+      }
+    }
     onChange({
       mode: "create",
       phase: "draft",
@@ -407,6 +437,7 @@ export function ScheduleCard({
       description: "",
       status: "",
       expires_at: expiresAt,
+      confirm_token: confirmToken || undefined,
       items: [],
       event_id: null,
       conflicts: [],
@@ -476,7 +507,7 @@ export function ScheduleCard({
                 key={`${slot.start_at}-${slot.end_at}`}
                 type="button"
                 className="ghost-btn"
-                onClick={() => useSlot(slot)}
+                onClick={() => void useSlot(slot)}
               >
                 用这个时段 {formatWhen(slot.start_at, slot.end_at)}
               </button>
@@ -500,7 +531,7 @@ export function ScheduleCard({
               key={`${slot.start_at}-${slot.end_at}`}
               type="button"
               className="ghost-btn"
-              onClick={() => useSlot(slot)}
+              onClick={() => void useSlot(slot)}
             >
               用这个时段 {formatWhen(slot.start_at, slot.end_at)}
             </button>
@@ -638,7 +669,7 @@ export function ScheduleCard({
                 type="button"
                 className="ghost-btn"
                 disabled={locked || busy}
-                onClick={() => onChange({ ...card, phase: "cancelled" })}
+                onClick={() => void declineCancel()}
               >
                 先不删
               </button>

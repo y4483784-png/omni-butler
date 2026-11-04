@@ -18,8 +18,9 @@ SPEC_DIR = Path(__file__).resolve().parent
 
 TLA_VERSION = "1.8.0"
 JAR_URL = "https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar"
-# GitHub replaces v1.8.0/tla2tools.jar without moving the tag. Pin the release asset digest.
-JAR_SHA256 = "fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e"
+# GitHub replaces the v1.8.0 asset without moving the tag. The 2026-11-03 asset
+# reports Implementation-Version 2.0, revision 309e489. Pin that digest.
+JAR_SHA256 = "e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf"
 JAR_CACHE = SPEC_DIR / ".tools" / "tla2tools.jar"
 
 HELD = (
@@ -28,11 +29,10 @@ HELD = (
     "NoWriteBeforeConfirm",
     "NoReentryWhileBusy",
     "SecondWriteImpliesRestore",
-)
-GAPS = (
     "AtMostOneSuccessfulWrite",
     "NoWriteAfterRetire",
 )
+LOCK_BROKEN = tuple(name for name in HELD if name != "AtMostOneSuccessfulWrite")
 HEALTH = ("TypeOK", "WritesFollowConfirm")
 
 SUBMIT_DISABLED = 'disabled={locked || busy || mode === "choose"}'
@@ -176,7 +176,7 @@ def lock_enabled(confirm_fn: str) -> bool:
 
 def require_definitions() -> None:
     spec = read("verification/schedule-confirm/ScheduleConfirm.tla")
-    for name in HELD + GAPS:
+    for name in HELD:
         if not re.search(rf"^{re.escape(name)} ==", spec, re.M):
             fail_model(f"ScheduleConfirm.tla has no {name} == definition.")
 
@@ -233,10 +233,26 @@ def check_anchors() -> tuple[bool, bool]:
         "updateLastAssistant" in loop and "scheduleCard" in loop,
         "runStreamLoop no longer restores a schedule card through updateLastAssistant.",
     )
+    require(
+        "mergeStreamScheduleCard" in brace_slice(chat, "function updateLastAssistant"),
+        "updateLastAssistant no longer keeps a settled schedule card.",
+    )
+    require(
+        "overlaySettledScheduleCards" in loop,
+        "runStreamLoop no longer keeps a settled card when it reloads messages.",
+    )
+    require(
+        "publish_schedule_claim" in read("backend/app/api/chat.py"),
+        "the chat stream no longer opens a confirm claim before showing the card.",
+    )
     void_draft = py_block(calendar, "def void_draft_schedule_cards")
     require(
         'card["phase"] = "cancelled"' in void_draft,
         "void_draft_schedule_cards no longer assigns a cancelled phase.",
+    )
+    require(
+        "cancel_open_schedule_claims" in void_draft,
+        "void_draft_schedule_cards no longer cancels an open confirm claim.",
     )
     require(
         '"phase": "draft"' in py_block(tool, "def _base_card"),
@@ -253,6 +269,10 @@ def check_anchors() -> tuple[bool, bool]:
         "def confirm_google_title_change",
     ):
         body = py_block(api, signature)
+        require(
+            "_consume_schedule_claim(" in body,
+            f"{signature} no longer consumes the confirm claim.",
+        )
         require(
             "phase" not in body and "expires_at" not in body,
             f"{signature} now mentions phase or expires_at.",
@@ -421,17 +441,21 @@ def main() -> None:
         fail_model("pass only one of --break-submit-gate and --break-confirmed-lock.")
     require_definitions()
     submit_gate, confirmed_lock = check_anchors()
+
+    def checked(lock_on: bool) -> tuple[str, ...]:
+        return HELD if lock_on else LOCK_BROKEN
+
     if not submit_gate:
-        result, output = invoke(False, confirmed_lock, HELD)
+        result, output = invoke(False, confirmed_lock, checked(confirmed_lock))
         require_named_violation(result, output, "NoReentryWhileBusy")
     if not confirmed_lock:
-        result, output = invoke(True, False, HELD)
+        result, output = invoke(True, False, checked(False))
         require_named_violation(result, output, "SecondWriteImpliesRestore")
     if args.break_submit_gate:
-        result, output = invoke(False, confirmed_lock, HELD)
+        result, output = invoke(False, confirmed_lock, checked(confirmed_lock))
         require_named_violation(result, output, "NoReentryWhileBusy")
     if args.break_confirmed_lock:
-        result, output = invoke(submit_gate, False, HELD)
+        result, output = invoke(submit_gate, False, checked(False))
         require_named_violation(result, output, "SecondWriteImpliesRestore")
     held_result, held_output = invoke(True, True, HELD)
     held_broken = classify(held_result, held_output)
@@ -447,21 +471,9 @@ def main() -> None:
     if "No error has been found" not in held_output:
         print(held_output)
         fail_model("the held run did not report that no error has been found.")
-    for gap in GAPS:
-        result, output = invoke(True, True, ("TypeOK", "WritesFollowConfirm", gap))
-        broken = classify(result, output)
-        if broken != [gap]:
-            if "No error has been found" in output:
-                print(output)
-                fail_model(f"{gap} holds. A reachable write was dropped.")
-            print(output)
-            fail_model(f"expected {gap} violated and no other, got {broken}.")
-        print(f"Invariant {gap} is violated.")
-        print(behavior(output))
-        print()
     print(
-        "pass: NoWriteBeforeConfirm, NoReentryWhileBusy, and SecondWriteImpliesRestore hold. "
-        f"AtMostOneSuccessfulWrite and NoWriteAfterRetire violated. "
+        "pass: NoWriteBeforeConfirm, NoReentryWhileBusy, SecondWriteImpliesRestore, "
+        "AtMostOneSuccessfulWrite, and NoWriteAfterRetire hold. "
         f"{state_count(held_output)}. TLC {TLA_VERSION}."
     )
 

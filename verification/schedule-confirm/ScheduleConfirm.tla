@@ -178,6 +178,7 @@ CheckConflict ==
 CreateCalendarEvent ==
   /\ armed > 0
   /\ writes < 2
+  /\ ~retired
   /\ armed' = armed - 1
   /\ writes' = writes + 1
   /\ unacked' = unacked + 1
@@ -200,6 +201,7 @@ RejectCreateConflict ==
      >>
 
 countWrite ==
+  /\ ~retired
   /\ pending' = pending - 1
   /\ writes' = writes + 1
   /\ unacked' = unacked + 1
@@ -251,13 +253,22 @@ ApplySuccess ==
 
 UpdateLastAssistant ==
   /\ streaming
-  /\ phase' = "draft"
-  /\ restored' = TRUE
-  /\ pastExpiry' = FALSE
-  /\ UNCHANGED <<
-       mode, target, streaming, window, busy, pending, armed, unacked,
-       writes, entered, retired, writesAtRetire
-     >>
+  /\ \/ /\ phase \in {"draft", ""}
+        /\ ~retired
+        /\ writes = 0
+        /\ phase' = "draft"
+        /\ restored' = TRUE
+        /\ pastExpiry' = FALSE
+        /\ UNCHANGED <<
+             mode, target, streaming, window, busy, pending, armed, unacked,
+             writes, entered, retired, writesAtRetire
+           >>
+     \/ /\ phase \in {"confirmed", "cancelled"} \/ retired \/ writes >= 1
+        /\ restored' = TRUE
+        /\ UNCHANGED <<
+             phase, pastExpiry, mode, target, streaming, window, busy, pending,
+             armed, unacked, writes, entered, retired, writesAtRetire
+           >>
 
 FinishRunStreamLoop ==
   /\ streaming

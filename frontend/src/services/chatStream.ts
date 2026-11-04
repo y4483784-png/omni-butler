@@ -3,6 +3,7 @@ import type { ChatMsg, Citation, ScheduleCard, ArtifactPayload } from "../api/cl
 import { useStore, type SessionChatState } from "../store/useStore";
 import { artifactFromPayload } from "../utils/artifact";
 import { foldThinking, type ThinkingFold } from "../thinkingFold";
+import { mergeStreamScheduleCard, overlaySettledScheduleCards } from "../utils/scheduleExpiry";
 import { overlayUnsavedError } from "../unsavedError";
 
 const abortControllers = new Map<number, AbortController>();
@@ -142,7 +143,10 @@ function updateLastAssistant(
     reasoning: extras.reasoning !== undefined ? extras.reasoning : last.reasoning,
     fold: extras.fold !== undefined ? extras.fold : last.fold,
     citations: extras.citations ?? last.citations,
-    scheduleCard: extras.scheduleCard !== undefined ? extras.scheduleCard : last.scheduleCard,
+    scheduleCard:
+      extras.scheduleCard !== undefined
+        ? mergeStreamScheduleCard(last.scheduleCard, extras.scheduleCard)
+        : last.scheduleCard,
     artifact: extras.artifact !== undefined ? extras.artifact : last.artifact,
   };
   patchSession(sessionId, { messages: copy });
@@ -252,7 +256,7 @@ async function runStreamLoop(
     patchSession(sessionId, { busy: false, thinking: false, phaseHint: "" });
     try {
       const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-      const synced = withHydratedFold(before, await loadMessages(sessionId));
+      const synced = overlaySettledScheduleCards(before, withHydratedFold(before, await loadMessages(sessionId)));
       const messages = aborted ? synced : overlayUnsavedError(before, synced);
       patchSession(sessionId, { messages, hydrated: true });
     } catch {

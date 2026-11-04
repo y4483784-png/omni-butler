@@ -1362,6 +1362,7 @@ def free_slots_for(
 def void_draft_schedule_cards(db: Session, session_id: int) -> int:
     """Mark unconfirmed write cards cancelled. Suggest/info cards are left alone."""
     from app.models.models import Message
+    from app.services.schedule_confirm import cancel_open_schedule_claims
 
     changed = 0
     rows = (
@@ -1383,8 +1384,11 @@ def void_draft_schedule_cards(db: Session, session_id: int) -> int:
             card["phase"] = "cancelled"
             row.schedule_card = json.dumps(card, ensure_ascii=False)
             changed += 1
-    if changed:
+    claims = cancel_open_schedule_claims(db, session_id)
+    if changed or claims:
         db.commit()
+    else:
+        db.rollback()
     return changed
 
 
