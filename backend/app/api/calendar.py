@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.core.db import set_rls_context
 from app.core.deps import get_db_scoped
-from app.core.ownership import require_owned_event
 from app.models.models import User
 from app.services.calendar_secrets import (
     CalendarOAuthError,
@@ -25,6 +24,7 @@ from app.services.calendar_secrets import (
     oauth_configuration_error,
     sign_oauth_state,
 )
+from app.core.ownership import require_owned_event, require_owned_session
 from app.services.calendar import (
     REMOTE_READ_ERRORS,
     answer_invitation,
@@ -33,9 +33,17 @@ from app.services.calendar import (
     check_conflict,
     confirm_titled_change,
     create_event,
+    draft_expires_at,
     free_slots_for,
     serialize_event_card,
     update_event,
+)
+from app.services.schedule_confirm import (
+    ScheduleConfirmClosed,
+    consume_schedule_claim,
+    open_schedule_claim,
+    parse_card_expiry,
+    release_schedule_claim,
 )
 from app.services.calendar_google import (
     CalendarOverlapError,
@@ -69,6 +77,7 @@ class CalendarWrite(BaseModel):
     location: str | None = None
     description: str | None = None
     meet: bool = False
+    confirm_token: str | None = None
 
     @field_validator("participants", mode="before")
     @classmethod
@@ -179,6 +188,7 @@ def create_calendar_event(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
+    _consume_schedule_claim(db, current_user.id, body.confirm_token)
     title = (body.title or "").strip()
     start_at = _parse_dt(body.start_at)
     end_at = _parse_dt(body.end_at)
@@ -264,6 +274,7 @@ def patch_event(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
+    _consume_schedule_claim(db, current_user.id, body.confirm_token)
     current = require_owned_event(db, event_id, current_user.id)
     start_at = _parse_dt(body.start_at) if body.start_at is not None else current.start_at
     end_at = _parse_dt(body.end_at) if body.end_at is not None else current.end_at
@@ -321,7 +332,9 @@ def delete_event(
     event_id: int,
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
+    confirm_token: str | None = None,
 ):
+    _consume_schedule_claim(db, current_user.id, confirm_token)
     require_owned_event(db, event_id, current_user.id)
     try:
         event = cancel_event(db, event_id, user_id=current_user.id)
@@ -376,9 +389,53 @@ def rsvp_google_event(
         raise HTTPException(status_code=502, detail=str(exc)) from None
 
 
+class ConfirmClaimOpen(BaseModel):
+    session_id: int
+
+
+def _consume_schedule_claim(db: Session, user_id: int, token: str | None) -> None:
+    try:
+        consume_schedule_claim(db, user_id, token)
+    except ScheduleConfirmClosed:
+        raise HTTPException(status_code=409, detail="这张确认已经失效，未写入。") from None
+
+
+@router.post("/confirm-claims")
+def open_confirm_claim(
+    body: ConfirmClaimOpen,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    require_owned_session(db, body.session_id, current_user.id)
+    expires_at = draft_expires_at()
+    token = open_schedule_claim(
+        db,
+        current_user.id,
+        body.session_id,
+        parse_card_expiry(expires_at),
+    )
+    return {"confirm_token": token, "expires_at": expires_at}
+
+
+@router.post("/confirm-claims/{token}/release")
+def release_confirm_claim(
+    token: str,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        release_schedule_claim(db, current_user.id, token)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="确认不存在") from None
+    except ScheduleConfirmClosed:
+        raise HTTPException(status_code=409, detail="这张确认已经写入。") from None
+    return {"ok": True}
+
+
 class GoogleTitleConfirm(BaseModel):
     action: str
     title: str | None = None
+    confirm_token: str | None = None
     start_at: str | None = None
     end_at: str | None = None
     participants: list[dict[str, str]] | None = None
@@ -401,6 +458,7 @@ def confirm_google_title_change(
     current_user: User = Depends(get_current_user),
 ):
     """Write one primary event. The card's Google id is required."""
+    _consume_schedule_claim(db, current_user.id, body.confirm_token)
     action = (body.action or "").strip().lower()
     if action not in {"update", "cancel"}:
         raise HTTPException(status_code=400, detail="需要改期或撤销")

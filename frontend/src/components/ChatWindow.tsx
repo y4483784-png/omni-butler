@@ -205,7 +205,7 @@ function MessageRow({
               </div>
             ) : null}
             {m.scheduleCard?.mode === "list" ? (
-              <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} onAsk={onAsk} />
+              <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} onAsk={onAsk} sessionId={sessionId} />
             ) : m.scheduleCard?.mode === "brief" ? (
               <MeetingBriefCard card={m.scheduleCard as MeetingBrief} onAsk={onAsk} />
             ) : m.scheduleCard?.mode === "followup" ? (
@@ -230,7 +230,7 @@ function MessageRow({
               </button>
             ) : null}
             {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "brief" && m.scheduleCard.mode !== "followup" ? (
-              <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} />
+              <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} sessionId={sessionId} />
             ) : null}
             <MessageActions
               sessionId={sessionId}

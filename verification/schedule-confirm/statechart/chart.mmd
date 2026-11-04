@@ -1,0 +1,40 @@
+---
+title: "Schedule confirm"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: open
+    lg1: busy
+    lg2: done
+    lg3: closed
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 teal
+  class lg3 tan
+  s0: Draft
+  s1: Choosing
+  s2: Confirming
+  s3: Closed
+  s4: Expired
+  s5: Arranged
+  s6: Arranged, then closed
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: you confirm
+  s0 --> s3: you choose not to delete or you send another message
+  s0 --> s4: the card expires
+  s1 --> s0: you pick one schedule
+  s1 --> s3: you send another message
+  s1 --> s4: the card expires
+  s2 --> s5: the calendar saves the change or the calendar saves the Google change or the calendar deletes the event or the calendar creates the event
+  s2 --> s3: you send another message
+  s2 --> s4: the card expires
+  s5 --> s6: you send another message or the card expires
+  class s0 blue
+  class s1 blue
+  class s2 orange
+  class s3 tan
+  class s4 tan
+  class s5 teal
+  class s6 teal
