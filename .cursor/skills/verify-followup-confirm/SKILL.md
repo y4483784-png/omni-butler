@@ -23,11 +23,11 @@ From the repo root, with Java 21 or newer on `PATH`:
 python3 verification/followup-confirm/check.py
 ```
 
-The script downloads TLC 1.8.0 from the pinned `tla2tools.jar` on first use, checks sha256 `fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e`, checks the source anchors, and runs TLC with one worker. A pass prints `pass: follow-up confirm holds`.
+The script downloads TLC 1.8.0 from the pinned `tla2tools.jar` on first use, checks sha256 `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf`, checks the source anchors, and runs TLC with one worker. A pass prints `pass: follow-up confirm holds`.
 
 CI runs that command, then `--break-claim`, then `--drop-overlap`, in `.github/workflows/followup-confirm-tla.yml`.
 
-GitHub replaces the v1.8.0 `tla2tools.jar` asset and keeps the same URL. A run on 2026-10-23 matched sha256 `5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2`. The asset published on 2026-10-28 has sha256 `fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e` and sha1 `bdfd4b754eee174f0bcdeaaffb96fa4d04bfbda8`. That sha1 is the checksum in the v1.8.0 release notes. The jar reports TLC2 Version 2026.10.28.014557, revision 56d37a9. On this model it still generates 149 states, 58 of them distinct. When the release asset digest changes, update the pin in `check.py` and the hash in this skill. Keep the hash check.
+GitHub replaces the v1.8.0 `tla2tools.jar` asset and keeps the same URL. A run on 2026-10-23 matched sha256 `5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2`. The asset published on 2026-10-28 had sha256 `fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e` and sha1 `bdfd4b754eee174f0bcdeaaffb96fa4d04bfbda8`. That sha1 was the checksum in the v1.8.0 release notes for that asset. That jar reported TLC2 Version 2026.10.28.014557, revision 56d37a9, and on this model it generated 149 states, 58 of them distinct. GitHub replaced the asset again on 2026-11-03. The bytes now served are sha256 `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf`. The jar reports Implementation-Version 2.0, revision 309e489. TLC2 reports Version 2026.11.03.180953. On this model it still generates 149 states, 58 of them distinct. When the release asset digest changes, update the pin in `check.py` and the hash in this skill. Keep the hash check.
 
 To show the property failing without editing product code:
 
