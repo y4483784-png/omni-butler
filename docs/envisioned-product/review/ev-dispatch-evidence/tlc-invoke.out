@@ -1,0 +1,57 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Running breadth-first search Model-Checking with fp 48 and seed 5613099943940601541 with 1 worker on 4 cores with 3330MB heap and 64MB offheap memory [pid: 4999] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/dispatch-boundary/DispatchBoundary.tla
+Parsing file /tmp/tlc-5847437504257771835/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-5847437504257771835/_TLCTrace.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-5847437504257771835/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-5847437504257771835/TLC.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-5847437504257771835/TLCExt.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-5847437504257771835/Sequences.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-5847437504257771835/FiniteSets.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module DispatchBoundary
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module DispatchBoundary
+Starting... (2026-11-10 19:03:21)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-10 19:03:21.
+Error: Invariant DispatchDoesNotInvoke is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ tool = "none"
+/\ dispatchWrote = FALSE
+/\ dispatchInvoked = FALSE
+/\ invokedAfterStop = FALSE
+/\ workInvoked = FALSE
+/\ claim = FALSE
+/\ dispatchClaimed = FALSE
+/\ reply = "none"
+/\ phase = "start"
+/\ calendar = 0
+/\ stopped = FALSE
+
+State 2: <Assign line 31, col 3 to line 38, col 71 of module DispatchBoundary>
+/\ tool = "calendar"
+/\ dispatchWrote = FALSE
+/\ dispatchInvoked = TRUE
+/\ invokedAfterStop = FALSE
+/\ workInvoked = FALSE
+/\ claim = FALSE
+/\ dispatchClaimed = FALSE
+/\ reply = "none"
+/\ phase = "assigned"
+/\ calendar = 0
+/\ stopped = FALSE
+
+2 states generated, 2 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 2.
+Finished in 00s at (2026-11-10 19:03:21)
+Trace exploration spec path: ./DispatchBoundary_TTrace_1794337401.tla
+
