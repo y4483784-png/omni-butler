@@ -571,6 +571,8 @@ def run_agent_workflow(
             # Infra failures must surface (eval: infra_error; SSE: the existing
             # error event). A silent "" was scored as an ordinary empty answer.
             draft = complete_text(llm_messages, role=Role.CHAT, raise_on_error=True)
+            if is_stopped():
+                return _cutoff()
             if not isinstance(draft, Spoken):
                 draft = Spoken(str(draft or ""), "", None)
             sandbox_gate = should_apply_sandbox_number_gate(
