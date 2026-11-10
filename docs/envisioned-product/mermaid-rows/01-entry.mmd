@@ -1,0 +1,77 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": ""Noto Sans CJK SC", "Noto Sans SC", Inter, system-ui, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#E8F1FF",
+    "primaryTextColor": "#0F172A",
+    "primaryBorderColor": "#3B82F6",
+    "secondaryColor": "#FEF3C7",
+    "secondaryTextColor": "#0F172A",
+    "secondaryBorderColor": "#D97706",
+    "tertiaryColor": "#ECFDF5",
+    "tertiaryTextColor": "#0F172A",
+    "tertiaryBorderColor": "#059669",
+    "lineColor": "#64748B",
+    "textColor": "#0F172A",
+    "mainBkg": "#F8FAFC",
+    "nodeBorder": "#94A3B8",
+    "clusterBkg": "#FFFBEB",
+    "clusterBorder": "#F59E0B",
+    "titleColor": "#0F172A",
+    "edgeLabelBackground": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "padding": 18,
+    "nodeSpacing": 28,
+    "rankSpacing": 36,
+    "htmlLabels": true
+  }
+}}%%
+flowchart LR
+  subgraph R1["入口、交互与事件"]
+    direction LR
+
+    subgraph ENTRY["① 你怎么进来"]
+      direction LR
+      desk([桌面安装包<br/>完整产品：聊天窗 + 本机动手同一应用])
+      web([网页版<br/>保留但瘦：对话 / 日历确认卡 / 知识库等<br/>无本机动手])
+      mailin([邮件当一等入口<br/>来信也可当事件送③])
+      desk ~~~ web ~~~ mailin
+    end
+
+    subgraph SHELL["② 外壳：收发与可打断交互（简化要做）"]
+      direction TB
+      login["登录，记住你是谁"]
+      ctx["拼好这一轮上下文<br/>长期记忆 + 会话"]
+      stream["一边生成一边推气泡"]
+      duplex["人可随时插话 / 叫停<br/>干活可暂停或改方向（简化全双工）<br/>停止传到子任务、排队项、以及请求发出前<br/>不承诺撤回已经发出的邮件、日程或付款"]
+      chan["按入口略调说法：桌面 / 网页 / 邮件<br/>先不做完整按信道输出规范"]
+      shellnote["确认闸仍不归外壳管<br/>最终结果仍由这里推给你"]
+      login --> ctx --> stream --> duplex --> chan --> shellnote
+    end
+
+    subgraph TRIGGER["③ 事件驱动主动（要做）"]
+      direction TB
+      src["外部事件：邮件 / 日程提醒 / 其它订好的来源"]
+      f1["一级：程序规则过滤<br/>噪声直接丢掉"]
+      f2["二级：模型判断要不要动"]
+      inbox["事件收件箱 + 持久回执<br/>按来源与投递编号去重后派活"]
+      route{已有对应正在干的活？}
+      receipt["回执分清：已接收 / 已派活 / 外部成功<br/>收到事件 ≠ 外部动作成功<br/>外部结果未知见⑧，不能当成功"]
+      newjob["新事件 → 交给派活开任务"]
+      direct["订阅直通：交给正在干的那一轮<br/>仍用同一任务代次，不新开派活"]
+      busy{那一轮正在等人确认？}
+      waitq["先排队，或作废旧卡后重新批<br/>不让两套写操作并行"]
+      tnote["写操作仍走确认闸<br/>先不做投机执行；需开任务交④"]
+      src --> f1 --> f2 --> inbox --> route
+      inbox -.-> receipt
+      route -->|无| newjob
+      route -->|有| direct --> busy
+      busy -->|是| waitq --> tnote
+      busy -->|否| tnote
+    end
+
+    ENTRY --> SHELL
+  end

@@ -1,0 +1,75 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": ""Noto Sans CJK SC", "Noto Sans SC", Inter, system-ui, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#E8F1FF",
+    "primaryTextColor": "#0F172A",
+    "primaryBorderColor": "#3B82F6",
+    "secondaryColor": "#FEF3C7",
+    "secondaryTextColor": "#0F172A",
+    "secondaryBorderColor": "#D97706",
+    "tertiaryColor": "#ECFDF5",
+    "tertiaryTextColor": "#0F172A",
+    "tertiaryBorderColor": "#059669",
+    "lineColor": "#64748B",
+    "textColor": "#0F172A",
+    "mainBkg": "#F8FAFC",
+    "nodeBorder": "#94A3B8",
+    "clusterBkg": "#FFFBEB",
+    "clusterBorder": "#F59E0B",
+    "titleColor": "#0F172A",
+    "edgeLabelBackground": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "padding": 18,
+    "nodeSpacing": 28,
+    "rankSpacing": 36,
+    "htmlLabels": true
+  }
+}}%%
+flowchart LR
+  subgraph R5["支撑与边界"]
+    direction LR
+
+    subgraph DEPLOY["⑪ 背后服务"]
+      direction LR
+      agentpc["桌面安装包内本机能力<br/>与聊天同一应用"]
+      cron["定时后台<br/>不当助手核、不定确认闸"]
+      api["主服务"]
+      runner["跑代码小服务"]
+      q[(队列缓存)]
+      files[(文件存储)]
+      pg[(数据库)]
+      vec[(向量库)]
+      agentpc --- cron
+      cron --- api
+      api --- runner
+      api --- q
+      api --- files
+      api --- pg
+      api --- vec
+    end
+
+    subgraph OUT["⑫ 明确不做 / 已废弃 / 后置"]
+      direction LR
+      no1["整仓换底座 / 推倒重写"]
+      no2["云手机点 App"]
+      no3["无人确认自动写入或付钱"]
+      no4["手机端产品"]
+      no5["外接微信等聊天总机"]
+      no6["智谱网页搜索工具<br/>已废弃，改 DeepSeek 自带联网"]
+      no7["网页遥控独立本机助手<br/>已废弃；本机动手在安装包内"]
+      no8["事件投机执行<br/>先不做"]
+      no9["看屏点点点式桌面视觉操控<br/>后置，不进本版主链"]
+      no10["完整按信道输出规范 / 满分异步 ReAct<br/>先用可打断简化版"]
+      no11["看门狗自行改提示词与 Trigger 规则<br/>先不做"]
+      no12["别学：提示词恢复代替幂等账本<br/>隐藏工具当授权或沙箱；内存审批表当持久队列"]
+      no1 ~~~ no2 ~~~ no3 ~~~ no4
+      no5 ~~~ no6 ~~~ no7 ~~~ no8
+      no9 ~~~ no10 ~~~ no11 ~~~ no12
+    end
+
+    DEPLOY ~~~ OUT
+  end
