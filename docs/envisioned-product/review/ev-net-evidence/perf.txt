@@ -1,0 +1,13 @@
+Machine: 4 cores. The first trunk run saw load 0.44. The later runs saw load 0.10.
+Python: /tmp/ev-net-venv. pytest 8.4.2.
+Command: python -m pytest <file> -q, with the boot-recipe env and a fresh sqlite file.
+One run each. No repeats, no ratio.
+
+trunk before the head, tests/test_web_thinking.py, commit 643b0604c69ff58bcb75bf41aa04bf5ddd83518f: 2.564s, exit 0
+head, tests/test_web_thinking.py: 1.831s, exit 0
+trunk again, tests/test_web_thinking.py, same commit, separate worktree: 1.763s, exit 0
+head, tests/test_one_web_path.py: 1.778s, exit 0
+
+Fail lines from the plan: head test_web_thinking.py at or above 60s, head test_one_web_path.py at or above 30s. Both head runs are under those lines.
+
+A separate profile of the first trunk run, not part of the gate, showed about 0.50s in setup and under 0.005s in the test call. The wall clock is process startup. The trunk-to-trunk spread is 0.801s. The head run sits 0.068s above the second trunk run. That is inside the spread, so this knife does not show a slower web-thinking test.

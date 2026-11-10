@@ -1,0 +1,87 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Running breadth-first search Model-Checking with fp 88 and seed 2433437869107973493 with 1 worker on 4 cores with 3330MB heap and 64MB offheap memory [pid: 4936] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/one-web-path/OneWebPath.tla
+Parsing file /tmp/tlc-5355096202618162346/TLC.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-5355096202618162346/_TLCTrace.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-5355096202618162346/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-5355096202618162346/Sequences.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-5355096202618162346/FiniteSets.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-5355096202618162346/TLCExt.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-5355096202618162346/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Integers
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module OneWebPath
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module OneWebPath
+Starting... (2026-11-10 21:38:31)
+Computing initial states...
+Computed 2 initial states...
+Finished computing initial states: 4 distinct states generated at 2026-11-10 21:38:31.
+Error: Invariant CalendarStaysUnwritten is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ netField = FALSE
+/\ token = FALSE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = FALSE
+/\ phase = "start"
+/\ stopped = FALSE
+/\ calendarWritten = FALSE
+
+State 2: <Queue line 31, col 3 to line 33, col 99 of module OneWebPath>
+/\ netField = FALSE
+/\ token = FALSE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = FALSE
+/\ phase = "queued"
+/\ stopped = FALSE
+/\ calendarWritten = FALSE
+
+State 3: <Build line 36, col 3 to line 39, col 89 of module OneWebPath>
+/\ netField = FALSE
+/\ token = FALSE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = FALSE
+/\ phase = "built"
+/\ stopped = FALSE
+/\ calendarWritten = FALSE
+
+State 4: <SkipSearch line 49, col 3 to line 52, col 99 of module OneWebPath>
+/\ netField = FALSE
+/\ token = FALSE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = FALSE
+/\ phase = "searched"
+/\ stopped = FALSE
+/\ calendarWritten = FALSE
+
+State 5: <ShowCard line 55, col 3 to line 59, col 76 of module OneWebPath>
+/\ netField = FALSE
+/\ token = FALSE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = TRUE
+/\ phase = "card"
+/\ stopped = FALSE
+/\ calendarWritten = TRUE
+
+21 states generated, 21 distinct states found, 7 states left on queue.
+The depth of the complete state graph search is 5.
+Finished in 00s at (2026-11-10 21:38:31)
+Trace exploration spec path: ./OneWebPath_TTrace_1794346711.tla
+

@@ -1,0 +1,7 @@
+id	decision	why	rejected
+D1	Read the 2026-11-10 DeepSeek chat-completions page before touching the request body.	The plan says the field name comes from the current document.	Guessing a networking key from memory or from another DeepSeek API.
+D2	CreateChatCompletionRequest names no networking property.	The schema lists messages, model, thinking, reasoning_effort, max_tokens, response_format, stop, stream, stream_options, temperature, top_p, tools, tool_choice, logprobs, top_logprobs, user_id, and the deprecated frequency and presence penalties. tools is function only.	Treating web_search_20250305, the Responses API tool, or POST /v1/tools/search as a field of this request.
+D3	Leave _build_request unchanged.	A key the document does not name would be an invented field. The plan says to stop there.	Adding a body flag and hoping the server ignores it.
+D4	Leave execute_web on the existing Zhipu search.	Deleting it would remove the only search. Pointing it at a second client would add a vendor.	A tool plug, Khoj, or a cutover onto the Messages API inside this knife.
+D5	Record the two cutover rules as failing TLC invariants.	FieldWhenAllowed and AbsentSkipsZhipu fail on the code that shipped. Weakening them would hide the gap.	Changing the invariants until the held run is all green, or changing product code to force a pass.
+D6	Leave live lanes 1 to 10 unrun.	This run has no model key, and the plan says not to mark a deferred lane as passed.	Writing ev-net-review-web.png or ev-net-review.mp4 as proof.

@@ -1,0 +1,50 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Warning: Please run the Java VM, which executes TLC with a throughput optimized garbage collector, by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed 1266543043699052460 with 1 worker on 4 cores with 3746MB heap and 64MB offheap memory [pid: 5912] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/one-web-path/OneWebPath.tla
+Semantic processing of module OneWebPath
+Linting of module OneWebPath
+Starting... (2026-11-10 21:41:46)
+Computing initial states...
+Computed 2 initial states...
+Finished computing initial states: 4 distinct states generated at 2026-11-10 21:41:46.
+Error: Invariant FieldWhenAllowed is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ netField = FALSE
+/\ token = TRUE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = FALSE
+/\ phase = "start"
+/\ stopped = FALSE
+/\ calendarWritten = FALSE
+
+State 2: <Queue line 29, col 3 to line 31, col 99 of module OneWebPath>
+/\ netField = FALSE
+/\ token = TRUE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = FALSE
+/\ phase = "queued"
+/\ stopped = FALSE
+/\ calendarWritten = FALSE
+
+State 3: <Build line 34, col 3 to line 37, col 89 of module OneWebPath>
+/\ netField = FALSE
+/\ token = TRUE
+/\ zhipu = FALSE
+/\ sendsAfterStop = FALSE
+/\ needsWeb = FALSE
+/\ card = FALSE
+/\ phase = "built"
+/\ stopped = FALSE
+/\ calendarWritten = FALSE
+
+11 states generated, 11 distinct states found, 3 states left on queue.
+The depth of the complete state graph search is 3.
+Finished in 00s at (2026-11-10 21:41:46)
+

@@ -57,6 +57,6 @@ The model is one turn. It does not model a second user, `verify_state` queueing 
 
 ## Keep the check with the code
 
-The anchors were confirmed at the commit that adds this check. Move the confirmation forward only after reading `_build_request`, `_create_sync`, `execute_web`, `_web_search_url`, and `_decision_to_plan`, and seeing that the model still describes them. If `_build_request` contains `web_search`, or `_create_sync` calls `create` before `is_stopped()`, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at 70dab2ade062dfbc9b83c8b95b26f59f51f5e53a. Move the confirmation forward only after reading `_build_request`, `_create_sync`, `execute_web`, `_web_search_url`, and `_decision_to_plan`, and seeing that the model still describes them. If `_build_request` contains `web_search`, or `_create_sync` calls `create` before `is_stopped()`, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.
