@@ -1,0 +1,22 @@
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+......................x................................................. [ 37%]
+.................................................s...................... [ 46%]
+........................................................................ [ 55%]
+.s...................................................................... [ 65%]
+........................................................................ [ 74%]
+...............................................sss...................... [ 83%]
+........................................................................ [ 93%]
+......s..............................................                    [100%]
+=============================== warnings summary ===============================
+../../../../tmp/ev-gate-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18
+  /tmp/ev-gate-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+tests/test_rag_ingestion_kb.py::test_ingest_real_xlsx_fixture_preserves_sheet_metadata
+  /tmp/ev-gate-venv/lib/python3.12/site-packages/qdrant_client/qdrant_remote.py:295: UserWarning: Failed to obtain server version. Unable to check client-server compatibility. Set check_compatibility=False to skip version check.
+    show_warning(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+EXIT:0

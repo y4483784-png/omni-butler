@@ -25,9 +25,28 @@ HELD = (
     "SecondWriteImpliesRestore",
     "AtMostOneSuccessfulWrite",
     "NoWriteAfterRetire",
+    "NoWriteWithoutToken",
 )
 LOCK_BROKEN = tuple(name for name in HELD if name != "AtMostOneSuccessfulWrite")
 HEALTH = ("TypeOK", "WritesFollowConfirm")
+CLAIM_HELD = (
+    "TypeOK",
+    "AtMostOneSuccessfulWrite",
+    "NoWriteWithoutToken",
+    "WriteMatchedFingerprint",
+    "WriteSawLiveGeneration",
+    "OpenClaimHasLiveGeneration",
+    "AtMostOneOpenRow",
+    "OwnerWrites",
+)
+CLAIM_BREAKS = {
+    "token": "NoWriteWithoutToken",
+    "match": "WriteMatchedFingerprint",
+    "retire": "OpenClaimHasLiveGeneration",
+    "once": "AtMostOneSuccessfulWrite",
+    "dedup": "AtMostOneOpenRow",
+    "owner": "OwnerWrites",
+}
 
 SUBMIT_DISABLED = 'disabled={locked || busy || mode === "choose"}'
 CONFIRMED_PHASE = 'phase: "confirmed"'
@@ -261,6 +280,7 @@ def check_anchors() -> tuple[bool, bool]:
         "def patch_event",
         "def delete_event",
         "def confirm_google_title_change",
+        "def rsvp_google_event",
     ):
         body = py_block(api, signature)
         require(
@@ -271,6 +291,20 @@ def check_anchors() -> tuple[bool, bool]:
             "phase" not in body and "expires_at" not in body,
             f"{signature} now mentions phase or expires_at.",
         )
+    consume = py_block(read("backend/app/services/schedule_confirm.py"), "def consume_schedule_claim")
+    require(
+        'raise ScheduleConfirmClosed("missing")' in consume,
+        "consume_schedule_claim no longer rejects a missing token.",
+    )
+    opener = py_block(api, "def open_confirm_claim")
+    require(
+        "issue_schedule_claim(" in opener,
+        "open_confirm_claim no longer issues through schedule_confirm.",
+    )
+    require(
+        "open_schedule_claim(" not in api,
+        "calendar.py still opens a claim without a fingerprint.",
+    )
     update_event = py_block(local, "def update_event")
     if "status" in update_event:
         require(
@@ -290,12 +324,19 @@ def check_anchors() -> tuple[bool, bool]:
     return gate, lock
 
 
-def write_cfg(directory: Path, submit_gate: bool, confirmed_lock: bool, invariants: tuple[str, ...]) -> Path:
+def write_cfg(
+    directory: Path,
+    submit_gate: bool,
+    confirmed_lock: bool,
+    token_required: bool,
+    invariants: tuple[str, ...],
+) -> Path:
     lines = [
         "SPECIFICATION Spec",
         "CONSTANT",
         f"  SUBMIT_GATE = {'TRUE' if submit_gate else 'FALSE'}",
         f"  CONFIRMED_LOCK = {'TRUE' if confirmed_lock else 'FALSE'}",
+        f"  TOKEN_REQUIRED = {'TRUE' if token_required else 'FALSE'}",
     ]
     for name in invariants:
         lines.append(f"INVARIANT {name}")
@@ -309,12 +350,18 @@ def violated(output: str) -> list[str]:
     return re.findall(r"Invariant (\w+) is violated", output)
 
 
-def run_tlc(submit_gate: bool, confirmed_lock: bool, invariants: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+def run_tlc(
+    submit_gate: bool,
+    confirmed_lock: bool,
+    token_required: bool,
+    invariants: tuple[str, ...],
+) -> subprocess.CompletedProcess[str]:
     if shutil.which("java") is None:
         fail_model("java is not on PATH. Install a JDK 21 and rerun.")
     with tempfile.TemporaryDirectory(prefix="schedule-confirm-tlc-") as tmp:
         meta = Path(tmp)
-        cfg = write_cfg(meta, submit_gate, confirmed_lock, invariants)
+        cfg = write_cfg(meta, submit_gate, confirmed_lock, token_required, invariants)
+        shutil.copy(SPEC_DIR / "ScheduleConfirm.tla", meta / "ScheduleConfirm.tla")
         return subprocess.run(
             [
                 "java",
@@ -331,7 +378,7 @@ def run_tlc(submit_gate: bool, confirmed_lock: bool, invariants: tuple[str, ...]
                 str(meta),
                 "ScheduleConfirm.tla",
             ],
-            cwd=SPEC_DIR,
+            cwd=meta,
             capture_output=True,
             text=True,
             timeout=120,
@@ -378,9 +425,58 @@ def classify(result: subprocess.CompletedProcess[str], output: str) -> list[str]
     return broken
 
 
-def invoke(submit_gate: bool, confirmed_lock: bool, invariants: tuple[str, ...]) -> tuple[subprocess.CompletedProcess[str], str]:
+def run_claim(break_name: str, invariants: tuple[str, ...]) -> tuple[subprocess.CompletedProcess[str], str]:
+    if shutil.which("java") is None:
+        fail_model("java is not on PATH. Install a JDK 21 and rerun.")
+    with tempfile.TemporaryDirectory(prefix="claim-gate-tlc-") as tmp:
+        meta = Path(tmp)
+        lines = [
+            "SPECIFICATION Spec",
+            "CONSTANT",
+            f'  BREAK = "{break_name}"',
+        ]
+        for name in invariants:
+            lines.append(f"INVARIANT {name}")
+        lines.append("")
+        cfg = meta / "ClaimGate.cfg"
+        cfg.write_text("\n".join(lines), encoding="utf-8")
+        shutil.copy(SPEC_DIR / "ClaimGate.tla", meta / "ClaimGate.tla")
+        try:
+            result = subprocess.run(
+                [
+                    "java",
+                    "-XX:+UseParallelGC",
+                    "-cp",
+                    str(jar_path()),
+                    "tlc2.TLC",
+                    "-workers",
+                    "1",
+                    "-nowarning",
+                    "-config",
+                    str(cfg),
+                    "-metadir",
+                    str(meta),
+                    "ClaimGate.tla",
+                ],
+                cwd=meta,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            fail_model("claim TLC exceeded 120 seconds.")
+    return result, tlc_text(result)
+
+
+def invoke(
+    submit_gate: bool,
+    confirmed_lock: bool,
+    token_required: bool,
+    invariants: tuple[str, ...],
+) -> tuple[subprocess.CompletedProcess[str], str]:
     try:
-        result = run_tlc(submit_gate, confirmed_lock, invariants)
+        result = run_tlc(submit_gate, confirmed_lock, token_required, invariants)
     except subprocess.TimeoutExpired:
         fail_model("TLC exceeded 120 seconds.")
     return result, tlc_text(result)
@@ -411,28 +507,58 @@ def main() -> None:
         action="store_true",
         help="Treat a successful confirm as leaving phase unchanged.",
     )
+    parser.add_argument(
+        "--break-tokenless",
+        action="store_true",
+        help="Let a calendar write proceed when the card has no token.",
+    )
+    parser.add_argument(
+        "--break-claim",
+        choices=tuple(CLAIM_BREAKS),
+        help="Enable one broken claim transition and require its invariant to fail.",
+    )
     args = parser.parse_args()
-    if args.break_submit_gate and args.break_confirmed_lock:
-        fail_model("pass only one of --break-submit-gate and --break-confirmed-lock.")
+    chosen = [
+        name
+        for name, enabled in (
+            ("--break-submit-gate", args.break_submit_gate),
+            ("--break-confirmed-lock", args.break_confirmed_lock),
+            ("--break-tokenless", args.break_tokenless),
+            ("--break-claim", args.break_claim is not None),
+        )
+        if enabled
+    ]
+    if len(chosen) > 1:
+        fail_model("pass only one break flag.")
     require_definitions()
+    claim_spec = read("verification/schedule-confirm/ClaimGate.tla")
+    for name in CLAIM_HELD:
+        if not re.search(rf"^{re.escape(name)} ==", claim_spec, re.M):
+            fail_model(f"ClaimGate.tla has no {name} == definition.")
     submit_gate, confirmed_lock = check_anchors()
 
     def checked(lock_on: bool) -> tuple[str, ...]:
         return HELD if lock_on else LOCK_BROKEN
 
     if not submit_gate:
-        result, output = invoke(False, confirmed_lock, checked(confirmed_lock))
+        result, output = invoke(False, confirmed_lock, True, checked(confirmed_lock))
         require_named_violation(result, output, "NoReentryWhileBusy")
     if not confirmed_lock:
-        result, output = invoke(True, False, checked(False))
+        result, output = invoke(True, False, True, checked(False))
         require_named_violation(result, output, "SecondWriteImpliesRestore")
     if args.break_submit_gate:
-        result, output = invoke(False, confirmed_lock, checked(confirmed_lock))
+        result, output = invoke(False, confirmed_lock, True, checked(confirmed_lock))
         require_named_violation(result, output, "NoReentryWhileBusy")
     if args.break_confirmed_lock:
-        result, output = invoke(submit_gate, False, checked(False))
+        result, output = invoke(submit_gate, False, True, checked(False))
         require_named_violation(result, output, "SecondWriteImpliesRestore")
-    held_result, held_output = invoke(True, True, HELD)
+    if args.break_tokenless:
+        result, output = invoke(True, True, False, HELD)
+        require_named_violation(result, output, "NoWriteWithoutToken")
+    if args.break_claim:
+        result, output = run_claim(args.break_claim, CLAIM_HELD)
+        require_named_violation(result, output, CLAIM_BREAKS[args.break_claim])
+    held_result, held_output = invoke(True, True, True, HELD)
     held_broken = classify(held_result, held_output)
     if held_broken:
         print(behavior(held_output))
@@ -446,10 +572,26 @@ def main() -> None:
     if "No error has been found" not in held_output:
         print(held_output)
         fail_model("the held run did not report that no error has been found.")
+    claim_result, claim_output = run_claim("none", CLAIM_HELD)
+    claim_broken = classify(claim_result, claim_output)
+    if claim_broken:
+        print(behavior(claim_output))
+        print(
+            "claim property failed on the unmutated model. "
+            "Replay the trace against issue_schedule_claim and consume_schedule_claim.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if "No error has been found" not in claim_output:
+        print(claim_output)
+        fail_model("the claim run did not report that no error has been found.")
     print(
         "pass: NoWriteBeforeConfirm, NoReentryWhileBusy, SecondWriteImpliesRestore, "
-        "AtMostOneSuccessfulWrite, and NoWriteAfterRetire hold. "
-        f"{state_count(held_output)}. TLC {TLA_VERSION}."
+        "AtMostOneSuccessfulWrite, NoWriteAfterRetire, and NoWriteWithoutToken hold. "
+        f"{state_count(held_output)}. "
+        "claim: AtMostOneSuccessfulWrite, NoWriteWithoutToken, WriteMatchedFingerprint, "
+        "WriteSawLiveGeneration, OpenClaimHasLiveGeneration, AtMostOneOpenRow, and OwnerWrites hold. "
+        f"{state_count(claim_output)}. TLC {TLA_VERSION}."
     )
 
 

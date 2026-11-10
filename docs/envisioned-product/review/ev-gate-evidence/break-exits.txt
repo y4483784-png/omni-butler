@@ -1,0 +1,9 @@
+break-confirmed-lock EXIT:1
+break-submit-gate EXIT:1
+break-tokenless EXIT:1
+claim-dedup EXIT:1
+claim-match EXIT:1
+claim-once EXIT:1
+claim-owner EXIT:1
+claim-retire EXIT:1
+claim-token EXIT:1

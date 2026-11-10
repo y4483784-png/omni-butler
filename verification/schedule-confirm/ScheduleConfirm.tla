@@ -2,7 +2,7 @@
 
 EXTENDS Integers
 
-CONSTANTS SUBMIT_GATE, CONFIRMED_LOCK
+CONSTANTS SUBMIT_GATE, CONFIRMED_LOCK, TOKEN_REQUIRED
 
 VARIABLES
   phase,
@@ -19,11 +19,13 @@ VARIABLES
   entered,
   restored,
   retired,
-  writesAtRetire
+  writesAtRetire,
+  token
 
 vars == <<
   phase, mode, target, pastExpiry, streaming, window,
-  busy, pending, armed, unacked, writes, entered, restored, retired, writesAtRetire
+  busy, pending, armed, unacked, writes, entered, restored, retired, writesAtRetire,
+  token
 >>
 
 legacy == phase = "" /\ mode = ""
@@ -59,8 +61,10 @@ TypeOK ==
   /\ restored \in BOOLEAN
   /\ retired \in BOOLEAN
   /\ writesAtRetire \in 0..2
+  /\ token \in {"absent", "bound"}
 
 NoWriteBeforeConfirm == writes = 0 \/ entered > 0
+NoWriteWithoutToken == writes = 0 \/ token = "bound"
 AtMostOneSuccessfulWrite == writes <= 1
 NoWriteAfterRetire == ~retired \/ writes <= writesAtRetire
 NoReentryWhileBusy == open <= 1
@@ -81,39 +85,25 @@ base ==
   /\ retired = FALSE
   /\ writesAtRetire = 0
 
+ready(p, m, t, tok) ==
+  /\ base
+  /\ phase = p
+  /\ mode = m
+  /\ target = t
+  /\ token = tok
+
 Init ==
-  \/ /\ base
-     /\ phase = "draft"
-     /\ mode = "create"
-     /\ target = "none"
-  \/ /\ base
-     /\ phase = "draft"
-     /\ mode = "update"
-     /\ target = "local"
-  \/ /\ base
-     /\ phase = "draft"
-     /\ mode = "cancel"
-     /\ target = "local"
-  \/ /\ base
-     /\ phase = "draft"
-     /\ mode = "update"
-     /\ target = "google"
-  \/ /\ base
-     /\ phase = "draft"
-     /\ mode = "cancel"
-     /\ target = "google"
-  \/ /\ base
-     /\ phase = "draft"
-     /\ mode = "choose"
-     /\ target = "none"
-  \/ /\ base
-     /\ phase = ""
-     /\ mode = ""
-     /\ target = "local"
-  \/ /\ base
-     /\ phase = "draft"
-     /\ mode = "update"
-     /\ target = "none"
+  \/ ready("draft", "create", "none", "bound")
+  \/ ready("draft", "create", "none", "absent")
+  \/ ready("draft", "update", "local", "bound")
+  \/ ready("draft", "cancel", "local", "bound")
+  \/ ready("draft", "update", "google", "bound")
+  \/ ready("draft", "cancel", "google", "bound")
+  \/ ready("draft", "choose", "none", "bound")
+  \/ ready("", "", "local", "bound")
+  \/ ready("draft", "update", "none", "bound")
+
+tokenOk == ~TOKEN_REQUIRED \/ token = "bound"
 
 canEnter ==
   /\ entered < 2
@@ -130,7 +120,7 @@ ChooseCandidate ==
   /\ target' \in {"local", "google"}
   /\ UNCHANGED <<
        phase, pastExpiry, streaming, window, busy, pending, armed, unacked,
-       writes, entered, restored, retired, writesAtRetire
+       writes, entered, restored, retired, writesAtRetire, token
      >>
 
 applySlot ==
@@ -139,7 +129,7 @@ applySlot ==
   /\ window' = "free"
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, busy, pending, armed, unacked,
-       writes, entered, restored, retired, writesAtRetire
+       writes, entered, restored, retired, writesAtRetire, token
      >>
 
 Confirm ==
@@ -150,7 +140,7 @@ Confirm ==
   /\ pending' = pending + 1
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, window, armed, unacked,
-       writes, restored, retired, writesAtRetire
+       writes, restored, retired, writesAtRetire, token
      >>
 
 MissingEvent ==
@@ -160,7 +150,7 @@ MissingEvent ==
   /\ busy' = FALSE
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, window, pending, armed, unacked,
-       writes, restored, retired, writesAtRetire
+       writes, restored, retired, writesAtRetire, token
      >>
 
 CheckConflict ==
@@ -172,20 +162,21 @@ CheckConflict ==
   /\ armed' = armed + 1
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, window, busy, unacked,
-       writes, entered, restored, retired, writesAtRetire
+       writes, entered, restored, retired, writesAtRetire, token
      >>
 
 CreateCalendarEvent ==
   /\ armed > 0
   /\ writes < 2
   /\ ~retired
+  /\ tokenOk
   /\ armed' = armed - 1
   /\ writes' = writes + 1
   /\ unacked' = unacked + 1
   /\ window' = "busy"
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, busy, pending,
-       entered, restored, retired, writesAtRetire
+       entered, restored, retired, writesAtRetire, token
      >>
 
 RejectCreateConflict ==
@@ -197,17 +188,18 @@ RejectCreateConflict ==
   /\ busy' = FALSE
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, window, armed, unacked,
-       writes, entered, restored, retired, writesAtRetire
+       writes, entered, restored, retired, writesAtRetire, token
      >>
 
 countWrite ==
   /\ ~retired
+  /\ tokenOk
   /\ pending' = pending - 1
   /\ writes' = writes + 1
   /\ unacked' = unacked + 1
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, window, busy, armed,
-       entered, restored, retired, writesAtRetire
+       entered, restored, retired, writesAtRetire, token
      >>
 
 PatchEvent ==
@@ -238,7 +230,7 @@ CalendarTitleUnmatched ==
   /\ busy' = FALSE
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, streaming, window, armed, unacked,
-       writes, entered, restored, retired, writesAtRetire
+       writes, entered, restored, retired, writesAtRetire, token
      >>
 
 ApplySuccess ==
@@ -248,7 +240,7 @@ ApplySuccess ==
   /\ phase' = IF CONFIRMED_LOCK THEN "confirmed" ELSE phase
   /\ UNCHANGED <<
        mode, target, pastExpiry, streaming, window, pending, armed,
-       writes, entered, restored, retired, writesAtRetire
+       writes, entered, restored, retired, writesAtRetire, token
      >>
 
 UpdateLastAssistant ==
@@ -261,13 +253,13 @@ UpdateLastAssistant ==
         /\ pastExpiry' = FALSE
         /\ UNCHANGED <<
              mode, target, streaming, window, busy, pending, armed, unacked,
-             writes, entered, retired, writesAtRetire
+             writes, entered, retired, writesAtRetire, token
            >>
      \/ /\ phase \in {"confirmed", "cancelled"} \/ retired \/ writes >= 1
         /\ restored' = TRUE
         /\ UNCHANGED <<
              phase, pastExpiry, mode, target, streaming, window, busy, pending,
-             armed, unacked, writes, entered, retired, writesAtRetire
+             armed, unacked, writes, entered, retired, writesAtRetire, token
            >>
 
 FinishRunStreamLoop ==
@@ -275,7 +267,7 @@ FinishRunStreamLoop ==
   /\ streaming' = FALSE
   /\ UNCHANGED <<
        phase, mode, target, pastExpiry, window, busy, pending, armed, unacked,
-       writes, entered, restored, retired, writesAtRetire
+       writes, entered, restored, retired, writesAtRetire, token
      >>
 
 retireNow ==
@@ -288,7 +280,7 @@ VoidOpenDrafts ==
   /\ retireNow
   /\ UNCHANGED <<
        mode, target, pastExpiry, streaming, window, busy, pending, armed, unacked,
-       writes, entered, restored
+       writes, entered, restored, token
      >>
 
 DeclineCancel ==
@@ -299,7 +291,7 @@ DeclineCancel ==
   /\ retireNow
   /\ UNCHANGED <<
        mode, target, pastExpiry, streaming, window, busy, pending, armed, unacked,
-       writes, entered, restored
+       writes, entered, restored, token
      >>
 
 ExpireDraft ==
@@ -309,7 +301,7 @@ ExpireDraft ==
   /\ retireNow
   /\ UNCHANGED <<
        phase, mode, target, streaming, window, busy, pending, armed, unacked,
-       writes, entered, restored
+       writes, entered, restored, token
      >>
 
 Idle == UNCHANGED vars

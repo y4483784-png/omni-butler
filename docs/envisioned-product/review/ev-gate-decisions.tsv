@@ -1,0 +1,15 @@
+ts	phase	decision	why	evidence	result
+2026-11-10T12:26:50Z	frame	Release HEAD is 5a6e0f847a238061fa719778689705bcccf0f01d	ev-task PR79 was squash-merged. This knife starts there, not on the old branch.	git log -1 release	verified
+2026-11-10T12:26:50Z	design	Skip a second arena	The plan already names one ScheduleConfirmClaim row per user, action, and fingerprint.	envisioned-product-plan.md ev-gate	no architect
+2026-11-10T12:26:50Z	design	Store generation ids on the claim row	A child table would be a second product table and a second RLS policy.	models.py ScheduleConfirmClaim.generation_ids	column kept
+2026-11-10T12:26:50Z	design	Follow-up writes are calendar.create. Meeting prep has no write.	prepare_meeting does not call create_event. The client follow-up create is the only write.	FollowupCard postFollowAction	gated as create
+2026-11-10T12:26:50Z	design	Test writes use BindingClient. Gate tests use plain_client.	A silent fixture would hide the new 409. The binder calls the real confirm-claims route.	backend/tests/claim_bind.py	migration kept
+2026-11-10T12:26:50Z	prove	Baseline claims file 4.022s exit 0 before edits	/usr/bin/time is missing. Wall clock uses date +%s.%N. Python 3.12.3, CI is 3.11.	ev-gate-evidence/baseline-1.seconds	4.022
+2026-11-10T12:26:50Z	prove	Head claims 3.203s, fingerprint 4.851s, release again 3.604s	Same boot env. Absolute gates are 60s and 30s. One run each.	ev-gate-evidence head and release-again seconds	under the gates
+2026-11-10T12:26:50Z	design	Copy receipt match and rollback, not the DS-Bot Map	Pinned OpenMausBot 083fd7b and DS-Bot 71d344b were reread. Scope and stop are ours.	ev-gate-evidence/README.md	copied and avoided recorded
+2026-11-10T12:26:50Z	frame	Live lanes are deferred	The operator moved running-product checks to the end of the whole plan.	user acceptance change	not run
+2026-11-10T12:26:50Z	prove	Claim model catches a tokenless write	'--break-claim token exits 1. NoWriteWithoutToken fails when Consume runs with claim none.	ev-gate-evidence/claim-token.out	exit 1
+2026-11-10T12:26:50Z	prove	Cross-family review is blocked by the model lock	Every child is grok-4.7-high. A second family was not used.	pstack-models.mdc	grok-4.7-high only
+2026-11-10T12:26:50Z	design	Suggest and list cards do not start a turn	ev-task keeps those turns completed. useSlot and RSVP then cannot issue unless another turn is live.	chat.py wait_for_person gate	reported, not a bypass
+2026-11-10T12:35:12Z	prove	Product commit is 083ffdfb4ff691873004f6a0b4ce6f34293d437e	The claim model and the skill name this commit as the code they describe.	git rev-parse	recorded
+2026-11-10T12:35:12Z	review	Comment review by grok-4.7-high deleted six comments	The open-write key, the uncommitted consume, and the test binder stay in the code, the tests, and the model.	bc-bf99ce87	accepted

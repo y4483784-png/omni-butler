@@ -29,6 +29,12 @@ jobs:
           gate_status=$?
           python3 verification/schedule-confirm/check.py --break-confirmed-lock
           lock_status=$?
+          python3 verification/schedule-confirm/check.py --break-tokenless
+          token_status=$?
+          python3 verification/schedule-confirm/check.py --break-claim token
+          claim_status=$?
           set -e
           test "$gate_status" -eq 1
           test "$lock_status" -eq 1
+          test "$token_status" -eq 1
+          test "$claim_status" -eq 1

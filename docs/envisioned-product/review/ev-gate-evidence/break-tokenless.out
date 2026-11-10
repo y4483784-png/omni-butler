@@ -1,0 +1,73 @@
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ phase = "draft"
+/\ unacked = 0
+/\ pastExpiry = FALSE
+/\ writesAtRetire = 0
+/\ mode = "create"
+/\ writes = 0
+/\ entered = 0
+/\ window = "free"
+/\ restored = FALSE
+/\ pending = 0
+/\ streaming = TRUE
+/\ armed = 0
+/\ token = "absent"
+/\ target = "none"
+/\ busy = FALSE
+/\ retired = FALSE
+
+State 2: <Confirm line 136, col 3 to line 144, col 7 of module ScheduleConfirm>
+/\ phase = "draft"
+/\ unacked = 0
+/\ pastExpiry = FALSE
+/\ writesAtRetire = 0
+/\ mode = "create"
+/\ writes = 0
+/\ entered = 1
+/\ window = "free"
+/\ restored = FALSE
+/\ pending = 1
+/\ streaming = TRUE
+/\ armed = 0
+/\ token = "absent"
+/\ target = "none"
+/\ busy = TRUE
+/\ retired = FALSE
+
+State 3: <CheckConflict line 157, col 3 to line 166, col 7 of module ScheduleConfirm>
+/\ phase = "draft"
+/\ unacked = 0
+/\ pastExpiry = FALSE
+/\ writesAtRetire = 0
+/\ mode = "create"
+/\ writes = 0
+/\ entered = 1
+/\ window = "free"
+/\ restored = FALSE
+/\ pending = 0
+/\ streaming = TRUE
+/\ armed = 1
+/\ token = "absent"
+/\ target = "none"
+/\ busy = TRUE
+/\ retired = FALSE
+
+State 4: <CreateCalendarEvent line 169, col 3 to line 180, col 7 of module ScheduleConfirm>
+/\ phase = "draft"
+/\ unacked = 1
+/\ pastExpiry = FALSE
+/\ writesAtRetire = 0
+/\ mode = "create"
+/\ writes = 1
+/\ entered = 1
+/\ window = "busy"
+/\ restored = FALSE
+/\ pending = 0
+/\ streaming = TRUE
+/\ armed = 0
+/\ token = "absent"
+/\ target = "none"
+/\ busy = TRUE
+/\ retired = FALSE
+NoWriteWithoutToken violated, as required. 330 states generated, 157 distinct.
