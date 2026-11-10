@@ -86,7 +86,6 @@ class Turn:
 
 @dataclass(frozen=True)
 class UnfinishedWriteKey:
-    # A later knife looks up an unfinished write by these fields. This table does not store them.
     user_id: int
     action: str
     fingerprint: str
@@ -201,7 +200,6 @@ def begin_turn(*, user_id: int, session_id: int) -> Turn:
             return turn
         except IntegrityError as exc:
             db.rollback()
-            # Two turns can read the same max generation. The unique key rejects one of them.
             if not _turn_key_conflict(exc):
                 raise
             conflict = exc
