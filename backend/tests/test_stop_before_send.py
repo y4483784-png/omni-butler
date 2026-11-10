@@ -1,5 +1,3 @@
-"""A stopped generation does not send, and a stop that lands after entry still counts."""
-
 from __future__ import annotations
 
 import asyncio

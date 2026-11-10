@@ -1,11 +1,5 @@
 ---- MODULE StopBeforeSend ----
-\* One chat generation.
-\*
-\* Queue then Create is a model request that has not left.
 \* Fly is a request already inside chat.completions.create. Stop does not unsend it.
-\* A chunk that comes back after Stop is not written into the bubble.
-\* Remember runs only when the generation is not stopped.
-\* The calendar count does not change.
 
 EXTENDS Integers
 

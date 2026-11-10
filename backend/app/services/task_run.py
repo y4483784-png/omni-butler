@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
-from app.agents.harness.constitution import load_constitution
 from app.core.db import SessionLocal, set_rls_context
 from app.models.models import TASK_RUN_STATUSES, Session as ChatSession, TaskRun
 
@@ -204,6 +203,8 @@ def _insert_running(db, *, user_id: int, session_id: int) -> Turn:
             continue
         _apply_event(db, row, "stop")
     generation = max((row.generation for row in rows), default=0) + 1
+    from app.agents.harness.constitution import load_constitution
+
     allowed_tools = json.dumps(list(load_constitution()["allowed_tools"]))
     created = TaskRun(
         user_id=user_id,

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Check stop-before-send, late-chunk voiding, and no memory after stop."""
 
 from __future__ import annotations
 

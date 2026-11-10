@@ -19,8 +19,8 @@ def execution_denial(db, *, user_id: int, task_id: int | None, tool: str) -> str
 
     A missing task id keeps today's callers working. This function does not
     change a TaskRun. `completed` stays `completed`, and `stopped` stays
-    `stopped`. Status and the allow list come from a new session. The workflow
-    session can still be holding the row as running after stop commits.
+    `stopped`. The workflow session can still be holding the row as running
+    after stop commits.
     """
     if task_id is None:
         return None

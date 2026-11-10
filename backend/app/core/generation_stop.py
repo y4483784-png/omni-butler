@@ -3,6 +3,8 @@ from __future__ import annotations
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 
+from app.services import task_run
+
 
 @dataclass(frozen=True)
 class GenerationKey:
@@ -29,9 +31,5 @@ def is_stopped() -> bool:
     key = _current.get()
     if key is None:
         return False
-    # task_run imports the harness package. Importing it here keeps llm importable
-    # while that package is still loading.
-    from app.services import task_run
-
     turn = task_run.get(user_id=key.user_id, generation=key.generation)
     return turn is not None and turn.status == "stopped"
