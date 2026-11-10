@@ -23,7 +23,7 @@ Run these commands from the repo root. Java 21 must be on `PATH`.
 python3 verification/schedule-confirm/check.py
 ```
 
-Exit 0. `AtMostOneSuccessfulWrite`, `NoWriteAfterRetire`, and `NoWriteWithoutToken` hold, along with the older card invariants. The same command also checks `ClaimGate.tla`.
+Exit 0. `AtMostOneSuccessfulWrite`, `NoWriteAfterRetire`, and `NoWriteWithoutToken` hold, along with the older card invariants. The same command also checks `ClaimGate.tla` and `CardContinue.tla`.
 
 ```
 python3 verification/schedule-confirm/check.py --break-submit-gate
@@ -47,11 +47,11 @@ Exit 1 when a create proceeds with `token = "absent"`. The violated invariant is
 python3 verification/schedule-confirm/check.py --break-claim token
 ```
 
-Exit 1 when `Consume` runs with no claim row. The violated invariant is `NoWriteWithoutToken` in `ClaimGate.tla`. The other `--break-claim` values are `match`, `retire`, `once`, `dedup`, and `owner`. Each must exit 1 on its own invariant.
+Exit 1 when `Consume` runs with no claim row. The violated invariant is `NoWriteWithoutToken` in `ClaimGate.tla`. The other `--break-claim` values are `match`, `retire`, `once`, `dedup`, `owner`, and `borrow`. Each must exit 1 on its own invariant. `borrow` is the continuation model. A click while another turn is live sets `borrowed` and violates `NoBorrow`.
 
 The script loads `verification/tlc/tla2tools.jar`, checks sha256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, checks manifest version `2.0 2026-11-06` and revision `d8fb231de4e4b5d02c1b2ed1ac759c086f694021`, checks the source anchors, and runs TLC with one worker. That file is the v1.8.0 asset GitHub published on 2026-11-06. The previous pin `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf` was the 2026-11-03 upload, and the release URL no longer serves it. A deleted submit `disabled` expression makes the default command exit 1. A missing file, a hash or manifest mismatch, a TLC timeout, a deadlock, or an anchor that no longer matches the code exits 2.
 
-CI runs the default command and the four break commands in `.github/workflows/schedule-confirm-tla.yml`. Each break status must be 1.
+CI runs the default command and the break commands in `.github/workflows/schedule-confirm-tla.yml`, including `--break-claim borrow`. Each break status must be 1.
 
 Read a claim-gate TLC result with `/statechart` by name. The view is `verification/schedule-confirm/statechart/claim-view.mjs`. The review chart is `docs/envisioned-product/review/ev-gate-statechart.mmd`.
 
@@ -62,6 +62,8 @@ Read a TLC result with `/statechart` by name.
 Card model sync commit d5472ff2c985cc40428ff81e50c0c9254b5ef66c.
 
 Claim-gate sync commit `083ffdfb4ff691873004f6a0b4ce6f34293d437e`. The parent is release `5a6e0f847a238061fa719778689705bcccf0f01d`. Move this commit forward only after a run confirms that `ClaimGate.tla` and the new `NoWriteWithoutToken` conjunct still describe the code.
+
+Card-continuation sync commit `a1ec95f1319b2d467ee19dba96511d43a77e3e90`. `CardContinue.tla` describes that commit. A click gets its own waiting generation. An unrelated live turn is not the authorization. Move this commit forward only after a run confirms `NoBorrow` and `UnrelatedStopKeepsClick` still describe the code.
 
 `Idle` stays enabled so a finished card is not a TLC deadlock. The spec stutter does not count as an enabled action, and a deadlock exits 2.
 
@@ -94,6 +96,7 @@ Claim row coverage:
 | Code | Model step |
 | --- | --- |
 | `issue_schedule_claim` and the open branch of `Issue` in `ClaimGate.tla` | one open row for user, action, and fingerprint |
+| `continue_from_card` and `insert_card_action` | `Continue` opens one waiting click and does not set `borrowed` |
 | `consume_schedule_claim` rejecting an empty token | `Consume` disabled while `claim = "none"`, and `NoWriteWithoutToken` |
 | fingerprint or scope mismatch | `Edit` sets `match = FALSE`, and `WriteMatchedFingerprint` |
 | a stopped or completed linked generation | `Stop1`, `Stop2`, `Complete1`, `Complete2` |
@@ -107,6 +110,8 @@ One card. At most two entries. At most two successful writes. The overlap read a
 
 `ClaimGate.tla` is one user, one action, and one fingerprint. Two generations. `writes` is at most 2 so a broken second consume is visible. Stopped and completed stay distinct. The pass run reached 350 states generated and 115 distinct.
 
+`CardContinue.tla` is the click after a finished read. One unrelated turn, one click generation, one claim. The pass run reached 38 states generated and 15 distinct. It does not model expiry, the sha256 canonicalizer, or a second fingerprint.
+
 ## Out of scope
 
 A second mounted card, list, suggest, readonly, mailto, prep, OAuth, free-busy UI, guest editor, Meet, `X-Request-ID`, and the follow-up inflight ref. The card model still does not include RSVP or server idempotency. `ClaimGate.tla` covers the claim row, not the button. It leaves out expiry, the sha256 canonicalizer, SQLite's no-op row lock, a second fingerprint, and a new open row after a successful write.
@@ -117,7 +122,7 @@ Exit 1 on the default command is a held property TLC violated. Replay the trace 
 
 Exit 2 is a modeling or tool failure. A renamed call, a missing anchor, TLC violating `TypeOK` or `WritesFollowConfirm`, a jar or Java failure, a timeout, or a deadlock exits 2. Do not delete an action to make the run green.
 
-Do not weaken `NoWriteBeforeConfirm`, `WritesFollowConfirm`, `NoReentryWhileBusy`, `SecondWriteImpliesRestore`, `AtMostOneSuccessfulWrite`, `NoWriteAfterRetire`, or `NoWriteWithoutToken`. Do not weaken `WriteMatchedFingerprint`, `WriteSawLiveGeneration`, `OpenClaimHasLiveGeneration`, `AtMostOneOpenRow`, or `OwnerWrites`. A product change that removes the claim check or lets a refresh reopen a settled card has to update the model in the same change. If TLC then reports a violation, replay the trace before editing a formula.
+Do not weaken `NoWriteBeforeConfirm`, `WritesFollowConfirm`, `NoReentryWhileBusy`, `SecondWriteImpliesRestore`, `AtMostOneSuccessfulWrite`, `NoWriteAfterRetire`, or `NoWriteWithoutToken`. Do not weaken `WriteMatchedFingerprint`, `WriteSawLiveGeneration`, `OpenClaimHasLiveGeneration`, `AtMostOneOpenRow`, or `OwnerWrites`. Do not weaken `NoBorrow` or `UnrelatedStopKeepsClick`. A product change that removes the claim check or lets a refresh reopen a settled card has to update the model in the same change. If TLC then reports a violation, replay the trace before editing a formula.
 
 ## Prove the check can fail
 

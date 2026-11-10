@@ -1,0 +1,35 @@
+%%{init: {"flowchart": {"wrappingWidth": 280, "htmlLabels": true, "nodeSpacing": 30, "rankSpacing": 40}}}%%
+flowchart TD
+  readDone[只读列表或空闲建议已经做完]
+  clickChoice[用户点其中一个时段，或点接受、拒绝、暂定]
+  sourceOk{属于本人，选项还在，来源未停也未过期}
+  refuseIssue[不签发确认]
+  ownTask[为这次点击单独建一个等人确认的任务]
+  oneClaim[相同的写入只留一张确认]
+  chatWrite[聊天里直接说出要写入的日程]
+  chatWait[那一回合等人确认，并签发确认]
+  showExact[界面展示将要写入的内容]
+  confirmAgain[用户再点一次确认]
+  gateOk{凭证、参数和这次任务仍有效}
+  refuseWrite[不写入]
+  written[写入一次]
+
+  readDone --> clickChoice
+  clickChoice --> sourceOk
+  sourceOk -->|否| refuseIssue
+  sourceOk -->|是| ownTask
+  ownTask --> oneClaim
+  chatWrite --> chatWait
+  oneClaim --> showExact
+  chatWait --> showExact
+  showExact --> confirmAgain
+  confirmAgain --> gateOk
+  gateOk -->|否| refuseWrite
+  gateOk -->|是| written
+
+  classDef path fill:#c3e0ff,stroke:#2f5f93,color:#1c3348
+  classDef gate fill:#bfe3df,stroke:#2f6f68,color:#1c3348
+  classDef stop fill:#f0d3bf,stroke:#8a4b2f,color:#3f2418
+  class readDone,clickChoice,ownTask,oneClaim,chatWrite,chatWait,showExact,confirmAgain,written path
+  class sourceOk,gateOk gate
+  class refuseIssue,refuseWrite stop

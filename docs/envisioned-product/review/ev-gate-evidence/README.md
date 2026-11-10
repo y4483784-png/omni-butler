@@ -131,3 +131,25 @@ From `backend`, with the boot env:
 `npm test` in `frontend`: 29 passed.
 
 The old assertion that a create without a token still writes is gone.
+
+## Card click continuation
+
+A finished list or suggest turn stays completed. Clicking a slot or an RSVP button on that stored card is a new action. Typing a sentence such as "选下午三点" is still a new `POST /api/chat` and was not changed.
+
+Before the fix, `POST /api/calendar/confirm-claims` for that click returned 409 `没有进行中的任务，未签发确认。` The raw failure is `continuation-repro.out`. The route test uses `plain_client` and does not start a hidden turn.
+
+The click loads the owned assistant message. The stored card must be a completed list or suggest card, unexpired, and it must contain the chosen slot or the invitation. The server stamps `task_generation` when it saves the card. A stopped or expired source returns 409 and inserts no task. The request does not accept a task id.
+
+`insert_card_action` adds one `waiting_person` row for that message and does not stop other open rows. `begin_turn` still stops open chat turns in the session and skips these click rows. A second click with the same user, action, and fingerprint returns the open claim and does not add another waiting row. An edited time after that click gets a new claim on the same waiting row. The old token does not write the new time.
+
+`CardContinue.tla` pass: 38 states generated, 15 distinct, exit 0. `--break-claim borrow` exits 1 on `NoBorrow` after `StartUnrelated` then `Continue`. Logs: `continuation-pass.out`, `continuation-borrow.out`.
+
+The readable chart is `docs/envisioned-product/review/ev-gate-flowchart.mmd`, with PNG and SVG beside it. Blue is the path, green is a check, orange is a refusal. The formal state chart stays at `ev-gate-statechart.mmd`.
+
+Timed again on fresh databases, Python 3.12.3, pytest 8.4.2, venv `/tmp/ev-gate-venv`:
+
+- `tests/test_schedule_confirm_claims.py`: 3.470 seconds, exit 0
+- `tests/test_claim_fingerprint.py`: 5.224 seconds, exit 0
+- `tests/test_card_continuation.py`: 4.044 seconds, exit 0
+
+`python -m pytest tests -q` on fresh `ci-card-suite.db` exited 0 in 57.373 seconds. Frontend `npm test`: 30 passed. Follow-up, TaskRun, and prep checks exited 0 again. Live lanes above are still not run.

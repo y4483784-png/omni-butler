@@ -46,7 +46,16 @@ CLAIM_BREAKS = {
     "once": "AtMostOneSuccessfulWrite",
     "dedup": "AtMostOneOpenRow",
     "owner": "OwnerWrites",
+    "borrow": "NoBorrow",
 }
+CONTINUE_HELD = (
+    "TypeOK",
+    "NoWriteWithoutToken",
+    "AtMostOneSuccessfulWrite",
+    "AtMostOneOpenRow",
+    "NoBorrow",
+    "UnrelatedStopKeepsClick",
+)
 
 SUBMIT_DISABLED = 'disabled={locked || busy || mode === "choose"}'
 CONFIRMED_PHASE = 'phase: "confirmed"'
@@ -302,6 +311,31 @@ def check_anchors() -> tuple[bool, bool]:
         "open_confirm_claim no longer issues through schedule_confirm.",
     )
     require(
+        "continue_from_card(" in opener,
+        "open_confirm_claim no longer continues a card click through schedule_confirm.",
+    )
+    continued = py_block(read("backend/app/services/schedule_confirm.py"), "def continue_from_card")
+    require(
+        "live_task_ids_for_session" not in continued,
+        "continue_from_card borrows whatever task is live in the session.",
+    )
+    require(
+        "insert_card_action(" in continued,
+        "continue_from_card no longer opens a task for the click.",
+    )
+    require(
+        "is_card_action(" in py_block(read("backend/app/services/task_run.py"), "def _insert_running"),
+        "a new chat turn stops a card click.",
+    )
+    require(
+        "sourceMessageId" in brace_slice(card_src, "async function useSlot"),
+        "useSlot no longer names the stored card.",
+    )
+    require(
+        "sourceMessageId" in brace_slice(card_src, "async function reply"),
+        "reply no longer names the stored card.",
+    )
+    require(
         "open_schedule_claim(" not in api,
         "calendar.py still opens a claim without a fingerprint.",
     )
@@ -469,6 +503,50 @@ def run_claim(break_name: str, invariants: tuple[str, ...]) -> tuple[subprocess.
     return result, tlc_text(result)
 
 
+def run_continue(break_name: str, invariants: tuple[str, ...]) -> tuple[subprocess.CompletedProcess[str], str]:
+    if shutil.which("java") is None:
+        fail_model("java is not on PATH. Install a JDK 21 and rerun.")
+    with tempfile.TemporaryDirectory(prefix="card-continue-tlc-") as tmp:
+        meta = Path(tmp)
+        lines = [
+            "SPECIFICATION Spec",
+            "CONSTANT",
+            f'  BREAK = "{break_name}"',
+        ]
+        for name in invariants:
+            lines.append(f"INVARIANT {name}")
+        lines.append("")
+        cfg = meta / "CardContinue.cfg"
+        cfg.write_text("\n".join(lines), encoding="utf-8")
+        shutil.copy(SPEC_DIR / "CardContinue.tla", meta / "CardContinue.tla")
+        try:
+            result = subprocess.run(
+                [
+                    "java",
+                    "-XX:+UseParallelGC",
+                    "-cp",
+                    str(jar_path()),
+                    "tlc2.TLC",
+                    "-workers",
+                    "1",
+                    "-nowarning",
+                    "-config",
+                    str(cfg),
+                    "-metadir",
+                    str(meta),
+                    "CardContinue.tla",
+                ],
+                cwd=meta,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            fail_model("continuation TLC exceeded 120 seconds.")
+    return result, tlc_text(result)
+
+
 def invoke(
     submit_gate: bool,
     confirmed_lock: bool,
@@ -555,7 +633,10 @@ def main() -> None:
     if args.break_tokenless:
         result, output = invoke(True, True, False, HELD)
         require_named_violation(result, output, "NoWriteWithoutToken")
-    if args.break_claim:
+    if args.break_claim == "borrow":
+        result, output = run_continue("borrow", CONTINUE_HELD)
+        require_named_violation(result, output, "NoBorrow")
+    elif args.break_claim:
         result, output = run_claim(args.break_claim, CLAIM_HELD)
         require_named_violation(result, output, CLAIM_BREAKS[args.break_claim])
     held_result, held_output = invoke(True, True, True, HELD)
@@ -585,13 +666,32 @@ def main() -> None:
     if "No error has been found" not in claim_output:
         print(claim_output)
         fail_model("the claim run did not report that no error has been found.")
+    continue_spec = read("verification/schedule-confirm/CardContinue.tla")
+    for name in CONTINUE_HELD:
+        if not re.search(rf"^{re.escape(name)} ==", continue_spec, re.M):
+            fail_model(f"CardContinue.tla has no {name} == definition.")
+    continue_result, continue_output = run_continue("none", CONTINUE_HELD)
+    continue_broken = classify(continue_result, continue_output)
+    if continue_broken:
+        print(behavior(continue_output))
+        print(
+            "continuation property failed on the unmutated model. "
+            "Replay the trace against continue_from_card and begin_turn.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if "No error has been found" not in continue_output:
+        print(continue_output)
+        fail_model("the continuation run did not report that no error has been found.")
     print(
         "pass: NoWriteBeforeConfirm, NoReentryWhileBusy, SecondWriteImpliesRestore, "
         "AtMostOneSuccessfulWrite, NoWriteAfterRetire, and NoWriteWithoutToken hold. "
         f"{state_count(held_output)}. "
         "claim: AtMostOneSuccessfulWrite, NoWriteWithoutToken, WriteMatchedFingerprint, "
         "WriteSawLiveGeneration, OpenClaimHasLiveGeneration, AtMostOneOpenRow, and OwnerWrites hold. "
-        f"{state_count(claim_output)}. TLC {TLA_VERSION}."
+        f"{state_count(claim_output)}. "
+        "continuation: NoBorrow and UnrelatedStopKeepsClick hold. "
+        f"{state_count(continue_output)}. TLC {TLA_VERSION}."
     )
 
 

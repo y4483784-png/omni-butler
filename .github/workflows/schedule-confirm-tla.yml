@@ -33,8 +33,11 @@ jobs:
           token_status=$?
           python3 verification/schedule-confirm/check.py --break-claim token
           claim_status=$?
+          python3 verification/schedule-confirm/check.py --break-claim borrow
+          borrow_status=$?
           set -e
           test "$gate_status" -eq 1
           test "$lock_status" -eq 1
           test "$token_status" -eq 1
           test "$claim_status" -eq 1
+          test "$borrow_status" -eq 1

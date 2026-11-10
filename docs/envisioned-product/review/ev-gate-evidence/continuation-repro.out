@@ -1,0 +1,3 @@
+tests/test_card_continuation.py::test_completed_list_click_confirms_once_without_a_live_session_task
+AssertionError: {"detail":"没有进行中的任务，未签发确认。"}
+assert 409 == 200
