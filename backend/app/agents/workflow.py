@@ -1,11 +1,3 @@
-"""
-Agent workflow — plan → run_one_tool → reflect → answer.
-
-Scheme B: one tool per round; results merge into a shared evidence pool.
-Tools today: kb | web | calendar | sandbox.
-SSE intent label: chat | rag | web_search | calendar | data_analysis (display only).
-"""
-
 from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
@@ -23,10 +15,10 @@ from app.agents.harness import gateway
 from app.agents.harness.types import ToolContext
 from app.agents.harness.verify import verify_state
 from app.agents.context import ContextBundle, compose_answer_messages
+from app.agents.dispatch import TurnAssignment, sse_intent
 from app.agents.router import (
     Intent,
     classify_intent,
-    plan_tools,
 )
 from app.core.prompts import (
     answer_rules,
@@ -98,40 +90,6 @@ class WorkflowResult(TypedDict):
     artifact: dict | None
     analysis_summary: dict | None
     context_stats: dict | None
-
-
-def _sse_intent(
-    *,
-    forced: bool,
-    evidence: list[dict],
-    pending_had_kb: bool,
-    pending_had_web: bool,
-    pending_had_calendar: bool,
-    pending_had_sandbox: bool = False,
-) -> Intent:
-    if forced:
-        return "rag"
-    has_kb = any(e.get("source_type") == "kb" for e in evidence)
-    has_web = any(e.get("source_type") == "web" for e in evidence)
-    has_calendar = any(e.get("source_type") == "calendar" for e in evidence)
-    has_sandbox = any(e.get("source_type") == "sandbox" for e in evidence)
-    if has_sandbox:
-        return "data_analysis"
-    if has_kb:
-        return "rag"
-    if has_calendar:
-        return "calendar"
-    if has_web:
-        return "web_search"
-    if pending_had_sandbox:
-        return "data_analysis"
-    if pending_had_kb:
-        return "rag"
-    if pending_had_calendar:
-        return "calendar"
-    if pending_had_web:
-        return "web_search"
-    return "chat"
 
 
 def build_pool_prompt(
@@ -243,6 +201,7 @@ def _halted_result() -> WorkflowResult:
 def run_agent_workflow(
     db: Session,
     *,
+    assignment: TurnAssignment,
     message: str,
     history: list[dict],
     use_kb: bool = False,
@@ -260,54 +219,6 @@ def run_agent_workflow(
     ctx_state = (
         context if isinstance(context, dict) else ContextBundle.from_history(history).to_state()
     )
-
-    def plan_node(state: WorkflowState) -> dict[str, Any]:
-        if is_stopped():
-            return _cutoff()
-        ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
-        router_hist = list(ctx.get("router_history") or state.get("history") or [])
-        planned = plan_tools(
-            state.get("message") or "",
-            router_hist,
-            has_kb_docs=bool(state.get("has_kb_docs")),
-            forced_kb=bool(state.get("use_kb")),
-            has_tabular_docs=bool(state.get("has_tabular_docs")),
-            document_ids=state.get("document_ids") or None,
-            context_line=str(ctx.get("context_line") or ""),
-        )
-        queue = list(planned["pending_tools"])
-        next_tool = queue[0] if queue else None
-        pending = queue[1:] if queue else []
-        return {
-            "forced": bool(state.get("use_kb")),
-            "needs_freshness": planned["needs_freshness"],
-            "needs_kb": bool(planned["needs_kb"]),
-            "needs_web": bool(planned["needs_web"]),
-            "needs_calendar": bool(planned.get("needs_calendar")),
-            "needs_sandbox": bool(planned.get("needs_sandbox")),
-            "pending_tools": pending,
-            "next_tool": next_tool,
-            "iteration": 1,
-            "evidence": [],
-            "thinking_steps": [],
-            "citations": [],
-            "need_more": False,
-            "kb_retried": False,
-            "web_retried": False,
-            "schedule_card": None,
-            "calendar_reply": None,
-            "direct_answer": None,
-            "answer_reasoning": None,
-            "artifact": None,
-            "intent": _sse_intent(
-                forced=bool(state.get("use_kb")),
-                evidence=[],
-                pending_had_kb=bool(planned["needs_kb"]),
-                pending_had_web=bool(planned["needs_web"]),
-                pending_had_calendar=bool(planned.get("needs_calendar")),
-                pending_had_sandbox=bool(planned.get("needs_sandbox")),
-            ),
-        }
 
     def retrieve_node(state: WorkflowState) -> dict[str, Any]:
         if is_stopped():
@@ -449,7 +360,7 @@ def run_agent_workflow(
 
             direct = EMPTY_KB_MESSAGE
             state = {**state, **answer_pair(canned=direct)}
-        intent = _sse_intent(
+        intent = sse_intent(
             forced=bool(state.get("forced")),
             evidence=evidence,
             pending_had_kb=bool(state.get("needs_kb")) or bool(state.get("forced")),
@@ -615,13 +526,11 @@ def run_agent_workflow(
         return "retrieve_node" if state.get("need_more") and state.get("next_tool") else "answer_node"
 
     g = StateGraph(WorkflowState)
-    g.add_node("plan_node", plan_node)
     g.add_node("retrieve_node", retrieve_node)
     g.add_node("reflect_node", reflect_node)
     g.add_node("answer_node", answer_node)
-    g.add_edge(START, "plan_node")
     g.add_conditional_edges(
-        "plan_node",
+        START,
         after_plan,
         {"retrieve_node": "retrieve_node", "answer_node": "answer_node"},
     )
@@ -647,6 +556,27 @@ def run_agent_workflow(
                 "generation": generation,
                 "pending_calendar": pending_calendar,
                 "context": ctx_state,
+                "next_tool": assignment.next_tool,
+                "pending_tools": list(assignment.pending_tools),
+                "needs_freshness": assignment.needs_freshness,
+                "needs_kb": assignment.needs_kb,
+                "needs_web": assignment.needs_web,
+                "needs_calendar": assignment.needs_calendar,
+                "needs_sandbox": assignment.needs_sandbox,
+                "forced": assignment.forced,
+                "intent": assignment.intent,
+                "iteration": 1,
+                "evidence": [],
+                "thinking_steps": [],
+                "citations": [],
+                "need_more": False,
+                "kb_retried": False,
+                "web_retried": False,
+                "schedule_card": None,
+                "calendar_reply": None,
+                "direct_answer": None,
+                "answer_reasoning": None,
+                "artifact": None,
             }
         )
     except GenerationStopped:

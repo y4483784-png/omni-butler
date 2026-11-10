@@ -1,0 +1,6 @@
+nproc 4
+ 19:06:50 up  1:09,  0 user,  load average: 0.05, 0.06, 0.04
+python /usr/bin/python3 3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]
+probe order: trunk test_router, head test_router, trunk test_router, head test_dispatch_boundary
+env: DATABASE_URL=sqlite+pysqlite:///./ci-eval.db REDIS_ENABLED=false CELERY_TASK_ALWAYS_EAGER=true SANDBOX_RUNNER_URL= SECRET_KEY=test-secret-key ADMIN_PASSWORD=test-admin-pass
+interpreter: python3 because python is not on PATH

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from unittest.mock import patch
-
 from fastapi.testclient import TestClient
 
+from app.agents.dispatch import TurnAssignment
 from app.agents.workflow import run_agent_workflow
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarEvent, Message, Session as ChatSession
@@ -62,8 +61,13 @@ def _cleanup(db, event_ids: list[int]) -> None:
 
 
 def _say(db, user_id: int, message: str) -> dict:
-    with patch("app.agents.workflow.plan_tools", return_value=_PLAN):
-        return run_agent_workflow(db, message=message, history=[], user_id=user_id)
+    return run_agent_workflow(
+        db,
+        message=message,
+        history=[],
+        user_id=user_id,
+        assignment=TurnAssignment.from_plan(_PLAN, forced=False),
+    )
 
 
 def test_dialogue_create_list_move_conflict_and_cancel(auth_client: TestClient, monkeypatch):

@@ -8,6 +8,7 @@ from app.agents.harness.verify import web_is_stale
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarEvent
 from app.agents.harness.critique import CritiqueVerdict
+from app.agents.dispatch import TurnAssignment, assign_turn
 from app.agents.router import classify_intent, plan_needs, plan_tools
 from app.agents.workflow import (
     build_pool_prompt,
@@ -27,6 +28,11 @@ from app.services.web_search import (
     search_api,
     search_planned,
 )
+
+
+def _assigned(plan: dict, *, use_kb: bool = False) -> TurnAssignment:
+    return TurnAssignment.from_plan(plan, forced=use_kb)
+
 
 _GROUNDING_PASS = CritiqueVerdict.model_validate(
     {
@@ -336,20 +342,28 @@ def test_web_only_one_tool_round():
         recency_filter="oneDay",
         query_rewritten=True,
     )
-    with (
-        patch("app.agents.tools.web.search_planned", return_value=fake),
-        patch(
-            "app.agents.workflow.plan_tools",
-            return_value={
-                "pending_tools": ["web"],
-                "needs_freshness": True,
-                "needs_kb": False,
-                "needs_web": True,
-            },
-        ),
-        _grounding_pass(),
-    ):
-        r = run_agent_workflow(object(), message="今天有什么 AI 新闻", history=[], has_kb_docs=False)  # type: ignore[arg-type]
+    web_plan = {
+        "pending_tools": ["web"],
+        "needs_freshness": True,
+        "needs_kb": False,
+        "needs_web": True,
+    }
+    init_db()
+    db = SessionLocal()
+    try:
+        with (
+            patch("app.agents.tools.web.search_planned", return_value=fake),
+            _grounding_pass(),
+        ):
+            r = run_agent_workflow(
+                db,
+                message="今天有什么 AI 新闻",
+                history=[],
+                has_kb_docs=False,
+                assignment=_assigned(web_plan),
+            )
+    finally:
+        db.close()
     assert r["intent"] == "web_search"
     assert r["citations"][0]["url"] == "https://n.example/1"
     assert any("正在搜索" in s for s in r["thinking_steps"])
@@ -385,15 +399,6 @@ def test_kb_then_web_separate_rounds():
         page = None
 
     with (
-        patch(
-            "app.agents.workflow.plan_tools",
-            return_value={
-                "pending_tools": ["kb", "web"],
-                "needs_freshness": True,
-                "needs_kb": True,
-                "needs_web": True,
-            },
-        ),
         patch("app.agents.tools.kb.retrieve", return_value=[C()]),
         patch("app.agents.tools.web.search_planned", return_value=fake) as web_mock,
         _grounding_pass(),
@@ -403,6 +408,14 @@ def test_kb_then_web_separate_rounds():
             message="结合我上传的方案看看最近政策更新",
             history=[],
             has_kb_docs=True,
+            assignment=_assigned(
+                {
+                    "pending_tools": ["kb", "web"],
+                    "needs_freshness": True,
+                    "needs_kb": True,
+                    "needs_web": True,
+                }
+            ),
         )
     assert {c["source_type"] for c in r["citations"]} == {"kb", "web"}
     assert r["llm_messages"] == []
@@ -446,14 +459,17 @@ def test_calendar_missing_fields_returns_blank_card():
     db = SessionLocal()
     try:
         before = db.query(CalendarEvent).count()
-        with (
-            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
-            patch(
-                "app.agents.tools.calendar_tool.extract_event",
-                return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
-            ),
+        with patch(
+            "app.agents.tools.calendar_tool.extract_event",
+            return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
         ):
-            r = run_agent_workflow(db, message="帮我约一下", history=[], has_kb_docs=False)
+            r = run_agent_workflow(
+                db,
+                message="帮我约一下",
+                history=[],
+                has_kb_docs=False,
+                assignment=_assigned(_calendar_plan()),
+            )
         assert r["intent"] == "calendar"
         assert r["schedule_card"]["mode"] == "create"
         assert r["schedule_card"]["phase"] == "draft"
@@ -479,11 +495,16 @@ def test_calendar_complete_request_is_a_draft_until_confirm():
     try:
         before = db.query(CalendarEvent).count()
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
             patch("app.services.calendar.create_event") as create_event,
         ):
-            r = run_agent_workflow(db, message="明天三点开周会", history=[], has_kb_docs=False)
+            r = run_agent_workflow(
+                db,
+                message="明天三点开周会",
+                history=[],
+                has_kb_docs=False,
+                assignment=_assigned(_calendar_plan()),
+            )
         create_event.assert_not_called()
         assert db.query(CalendarEvent).count() == before
     finally:
@@ -501,12 +522,15 @@ def test_calendar_complete_request_is_a_draft_until_confirm():
 def test_pending_calendar_does_not_skip_planner_or_write():
     pending = {"title": "会议", "missing_fields": ["end_at", "participants"], "action": "create"}
     draft = EventDraft(title="会议", start_at=datetime(2026, 8, 6, 15, 0), end_at=datetime(2026, 8, 6, 16, 0))
+    with patch("app.agents.dispatch.plan_tools", return_value=_calendar_plan()) as planner:
+        routed = assign_turn("到5点，参与人张三、李四", [])
+    planner.assert_called()
+    assert routed.next_tool == "calendar"
     init_db()
     db = SessionLocal()
     try:
         before = db.query(CalendarEvent).count()
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
             patch("app.services.calendar.create_event") as create_event,
         ):
@@ -516,8 +540,8 @@ def test_pending_calendar_does_not_skip_planner_or_write():
                 history=[],
                 has_kb_docs=False,
                 pending_calendar=pending,
+                assignment=_assigned(_calendar_plan()),
             )
-        planner.assert_called()
         create_event.assert_not_called()
         assert db.query(CalendarEvent).count() == before
     finally:
@@ -529,16 +553,17 @@ def test_pending_calendar_does_not_skip_planner_or_write():
 
 def test_legacy_pending_message_is_not_a_slot_fill():
     pending = {"title": "会议", "missing_fields": ["end_at"], "start_at": "2026-08-06T15:00:00"}
+    with patch("app.agents.dispatch.plan_tools", return_value=_calendar_plan()) as planner:
+        routed = assign_turn("参与人张三", [])
+    planner.assert_called()
+    assert routed.next_tool == "calendar"
     init_db()
     db = SessionLocal()
     try:
         before = db.query(CalendarEvent).count()
-        with (
-            patch("app.agents.workflow.plan_tools", return_value=_calendar_plan()) as planner,
-            patch(
-                "app.agents.tools.calendar_tool.extract_event",
-                return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
-            ),
+        with patch(
+            "app.agents.tools.calendar_tool.extract_event",
+            return_value=EventDraft(title="", missing_fields=["title", "start_at"]),
         ):
             r = run_agent_workflow(
                 db,
@@ -546,8 +571,8 @@ def test_legacy_pending_message_is_not_a_slot_fill():
                 history=[],
                 has_kb_docs=False,
                 pending_calendar=pending,
+                assignment=_assigned(_calendar_plan()),
             )
-        planner.assert_called()
         assert db.query(CalendarEvent).count() == before
     finally:
         db.close()
@@ -573,17 +598,6 @@ def test_sandbox_tool_produces_artifact():
         },
     )
     with (
-        patch(
-            "app.agents.workflow.plan_tools",
-            return_value={
-                "pending_tools": ["sandbox"],
-                "needs_freshness": False,
-                "needs_kb": False,
-                "needs_web": False,
-                "needs_calendar": False,
-                "needs_sandbox": True,
-            },
-        ),
         patch("app.agents.tools.sandbox_tool.run_analysis", return_value=outcome),
         _grounding_pass(),
     ):
@@ -593,6 +607,16 @@ def test_sandbox_tool_produces_artifact():
             history=[],
             has_kb_docs=True,
             has_tabular_docs=True,
+            assignment=_assigned(
+                {
+                    "pending_tools": ["sandbox"],
+                    "needs_freshness": False,
+                    "needs_kb": False,
+                    "needs_web": False,
+                    "needs_calendar": False,
+                    "needs_sandbox": True,
+                }
+            ),
         )
     assert r["intent"] == "data_analysis"
     assert r["artifact"]["kind"] == "image"
@@ -613,27 +637,36 @@ def test_grounded_answer_raises_llm_infra_instead_of_empty_draft():
         assert kwargs.get("raise_on_error") is True
         raise LLMInfraError("APITimeoutError: timed out")
 
-    with (
-        patch("app.agents.tools.web.search_planned", return_value=fake),
-        patch(
-            "app.agents.workflow.plan_tools",
-            return_value={
-                "pending_tools": ["web"],
-                "needs_freshness": True,
-                "needs_kb": False,
-                "needs_web": True,
-                "needs_calendar": False,
-                "needs_sandbox": False,
-            },
-        ),
-        patch("app.agents.workflow.complete_text", side_effect=boom),
-    ):
-        try:
-            run_agent_workflow(object(), message="今天有什么 AI 新闻", history=[], has_kb_docs=False)  # type: ignore[arg-type]
-        except LLMInfraError as exc:
-            assert "timed out" in str(exc)
-        else:
-            raise AssertionError("LLM infra failure was swallowed into an empty answer")
+    init_db()
+    db = SessionLocal()
+    try:
+        with (
+            patch("app.agents.tools.web.search_planned", return_value=fake),
+            patch("app.agents.workflow.complete_text", side_effect=boom),
+        ):
+            try:
+                run_agent_workflow(
+                    db,
+                    message="今天有什么 AI 新闻",
+                    history=[],
+                    has_kb_docs=False,
+                    assignment=_assigned(
+                        {
+                            "pending_tools": ["web"],
+                            "needs_freshness": True,
+                            "needs_kb": False,
+                            "needs_web": True,
+                            "needs_calendar": False,
+                            "needs_sandbox": False,
+                        }
+                    ),
+                )
+            except LLMInfraError as exc:
+                assert "timed out" in str(exc)
+            else:
+                raise AssertionError("LLM infra failure was swallowed into an empty answer")
+    finally:
+        db.close()
 
 
 def test_tier1_greeting_skips_llm(monkeypatch):
@@ -661,26 +694,24 @@ def test_tier1_kb_deixis_skips_llm(monkeypatch):
 def test_empty_kb_uses_prd_copy():
     from app.core.messages import EMPTY_KB_MESSAGE
 
-    with (
-        patch(
-            "app.agents.workflow.plan_tools",
-            return_value={
-                "pending_tools": ["kb"],
-                "needs_freshness": False,
-                "needs_kb": True,
-                "needs_web": False,
-                "needs_calendar": False,
-                "needs_sandbox": False,
-            },
-        ),
-        patch("app.agents.tools.kb.retrieve", return_value=[]),
-    ):
+    with patch("app.agents.tools.kb.retrieve", return_value=[]):
         r = run_agent_workflow(
             object(),  # type: ignore[arg-type]
             message="制度里正常工作时间是几点",
             history=[],
             use_kb=True,
             has_kb_docs=True,
+            assignment=_assigned(
+                {
+                    "pending_tools": ["kb"],
+                    "needs_freshness": False,
+                    "needs_kb": True,
+                    "needs_web": False,
+                    "needs_calendar": False,
+                    "needs_sandbox": False,
+                },
+                use_kb=True,
+            ),
         )
     assert r["direct_answer"] == EMPTY_KB_MESSAGE
     assert r["llm_messages"] == []

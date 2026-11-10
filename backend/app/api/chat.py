@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
+from app.agents.dispatch import assign_turn
 from app.agents.router import RouterError
 from app.agents.workflow import run_agent_workflow
 from app.agents.context import build_context, invalidate_summary_if_needed, refresh_session_context
@@ -286,7 +287,16 @@ def _run_workflow_sync(**kwargs) -> dict:
         uid = int(kwargs.get("user_id") or 0)
         if uid:
             set_rls_context(db, uid)
-        return run_agent_workflow(db, **kwargs)
+        assignment = assign_turn(
+            kwargs["message"],
+            kwargs["history"],
+            context=kwargs.get("context"),
+            use_kb=kwargs.get("use_kb", False),
+            has_kb_docs=kwargs.get("has_kb_docs", False),
+            has_tabular_docs=kwargs.get("has_tabular_docs", False),
+            document_ids=kwargs.get("document_ids"),
+        )
+        return run_agent_workflow(db, assignment=assignment, **kwargs)
     finally:
         db.close()
 

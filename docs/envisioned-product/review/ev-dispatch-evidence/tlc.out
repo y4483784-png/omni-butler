@@ -1,0 +1,23 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Warning: Please run the Java VM, which executes TLC with a throughput optimized garbage collector, by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed -845456690957258920 with 1 worker on 4 cores with 3746MB heap and 64MB offheap memory [pid: 5456] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/dispatch-boundary/DispatchBoundary.tla
+Parsing file /tmp/statechart-lZfbQ5/statechart-p5HJ1U/tmp-verdict-1/tlc-12540531903735147866/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/statechart-lZfbQ5/statechart-p5HJ1U/tmp-verdict-1/tlc-12540531903735147866/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module DispatchBoundary
+Linting of module DispatchBoundary
+Starting... (2026-11-10 19:06:31)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-10 19:06:31.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 1.4E-17
+34 states generated, 22 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 6.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 4 and the 95th percentile is 2).
+Finished in 00s at (2026-11-10 19:06:31)
+

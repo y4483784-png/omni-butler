@@ -8,7 +8,8 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.agents.workflow import build_pool_prompt, plan_tools
+from app.agents.router import plan_tools
+from app.agents.workflow import build_pool_prompt
 from app.services.data_analysis import AnalysisOutcome, run_analysis
 
 MSG = "按报考专业分类画出所有考生四门科目的平均值的柱状图"

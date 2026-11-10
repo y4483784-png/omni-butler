@@ -1,0 +1,46 @@
+---
+title: "派活会不会自己动手"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 派活
+    lg1: 干活
+    lg2: 已停止
+    lg3: 已结束
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 tan
+  class lg3 yellow
+  s0: 这一代刚开始
+  s1: 这一回合已分配
+  s2: 停止时还没有分配
+  s3: 分配已记下但还没干活
+  s4: 干活进行中
+  s5: 确认卡已给出
+  s6: 这一代已停下
+  s7: 干活路径写出了回复
+  s8: 干活途中已停止
+  s9: 确认后写入了日历
+  [*] --> s0
+  s0 --> s1: 写下这一回合的分配
+  s0 --> s2: 停止这一代
+  s1 --> s3: 停止这一代
+  s1 --> s4: 干活图从分配开始
+  s2 --> s3: 写下这一回合的分配
+  s3 --> s6: 干活图从分配开始
+  s4 --> s5: 干活路径调用工具
+  s4 --> s8: 停止这一代
+  s4 --> s7: 干活路径写出回答 or 干活路径调用工具
+  s8 --> s6: 停止后不再调用网关 or 干活路径写出回答
+  s5 --> s9: 点击后写入日历
+  class s0 blue
+  class s1 blue
+  class s2 tan
+  class s3 tan
+  class s4 teal
+  class s5 yellow
+  class s6 yellow
+  class s7 yellow
+  class s8 tan
+  class s9 yellow
