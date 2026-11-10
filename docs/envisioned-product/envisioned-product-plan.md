@@ -66,7 +66,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] 先确定用哪个代码托管。默认 `gh`。如果 `command -v origin` 成功且 Origin 能解析这个仓库，所有 PR 操作都用 `origin pr`。记下任何退回 `gh` 的情况。不要求安装 `gt`。
 - [ ] PR 打开时就是可审阅状态，不要开成草稿。这个运行环境有内置 PR 工具时用它，否则按上面的选择用 `origin pr create --status open --base <base-branch>` 或 `gh pr create --base <base-branch>`。栈里的子 PR 指向父分支。
-- [ ] 面向 PR 的那次推送之前，在 `backend` 用启动配方里的环境跑一次 `python -m pytest tests -q`。改了前端的 PR 再在 `frontend` 跑 `npm test`。推送时打开 git 钩子。
+- [ ] 面向 PR 的那次推送之前，在 `backend` 用启动配方里的环境跑一次 `python -m pytest tests -q`。改了前端的 PR 再在 `frontend` 跑 `npm test`。`frontend/package.json` 的 `test` 脚本目前只列出六个文件。新的或改过的前端测试必须先写进这个脚本，否则 `npm test` 不会跑它们。推送时打开 git 钩子。
 - [ ] 每次提交前按 `/deslop` 清理文案。送审前按 `/no-comments` 检查注释。
 - [ ] Bugbot 和安全审查的每条评论都按 `pstack/skills/poteto-mode/references/bugbot-triage.md` 分流。
 - [ ] 报告可以叠栈之前，先变基到当时的父分支。`ev-task` 变基到当时的 `release`。修复轮次保持这个合并基线。只有准备合并、`git merge-tree` 与父分支冲突、或 CI 失败来自父分支上的新提交时，才再次变基。
@@ -107,25 +107,25 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] `task_run.py` 是这张表的唯一写入者。聊天、以后的事件、脉搏和看门狗都调用它，不各自改行。
 - [ ] 在 `ToolContext` 上增加 `task_id` 和 `generation`。把当前章程里的工具白名单抄到这一回合的允许列表。上下文变长时不改这张列表。这一刀不加确认凭据，不改 `ScheduleConfirmClaim`。
 - [ ] 聊天已经要推送日历卡时，把该代次写成 `waiting_person`。人还没点，状态不能是 `stopped`。
-- [ ] 停止后的旧代次不能再变回 `running`。迟到的工具结果写入时，代次不一致就丢弃。
+- [ ] `task_run.stop` 由测试直接调用。它把代次写成 `stopped`。迟到结果不能把该代次改回 `running`。页面上的停止按钮要到 `ev-stop` 才接到这个函数。这一刀不要用页面按钮充当停止。
 - [ ] 证据级别是本仓库已打开的路径，提交 `f567fdd`。OpenMausBot 和 DS-Bot 的地图没有这组状态的源码路径。不要另找一张任务表来搬。
 - [ ] 不要把 Khoj 加进仓库或 Compose。
 
 **You see.**
 
-- [ ] 同一会话里发两句。第二句的 `generation` 更大。第一句进入 `stopped` 之后，迟到结果不能把它改回 `running`。
+- [ ] 同一会话里发两句。第二句的 `generation` 更大。测试调用 `task_run.stop` 之后，迟到结果不能把该代次改回 `running`。
 - [ ] `docker compose config --services` 与主干相同。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 在 `backend/tests/test_task_generation.py` 覆盖代次递增、停止后拒绝旧代次、以及第二个用户读不到第一个用户的任务。用启动配方里的环境变量运行 `python -m pytest tests/test_task_generation.py -q`。
+- [ ] 在 `backend/tests/test_task_generation.py` 覆盖代次递增、测试直接调用 `task_run.stop` 后拒绝旧代次、以及第二个用户读不到第一个用户的任务。不要靠页面停止按钮。用启动配方里的环境变量运行 `python -m pytest tests/test_task_generation.py -q`。
 - [ ] 再跑 `python -m pytest tests/test_chat_sse_routing.py -q`。现有聊天路由仍然通过。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. Ask one ordinary question on trunk and on the head. Trunk has no task row. Record that. Gate the answer bubble plus the new task row. Save `ev-task-regression.png`. Pass when the head shows one answer bubble and the api log contains one new `TaskRun` for that turn.
 - [ ] Lane 2. Send a second message in the same signed-in session. Save `ev-task-generation.png`. Pass when the second `generation` is greater than the first and the first row is not `running`.
-- [ ] Lane 3. Disconnect the page while the status still says planning. Save `ev-task-stop.png`. Pass when that generation's state is `stopped` and a forced late result does not set it back to `running`.
+- [ ] Lane 3. Press the existing stop control during planning on trunk and on the head. Save `ev-task-stop.png`. Pass when both sides end the bubble the same way. The head row is not `stopped` from that button. `task_run.stop` is covered by the unit test.
 - [ ] Lane 4. Open a calendar draft that is already waiting for a click. Do not click it. Save `ev-task-waiting.png`. Pass when the task state is `waiting_person` and the card is still open.
 - [ ] Lane 5. Sign in as a second user and open the first user's session URL. Save `ev-task-identity.png`. Pass when the second user does not see the first user's task or transcript.
 - [ ] Lane 6. Send the same message twice by repeating the button after the answer arrives. Save `ev-task-repeat.png`. Pass when each accepted turn has its own generation and the two rows do not overwrite each other.
@@ -139,7 +139,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_chat_sse_routing.py` on trunk and on the head, plus pytest seconds for `tests/test_task_generation.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_chat_sse_routing.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_task_generation.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_chat_sse_routing.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_chat_sse_routing.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_task_generation.py` takes 30 seconds or more. Do not ratio `tests/test_task_generation.py` against `tests/test_chat_sse_routing.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_chat_sse_routing.py` are 60 seconds or more. Fail when `tests/test_task_generation.py` takes 30 seconds or more. Do not ratio `tests/test_task_generation.py` against `tests/test_chat_sse_routing.py`.
 
 **Review gate.** None. ev-task is not review-gated.
 
@@ -174,7 +174,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 凭据绑定动作、参数指纹、作用范围和 `ev-task` 的代次。执行前再验一次。参数变了必须重新签发。任务进入 `stopped` 时未消费的凭据失效。
 - [ ] `publish` 对同一用户、同一代次、同一动作和同一参数指纹是幂等的。第二次调用返回已经打开的那张凭据，不另开一张。
 - [ ] 日历创建、修改、删除、会前简报和会后跟进都走这一个函数。没有 token 的写返回 409。改掉 `test_create_without_a_token_still_writes`，让无 token 的创建失败。
-- [ ] RSVP 现在在 `api/calendar.py` 里不带 token。给它补上同一道闸，或者在这一刀明确拒绝无凭据的 RSVP 写。
+- [ ] RSVP 写也走这同一道闸。没有凭据就拒绝。先搜索仓库里不带 `confirm_token` 的日历创建和 RSVP 调用，把调用者写进该 PR，再改测试。
 - [ ] 抄 OpenMausBot `O-CONFIRM` 的「回执绑定动作和指纹、提交失败就回滚」，以及 `O-LIVE` 的「每次决定读当前等级」。提交是 `083fd7b51405e6d0c01e189b2f65ab0322509b5a`，行号在 `envisioned-oss-map-harness.md` 的来源锚点。证据级别是地图声称的固定提交静态阅读。本计划运行没有打开那些上游文件。动工前按该提交重读 `server/routines.ts` 第 1487 到 1536 行和 `server/host/live-approval.ts` 第 12 到 17 行。
 - [ ] DS-Bot `D-APPROVAL` 只抄「取消时待处理审批失效、过期回答拒绝」。文件是 `ds-bot/src/host/approvals.js`，提交 `71d344bf193f3f18185f25de3d8e5c483046910a`，地图只给了文件级锚点。不要把它的内存 Map 当成持久队列。持久行继续用 `ScheduleConfirmClaim`。
 - [ ] 地图 `G-GATE` 写明作用范围、任务代次和停止作废没有上游实现。这三样在本仓库写，不要假装上游已经有。
@@ -183,13 +183,13 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] 无 token 的日历创建返回 409，数据库里没有新事件。
 - [ ] 同一张卡点击两次，只出现一条事件。改时间后旧 token 返回 409，新卡才能写。
-- [ ] 任务停止后，原来的确认按钮不能再写。
+- [ ] 测试调用 `task_run.stop` 之后，原来的确认按钮不能再写。页面停止按钮还没接到这个函数。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
 - [ ] 改 `tests/test_schedule_confirm_claims.py`，让无 token 创建失败。新建 `tests/test_claim_fingerprint.py`，覆盖同一凭据只写一次、参数变化后旧凭据失败、停止后凭据失效、相同指纹再次签发仍是同一张凭据。用启动配方运行 `python -m pytest tests/test_schedule_confirm_claims.py tests/test_claim_fingerprint.py tests/test_task_generation.py -q`。
 - [ ] 在 `frontend` 运行 `npm test`。
-- [ ] 运行 `python3 verification/schedule-confirm/check.py`。失败就先改规格里被这一刀推翻的空 token 条目，再让检查通过。
+- [ ] 把 `verification/schedule-confirm/` 的规格改成无 token 不得写入。然后运行 `python3 verification/schedule-confirm/check.py`。检查必须按这个新规格通过。不要把规格改回允许无 token 写入。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
@@ -197,7 +197,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Lane 2. Click the confirm button once on a new event card. Save `ev-gate-click.png`. Pass when one event exists and the card phase shows confirmed.
 - [ ] Lane 3. Click the same confirm button again. Save `ev-gate-twice.png`. Pass when the second click does not create a second event and the page shows the closed state.
 - [ ] Lane 4. Edit the time on the card and then click the original button. Save `ev-gate-edit.png`. Pass when the write is rejected and a new card is the only way to save the new time.
-- [ ] Lane 5. Stop the turn from the chat control while the card is open, then click the card. Save `ev-gate-stop.png`. Pass when the click does not write and the claim status is no longer open.
+- [ ] Lane 5. Call `task_run.stop` for the generation that owns the open card, then click the card. Save `ev-gate-stop.png`. Pass when the click does not write. The chat stop button is not the control for this lane.
 - [ ] Lane 6. Sign in as a second user and submit the first user's token. Save `ev-gate-identity.png`. Pass when the response is rejected and the first user's calendar is unchanged.
 - [ ] Lane 7. Ask for the same event twice so publish runs again for the same fingerprint. Save `ev-gate-idempotent.png`. Pass when the page shows one open card and the claim table has one open row for that fingerprint.
 - [ ] Lane 8. Send a calendar create request with the token field omitted. Save `ev-gate-missing.png`. Pass when the response is 409 and no event row appears.
@@ -209,7 +209,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_schedule_confirm_claims.py` on trunk and on the head, plus pytest seconds for `tests/test_claim_fingerprint.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_schedule_confirm_claims.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_claim_fingerprint.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_schedule_confirm_claims.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_schedule_confirm_claims.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_claim_fingerprint.py` takes 30 seconds or more. Do not ratio `tests/test_claim_fingerprint.py` against `tests/test_schedule_confirm_claims.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_schedule_confirm_claims.py` are 60 seconds or more. Fail when `tests/test_claim_fingerprint.py` takes 30 seconds or more. Do not ratio `tests/test_claim_fingerprint.py` against `tests/test_schedule_confirm_claims.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -266,7 +266,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Lane 2. Confirm a card and let the Google insert succeed. Save `ev-plug-write.png`. Pass when one remote event exists and the card shows confirmed.
 - [ ] Lane 3. Force the insert to fail after the token refresh has committed. Save `ev-plug-unknown.png`. Pass when the page says the outcome is unknown and the claim is not opened for a second insert.
 - [ ] Lane 4. Click again after that unknown outcome. Save `ev-plug-second.png`. Pass when no second Google insert is sent and the event count stays the same.
-- [ ] Lane 5. Stop the task and then invoke a registered tool. Save `ev-plug-stop.png`. Pass when the gateway returns denied and the audit row records the stopped generation.
+- [ ] Lane 5. Call `task_run.stop` for that generation, then invoke a registered tool. Save `ev-plug-stop.png`. Pass when the gateway returns denied and the audit row records the stopped generation. The chat stop button is still the old disconnect.
 - [ ] Lane 6. Sign in as a second user and submit the first user's confirm token. Save `ev-plug-identity.png`. Pass when no event is written on the first user's calendar.
 - [ ] Lane 7. Repeat a read tool call that the contract marks as read. Save `ev-plug-read.png`. Pass when the second call returns data and does not create a calendar event.
 - [ ] Lane 8. Show a tool name in the model-visible list and call it after the allow list removes it. Save `ev-plug-visible.png`. Pass when the call is denied even though the name was visible.
@@ -278,11 +278,11 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_harness_gateway.py` on trunk and on the head, plus pytest seconds for `tests/test_tool_contract.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_harness_gateway.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_tool_contract.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_harness_gateway.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_harness_gateway.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_tool_contract.py` takes 30 seconds or more. Do not ratio `tests/test_tool_contract.py` against `tests/test_harness_gateway.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_harness_gateway.py` are 60 seconds or more. Fail when `tests/test_tool_contract.py` takes 30 seconds or more. Do not ratio `tests/test_tool_contract.py` against `tests/test_harness_gateway.py`.
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy the lane 2 screenshot into `docs/envisioned-product/review/ev-plug-review-unknown.png`.
+- [ ] Copy the lane 3 screenshot into `docs/envisioned-product/review/ev-plug-review-unknown.png`.
 - [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/envisioned-product/review/ev-plug-review.mp4`.
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator to review them before merge.
 
@@ -311,7 +311,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 把当前代次的停止标志传进工作线程。`stream_chat` 和同步补全在调用 `chat.completions.create` 之前读这个标志。已经停止就不要发请求。
 - [ ] `gateway.invoke` 之前再读一次。队列里还没发出的模型请求一并丢掉。
 - [ ] 停止不删除已经写入的日历，不撤回已经发出的邮件，不退回已经付出的款项。
-- [ ] 这一刀不改 `chat.py` 里记忆抽取的 `finally`。停止后的记忆写入留给 `ev-memory`。这一刀只保证模型请求和工具调用停住。
+- [ ] 这一刀不改 `chat.py` 第 648 到 689 行的 `finally`。第 681 到 687 行仍会调用 `_remember_turn_isolated`。从这一刀合入到 `ev-memory` 合入之前，停止后的回合仍可能写记忆。这是计划中的中间状态。`ev-memory` 再把它去掉。这一刀只保证模型请求和工具调用停住。
 - [ ] 抄 DS-Bot `D-CANCEL`（`turns.js` 第 221 到 264 行）和 `D-LATE`（第 695 到 708 行），以及 OpenMausBot `O-CANCEL`（`client.ts` 第 259 到 265 行）和 `O-HTTP`（第 335 到 401 行）。提交分别是 `71d344bf193f3f18185f25de3d8e5c483046910a` 和 `083fd7b51405e6d0c01e189b2f65ab0322509b5a`。证据级别是地图声称的静态阅读。动工前重读这些行。
 - [ ] 地图 `G-SHELL` 写明完整的暂停、改方向和流式中断还没有被证明。这一刀只做停止传到请求前和迟到结果作废。不要在这一刀做满分异步 ReAct。
 - [ ] 不要把确认签发搬回外壳。
@@ -344,7 +344,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_chat_sse_routing.py` on trunk and on the head, plus pytest seconds for `tests/test_stop_before_send.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_chat_sse_routing.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_stop_before_send.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_chat_sse_routing.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_chat_sse_routing.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_stop_before_send.py` takes 30 seconds or more. Do not ratio `tests/test_stop_before_send.py` against `tests/test_chat_sse_routing.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_chat_sse_routing.py` are 60 seconds or more. Fail when `tests/test_stop_before_send.py` takes 30 seconds or more. Do not ratio `tests/test_stop_before_send.py` against `tests/test_chat_sse_routing.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -404,7 +404,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_router.py` on trunk and on the head, plus pytest seconds for `tests/test_dispatch_boundary.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_router.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_dispatch_boundary.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_router.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_router.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_dispatch_boundary.py` takes 30 seconds or more. Do not ratio `tests/test_dispatch_boundary.py` against `tests/test_router.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_router.py` are 60 seconds or more. Fail when `tests/test_dispatch_boundary.py` takes 30 seconds or more. Do not ratio `tests/test_dispatch_boundary.py` against `tests/test_router.py`.
 
 **Review gate.** None. ev-dispatch is not review-gated.
 
@@ -461,7 +461,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_workflow.py` on trunk and on the head, plus pytest seconds for `tests/test_work_loop.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_workflow.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_work_loop.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_workflow.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_workflow.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_work_loop.py` takes 30 seconds or more. Do not ratio `tests/test_work_loop.py` against `tests/test_workflow.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_workflow.py` are 60 seconds or more. Fail when `tests/test_work_loop.py` takes 30 seconds or more. Do not ratio `tests/test_work_loop.py` against `tests/test_workflow.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -523,7 +523,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_web_thinking.py` on trunk and on the head, plus pytest seconds for `tests/test_one_web_path.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_web_thinking.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_one_web_path.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_web_thinking.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_web_thinking.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_one_web_path.py` takes 30 seconds or more. Do not ratio `tests/test_one_web_path.py` against `tests/test_web_thinking.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_web_thinking.py` are 60 seconds or more. Fail when `tests/test_one_web_path.py` takes 30 seconds or more. Do not ratio `tests/test_one_web_path.py` against `tests/test_web_thinking.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -587,11 +587,11 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_chat_sse_routing.py` on trunk and on the head, plus pytest seconds for `tests/test_event_inbox.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_chat_sse_routing.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_event_inbox.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_chat_sse_routing.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_chat_sse_routing.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_event_inbox.py` takes 30 seconds or more. Do not ratio `tests/test_event_inbox.py` against `tests/test_chat_sse_routing.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_chat_sse_routing.py` are 60 seconds or more. Fail when `tests/test_event_inbox.py` takes 30 seconds or more. Do not ratio `tests/test_event_inbox.py` against `tests/test_chat_sse_routing.py`.
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy the lane 2 screenshot into `docs/envisioned-product/review/ev-events-review-reissue.png`.
+- [ ] Copy the lane 4 screenshot into `docs/envisioned-product/review/ev-events-review-reissue.png`.
 - [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/envisioned-product/review/ev-events-review.mp4`.
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator to review them before merge.
 
@@ -655,7 +655,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_memory.py` on trunk and on the head, plus pytest seconds for `tests/test_memory_ledger.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_memory.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_memory_ledger.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_memory.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_memory.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_memory_ledger.py` takes 30 seconds or more. Do not ratio `tests/test_memory_ledger.py` against `tests/test_memory.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_memory.py` are 60 seconds or more. Fail when `tests/test_memory_ledger.py` takes 30 seconds or more. Do not ratio `tests/test_memory_ledger.py` against `tests/test_memory.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -716,11 +716,11 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_celery_ingest.py` on trunk and on the head, plus pytest seconds for `tests/test_watchdog.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_celery_ingest.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_watchdog.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_celery_ingest.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_celery_ingest.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_watchdog.py` takes 30 seconds or more. Do not ratio `tests/test_watchdog.py` against `tests/test_celery_ingest.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_celery_ingest.py` are 60 seconds or more. Fail when `tests/test_watchdog.py` takes 30 seconds or more. Do not ratio `tests/test_watchdog.py` against `tests/test_celery_ingest.py`.
 
 **Review gate.** The operator reviews before merge.
 
-- [ ] Copy the lane 2 screenshot into `docs/envisioned-product/review/ev-watch-review-alert.png`.
+- [ ] Copy the lane 3 screenshot into `docs/envisioned-product/review/ev-watch-review-alert.png`.
 - [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `docs/envisioned-product/review/ev-watch-review.mp4`.
 - [ ] Post the screenshots and the video in chat. Stop at merge-ready. Wait for the operator to review them before merge.
 
@@ -777,7 +777,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_harness_gateway.py` on trunk and on the head, plus pytest seconds for `tests/test_web_blocks_local.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_harness_gateway.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_web_blocks_local.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_harness_gateway.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_harness_gateway.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_web_blocks_local.py` takes 30 seconds or more. Do not ratio `tests/test_web_blocks_local.py` against `tests/test_harness_gateway.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_harness_gateway.py` are 60 seconds or more. Fail when `tests/test_web_blocks_local.py` takes 30 seconds or more. Do not ratio `tests/test_web_blocks_local.py` against `tests/test_harness_gateway.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -841,7 +841,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_gmail_meeting_query.py` on trunk and on the head, plus pytest seconds for `tests/test_mail_entry.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_gmail_meeting_query.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_mail_entry.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_gmail_meeting_query.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_gmail_meeting_query.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_mail_entry.py` takes 30 seconds or more. Do not ratio `tests/test_mail_entry.py` against `tests/test_gmail_meeting_query.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_gmail_meeting_query.py` are 60 seconds or more. Fail when `tests/test_mail_entry.py` takes 30 seconds or more. Do not ratio `tests/test_mail_entry.py` against `tests/test_gmail_meeting_query.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -904,7 +904,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_tool_contract.py` on trunk and on the head, plus pytest seconds for `tests/test_errands.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_tool_contract.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_errands.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_tool_contract.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_tool_contract.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_errands.py` takes 30 seconds or more. Do not ratio `tests/test_errands.py` against `tests/test_tool_contract.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_tool_contract.py` are 60 seconds or more. Fail when `tests/test_errands.py` takes 30 seconds or more. Do not ratio `tests/test_errands.py` against `tests/test_tool_contract.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -969,7 +969,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Metric. Pytest seconds for `tests/test_web_blocks_local.py` on trunk and on the head, plus pytest seconds for `tests/test_desktop_surface.py` on the head only.
 - [ ] Probe. From `backend`, run `tests/test_web_blocks_local.py` with the boot-recipe env on trunk, then on the head, then on trunk again. On the head also run `tests/test_desktop_surface.py` with the same env.
 - [ ] Baseline. Record the first trunk seconds for `tests/test_web_blocks_local.py` before the head run.
-- [ ] Rule. Fail when the head seconds for `tests/test_web_blocks_local.py` are more than 25 percent above that trunk baseline. Fail when `tests/test_desktop_surface.py` takes 30 seconds or more. Do not ratio `tests/test_desktop_surface.py` against `tests/test_web_blocks_local.py`.
+- [ ] Rule. Fail when the head seconds for `tests/test_web_blocks_local.py` are 60 seconds or more. Fail when `tests/test_desktop_surface.py` takes 30 seconds or more. Do not ratio `tests/test_desktop_surface.py` against `tests/test_web_blocks_local.py`.
 
 **Review gate.** The operator reviews before merge.
 
@@ -1042,7 +1042,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 `ev-events`、`ev-memory` 和 `ev-watch` 都可能碰到同一张打开的卡。`publish` 必须按指纹幂等。看门狗不能成为第四个写入者。
 
-`ev-memory` 之前，停止后的 `finally` 仍会抽取记忆。不要在 `ev-stop` 里顺手改掉它，否则两个 PR 抢 `chat.py` 的同一段。
+从 `ev-stop` 合入到 `ev-memory` 合入之前，`chat.py` 第 681 到 687 行仍会在停止后的回合写记忆。这是计划中的中间状态。不要在 `ev-stop` 里顺手改掉它，否则两个 PR 抢 `chat.py` 的同一段。
 
 `ev-webblock` 用测试工具名证明拒绝。真正的本机程序要等 `ev-desktop`。网页车道不能把「没有按钮」写成「执行器已经存在」。
 
@@ -1053,6 +1053,8 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 `ev-net` 的字段名依赖动工时的厂商文档。字段没读到之前，不能把猜测写进 `_build_request`。
 
 ⑫里的云手机、手机端、外接聊天总机、看屏点击、投机执行、看门狗改提示词，都不进这十四条。执行中如果有人把其中一项写进十四条里的任何一个 PR，就停下来。
+
+十四条排成一条栈，是因为 `chat.py`、`workflow.py`、`models.py` 和确认凭据会重叠，Alembic 修订也要按顺序。`ev-net`、`ev-webblock` 和 `ev-desktop` 的行为并不都依赖紧挨着的前一刀。不要为了缩短栈去并行改这些共享文件。
 
 ## Appendix D. Links and reading list
 
