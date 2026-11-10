@@ -24,6 +24,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
+from app.core.generation_stop import GenerationStopped, is_stopped
 from app.core.proxy import proxy_from_env
 from app.core.redis import async_model_slot, model_slot
 
@@ -395,6 +396,18 @@ def _raise_infra(exc: BaseException) -> None:
     raise LLMInfraError(f"{type(exc).__name__}: {exc}") from exc
 
 
+def _create_sync(client: Any, body: dict[str, Any]) -> Any:
+    if is_stopped():
+        raise GenerationStopped()
+    return client.chat.completions.create(**body)
+
+
+async def _create_async(client: Any, body: dict[str, Any]) -> Any:
+    if is_stopped():
+        raise GenerationStopped()
+    return await client.chat.completions.create(**body)
+
+
 async def stream_chat(
     messages: list[dict],
     *,
@@ -409,10 +422,15 @@ async def stream_chat(
     Rate limits and timeouts raise ``LLMInfraError`` and are not retried here.
     """
     _refuse_outbound(messages, tools)
+    if is_stopped():
+        raise GenerationStopped()
     if not settings.llm_api_key:
         async for ch in _mock_stream(messages):
-            if ch:
-                yield AnswerDelta(ch)
+            if not ch:
+                continue
+            if is_stopped():
+                return
+            yield AnswerDelta(ch)
         return
 
     call = resolve(role)
@@ -422,13 +440,13 @@ async def stream_chat(
     client = _get_async_client()
     async with async_model_slot(call.model):
         try:
-            resp = await client.chat.completions.create(**body)
+            resp = await _create_async(client, body)
         except Exception as exc:
             if _rejects_stream_options(exc) and "stream_options" in body:
                 logger.debug("stream_chat retry without stream_options")
                 body.pop("stream_options", None)
                 try:
-                    resp = await client.chat.completions.create(**body)
+                    resp = await _create_async(client, body)
                 except Exception as retry_exc:
                     if is_llm_infra_exception(retry_exc):
                         _raise_infra(retry_exc)
@@ -468,8 +486,12 @@ async def stream_chat(
                 delta = getattr(choice, "delta", None)
                 content, reasoning = message_parts(delta)
                 if reasoning:
+                    if is_stopped():
+                        return
                     yield ReasoningDelta(reasoning)
                 if content:
+                    if is_stopped():
+                        return
                     yield AnswerDelta(content)
         except (LLMInfraError, LLMStructuredError):
             raise
@@ -490,6 +512,8 @@ def complete_text(
     kind: Literal["text", "json"] = "text",
 ) -> Spoken:
     _refuse_outbound(messages, tools)
+    if is_stopped():
+        raise GenerationStopped()
     if not settings.llm_api_key:
         return Spoken(_mock_text(messages), "", None)
 
@@ -499,11 +523,15 @@ def complete_text(
     client = _get_sync_client()
     attempts = 1 + max(0, int(retries))
     for attempt in range(1, attempts + 1):
+        if is_stopped():
+            raise GenerationStopped()
         started = time.monotonic()
         try:
             with model_slot(call.model):
-                resp = client.chat.completions.create(**body)
+                resp = _create_sync(client, body)
         except Exception as exc:
+            if is_stopped():
+                raise GenerationStopped()
             if is_llm_infra_exception(exc) and attempt < attempts:
                 _STATS["retries"] += 1
                 delay = min(30.0, 2.0 ** attempt)
@@ -557,6 +585,8 @@ def complete_json(
     ``raise_on_error`` turns transport and infra finishes into ``LLMInfraError``.
     """
     _refuse_outbound(messages, tools)
+    if is_stopped():
+        raise GenerationStopped()
     if not settings.llm_api_key:
         return None
 
@@ -569,8 +599,10 @@ def complete_json(
     client = _get_sync_client()
     try:
         with model_slot(call.model):
-            resp = client.chat.completions.create(**body)
+            resp = _create_sync(client, body)
     except Exception as exc:
+        if is_stopped():
+            raise GenerationStopped()
         if raise_on_error:
             _raise_infra(exc)
         return None
@@ -681,6 +713,9 @@ def complete_json_object(
     Retries once when the body is empty, truncated, or invalid. Transport and
     infra finishes raise ``LLMInfraError`` on the call that failed.
     """
+    _refuse_outbound(messages, tools)
+    if is_stopped():
+        raise GenerationStopped()
     if not settings.llm_api_key:
         raise LLMStructuredError("未配置 LLM_API_KEY，无法进行工具规划")
 
@@ -691,6 +726,8 @@ def complete_json_object(
     msgs = list(messages)
 
     for attempt in (1, 2):
+        if is_stopped():
+            raise GenerationStopped()
         body = _build_request(
             call,
             msgs,
@@ -701,10 +738,12 @@ def complete_json_object(
         )
         try:
             with model_slot(call.model):
-                resp = client.chat.completions.create(**body)
+                resp = _create_sync(client, body)
         except (ToolsRefused, RoleConfigError):
             raise
         except Exception as exc:
+            if is_stopped():
+                raise GenerationStopped()
             if is_llm_infra_exception(exc):
                 _raise_infra(exc)
             msgs = _fail_or_retry(
