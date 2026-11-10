@@ -1,5 +1,3 @@
-"""Dispatch writes the assignment. The work graph and the reply do not plan."""
-
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -99,37 +97,47 @@ def test_work_graph_runs_web_once_without_planning():
     def boom(*_args, **_kwargs):
         raise AssertionError("planner ran on the work path")
 
-    with (
-        patch("app.agents.tools.web.search_planned", return_value=fake) as search,
-        patch("app.agents.dispatch.plan_tools", side_effect=boom),
-        patch("app.agents.router.plan_tools", side_effect=boom),
-        patch("app.agents.workflow.complete_text", return_value="根据证据的简要说明。[1]"),
-        patch("app.agents.harness.critique.complete_json_object", return_value=verdict),
-        patch("app.agents.harness.critique.settings.llm_api_key", "fake"),
-    ):
-        result = run_agent_workflow(
-            object(),  # type: ignore[arg-type]
-            message="今天有什么 AI 新闻",
-            history=[],
-            has_kb_docs=False,
-            assignment=_web_assignment(),
-        )
+    init_db()
+    db = SessionLocal()
+    try:
+        with (
+            patch("app.agents.tools.web.search_planned", return_value=fake) as search,
+            patch("app.agents.dispatch.plan_tools", side_effect=boom),
+            patch("app.agents.router.plan_tools", side_effect=boom),
+            patch("app.agents.workflow.complete_text", return_value="根据证据的简要说明。[1]"),
+            patch("app.agents.harness.critique.complete_json_object", return_value=verdict),
+            patch("app.agents.harness.critique.settings.llm_api_key", "fake"),
+        ):
+            result = run_agent_workflow(
+                db,
+                message="今天有什么 AI 新闻",
+                history=[],
+                has_kb_docs=False,
+                assignment=_web_assignment(),
+            )
+    finally:
+        db.close()
     assert search.call_count == 1
     assert result["intent"] == "web_search"
 
 
 def test_stopped_turn_returns_halted_result_without_a_tool():
     invoke = _forbid("gateway.invoke")
-    with (
-        patch("app.agents.workflow.is_stopped", return_value=True),
-        patch("app.agents.harness.gateway.invoke", invoke),
-    ):
-        result = run_agent_workflow(
-            object(),  # type: ignore[arg-type]
-            message="今天有什么 AI 新闻",
-            history=[],
-            assignment=_web_assignment(),
-        )
+    init_db()
+    db = SessionLocal()
+    try:
+        with (
+            patch("app.agents.workflow.is_stopped", return_value=True),
+            patch("app.agents.harness.gateway.invoke", invoke),
+        ):
+            result = run_agent_workflow(
+                db,
+                message="今天有什么 AI 新闻",
+                history=[],
+                assignment=_web_assignment(),
+            )
+    finally:
+        db.close()
     assert result == _HALTED
     assert invoke.call_count == 0
 

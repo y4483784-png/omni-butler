@@ -348,17 +348,22 @@ def test_web_only_one_tool_round():
         "needs_kb": False,
         "needs_web": True,
     }
-    with (
-        patch("app.agents.tools.web.search_planned", return_value=fake),
-        _grounding_pass(),
-    ):
-        r = run_agent_workflow(  # type: ignore[arg-type]
-            object(),
-            message="今天有什么 AI 新闻",
-            history=[],
-            has_kb_docs=False,
-            assignment=_assigned(web_plan),
-        )
+    init_db()
+    db = SessionLocal()
+    try:
+        with (
+            patch("app.agents.tools.web.search_planned", return_value=fake),
+            _grounding_pass(),
+        ):
+            r = run_agent_workflow(
+                db,
+                message="今天有什么 AI 新闻",
+                history=[],
+                has_kb_docs=False,
+                assignment=_assigned(web_plan),
+            )
+    finally:
+        db.close()
     assert r["intent"] == "web_search"
     assert r["citations"][0]["url"] == "https://n.example/1"
     assert any("正在搜索" in s for s in r["thinking_steps"])
@@ -517,7 +522,6 @@ def test_calendar_complete_request_is_a_draft_until_confirm():
 def test_pending_calendar_does_not_skip_planner_or_write():
     pending = {"title": "会议", "missing_fields": ["end_at", "participants"], "action": "create"}
     draft = EventDraft(title="会议", start_at=datetime(2026, 8, 6, 15, 0), end_at=datetime(2026, 8, 6, 16, 0))
-    # assign_turn has no pending_calendar argument, so a leftover card cannot skip routing.
     with patch("app.agents.dispatch.plan_tools", return_value=_calendar_plan()) as planner:
         routed = assign_turn("到5点，参与人张三、李四", [])
     planner.assert_called()
@@ -633,31 +637,36 @@ def test_grounded_answer_raises_llm_infra_instead_of_empty_draft():
         assert kwargs.get("raise_on_error") is True
         raise LLMInfraError("APITimeoutError: timed out")
 
-    with (
-        patch("app.agents.tools.web.search_planned", return_value=fake),
-        patch("app.agents.workflow.complete_text", side_effect=boom),
-    ):
-        try:
-            run_agent_workflow(  # type: ignore[arg-type]
-                object(),
-                message="今天有什么 AI 新闻",
-                history=[],
-                has_kb_docs=False,
-                assignment=_assigned(
-                    {
-                        "pending_tools": ["web"],
-                        "needs_freshness": True,
-                        "needs_kb": False,
-                        "needs_web": True,
-                        "needs_calendar": False,
-                        "needs_sandbox": False,
-                    }
-                ),
-            )
-        except LLMInfraError as exc:
-            assert "timed out" in str(exc)
-        else:
-            raise AssertionError("LLM infra failure was swallowed into an empty answer")
+    init_db()
+    db = SessionLocal()
+    try:
+        with (
+            patch("app.agents.tools.web.search_planned", return_value=fake),
+            patch("app.agents.workflow.complete_text", side_effect=boom),
+        ):
+            try:
+                run_agent_workflow(
+                    db,
+                    message="今天有什么 AI 新闻",
+                    history=[],
+                    has_kb_docs=False,
+                    assignment=_assigned(
+                        {
+                            "pending_tools": ["web"],
+                            "needs_freshness": True,
+                            "needs_kb": False,
+                            "needs_web": True,
+                            "needs_calendar": False,
+                            "needs_sandbox": False,
+                        }
+                    ),
+                )
+            except LLMInfraError as exc:
+                assert "timed out" in str(exc)
+            else:
+                raise AssertionError("LLM infra failure was swallowed into an empty answer")
+    finally:
+        db.close()
 
 
 def test_tier1_greeting_skips_llm(monkeypatch):

@@ -1,8 +1,3 @@
-"""The work graph starts from an assignment assign_turn already wrote.
-
-It runs one tool per round, reflects, and then answers.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Literal, TypedDict

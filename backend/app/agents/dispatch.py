@@ -1,5 +1,3 @@
-"""The assignment written before the work graph runs."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
