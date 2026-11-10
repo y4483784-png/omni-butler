@@ -307,3 +307,46 @@ def test_stopped_generation_writes_no_memory(plain_client: TestClient, monkeypat
     finally:
         db.close()
     assert after == before
+
+
+def test_loaded_session_denies_invoke_after_stop_commits(monkeypatch):
+    from app.agents.harness import gateway
+    from app.agents.harness.types import ToolContext
+    from app.core.db import set_rls_context
+    from app.models.models import TaskRun
+
+    user_id = _admin_id()
+    turn = task_run.begin_turn(user_id=user_id, session_id=_session(user_id))
+    calls = {"n": 0}
+
+    def boom(*_args, **_kwargs):
+        calls["n"] += 1
+        raise AssertionError("tool body ran")
+
+    monkeypatch.setattr("app.agents.tools.kb.retrieve", boom)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        row = db.get(TaskRun, turn.id)
+        assert row is not None
+        assert row.status == "running"
+        task_run.stop(user_id=user_id, generation=turn.generation)
+        assert row.status == "running"
+        result = gateway.invoke(
+            "kb",
+            ToolContext(
+                db=db,
+                message="查资料",
+                history=[],
+                user_id=user_id,
+                task_id=turn.id,
+                generation=turn.generation,
+            ),
+            {},
+        )
+        assert result.denied is True
+        assert "已经停止" in (result.deny_reason or "")
+        assert calls["n"] == 0
+        assert row.status == "running"
+    finally:
+        db.close()

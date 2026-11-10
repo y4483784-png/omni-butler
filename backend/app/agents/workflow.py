@@ -34,6 +34,7 @@ from app.core.prompts import (
     max_pool_chars,
     no_evidence_block,
 )
+from app.core.generation_stop import GenerationStopped, is_stopped
 from app.core.llm import Role, Spoken, answer_pair, complete_text
 from app.services.memory import load_memory_prompt
 
@@ -218,6 +219,27 @@ def _reindex(evidence: list[dict]) -> list[dict]:
     return evidence
 
 
+def _cutoff() -> dict[str, Any]:
+    return {"next_tool": None, "pending_tools": [], "need_more": False}
+
+
+def _halted_result() -> WorkflowResult:
+    return {
+        "intent": "chat",
+        "forced": False,
+        "citations": [],
+        "thinking_steps": [],
+        "llm_messages": [],
+        "schedule_card": None,
+        "direct_answer": None,
+        "answer_reasoning": None,
+        "pending_calendar": None,
+        "artifact": None,
+        "analysis_summary": None,
+        "context_stats": None,
+    }
+
+
 def run_agent_workflow(
     db: Session,
     *,
@@ -233,11 +255,15 @@ def run_agent_workflow(
     task_id: int | None = None,
     generation: int | None = None,
 ) -> WorkflowResult:
+    if is_stopped():
+        return _halted_result()
     ctx_state = (
         context if isinstance(context, dict) else ContextBundle.from_history(history).to_state()
     )
 
     def plan_node(state: WorkflowState) -> dict[str, Any]:
+        if is_stopped():
+            return _cutoff()
         ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
         router_hist = list(ctx.get("router_history") or state.get("history") or [])
         planned = plan_tools(
@@ -284,6 +310,8 @@ def run_agent_workflow(
         }
 
     def retrieve_node(state: WorkflowState) -> dict[str, Any]:
+        if is_stopped():
+            return _cutoff()
         tool = state.get("next_tool")
         ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
         hist = list(ctx.get("tool_history") or state.get("history") or [])
@@ -333,6 +361,8 @@ def run_agent_workflow(
         return update
 
     def reflect_node(state: WorkflowState) -> dict[str, Any]:
+        if is_stopped():
+            return _cutoff()
         steps = list(state.get("thinking_steps") or [])
         pending = list(state.get("pending_tools") or [])
         it = int(state.get("iteration") or 1)
@@ -395,6 +425,8 @@ def run_agent_workflow(
         }
 
     def answer_node(state: WorkflowState) -> dict[str, Any]:
+        if is_stopped():
+            return _cutoff()
         ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
         hist = list(state.get("history") or ctx.get("answer_history") or [])
         msg = state.get("message") or ""
@@ -599,21 +631,26 @@ def run_agent_workflow(
     )
     g.add_edge("answer_node", END)
 
-    out = g.compile().invoke(
-        {
-            "history": history,
-            "message": message,
-            "use_kb": use_kb,
-            "has_kb_docs": has_kb_docs,
-            "has_tabular_docs": has_tabular_docs,
-            "document_ids": document_ids,
-            "user_id": user_id,
-            "task_id": task_id,
-            "generation": generation,
-            "pending_calendar": pending_calendar,
-            "context": ctx_state,
-        }
-    )
+    try:
+        out = g.compile().invoke(
+            {
+                "history": history,
+                "message": message,
+                "use_kb": use_kb,
+                "has_kb_docs": has_kb_docs,
+                "has_tabular_docs": has_tabular_docs,
+                "document_ids": document_ids,
+                "user_id": user_id,
+                "task_id": task_id,
+                "generation": generation,
+                "pending_calendar": pending_calendar,
+                "context": ctx_state,
+            }
+        )
+    except GenerationStopped:
+        return _halted_result()
+    if is_stopped():
+        return _halted_result()
     return {
         "intent": out.get("intent") or "chat",
         "forced": bool(out.get("forced")),
