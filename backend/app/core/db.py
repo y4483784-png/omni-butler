@@ -121,6 +121,78 @@ def _postgres_add_column_if_missing(table: str, column: str, coltype: str) -> No
         conn.commit()
 
 
+def _ensure_schedule_confirm_fingerprint() -> None:
+    """Columns and the open-write key from alembic 0012. create_all does not alter an existing table."""
+    bind = engine if _IS_SQLITE else ddl_engine
+    with bind.connect() as conn:
+        if _IS_SQLITE:
+            found = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'schedule_confirm_claims'"
+                )
+            ).scalar()
+            if not found:
+                return
+            rows = conn.execute(text("PRAGMA table_info(schedule_confirm_claims)")).fetchall()
+            names = {row[1] for row in rows}
+            statements = []
+            if "action" not in names:
+                statements.append(
+                    "ALTER TABLE schedule_confirm_claims ADD COLUMN action TEXT NOT NULL DEFAULT ''"
+                )
+            if "fingerprint" not in names:
+                statements.append(
+                    "ALTER TABLE schedule_confirm_claims ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''"
+                )
+            if "scope" not in names:
+                statements.append(
+                    "ALTER TABLE schedule_confirm_claims ADD COLUMN scope TEXT NOT NULL DEFAULT ''"
+                )
+            if "generation_ids" not in names:
+                statements.append(
+                    "ALTER TABLE schedule_confirm_claims "
+                    "ADD COLUMN generation_ids TEXT NOT NULL DEFAULT '[]'"
+                )
+            for statement in statements:
+                conn.execute(text(statement))
+        else:
+            for name, coltype in (
+                ("action", "VARCHAR DEFAULT ''"),
+                ("fingerprint", "VARCHAR DEFAULT ''"),
+                ("scope", "VARCHAR DEFAULT ''"),
+                ("generation_ids", "TEXT DEFAULT '[]'"),
+            ):
+                conn.execute(
+                    text(
+                        "ALTER TABLE schedule_confirm_claims "
+                        f"ADD COLUMN IF NOT EXISTS {name} {coltype}"
+                    )
+                )
+        conn.execute(text("UPDATE schedule_confirm_claims SET action = COALESCE(action, '')"))
+        conn.execute(
+            text(
+                "UPDATE schedule_confirm_claims SET fingerprint = token "
+                "WHERE fingerprint IS NULL OR fingerprint = ''"
+            )
+        )
+        conn.execute(text("UPDATE schedule_confirm_claims SET scope = COALESCE(scope, '')"))
+        conn.execute(
+            text(
+                "UPDATE schedule_confirm_claims SET generation_ids = '[]' "
+                "WHERE generation_ids IS NULL OR generation_ids = ''"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_confirm_open_write "
+                "ON schedule_confirm_claims (user_id, action, fingerprint) "
+                "WHERE status = 'open'"
+            )
+        )
+        conn.commit()
+
+
 def _ensure_calendar_external_unique_index() -> None:
     """One non-empty external id per user and provider. Empty local ids stay unrestricted."""
     bind = engine if _IS_SQLITE else ddl_engine
@@ -265,3 +337,4 @@ def init_db():
     _postgres_add_column_if_missing("calendar_events", "provider", "VARCHAR DEFAULT 'local'")
     # Partial unique index from alembic 0008. create_all does not alter an existing table.
     _ensure_calendar_external_unique_index()
+    _ensure_schedule_confirm_fingerprint()

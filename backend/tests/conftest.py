@@ -70,7 +70,7 @@ def _stub_blob_store():
 
 
 @pytest.fixture
-def auth_client() -> TestClient:
+def plain_client() -> TestClient:
     from app.main import app
 
     client = TestClient(app)
@@ -80,6 +80,13 @@ def auth_client() -> TestClient:
     )
     assert r.status_code == 200, r.text
     return client
+
+
+@pytest.fixture
+def auth_client(plain_client: TestClient):
+    from tests.claim_bind import BindingClient
+
+    return BindingClient(plain_client)
 
 
 @pytest.fixture(autouse=True)

@@ -232,6 +232,7 @@ export function ScheduleCard({
   const [durationMin, setDurationMin] = useState(durationMinutes(toLocalInput(card.start_at), toLocalInput(card.end_at)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rsvpTokens, setRsvpTokens] = useState<Record<string, string>>({});
   const [meetOn, setMeetOn] = useState(Boolean(card.meet) && !card.meet_link);
 
   const mode = card.mode || (legacy ? "update" : "create");
@@ -377,6 +378,33 @@ export function ScheduleCard({
         setError("这个时间有冲突，可以改用卡片上的空闲时段。");
         return;
       }
+      if (err instanceof Error && err.message === "参数已变，旧确认不能写入。" && sessionId != null) {
+        try {
+          const claim = await openConfirmClaim({
+            sessionId,
+            action: mode === "cancel" ? "delete" : mode === "update" ? "update" : "create",
+            title: payload.title,
+            start_at: payload.start_at,
+            end_at: payload.end_at,
+            participants: payload.participants,
+            location: payload.location,
+            description: payload.description,
+            meet: payload.meet,
+            event_id: savedEventId(card),
+            external_id: (card.external_id || "").trim(),
+          });
+          onChange({
+            ...card,
+            ...payload,
+            confirm_token: claim.confirm_token,
+            expires_at: claim.expires_at,
+          });
+          setError("参数已变，请再确认一次。");
+        } catch (openErr) {
+          setError(openErr instanceof Error ? openErr.message : "无法打开确认");
+        }
+        return;
+      }
       setError(err instanceof Error ? err.message : "保存失败");
     } finally {
       setBusy(false);
@@ -385,9 +413,33 @@ export function ScheduleCard({
 
   async function reply(externalId: string, status: "accepted" | "declined" | "tentative") {
     setError("");
+    const key = `${externalId}:${status}`;
+    const existing = rsvpTokens[key];
+    if (!existing) {
+      if (sessionId == null) {
+        setError("缺少确认，未写入。");
+        return;
+      }
+      setBusy(true);
+      try {
+        const claim = await openConfirmClaim({
+          sessionId,
+          action: "rsvp",
+          external_id: externalId,
+          response: status,
+        });
+        setRsvpTokens((current) => ({ ...current, [key]: claim.confirm_token }));
+        setError("请再点一次以确认回复。");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "无法打开确认");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     setBusy(true);
     try {
-      const saved = await rsvpCalendarEvent(externalId, status);
+      const saved = await rsvpCalendarEvent(externalId, status, existing);
       const next = (card.items || []).map((item) =>
         item.external_id === externalId ? { ...item, rsvp: saved.rsvp || status } : item
       );
@@ -412,11 +464,26 @@ export function ScheduleCard({
   }
 
   async function useSlot(slot: ScheduleSlot) {
+    const nextStart = toLocalInput(slot.start_at);
+    const nextEnd = toLocalInput(slot.end_at);
+    setTitle("");
+    setStartAt(nextStart);
+    setEndAt(nextEnd);
     let expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     let confirmToken = "";
     if (sessionId != null) {
       try {
-        const claim = await openConfirmClaim(sessionId);
+        const claim = await openConfirmClaim({
+          sessionId,
+          action: "create",
+          title: "",
+          start_at: fromLocalInput(nextStart),
+          end_at: fromLocalInput(nextEnd),
+          participants: participantsForSubmit(blockForm, guests),
+          location: blockForm ? "" : location.trim(),
+          description: description.trim(),
+          meet: showMeet && meetOn,
+        });
         confirmToken = claim.confirm_token;
         expiresAt = claim.expires_at;
       } catch (err) {

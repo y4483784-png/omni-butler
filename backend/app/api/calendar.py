@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,9 +39,11 @@ from app.services.calendar import (
     update_event,
 )
 from app.services.schedule_confirm import (
+    CONFIRM_DETAIL,
     ScheduleConfirmClosed,
     consume_schedule_claim,
-    open_schedule_claim,
+    issue_schedule_claim,
+    live_task_ids_for_session,
     parse_card_expiry,
     release_schedule_claim,
 )
@@ -188,7 +190,13 @@ def create_calendar_event(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    _consume_schedule_claim(db, current_user.id, body.confirm_token)
+    _consume_schedule_claim(
+        db,
+        current_user.id,
+        body.confirm_token,
+        action="calendar.create",
+        raw=_write_raw(body),
+    )
     title = (body.title or "").strip()
     start_at = _parse_dt(body.start_at)
     end_at = _parse_dt(body.end_at)
@@ -274,7 +282,13 @@ def patch_event(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    _consume_schedule_claim(db, current_user.id, body.confirm_token)
+    _consume_schedule_claim(
+        db,
+        current_user.id,
+        body.confirm_token,
+        action="calendar.update",
+        raw=_write_raw(body, event_id=event_id),
+    )
     current = require_owned_event(db, event_id, current_user.id)
     start_at = _parse_dt(body.start_at) if body.start_at is not None else current.start_at
     end_at = _parse_dt(body.end_at) if body.end_at is not None else current.end_at
@@ -334,7 +348,13 @@ def delete_event(
     current_user: User = Depends(get_current_user),
     confirm_token: str | None = None,
 ):
-    _consume_schedule_claim(db, current_user.id, confirm_token)
+    _consume_schedule_claim(
+        db,
+        current_user.id,
+        confirm_token,
+        action="calendar.delete",
+        raw={"event_id": event_id},
+    )
     require_owned_event(db, event_id, current_user.id)
     try:
         event = cancel_event(db, event_id, user_id=current_user.id)
@@ -356,6 +376,7 @@ def delete_event(
 class GoogleRsvp(BaseModel):
     external_id: str
     response: str
+    confirm_token: str | None = None
 
 
 @router.post("/google/rsvp")
@@ -371,6 +392,13 @@ def rsvp_google_event(
         raise HTTPException(status_code=409, detail="需要日程编号，未写入。")
     if status not in {"accepted", "declined", "tentative"}:
         raise HTTPException(status_code=400, detail="需要接受、拒绝或暂定")
+    _consume_schedule_claim(
+        db,
+        current_user.id,
+        body.confirm_token,
+        action="calendar.rsvp",
+        raw={"external_id": external_id, "response": status},
+    )
     if not calendar_writes_remote(db, current_user.id):
         raise HTTPException(status_code=400, detail="未连接 Google 日历")
     try:
@@ -391,13 +419,56 @@ def rsvp_google_event(
 
 class ConfirmClaimOpen(BaseModel):
     session_id: int
+    action: str
+    title: str | None = None
+    start_at: str | None = None
+    end_at: str | None = None
+    participants: list[dict[str, str]] | None = None
+    location: str | None = None
+    description: str | None = None
+    meet: bool = False
+    event_id: int | None = None
+    external_id: str | None = None
+    response: str | None = None
+
+    @field_validator("participants", mode="before")
+    @classmethod
+    def _participants(cls, value: object) -> list[dict[str, str]] | None:
+        return _wire_participants(value)
 
 
-def _consume_schedule_claim(db: Session, user_id: int, token: str | None) -> None:
+def _write_raw(body: CalendarWrite, *, event_id: int | None = None) -> dict:
+    return {
+        "title": body.title,
+        "start_at": body.start_at,
+        "end_at": body.end_at,
+        "participants": body.participants,
+        "location": body.location,
+        "description": body.description,
+        "meet": body.meet,
+        "event_id": event_id,
+    }
+
+
+def _consume_schedule_claim(
+    db: Session,
+    user_id: int,
+    token: str | None,
+    *,
+    action: str,
+    raw: dict,
+) -> None:
     try:
-        consume_schedule_claim(db, user_id, token)
-    except ScheduleConfirmClosed:
-        raise HTTPException(status_code=409, detail="这张确认已经失效，未写入。") from None
+        consume_schedule_claim(db, user_id, token, action=action, raw=raw)
+    except ScheduleConfirmClosed as exc:
+        detail = CONFIRM_DETAIL.get(exc.reason, CONFIRM_DETAIL["closed"])
+        raise HTTPException(status_code=409, detail=detail) from None
+
+
+def _expiry_stamp(expires_at: datetime | None) -> str:
+    if expires_at is None:
+        return draft_expires_at()
+    return expires_at.replace(tzinfo=timezone.utc).isoformat()
 
 
 @router.post("/confirm-claims")
@@ -407,14 +478,33 @@ def open_confirm_claim(
     current_user: User = Depends(get_current_user),
 ):
     require_owned_session(db, body.session_id, current_user.id)
+    task_ids = live_task_ids_for_session(db, current_user.id, body.session_id)
     expires_at = draft_expires_at()
-    token = open_schedule_claim(
-        db,
-        current_user.id,
-        body.session_id,
-        parse_card_expiry(expires_at),
-    )
-    return {"confirm_token": token, "expires_at": expires_at}
+    try:
+        token, stored_expiry = issue_schedule_claim(
+            db,
+            user_id=current_user.id,
+            session_id=body.session_id,
+            action=body.action,
+            raw={
+                "title": body.title,
+                "start_at": body.start_at,
+                "end_at": body.end_at,
+                "participants": body.participants,
+                "location": body.location,
+                "description": body.description,
+                "meet": body.meet,
+                "event_id": body.event_id,
+                "external_id": body.external_id,
+                "response": body.response,
+            },
+            task_run_ids=task_ids,
+            expires_at=parse_card_expiry(expires_at),
+        )
+    except ScheduleConfirmClosed as exc:
+        detail = CONFIRM_DETAIL.get(exc.reason, CONFIRM_DETAIL["closed"])
+        raise HTTPException(status_code=409, detail=detail) from None
+    return {"confirm_token": token, "expires_at": _expiry_stamp(stored_expiry)}
 
 
 @router.post("/confirm-claims/{token}/release")
@@ -458,8 +548,23 @@ def confirm_google_title_change(
     current_user: User = Depends(get_current_user),
 ):
     """Write one primary event. The card's Google id is required."""
-    _consume_schedule_claim(db, current_user.id, body.confirm_token)
     action = (body.action or "").strip().lower()
+    _consume_schedule_claim(
+        db,
+        current_user.id,
+        body.confirm_token,
+        action="calendar.delete" if action == "cancel" else "calendar.update",
+        raw={
+            "title": body.title,
+            "start_at": body.start_at,
+            "end_at": body.end_at,
+            "participants": body.participants,
+            "location": body.location,
+            "description": body.description,
+            "meet": body.meet,
+            "external_id": body.external_id,
+        },
+    )
     if action not in {"update", "cancel"}:
         raise HTTPException(status_code=400, detail="需要改期或撤销")
     if not calendar_writes_remote(db, current_user.id):
