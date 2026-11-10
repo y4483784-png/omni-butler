@@ -1,0 +1,74 @@
+---
+title: "这一轮的上网路径"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 请求
+    lg1: 搜索
+    lg2: 确认卡
+    lg3: 结束
+    lg4: Breaks AbsentSkipsZhipu or FieldWhenAllowed in some cases
+    lg5: Path to the AbsentSkipsZhipu or FieldWhenAllowed bug
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 tan
+  class lg4 mayBreak
+  class lg5 bugPath
+  s0: 这一轮开始
+  s1: 路由已经记下要不要搜索
+  s2: 请求只有思考开关
+  s3: 已停止且请求只有思考开关
+  s4: 这一轮没有搜索
+  s5: 已经调用网页搜索
+  s6: 已停止且这一轮没有搜索
+  s7: 确认卡已出示
+  s8: 已停止且搜索已经发出
+  s9: 已停止且确认卡还在
+  s10: 这一轮结束
+  s11: 停止后没有再发送
+  [*] --> s0
+  s0 --> s1: 记下路由结果
+  s1 --> s2: 组装模型请求
+  s2 --> s3: 人按下停止
+  s2 --> s4: 不调用搜索
+  s2 --> s5: 调用现有搜索
+  s3 --> s6: 不调用搜索
+  s4 --> s6: 人按下停止
+  s4 --> s7: 出示确认卡
+  s3 --> s8: 调用现有搜索
+  s5 --> s8: 人按下停止
+  s5 --> s7: 出示确认卡
+  s6 --> s9: 出示确认卡
+  s7 --> s9: 人按下停止
+  s7 --> s10: 准备下一次发送
+  s8 --> s9: 出示确认卡
+  s9 --> s11: 准备下一次发送
+  classDef mayBreak fill:#fff3e6,stroke:#e8730c,stroke-width:2.5px,color:#b85a06
+  class s0 blue
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 blue
+  class s2 mayBreak
+  class s2 bugPath
+  class s3 tan
+  class s3 mayBreak
+  class s4 teal
+  class s4 mayBreak
+  class s5 teal
+  class s5 mayBreak
+  class s5 bugPath
+  class s6 tan
+  class s6 mayBreak
+  class s7 orange
+  class s7 mayBreak
+  class s8 tan
+  class s8 mayBreak
+  class s9 tan
+  class s9 mayBreak
+  class s10 tan
+  class s10 mayBreak
+  class s11 tan
+  class s11 mayBreak
