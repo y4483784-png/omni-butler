@@ -25,6 +25,8 @@ class ToolContext:
     needs_sandbox: bool = False
     summary: str = ""
     working_state: dict | None = None
+    task_id: int | None = None
+    generation: int | None = None
 
 
 @dataclass

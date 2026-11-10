@@ -50,6 +50,8 @@ class WorkflowState(TypedDict, total=False):
     has_tabular_docs: bool
     document_ids: list[int] | None
     user_id: int
+    task_id: int | None
+    generation: int | None
     context: dict
     intent: Intent
     forced: bool
@@ -228,6 +230,8 @@ def run_agent_workflow(
     user_id: int = 1,
     pending_calendar: dict | None = None,
     context: dict | None = None,
+    task_id: int | None = None,
+    generation: int | None = None,
 ) -> WorkflowResult:
     ctx_state = (
         context if isinstance(context, dict) else ContextBundle.from_history(history).to_state()
@@ -308,6 +312,8 @@ def run_agent_workflow(
             needs_sandbox=bool(state.get("needs_sandbox")),
             summary=str(ctx.get("summary_block") or ""),
             working_state=None,
+            task_id=state.get("task_id"),
+            generation=state.get("generation"),
         )
         # Extra args reserved for governance checks (e.g. deny sandbox network escapes).
         tool_args: dict[str, Any] = {}
@@ -602,6 +608,8 @@ def run_agent_workflow(
             "has_tabular_docs": has_tabular_docs,
             "document_ids": document_ids,
             "user_id": user_id,
+            "task_id": task_id,
+            "generation": generation,
             "pending_calendar": pending_calendar,
             "context": ctx_state,
         }
