@@ -89,7 +89,7 @@ def test_fresh_token_network_failure_does_not_insert_again(
         user_id = _connect_admin(plain_client, db, google)
         google.network_on = {"POST"}
         body = _body(title, start_at="2026-08-06T15:00:00", end_at="2026-08-06T16:00:00")
-        token, _session_id, _turn = _open(plain_client, body)
+        token, session_id, _turn = _open(plain_client, body)
         first = _post(plain_client, body, token)
         assert first.status_code == 409, first.text
         assert first.json()["detail"] == UNKNOWN
@@ -104,6 +104,23 @@ def test_fresh_token_network_failure_does_not_insert_again(
         assert again.json()["detail"] == UNKNOWN
         assert len(_insert_calls(google)) == 1
         assert _count(title) == 0
+        reissue = plain_client.post(
+            "/api/calendar/confirm-claims",
+            json={
+                "session_id": session_id,
+                "action": "create",
+                "title": body["title"],
+                "start_at": body["start_at"],
+                "end_at": body["end_at"],
+                "participants": body.get("participants") or [],
+                "location": body.get("location") or "",
+                "description": body.get("description") or "",
+                "meet": bool(body.get("meet")),
+            },
+        )
+        assert reissue.status_code == 409, reissue.text
+        assert reissue.json()["detail"] == UNKNOWN
+        assert len(_insert_calls(google)) == 1
     finally:
         _delete_title(title)
         _cleanup(user_id)
@@ -162,6 +179,32 @@ def test_refresh_failure_rolls_the_claim_back_and_does_not_insert(
         assert _access_cipher(user_id) == before
         assert _insert_calls(google) == []
         assert _claim(token).status == "open"
+        assert _count(title) == 0
+    finally:
+        _delete_title(title)
+        _cleanup(user_id)
+        db.close()
+
+
+def test_rate_limit_stays_unknown_and_does_not_insert_again(
+    plain_client: TestClient, google: FakeGoogle
+):
+    init_db()
+    db = SessionLocal()
+    title = "契约限流未知"
+    user_id = 0
+    try:
+        user_id = _connect_admin(plain_client, db, google)
+        google.insert_status = 429
+        body = _body(title, start_at="2026-08-06T15:00:00", end_at="2026-08-06T16:00:00")
+        token, _session_id, _turn = _open(plain_client, body)
+        limited = _post(plain_client, body, token)
+        assert limited.status_code == 409, limited.text
+        assert limited.json()["detail"] == UNKNOWN
+        assert _claim(token).status == "unknown"
+        again = _post(plain_client, body, token)
+        assert again.status_code == 409, again.text
+        assert len(_insert_calls(google)) == 1
         assert _count(title) == 0
     finally:
         _delete_title(title)

@@ -67,8 +67,8 @@ class ScheduleConfirmClaim(Base):
             "action",
             "fingerprint",
             unique=True,
-            sqlite_where=text("status = 'open'"),
-            postgresql_where=text("status = 'open'"),
+            sqlite_where=text("status IN ('open', 'unknown')"),
+            postgresql_where=text("status IN ('open', 'unknown')"),
         ),
     )
     token = Column(String, primary_key=True)

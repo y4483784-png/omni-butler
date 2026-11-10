@@ -19,11 +19,18 @@ def upgrade() -> None:
     if _TABLE not in set(inspector.get_table_names()):
         return
     columns = {column["name"] for column in inspector.get_columns(_TABLE)}
-    if "remote_request_id" in columns:
-        return
-    op.add_column(
-        _TABLE,
-        sa.Column("remote_request_id", sa.String(), nullable=False, server_default=""),
+    if "remote_request_id" not in columns:
+        op.add_column(
+            _TABLE,
+            sa.Column("remote_request_id", sa.String(), nullable=False, server_default=""),
+        )
+    op.execute(sa.text("DROP INDEX IF EXISTS uq_schedule_confirm_open_write"))
+    op.execute(
+        sa.text(
+            "CREATE UNIQUE INDEX uq_schedule_confirm_open_write "
+            "ON schedule_confirm_claims (user_id, action, fingerprint) "
+            "WHERE status IN ('open', 'unknown')"
+        )
     )
 
 
@@ -33,6 +40,13 @@ def downgrade() -> None:
     if _TABLE not in set(inspector.get_table_names()):
         return
     columns = {column["name"] for column in inspector.get_columns(_TABLE)}
-    if "remote_request_id" not in columns:
-        return
-    op.drop_column(_TABLE, "remote_request_id")
+    if "remote_request_id" in columns:
+        op.drop_column(_TABLE, "remote_request_id")
+    op.execute(sa.text("DROP INDEX IF EXISTS uq_schedule_confirm_open_write"))
+    op.execute(
+        sa.text(
+            "CREATE UNIQUE INDEX uq_schedule_confirm_open_write "
+            "ON schedule_confirm_claims (user_id, action, fingerprint) "
+            "WHERE status = 'open'"
+        )
+    )

@@ -92,6 +92,39 @@ class CalendarRemoteWriteError(CalendarRemoteError):
         self.unknown = unknown
 
 
+_DEFINITE_REJECTION = frozenset({400, 401, 403, 404})
+_QUOTA_REASONS = frozenset({"rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"})
+
+
+def _google_error_reason(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return ""
+    errors = error.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if isinstance(item, dict) and item.get("reason"):
+                return str(item["reason"])
+    return ""
+
+
+def _write_result_unknown(status: int, payload: dict | None) -> bool:
+    """True when the status does not prove that nothing was stored.
+
+    400, 401, and 404 are definite rejections. A 403 is definite unless Google
+    names a quota or rate limit. 408, 409, 412, 429, and 5xx stay unknown.
+    """
+    if status >= 500 or status in {408, 409, 412, 429}:
+        return True
+    if status == 403 and _google_error_reason(payload) in _QUOTA_REASONS:
+        return True
+    if status in _DEFINITE_REJECTION:
+        return False
+    return True
+
+
 class CalendarOverlapError(Exception):
     """Proposed time overlaps local rows or busy Google intervals. Nothing was written."""
 
@@ -1161,13 +1194,11 @@ class GoogleCalendarProvider:
         except CalendarRemoteReadError:
             logger.warning("google calendar events patch failed status=network")
             raise CalendarRemoteWriteError(unknown=True) from None
-        if response.status_code >= 500:
-            logger.warning("google calendar events patch failed status=%s", response.status_code)
-            raise CalendarRemoteWriteError(unknown=True)
+        payload = _json_object(response) or {}
         if response.status_code not in (200, 201):
             logger.warning("google calendar events patch failed status=%s", response.status_code)
-            raise CalendarRemoteWriteError()
-        return _json_object(response) or {}
+            raise CalendarRemoteWriteError(unknown=_write_result_unknown(response.status_code, payload))
+        return payload
 
     def _restore_patch(self, event_id: str, body: dict) -> None:
         """Best-effort undo of a patch when the local commit fails. Log only the event id."""
@@ -1327,20 +1358,17 @@ class GoogleCalendarProvider:
             if found is not None:
                 return found
             raise CalendarRemoteWriteError(unknown=True) from None
-        if response.status_code >= 500:
-            logger.warning(
-                "google calendar events insert failed status=%s", response.status_code
-            )
-            found = self._adopt_inserted(request_id, meet)
-            if found is not None:
-                return found
-            raise CalendarRemoteWriteError(unknown=True)
+        payload = _json_object(response) or {}
         if response.status_code not in (200, 201):
             logger.warning(
                 "google calendar events insert failed status=%s", response.status_code
             )
+            if _write_result_unknown(response.status_code, payload):
+                found = self._adopt_inserted(request_id, meet)
+                if found is not None:
+                    return found
+                raise CalendarRemoteWriteError(unknown=True)
             raise CalendarRemoteWriteError()
-        payload = _json_object(response) or {}
         google_id = str(payload.get("id") or "").strip()
         if not google_id:
             logger.warning("google calendar events insert failed status=missing-id")
@@ -1415,7 +1443,7 @@ class GoogleCalendarProvider:
         if response.status_code in (200, 204, 404, 410):
             return
         logger.warning("google calendar events delete failed status=%s", response.status_code)
-        unknown = response.status_code >= 500
+        unknown = _write_result_unknown(response.status_code, _json_object(response))
         raise CalendarRemoteWriteError(_CANCEL_FAILED, unknown=unknown)
 
     def _delete_google_event(self, event_id: str) -> bool:
