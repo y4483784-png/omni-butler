@@ -96,10 +96,10 @@ def test_completed_list_click_confirms_once_without_a_live_session_task(plain_cl
     session_id = _session()
     message_id, _generation = _read_card(session_id)
     try:
-        opened = _click(plain_client, session_id, message_id)
+        opened = _click(plain_client, session_id, message_id, title=title)
         assert opened.status_code == 200, opened.text
         token = opened.json()["confirm_token"]
-        again = _click(plain_client, session_id, message_id)
+        again = _click(plain_client, session_id, message_id, title=title)
         assert again.status_code == 200, again.text
         assert again.json()["confirm_token"] == token
         actions = _waiting(_admin_id(), session_id)
@@ -127,7 +127,7 @@ def test_unrelated_live_task_is_not_the_authorization(plain_client: TestClient):
     message_id, _generation = _read_card(session_id)
     unrelated = task_run.begin_turn(user_id=_admin_id(), session_id=session_id)
     try:
-        opened = _click(plain_client, session_id, message_id)
+        opened = _click(plain_client, session_id, message_id, title=title)
         assert opened.status_code == 200, opened.text
         token = opened.json()["confirm_token"]
         _claim, bound = _runs(token)
@@ -148,14 +148,16 @@ def test_unrelated_live_task_is_not_the_authorization(plain_client: TestClient):
 def test_a_new_chat_turn_does_not_stop_the_card_action(plain_client: TestClient):
     session_id = _session()
     message_id, _generation = _read_card(session_id)
-    opened = _click(plain_client, session_id, message_id)
+    opened = _click(plain_client, session_id, message_id, title="卡片续接新回合")
     assert opened.status_code == 200, opened.text
     token = opened.json()["confirm_token"]
     _claim, bound = _runs(token)
-    action_generation = bound[0].generation
+    mine = [row for row in bound if row.session_id == session_id]
+    assert len(mine) == 1
+    assert mine[0].status == "waiting_person"
     typed = task_run.begin_turn(user_id=_admin_id(), session_id=session_id)
-    assert typed.generation != action_generation
-    assert task_run.get(user_id=_admin_id(), generation=action_generation).status == "waiting_person"
+    assert typed.generation != mine[0].generation
+    assert task_run.get(user_id=_admin_id(), generation=mine[0].generation).status == "waiting_person"
     assert task_run.get(user_id=_admin_id(), generation=typed.generation).status == "running"
 
 
@@ -173,7 +175,7 @@ def test_changed_time_and_stopped_action_do_not_write(plain_client: TestClient):
         )
         assert forged.status_code == 409, forged.text
         assert _waiting(_admin_id(), session_id) == []
-        opened = _click(plain_client, session_id, message_id)
+        opened = _click(plain_client, session_id, message_id, title=title)
         assert opened.status_code == 200, opened.text
         token = opened.json()["confirm_token"]
         edited = _click(
@@ -194,8 +196,9 @@ def test_changed_time_and_stopped_action_do_not_write(plain_client: TestClient):
         )
         assert rejected.status_code == 409, rejected.text
         assert _count(title) == 0
-        _claim, bound = _runs(token)
-        task_run.stop(user_id=_admin_id(), generation=bound[0].generation)
+        mine = _waiting(_admin_id(), session_id)
+        assert len(mine) == 1
+        task_run.stop(user_id=_admin_id(), generation=mine[0].generation)
         stopped = plain_client.post(
             "/api/calendar",
             json=_body(title, token, start_at=_SLOT["start_at"], end_at=_SLOT["end_at"]),

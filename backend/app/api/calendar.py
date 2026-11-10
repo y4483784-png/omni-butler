@@ -42,6 +42,7 @@ from app.services.schedule_confirm import (
     CONFIRM_DETAIL,
     ScheduleConfirmClosed,
     consume_schedule_claim,
+    continue_from_card,
     issue_schedule_claim,
     live_task_ids_for_session,
     parse_card_expiry,
@@ -420,6 +421,7 @@ def rsvp_google_event(
 class ConfirmClaimOpen(BaseModel):
     session_id: int
     action: str
+    source_message_id: int | None = None
     title: str | None = None
     start_at: str | None = None
     end_at: str | None = None
@@ -478,6 +480,32 @@ def open_confirm_claim(
     current_user: User = Depends(get_current_user),
 ):
     require_owned_session(db, body.session_id, current_user.id)
+    raw = {
+        "title": body.title,
+        "start_at": body.start_at,
+        "end_at": body.end_at,
+        "participants": body.participants,
+        "location": body.location,
+        "description": body.description,
+        "meet": body.meet,
+        "event_id": body.event_id,
+        "external_id": body.external_id,
+        "response": body.response,
+    }
+    if body.source_message_id is not None:
+        try:
+            token, stored_expiry = continue_from_card(
+                db,
+                user_id=current_user.id,
+                session_id=body.session_id,
+                message_id=body.source_message_id,
+                action=body.action,
+                raw=raw,
+            )
+        except ScheduleConfirmClosed as exc:
+            detail = CONFIRM_DETAIL.get(exc.reason, CONFIRM_DETAIL["closed"])
+            raise HTTPException(status_code=409, detail=detail) from None
+        return {"confirm_token": token, "expires_at": _expiry_stamp(stored_expiry)}
     task_ids = live_task_ids_for_session(db, current_user.id, body.session_id)
     expires_at = draft_expires_at()
     try:
@@ -486,18 +514,7 @@ def open_confirm_claim(
             user_id=current_user.id,
             session_id=body.session_id,
             action=body.action,
-            raw={
-                "title": body.title,
-                "start_at": body.start_at,
-                "end_at": body.end_at,
-                "participants": body.participants,
-                "location": body.location,
-                "description": body.description,
-                "meet": body.meet,
-                "event_id": body.event_id,
-                "external_id": body.external_id,
-                "response": body.response,
-            },
+            raw=raw,
             task_run_ids=task_ids,
             expires_at=parse_card_expiry(expires_at),
         )

@@ -524,6 +524,9 @@ async def chat(
             thinking_steps = wf.get("thinking_steps") or []
             llm_messages = wf["llm_messages"]
             schedule_card = wf.get("schedule_card")
+            if isinstance(schedule_card, dict):
+                schedule_card = {**schedule_card, "task_generation": turn.generation}
+                wf["schedule_card"] = schedule_card
             artifact = wf.get("artifact")
             artifact_stored = prepare_artifact_for_storage(artifact)
             direct_answer = redact_text(wf.get("direct_answer") or "")

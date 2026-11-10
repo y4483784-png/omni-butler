@@ -548,6 +548,7 @@ export function localStampFromDate(date: Date): string {
 
 export async function openConfirmClaim(body: {
   sessionId: number;
+  sourceMessageId?: number;
   action: string;
   title?: string;
   start_at?: string;
@@ -565,6 +566,7 @@ export async function openConfirmClaim(body: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       session_id: body.sessionId,
+      source_message_id: body.sourceMessageId,
       action: body.action,
       title: body.title ?? "",
       start_at: body.start_at ?? "",

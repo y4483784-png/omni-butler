@@ -20,6 +20,17 @@ test("cancel card title is read only", () => {
   assert.doesNotMatch(source, /待确认撤销/);
 });
 
+test("a slot click asks for a source card and does not write", () => {
+  const source = readFileSync(new URL("../src/components/ScheduleCard.tsx", import.meta.url), "utf8");
+  const useSlot = source.slice(source.indexOf("async function useSlot"), source.indexOf("if (card.readonly)"));
+  const reply = source.slice(source.indexOf("async function reply"), source.indexOf("async function declineCancel"));
+  assert.match(useSlot, /sourceMessageId/);
+  assert.match(reply, /sourceMessageId/);
+  assert.match(reply, /请再点一次以确认回复/);
+  assert.doesNotMatch(useSlot, /createCalendarEvent/);
+  assert.doesNotMatch(useSlot, /rsvpCalendarEvent/);
+});
+
 test("list card is time and title without a confirm button", () => {
   const source = readFileSync(new URL("../src/components/ScheduleCard.tsx", import.meta.url), "utf8");
   const listAt = source.indexOf('if (mode === "list")');

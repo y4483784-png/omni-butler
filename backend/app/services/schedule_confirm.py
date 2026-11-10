@@ -11,7 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal, set_rls_context
-from app.models.models import TASK_RUN_STATUSES, Message, ScheduleConfirmClaim, TaskRun
+from app.models.models import TASK_RUN_STATUSES, Message, ScheduleConfirmClaim, Session as ChatSession, TaskRun
+from app.services import task_run
 from app.services.calendar import draft_expires_at
 from app.services.calendar_provider import invitee_wire, parse_invitees
 from app.services.task_run import UnfinishedWriteKey
@@ -38,6 +39,7 @@ CONFIRM_DETAIL = {
     "mismatch": "参数已变，旧确认不能写入。",
     "closed": "这张确认已经失效，未写入。",
     "no-generation": "没有进行中的任务，未签发确认。",
+    "source": "这张卡片不能发起这次确认。",
 }
 
 
@@ -189,6 +191,64 @@ def issue_schedule_claim(
                 scope=scope,
                 session_id=session_id,
                 task_run_ids=ids,
+                expires_at=expires_at,
+            )
+            db.commit()
+            return token, expiry
+        except IntegrityError:
+            db.rollback()
+    raise ScheduleConfirmClosed("closed")
+
+
+def continue_from_card(
+    db: Session,
+    *,
+    user_id: int,
+    session_id: int,
+    message_id: int,
+    action: str,
+    raw: dict,
+) -> tuple[str, datetime | None]:
+    action_name = canonical_action(action)
+    message = _source_message(db, user_id, session_id, message_id)
+    if message is None:
+        raise ScheduleConfirmClosed("source")
+    card = _stored_card(message)
+    if card is None:
+        raise ScheduleConfirmClosed("source")
+    if str(card.get("mode") or "") not in {"list", "suggest"}:
+        return _reissue_linked(db, user_id, session_id, card, action, raw)
+    if not _completed_read(db, user_id, card):
+        raise ScheduleConfirmClosed("source")
+    offered = _selection_offered(card, action_name, raw)
+    edited = (
+        action_name == "calendar.create"
+        and _waiting_card_action(db, user_id, session_id, message.id) is not None
+    )
+    if not offered and not edited:
+        raise ScheduleConfirmClosed("source")
+    parts = write_parts(action_name, raw)
+    key = UnfinishedWriteKey(
+        user_id=user_id,
+        action=action_name,
+        fingerprint=write_fingerprint(parts),
+    )
+    scope = write_scope(user_id, parts)
+    expires_at = parse_card_expiry(draft_expires_at())
+    for _ in range(2):
+        try:
+            turn = task_run.insert_card_action(
+                db,
+                user_id=user_id,
+                session_id=session_id,
+                message_id=message.id,
+            )
+            token, expiry = _bind_open_claim(
+                db,
+                key=key,
+                scope=scope,
+                session_id=session_id,
+                task_run_ids=[turn.id],
                 expires_at=expires_at,
             )
             db.commit()
@@ -385,6 +445,124 @@ def live_task_ids_for_session(db: Session, user_id: int, session_id: int) -> lis
         .all()
     )
     return [row[0] for row in rows]
+
+
+def _reissue_linked(
+    db: Session,
+    user_id: int,
+    session_id: int,
+    card: dict,
+    action: str,
+    raw: dict,
+) -> tuple[str, datetime | None]:
+    token = str(card.get("confirm_token") or "").strip()
+    if not token:
+        raise ScheduleConfirmClosed("source")
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == token)
+        .one_or_none()
+    )
+    if claim is None or claim.user_id != user_id or claim.session_id != session_id or claim.status != "open":
+        raise ScheduleConfirmClosed("source")
+    ids = _owned_live_ids(db, user_id, _load_ids(claim.generation_ids))
+    if not ids:
+        raise ScheduleConfirmClosed("source")
+    return issue_schedule_claim(
+        db,
+        user_id=user_id,
+        session_id=session_id,
+        action=action,
+        raw=raw,
+        task_run_ids=ids,
+        expires_at=parse_card_expiry(draft_expires_at()),
+    )
+
+
+def _source_message(db: Session, user_id: int, session_id: int, message_id: int) -> Message | None:
+    return (
+        db.query(Message)
+        .join(ChatSession, ChatSession.id == Message.session_id)
+        .filter(
+            Message.id == int(message_id),
+            Message.session_id == session_id,
+            Message.role == "assistant",
+            ChatSession.user_id == user_id,
+        )
+        .one_or_none()
+    )
+
+
+def _stored_card(message: Message) -> dict | None:
+    try:
+        card = json.loads(message.schedule_card or "")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(card, dict):
+        return None
+    return card
+
+
+def _completed_read(db: Session, user_id: int, card: dict) -> bool:
+    if str(card.get("mode") or "") not in {"list", "suggest"}:
+        return False
+    expires = parse_card_expiry(card.get("expires_at"))
+    now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    if expires is not None and expires <= now:
+        return False
+    raw = card.get("task_generation")
+    if raw is None or raw == "":
+        return True
+    try:
+        generation = int(raw)
+    except (TypeError, ValueError):
+        return False
+    row = (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == user_id, TaskRun.generation == generation)
+        .one_or_none()
+    )
+    return row is not None and row.status == "completed"
+
+
+def _waiting_card_action(db: Session, user_id: int, session_id: int, message_id: int) -> TaskRun | None:
+    return (
+        db.query(TaskRun)
+        .filter(
+            TaskRun.user_id == user_id,
+            TaskRun.session_id == session_id,
+            TaskRun.allowed_tools == task_run.card_action_marker(message_id),
+            TaskRun.status == "waiting_person",
+        )
+        .one_or_none()
+    )
+
+
+def _selection_offered(card: dict, action: str, raw: dict) -> bool:
+    body = raw or {}
+    if action == "calendar.create":
+        start_at = _time(body.get("start_at"))
+        end_at = _time(body.get("end_at"))
+        if not start_at or not end_at:
+            return False
+        for slot in card.get("suggested_slots") or []:
+            if not isinstance(slot, dict):
+                continue
+            if _time(slot.get("start_at")) == start_at and _time(slot.get("end_at")) == end_at:
+                return True
+        return False
+    if action == "calendar.rsvp":
+        external_id = _text(body.get("external_id"))
+        response = _text(body.get("response"))
+        if not external_id or response not in {"accepted", "declined", "tentative"}:
+            return False
+        if str(card.get("mode") or "") != "list":
+            return False
+        for item in card.get("items") or []:
+            if isinstance(item, dict) and _text(item.get("external_id")) == external_id:
+                return True
+        return False
+    return False
 
 
 def _card_action(card: dict) -> str:

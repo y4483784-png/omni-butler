@@ -211,11 +211,13 @@ export function ScheduleCard({
   onChange,
   onAsk,
   sessionId,
+  messageId,
 }: {
   card: Card;
   onChange: (next: Card) => void;
   onAsk?: (text: string) => void;
   sessionId?: number;
+  messageId?: number;
 }) {
   const expired = isExpired(card);
   const legacy = !card.phase && !card.mode;
@@ -382,6 +384,7 @@ export function ScheduleCard({
         try {
           const claim = await openConfirmClaim({
             sessionId,
+            sourceMessageId: messageId,
             action: mode === "cancel" ? "delete" : mode === "update" ? "update" : "create",
             title: payload.title,
             start_at: payload.start_at,
@@ -416,7 +419,7 @@ export function ScheduleCard({
     const key = `${externalId}:${status}`;
     const existing = rsvpTokens[key];
     if (!existing) {
-      if (sessionId == null) {
+      if (sessionId == null || messageId == null) {
         setError("缺少确认，未写入。");
         return;
       }
@@ -424,6 +427,7 @@ export function ScheduleCard({
       try {
         const claim = await openConfirmClaim({
           sessionId,
+          sourceMessageId: messageId,
           action: "rsvp",
           external_id: externalId,
           response: status,
@@ -469,27 +473,30 @@ export function ScheduleCard({
     setTitle("");
     setStartAt(nextStart);
     setEndAt(nextEnd);
+    if (sessionId == null || messageId == null) {
+      setError("缺少确认，未写入。");
+      return;
+    }
     let expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
     let confirmToken = "";
-    if (sessionId != null) {
-      try {
-        const claim = await openConfirmClaim({
-          sessionId,
-          action: "create",
-          title: "",
-          start_at: fromLocalInput(nextStart),
-          end_at: fromLocalInput(nextEnd),
-          participants: participantsForSubmit(blockForm, guests),
-          location: blockForm ? "" : location.trim(),
-          description: description.trim(),
-          meet: showMeet && meetOn,
-        });
-        confirmToken = claim.confirm_token;
-        expiresAt = claim.expires_at;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "无法打开确认");
-        return;
-      }
+    try {
+      const claim = await openConfirmClaim({
+        sessionId,
+        sourceMessageId: messageId,
+        action: "create",
+        title: "",
+        start_at: fromLocalInput(nextStart),
+        end_at: fromLocalInput(nextEnd),
+        participants: participantsForSubmit(blockForm, guests),
+        location: blockForm ? "" : location.trim(),
+        description: description.trim(),
+        meet: showMeet && meetOn,
+      });
+      confirmToken = claim.confirm_token;
+      expiresAt = claim.expires_at;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "无法打开确认");
+      return;
     }
     onChange({
       mode: "create",
