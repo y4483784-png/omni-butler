@@ -50,7 +50,7 @@ flowchart LR
     subgraph WATCH["⑩ 看门狗（简化要做）"]
       direction TB
       wd["主系统外的独立会话<br/>定时叫醒；只读任务状态，不调会改世界的工具"]
-      wd_check["复用同一任务状态看实质进展<br/>等人 / 等资源不误判卡死；休眠不计超时"]
+      wd_check["复用同一任务状态看实质进展<br/>等人 / 等资源 / 已完成不误判卡死；休眠不计超时"]
       wd_act["异常：提醒你或沿取消链安全停住<br/>不自动改授权、不绕过确认闸"]
       wd_note["先不做：看门狗自己改提示词 / Trigger 规则"]
       wd --> wd_check --> wd_act --> wd_note

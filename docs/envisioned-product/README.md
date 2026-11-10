@@ -14,7 +14,8 @@
 - `envisioned-oss-map-harness.md` 和同名 JSON
 - `personal-agent-oss-comparison.md`
 - `envisioned-product-plan.md`
+- `decision-trail.md`
 
-要改其中任何一份，就单独做一次修订，在 PR 说明里写明改了哪一份、为什么。压缩包里没有合并后的整图 mermaid。五行图源、PNG 和 PDF 是图的原件。
+要改其中任何一份，就单独做一次修订，在 PR 说明里写明改了哪一份、为什么。压缩包里没有合并后的整图 mermaid。PNG 和 PDF 仍是上传时的原件，模块⑤在那两份图上仍是四种状态。2026-11-10 的计划审阅把第五种状态 `completed` 写进了 `mermaid-rows/02-dispatch.mmd`、`mermaid-rows/03-gate.mmd` 和实现计划。实现以计划和 `decision-trail.md` 为准。
 
-本目录只保存计划和依据。它不是实现许可，也不是合并许可。实现要等操作者另行说开始。合并仍要操作者说「合」。
+本目录只保存计划和依据。它不是实现许可，也不是合并许可。实现要等操作者另行说开始。每一刀的代码做完后，还要做 pstack 形式化验证并画出状态图。操作者看过代码、验证结果和图，说「合」才合并。没有操作者明说的部署请求，不部署。

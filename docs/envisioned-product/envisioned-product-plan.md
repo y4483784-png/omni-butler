@@ -58,7 +58,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
   - [ ] `ev-mail` 在 `ev-webblock` 之后。
   - [ ] `ev-errands` 在 `ev-mail` 之后。
   - [ ] `ev-desktop` 在 `ev-errands` 之后。
-- [ ] 守住文件边界。`ev-task` 只加任务行和代次。`ev-gate` 只改确认凭据和日历写入口。`ev-plug` 只改工具契约和未知结果。`ev-stop` 只改取消链。`ev-dispatch` 只把派活移出干活。`ev-work` 只改干活循环。`ev-net` 只改这一轮的上网路径。`ev-events` 只加事件收件箱。`ev-memory` 只改记忆、少打扰和脉搏。`ev-watch` 只加只读看门狗。`ev-webblock` 只加网页执行拦截。`ev-mail` 只加邮件入口。`ev-errands` 只加办事插头。`ev-desktop` 只加桌面安装包和包内本机插头。
+- [ ] 守住文件边界。`ev-task` 只加任务行、五种状态和代次，并给以后的同一件写清单留出不按代次去重的接口。`ev-gate` 只改确认凭据和日历写入口，并按用户、动作、指纹收成一条待办。`ev-plug` 只改工具契约和未知结果。`ev-stop` 只改取消链，并在停止后不再写长期记忆、不再为记忆调模型。`ev-dispatch` 只把派活移出干活。`ev-work` 只改干活循环。`ev-net` 只改这一轮的上网路径。`ev-events` 只加事件收件箱。`ev-memory` 只加记忆账本、少打扰和脉搏。停止后不写记忆已经在 `ev-stop`。`ev-watch` 只加只读看门狗。`ev-webblock` 只加网页执行拦截。表面由服务器判定。`ev-mail` 只加邮件入口。`ev-errands` 只加办事插头。`ev-desktop` 只加桌面安装包和包内本机插头。
 - [ ] 已有的开放 PR，包括 #71，不属于这条链。不要合并它们，也不要为了这条链去改它们，除非本计划的文档 PR 与 `release` 发生冲突。
 - [ ] 守住审阅门。`ev-gate`、`ev-plug`、`ev-stop`、`ev-work`、`ev-net`、`ev-events`、`ev-memory`、`ev-watch`、`ev-webblock`、`ev-mail`、`ev-errands`、`ev-desktop` 改了人能看见或能点的行为。合并前操作者要在聊天里看到截图和视频。`ev-task` 和 `ev-dispatch` 不改页面交互。
 
@@ -75,6 +75,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] 完整的十路现场检查只在代码就绪的那个提交上跑一次。只有新行为、改设计或大块新差异才再跑一轮。变基、解冲突或小修补只派一个核对者看新提交。措辞修改不再跑现场。现场车道和性能车道用本计划里该 PR 的盒子。另外至少两路只读审计，各自盯一个重点，读差异和证据，不信 PR 正文。根负责人在下结论前核对证据。
 - [ ] 按 `autopilot-stack` 的阻塞规则判断。没有阻塞项才算干净。标成 `Regression lane against trunk.` 的车道如果失败在主干已有行为上，记在主干名下，不阻塞这条 PR。新提交要重新下结论。`playbooks/shipping.md` 里补丁号没变的结果可以沿用。
+- [ ] 每一刀的代码做完后，先做 pstack 形式化验证，并画出这一刀的状态图。图放进该 PR 的说明，或放进 `docs/envisioned-product/review/`。操作者看过代码、验证结果和这张图，并且说了「合」，才合并。没有操作者明说的部署请求，不部署。本目录里的文档不是实现许可，也不是合并许可。
 - [ ] 负责人不合并。根负责人按依赖把 PR 的基线改到父分支。操作者从 `ev-task` 往上合并，而且只在说了「合」之后。补丁号规则以 `playbooks/shipping.md` 为准。
 
 ### Boot recipe, for every live lane
@@ -103,35 +104,38 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 **Build.**
 
 - [ ] 读 `ToolContext`（`types.py` 第 12 行）和 `Session`（`models.py` 第 32 行）。现在没有任务行，也没有代次。
-- [ ] 新增 `TaskRun`。状态只允许 `running`、`waiting_person`、`waiting_resource`、`stopped`。每个用户回合一个递增的 `generation`。
+- [ ] 新增 `TaskRun`。状态只允许 `running`、`waiting_person`、`waiting_resource`、`completed`、`stopped`。正常做完写成 `completed`。`stopped` 只表示人主动停掉，或以后看门狗调用停止函数。不要把正常做完标成 `stopped`。不要用附加 reason 字段代替这第五种状态。每个用户回合一个递增的 `generation`。`generation` 只表示这一轮有没有做完或被停掉。它不是「同一件写操作」的键。
 - [ ] `task_run.py` 是这张表的唯一写入者。聊天、以后的事件、脉搏和看门狗都调用它，不各自改行。
 - [ ] 在 `ToolContext` 上增加 `task_id` 和 `generation`。把当前章程里的工具白名单抄到这一回合的允许列表。上下文变长时不改这张列表。这一刀不加确认凭据，不改 `ScheduleConfirmClaim`。
-- [ ] 聊天已经要推送日历卡时，把该代次写成 `waiting_person`。人还没点，状态不能是 `stopped`。
-- [ ] `task_run.stop` 由测试直接调用。它把代次写成 `stopped`。迟到结果不能把该代次改回 `running`。页面上的停止按钮要到 `ev-stop` 才接到这个函数。这一刀不要用页面按钮充当停止。
+- [ ] 不要在 `TaskRun` 上建立包含 `generation` 的写操作唯一约束，也不要提供按用户、代次、动作和指纹去重的函数。给 `ev-gate` 留的查找是按用户、动作和参数指纹找未完成的待办。这一刀不建那张清单。
+- [ ] 聊天已经要推送日历卡时，把该代次写成 `waiting_person`。人还没点，状态不能是 `stopped`，也不能是 `completed`。
+- [ ] 上一句已经正常讲完，用户再发一句时，把上一句写成 `completed`。上一句还在 `running`、`waiting_person` 或 `waiting_resource`，用户又发了一句时，把上一句写成 `stopped`。终态只能是这两种里的一种，按这个规则选，不要猜。
+- [ ] `task_run.stop` 由测试直接调用。它把代次写成 `stopped`。迟到结果不能把该代次改回 `running` 或 `completed`。页面上的停止按钮要到 `ev-stop` 才接到这个函数。这一刀不要用页面按钮充当停止。
 - [ ] 证据级别是本仓库已打开的路径，提交 `f567fdd`。OpenMausBot 和 DS-Bot 的地图没有这组状态的源码路径。不要另找一张任务表来搬。
 - [ ] 不要把 Khoj 加进仓库或 Compose。
 
 **You see.**
 
-- [ ] 同一会话里发两句。第二句的 `generation` 更大。测试调用 `task_run.stop` 之后，迟到结果不能把该代次改回 `running`。
+- [ ] 第一句正常讲完后再发一句。第一句是 `completed`，第二句的 `generation` 更大。第一句不是 `stopped`。
+- [ ] 第一句还在做时再发一句。第一句变成 `stopped`。测试调用 `task_run.stop` 之后，迟到结果不能把该代次改回 `running` 或 `completed`。
 - [ ] `docker compose config --services` 与主干相同。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 在 `backend/tests/test_task_generation.py` 覆盖代次递增、测试直接调用 `task_run.stop` 后拒绝旧代次、以及第二个用户读不到第一个用户的任务。不要靠页面停止按钮。用启动配方里的环境变量运行 `python -m pytest tests/test_task_generation.py -q`。
+- [ ] 在 `backend/tests/test_task_generation.py` 覆盖代次递增、正常结束为 `completed`、做完后再发一句仍是 `completed`、做到一半再发一句为 `stopped`、测试直接调用 `task_run.stop` 后拒绝旧代次，以及第二个用户读不到第一个用户的任务。断言没有用 reason 字段区分做完和停掉，也没有按代次去重写操作的唯一约束。不要靠页面停止按钮。用启动配方里的环境变量运行 `python -m pytest tests/test_task_generation.py -q`。
 - [ ] 再跑 `python -m pytest tests/test_chat_sse_routing.py -q`。现有聊天路由仍然通过。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. Regression lane against trunk. Ask one ordinary question on trunk and on the head. Trunk has no task row. Record that. Gate the answer bubble plus the new task row. Save `ev-task-regression.png`. Pass when the head shows one answer bubble and the api log contains one new `TaskRun` for that turn.
-- [ ] Lane 2. Send a second message in the same signed-in session. Save `ev-task-generation.png`. Pass when the second `generation` is greater than the first and the first row is not `running`.
+- [ ] Lane 1. Regression lane against trunk. Ask one ordinary question on trunk and on the head. Trunk has no task row. Record that. Gate the answer bubble plus the new task row. Save `ev-task-regression.png`. Pass when the head shows one answer bubble, the api log contains one new `TaskRun` for that turn, and the finished row is `completed`.
+- [ ] Lane 2. After the first answer finishes, send a second message in the same signed-in session. Save `ev-task-generation.png`. Pass when the second `generation` is greater than the first and the first row is `completed`.
 - [ ] Lane 3. Press the existing stop control during planning on trunk and on the head. Save `ev-task-stop.png`. Pass when both sides end the bubble the same way. The head row is not `stopped` from that button. `task_run.stop` is covered by the unit test.
 - [ ] Lane 4. Open a calendar draft that is already waiting for a click. Do not click it. Save `ev-task-waiting.png`. Pass when the task state is `waiting_person` and the card is still open.
 - [ ] Lane 5. Sign in as a second user and open the first user's session URL. Save `ev-task-identity.png`. Pass when the second user does not see the first user's task or transcript.
-- [ ] Lane 6. Send the same message twice by repeating the button after the answer arrives. Save `ev-task-repeat.png`. Pass when each accepted turn has its own generation and the two rows do not overwrite each other.
+- [ ] Lane 6. Send a second message while the first turn is still running. Save `ev-task-repeat.png`. Pass when the first row becomes `stopped`, the second `generation` is greater, and the two rows do not overwrite each other.
 - [ ] Lane 7. Fill the composer with a long pasted history and send it. Save `ev-task-context.png`. Pass when the turn allow list stored on the task equals the allow list of a short turn for the same user.
 - [ ] Lane 8. Call a tool name that is not on the turn allow list through the existing gateway. Save `ev-task-deny.png`. Pass when the tool audit says denied and the stored allow list is unchanged.
-- [ ] Lane 9. Refresh the page after the answer. Save `ev-task-reload.png`. Pass when the transcript is still there and no second `TaskRun` appears for the finished generation.
+- [ ] Lane 9. Refresh the page after the answer. Save `ev-task-reload.png`. Pass when the transcript is still there, the finished generation stays `completed`, and no second `TaskRun` appears for it.
 - [ ] Lane 10. Compare Compose services with trunk. Also search the repo diff for Khoj. Save `ev-task-scope.png`. Pass when the service list matches trunk and the diff contains no Khoj tree.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
@@ -171,13 +175,14 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 读 `consume_schedule_claim`（`schedule_confirm.py` 第 96 行）。`token` 为空时函数直接返回，写操作继续。`test_create_without_a_token_still_writes`（`test_schedule_confirm_claims.py` 第 54 行）把这个行为锁成通过。
 - [ ] 读 `ScheduleConfirmClaim`（`models.py` 第 60 行）。现有列只有 token、用户、会话、状态和过期时间。没有动作、参数指纹、作用范围和任务代次。
 - [ ] 读 `chat.py` 第 533 行。外壳在这里调用 `publish_schedule_claim`。这一刀之后，签发只留在 `schedule_confirm.py`。聊天只负责把已经签发的卡推给页面。
-- [ ] 凭据绑定动作、参数指纹、作用范围和 `ev-task` 的代次。执行前再验一次。参数变了必须重新签发。任务进入 `stopped` 时未消费的凭据失效。
-- [ ] `publish` 对同一用户、同一代次、同一动作和同一参数指纹是幂等的。第二次调用返回已经打开的那张凭据，不另开一张。
+- [ ] 凭据记下动作、参数指纹、作用范围，以及当时那一轮的代次。代次用来拒绝已经 `stopped` 的那一轮去消费。代次不参与「是不是同一件写」的唯一键。执行前再验一次。参数变了必须重新签发。
+- [ ] `publish` 对同一用户、同一动作和同一参数指纹是幂等的，不管这一轮的 `generation` 是多少，也不管唤醒源是聊天、日历提醒、新邮件还是脉搏。第二次调用返回已经打开的那张凭据，不另开一张。不要把唯一键写成用户加代次加动作加指纹。
+- [ ] 某一代进入 `stopped` 时，这一代不能再消费该凭据。没有别的未停止代次还指着同一行时，未消费的凭据失效。不要因为旧代次停止就另开一张卡。`completed` 的代次同样不能把一张未消费的凭据当成自己还能写。
 - [ ] 日历创建、修改、删除、会前简报和会后跟进都走这一个函数。没有 token 的写返回 409。改掉 `test_create_without_a_token_still_writes`，让无 token 的创建失败。
 - [ ] RSVP 写也走这同一道闸。没有凭据就拒绝。先搜索仓库里不带 `confirm_token` 的日历创建和 RSVP 调用，把调用者写进该 PR，再改测试。
 - [ ] 抄 OpenMausBot `O-CONFIRM` 的「回执绑定动作和指纹、提交失败就回滚」，以及 `O-LIVE` 的「每次决定读当前等级」。提交是 `083fd7b51405e6d0c01e189b2f65ab0322509b5a`，行号在 `envisioned-oss-map-harness.md` 的来源锚点。证据级别是地图声称的固定提交静态阅读。本计划运行没有打开那些上游文件。动工前按该提交重读 `server/routines.ts` 第 1487 到 1536 行和 `server/host/live-approval.ts` 第 12 到 17 行。
 - [ ] DS-Bot `D-APPROVAL` 只抄「取消时待处理审批失效、过期回答拒绝」。文件是 `ds-bot/src/host/approvals.js`，提交 `71d344bf193f3f18185f25de3d8e5c483046910a`，地图只给了文件级锚点。不要把它的内存 Map 当成持久队列。持久行继续用 `ScheduleConfirmClaim`。
-- [ ] 地图 `G-GATE` 写明作用范围、任务代次和停止作废没有上游实现。这三样在本仓库写，不要假装上游已经有。
+- [ ] 地图 `G-GATE` 写明作用范围和停止作废没有上游实现。这两样在本仓库写，不要假装上游已经有。代次可以记在凭据上，用来拒绝已停止的一轮。不要把它写成同一件写的钥匙。
 
 **You see.**
 
@@ -187,7 +192,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 改 `tests/test_schedule_confirm_claims.py`，让无 token 创建失败。新建 `tests/test_claim_fingerprint.py`，覆盖同一凭据只写一次、参数变化后旧凭据失败、停止后凭据失效、相同指纹再次签发仍是同一张凭据。用启动配方运行 `python -m pytest tests/test_schedule_confirm_claims.py tests/test_claim_fingerprint.py tests/test_task_generation.py -q`。
+- [ ] 改 `tests/test_schedule_confirm_claims.py`，让无 token 创建失败。新建 `tests/test_claim_fingerprint.py`，覆盖同一凭据只写一次、参数变化后旧凭据失败、停止后凭据失效、两个不同 `generation` 发布同一用户同一动作同一指纹时仍是同一张凭据。用启动配方运行 `python -m pytest tests/test_schedule_confirm_claims.py tests/test_claim_fingerprint.py tests/test_task_generation.py -q`。
 - [ ] 在 `frontend` 运行 `npm test`。
 - [ ] 把 `verification/schedule-confirm/` 的规格改成无 token 不得写入。然后运行 `python3 verification/schedule-confirm/check.py`。检查必须按这个新规格通过。不要把规格改回允许无 token 写入。
 
@@ -199,7 +204,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Lane 4. Edit the time on the card and then click the original button. Save `ev-gate-edit.png`. Pass when the write is rejected and a new card is the only way to save the new time.
 - [ ] Lane 5. Call `task_run.stop` for the generation that owns the open card, then click the card. Save `ev-gate-stop.png`. Pass when the click does not write. The chat stop button is not the control for this lane.
 - [ ] Lane 6. Sign in as a second user and submit the first user's token. Save `ev-gate-identity.png`. Pass when the response is rejected and the first user's calendar is unchanged.
-- [ ] Lane 7. Ask for the same event twice so publish runs again for the same fingerprint. Save `ev-gate-idempotent.png`. Pass when the page shows one open card and the claim table has one open row for that fingerprint.
+- [ ] Lane 7. Ask for the same event from two turns so the generations differ and the fingerprint matches. Save `ev-gate-idempotent.png`. Pass when the page shows one open card and the claim table has one open row for that user, action, and fingerprint.
 - [ ] Lane 8. Send a calendar create request with the token field omitted. Save `ev-gate-missing.png`. Pass when the response is 409 and no event row appears.
 - [ ] Lane 9. Confirm a card, then refresh the page. Save `ev-gate-reload.png`. Pass when the confirmed phase remains and a refresh does not write a second event.
 - [ ] Lane 10. Look for a second approval table and for any Khoj path in the diff. Save `ev-gate-scope.png`. Pass when the only claim table is `schedule_confirm_claims` and the diff has no Khoj files.
@@ -311,25 +316,25 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 把当前代次的停止标志传进工作线程。`stream_chat` 和同步补全在调用 `chat.completions.create` 之前读这个标志。已经停止就不要发请求。
 - [ ] `gateway.invoke` 之前再读一次。队列里还没发出的模型请求一并丢掉。
 - [ ] 停止不删除已经写入的日历，不撤回已经发出的邮件，不退回已经付出的款项。
-- [ ] 这一刀不改 `chat.py` 第 648 到 689 行的 `finally`。第 681 到 687 行仍会调用 `_remember_turn_isolated`。从这一刀合入到 `ev-memory` 合入之前，停止后的回合仍可能写记忆。这是计划中的中间状态。`ev-memory` 再把它去掉。这一刀只保证模型请求和工具调用停住。
+- [ ] 改 `chat.py` 第 648 到 689 行的 `finally`。第 681 到 687 行现在会调用 `_remember_turn_isolated`。这一代已经是 `stopped` 时，不要调用它，也不要为了写记忆再调用模型。会话原文可以留下。正常结束并写成 `completed` 的回合，这一刀不建记忆账本。账本留给 `ev-memory`。
 - [ ] 抄 DS-Bot `D-CANCEL`（`turns.js` 第 221 到 264 行）和 `D-LATE`（第 695 到 708 行），以及 OpenMausBot `O-CANCEL`（`client.ts` 第 259 到 265 行）和 `O-HTTP`（第 335 到 401 行）。提交分别是 `71d344bf193f3f18185f25de3d8e5c483046910a` 和 `083fd7b51405e6d0c01e189b2f65ab0322509b5a`。证据级别是地图声称的静态阅读。动工前重读这些行。
 - [ ] 地图 `G-SHELL` 写明完整的暂停、改方向和流式中断还没有被证明。这一刀只做停止传到请求前和迟到结果作废。不要在这一刀做满分异步 ReAct。
 - [ ] 不要把确认签发搬回外壳。
 
 **You see.**
 
-- [ ] 点停止之后，api 日志里没有新的模型 HTTP 请求。已经确认过的日历事件还在。
+- [ ] 点停止之后，api 日志里没有新的模型 HTTP 请求，也没有为写记忆再发出的模型请求。已经确认过的日历事件还在。没有新的长期记忆行。
 - [ ] 停止前已经发出的请求，其迟到文本不会再写进当前气泡。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 新建 `tests/test_stop_before_send.py`。覆盖工作线程在 `create` 之前看到停止、迟到结果不写回气泡、以及停止后日历行数不变。用启动配方运行 `python -m pytest tests/test_stop_before_send.py tests/test_chat_sse_routing.py -q`。
+- [ ] 新建 `tests/test_stop_before_send.py`。覆盖工作线程在 `create` 之前看到停止、迟到结果不写回气泡、停止后日历行数不变，以及 `stopped` 的代次不再写长期记忆、也不再为记忆调用模型。用启动配方运行 `python -m pytest tests/test_stop_before_send.py tests/test_chat_sse_routing.py -q`。
 - [ ] 在 `frontend` 运行 `npm test`。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. Ask one question and let it finish on trunk and on the head. Save `ev-stop-regression.png`. Pass when both sides show a finished answer when the user does not press stop.
-- [ ] Lane 2. Press stop while the page still says planning. Save `ev-stop-press.png`. Pass when the bubble stops and the api log shows no model request after the stop line.
+- [ ] Lane 2. Press stop while the page still says planning. Save `ev-stop-press.png`. Pass when the bubble stops, the row is `stopped`, and the api log shows no model request and no memory extract after the stop line.
 - [ ] Lane 3. Press stop after a calendar event was already confirmed. Save `ev-stop-keep.png`. Pass when the calendar event remains and the page does not offer an undo of that event.
 - [ ] Lane 4. Press stop and then wait for a delayed model chunk from the old request. Save `ev-stop-late.png`. Pass when the old chunk is not appended to the bubble.
 - [ ] Lane 5. Press stop and then send a new message. Save `ev-stop-next.png`. Pass when the new message gets a new generation and can finish.
@@ -555,7 +560,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 读 `main.py` 第 43 到 50 行的路由列表。现在没有事件收件箱。`gmail.py` 的 `search_meeting_mail`（第 57 行）只为会前准备做只读搜索。不要把这次搜索改成入口。
 - [ ] 回执按来源和投递编号去重。状态分开写 `received`、`dispatched`、`external_success`。收到事件只表示 `received`。外部成功只在写操作被确认且对方接受之后才标。
 - [ ] 先用程序规则丢掉噪声，再让模型判断要不要动。不要做投机执行。
-- [ ] 已有正在运行且不在等人确认的任务时，事件进入那一个代次，不另开派活。
+- [ ] 已有 `running` 且不在等人确认的任务时，事件进入那一个代次，不另开派活。状态是 `completed` 时不要进入那一代，另开新任务。状态是 `stopped` 时不写，也不把回执标成 `external_success`。不要用附加 reason 把 `completed` 和 `stopped` 合成一种。
 - [ ] 正在等人确认时，投递编号重复则什么都不做。指纹相同则保留已打开的那张凭据。指纹不同则作废旧卡并只重签一张。重签之后又来的不同事件只排队，不执行，也不再开第二张写卡。
 - [ ] 抄 OpenMausBot `O-EVENT`（`server/routines.ts` 第 742 到 806 行）和 `O-RECEIPT`（`server/routine-event-receipts.ts`，文件级）。提交 `083fd7b51405e6d0c01e189b2f65ab0322509b5a`。证据级别是地图声称的静态阅读。动工前重读。地图 `G-EVENT` 写明完整闭环没有单一已核验实现。两级过滤和直通在本仓库写。
 - [ ] 不要接微信、Telegram 或 Slack。不要因为收到回执就显示外部成功。
@@ -567,12 +572,12 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 新建 `tests/test_event_inbox.py`。覆盖去重、直通同一代次、等人时作废并重签、以及第二条不同事件只排队。用启动配方运行 `python -m pytest tests/test_event_inbox.py tests/test_claim_fingerprint.py -q`。
+- [ ] 新建 `tests/test_event_inbox.py`。覆盖去重、直通同一代次、`completed` 不直通、`stopped` 不写、等人时作废并重签、以及第二条不同事件只排队。用启动配方运行 `python -m pytest tests/test_event_inbox.py tests/test_claim_fingerprint.py -q`。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. Ask an ordinary question on trunk and on the head. Save `ev-events-regression.png`. Pass when the chat still answers and trunk has no event inbox to compare.
-- [ ] Lane 2. Submit one new event through the internal route while no task is running. Save `ev-events-new.png`. Pass when one receipt is `dispatched` and one new task exists.
+- [ ] Lane 2. Submit one new event through the internal route after the previous task is `completed`. Save `ev-events-new.png`. Pass when one receipt is `dispatched`, one new task exists, and the `completed` row is not reused.
 - [ ] Lane 3. Submit the same delivery id again. Save `ev-events-dupe.png`. Pass when the receipt count stays one and no second task appears.
 - [ ] Lane 4. Open a confirm card and submit a different fingerprint for that task. Save `ev-events-reissue.png`. Pass when the old card is void and exactly one new card is open.
 - [ ] Lane 5. While that new card is open, submit another different event. Save `ev-events-queue.png`. Pass when the page still shows one card and the extra event is queued, not written.
@@ -611,7 +616,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 改 `backend/app/services/memory.py` 里的 `_upsert_memory` 和 `remember_from_turn`。
 - [ ] 在 `backend/app/models/models.py` 增加记忆变更账本。
 - [ ] 新建 `backend/alembic/versions/0014_memory_ledger.py`。
-- [ ] 改 `backend/app/api/chat.py` 里停止后的记忆抽取。
+- [ ] 改 `backend/app/api/chat.py`，只在代次为 `completed` 时写账本。不要把 `ev-stop` 里「停止后不写记忆」的判断挪到这一刀才补。
 - [ ] 改 `backend/app/tasks/celery_app.py` 的 `beat_schedule`，增加提醒任务。
 - [ ] 改 `frontend/src/components/MemoryPanel.tsx`。
 - [ ] 新建 `backend/tests/test_memory_ledger.py`。
@@ -621,7 +626,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] 读 `_upsert_memory`（`memory.py` 第 329 行）。第 350 到 352 行直接覆盖 `content`。没有来源、修改者、前后值和待提交状态。`remember_from_turn` 在第 411 行。`chat.py` 第 293 行在回合结束后抽取。
 - [ ] 覆盖改成追加账本。每条记下 source、actor、before、after 和 pending。冲突时保留两边，不强制撤销另一边。待提交的值可以由人恢复或丢弃。
 - [ ] 把握不够时只写账本，不出草稿卡。有结果或要人动手时才由外壳开口。
-- [ ] 代次已经 `stopped` 时不调用 `remember_from_turn`。会话原文可以留下。允许列表不因记忆文本而变长。
+- [ ] `stopped` 的回合不写长期记忆，也不为记忆调模型。这条的验收在 `ev-stop`。这一刀只在 `completed` 的回合调用 `remember_from_turn`。会话原文可以留下。允许列表不因记忆文本而变长。不要用账本上的 reason 把 `completed` 和 `stopped` 合成一种任务状态。
 - [ ] 脉搏是 beat 里的提醒。它经外壳推送。要写日历或发消息时调用 `ev-gate` 的幂等 `publish`。已经有同一指纹的未完成凭据时，不再开第二张。
 - [ ] Leon 的 `OWNER.md` 和 `PULSE.md`、Letta 的 MemFS 是仅文档。不要抄已经废弃的 Letta AgentFile。不要把 AnythingLLM 的浅记忆当成这个账本。不要把 Khoj 的文档检索当成身份档案。
 - [ ] 壳子地图 `G-MEM`（`envisioned-oss-map-harness.md` 第 390 行）说 DS-Bot 的记忆提交和冲突恢复还有旧证据，但没有路径。动工前在提交 `71d344bf193f3f18185f25de3d8e5c483046910a` 上查找。找不到就按本图实现账本，不要空等。
@@ -641,7 +646,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] Lane 1. Regression lane against trunk. Finish one ordinary chat on trunk and on the head. Save `ev-memory-regression.png`. Pass when both sides keep the transcript, and the head does not open a draft card for a low-confidence memory.
 - [ ] Lane 2. Tell the assistant a preference, then correct it. Save `ev-memory-ledger.png`. Pass when the memory panel shows the before value and the after value.
-- [ ] Lane 3. Press stop before the answer finishes. Save `ev-memory-stop.png`. Pass when no new memory ledger row is written for that generation.
+- [ ] Lane 3. Press stop before the answer finishes. Save `ev-memory-stop.png`. Pass when the row is `stopped` and no new memory ledger row is written for that generation.
 - [ ] Lane 4. Wait for a pulse that needs a calendar write. Save `ev-memory-pulse.png`. Pass when one confirm card appears and no event exists before the click.
 - [ ] Lane 5. Trigger the same pulse again while the card is open. Save `ev-memory-once.png`. Pass when the open card count stays one.
 - [ ] Lane 6. Sign in as a second user and open the memory panel. Save `ev-memory-identity.png`. Pass when the second user does not see the first user's ledger.
@@ -683,7 +688,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 **Build.**
 
 - [ ] 读 `celery_app.py` 第 37 到 43 行。现在的 beat 只恢复卡住的文档入库。`deploy/health-watch.sh` 看磁盘和容器。任务看门狗另写。不要把那份脚本改成任务看门狗。
-- [ ] 新任务只读 `TaskRun`。`waiting_person` 和 `waiting_resource` 不算卡住。休眠时间不计入超时。
+- [ ] 新任务只读 `TaskRun`。`waiting_person` 和 `waiting_resource` 不算卡住。`completed` 不是卡住，不是失败，也不是取消。看门狗不要把它改成 `stopped`。休眠时间不计入超时。
 - [ ] 真的没有进展时，提醒人，或者调用 `task_run` 已有的停止函数。不要直接改授权，不要改提示词，不要改触发规则，不要调用会写外部世界的工具。
 - [ ] 已经有打开的确认凭据时，看门狗不再 `publish` 第二张。
 - [ ] 抄 OpenMausBot `O-WATCH` 里「等人不是卡住、休眠要计时」这一点。文件是 `server/turn-watchdog.ts`，提交 `083fd7b51405e6d0c01e189b2f65ab0322509b5a`，地图只给文件级锚点，并写明它是进程内定时器。不要把它说成已经存在的外部看门狗。动工前重读该文件。
@@ -692,15 +697,15 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 **You see.**
 
 - [ ] 等人确认超过普通超时之后，任务仍是 `waiting_person`，看门狗没有新的日历写入。
-- [ ] 一个停在运行中且没有新日志的任务会收到提醒或进入 `stopped`。更新的代次不受影响。
+- [ ] 一个停在 `running` 且没有新日志的任务会收到提醒或进入 `stopped`。已经 `completed` 的任务仍是 `completed`。更新的代次不受影响。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 新建 `tests/test_watchdog.py`。覆盖等人不误判、休眠不计超时、看门狗没有写工具、以及旧代次停止不清理新代次。用启动配方运行 `python -m pytest tests/test_watchdog.py tests/test_celery_ingest.py -q`。
+- [ ] 新建 `tests/test_watchdog.py`。覆盖等人不误判、`completed` 不被改成 `stopped`、休眠不计超时、看门狗没有写工具、以及旧代次停止不清理新代次。用启动配方运行 `python -m pytest tests/test_watchdog.py tests/test_celery_ingest.py -q`。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
-- [ ] Lane 1. Regression lane against trunk. Let one chat finish on trunk and on the head. Save `ev-watch-regression.png`. Pass when both sides finish the answer and the head ingest recovery job still exists.
+- [ ] Lane 1. Regression lane against trunk. Let one chat finish on trunk and on the head. Save `ev-watch-regression.png`. Pass when both sides finish the answer, the head row is `completed` after the watchdog runs, and the head ingest recovery job still exists.
 - [ ] Lane 2. Leave a confirm card open past the old stall window. Save `ev-watch-wait.png`. Pass when the task stays `waiting_person` and no second card appears.
 - [ ] Lane 3. Create a running task with no progress past the stall window. Save `ev-watch-stall.png`. Pass when the page shows an alert or the task becomes `stopped`, and no calendar write is added.
 - [ ] Lane 4. Press stop yourself and then let the watchdog run. Save `ev-watch-stop.png`. Pass when the watchdog does not restart the stopped generation.
@@ -737,37 +742,37 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 **Files.**
 
-- [ ] 在 `backend/app/api/chat.py` 的 `ChatRequest` 上增加入口标记。
-- [ ] 在 `backend/app/agents/harness/types.py` 的 `ToolContext` 上增加同样的标记。
+- [ ] 改 `backend/app/api/chat.py`。服务器根据登录和安装包写入表面。忽略 `ChatRequest` 上客户端自报的 web 或 desktop 字段。
+- [ ] 在 `backend/app/agents/harness/types.py` 的 `ToolContext` 上增加服务器写入的表面。
 - [ ] 改 `backend/app/agents/harness/gateway.py` 的 `invoke`。
 - [ ] 新建 `backend/tests/test_web_blocks_local.py`。
 
 **Build.**
 
-- [ ] 读 `ChatRequest`（`chat.py` 第 46 行）和 `ToolContext`（`types.py` 第 12 行）。两边都没有网页或桌面的标记。现有页面是网页，默认标记为 `web`。
-- [ ] `invoke` 在执行前看标记。标记是 `web` 时，契约或名字属于本机的工具直接拒绝，即使模型文本里能看见这个名字。
-- [ ] 本仓库现在没有本机执行器。这一刀只注册一个测试用的本机工具名，用来证明网页拒绝、桌面标记在通过确认闸之后才放行。不要在这一刀交付真正的本机程序。
+- [ ] 读 `ChatRequest`（`chat.py` 第 46 行）和 `ToolContext`（`types.py` 第 12 行）。两边都没有网页或桌面的标记。现有登录都是网页。
+- [ ] 表面由服务器写入 `ToolContext`。依据是已登录的会话，以及调用方是不是服务器认出的桌面安装包。不要把客户端在 `ChatRequest` 里自填的 web 或 desktop 当作依据。网页会话即使把字段填成 `desktop`，本机工具也拒绝。
+- [ ] 本仓库现在没有安装包，所以这一刀没有服务器认可的桌面表面。只注册一个测试用的本机工具名，用来证明网页拒绝和撒谎拒绝。真正的桌面放行留到 `ev-desktop`。不要在这一刀交付真正的本机程序。
 - [ ] AnythingLLM 的瘦网页是仅文档。不要把它的 `server/` 搬进这个 Python 仓库。
 - [ ] 不要做网页遥控一台独立的本机助手。本机执行器留到 `ev-desktop`，而且只存在于安装包里。
 
 **You see.**
 
-- [ ] 现在的网页聊天没有本机操作按钮。测试用的本机工具从网页调用时被拒绝，日历确认卡仍然可用。
+- [ ] 现在的网页聊天没有本机操作按钮。测试用的本机工具从网页调用时被拒绝。请求体自报 `desktop` 时同样被拒绝。日历确认卡仍然可用。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 新建 `tests/test_web_blocks_local.py`。网页标记拒绝测试本机工具。桌面标记在没有有效凭据时也拒绝。桌面标记加有效凭据才放行测试工具。用启动配方运行 `python -m pytest tests/test_web_blocks_local.py tests/test_harness_gateway.py -q`。
+- [ ] 新建 `tests/test_web_blocks_local.py`。网页会话拒绝测试本机工具。同一网页会话把 `ChatRequest` 填成 `desktop` 时仍拒绝，有没有确认凭据都拒绝。不要写一条只靠客户端字段就放行的测试。用启动配方运行 `python -m pytest tests/test_web_blocks_local.py tests/test_harness_gateway.py -q`。
 - [ ] 在 `frontend` 运行 `npm test`。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
 - [ ] Lane 1. Regression lane against trunk. Ask one question and open a calendar card on trunk and on the head. Save `ev-webblock-regression.png`. Pass when the head web page still answers and still shows the calendar card.
 - [ ] Lane 2. Use the web page and invoke the test local tool. Save `ev-webblock-deny.png`. Pass when the tool is denied and no local file or process changes.
-- [ ] Lane 3. Call the same test tool with the desktop surface and no confirm token. Save `ev-webblock-noconfirm.png`. Pass when the call is denied.
-- [ ] Lane 4. Call it with the desktop surface and a valid confirm token in the test. Save `ev-webblock-allow.png`. Pass when the test tool runs and the web page still has no local button.
+- [ ] Lane 3. From the web page, call the test local tool with the request body marked `desktop` and no confirm token. Save `ev-webblock-noconfirm.png`. Pass when the call is denied.
+- [ ] Lane 4. Repeat that call from the same web login with a valid confirm token and the body still marked `desktop`. Save `ev-webblock-lie.png`. Pass when the call is denied and the web page still has no local button.
 - [ ] Lane 5. Press stop on the web page during a normal answer. Save `ev-webblock-stop.png`. Pass when stop still prevents the next model request.
 - [ ] Lane 6. Sign in as a second user on the web page. Save `ev-webblock-identity.png`. Pass when the second user also cannot run the local test tool.
-- [ ] Lane 7. Repeat the denied local call. Save `ev-webblock-repeat.png`. Pass when every repeat is denied and the audit shows `web`.
+- [ ] Lane 7. Repeat the denied local call, including one repeat whose JSON says `desktop`. Save `ev-webblock-repeat.png`. Pass when every repeat is denied and the audit shows the server surface `web`.
 - [ ] Lane 8. Ask for a knowledge-base answer on the web page. Save `ev-webblock-kb.png`. Pass when the answer appears, because the knowledge base stays allowed.
 - [ ] Lane 9. Reload the web chat. Save `ev-webblock-reload.png`. Pass when no local-control button appears after reload.
 - [ ] Lane 10. Search the diff for Electron packaging and for Khoj. Save `ev-webblock-scope.png`. Pass when this PR does not add a desktop package and does not add Khoj.
@@ -806,7 +811,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 **Build.**
 
-- [ ] `search_meeting_mail` 继续只给会前准备做只读搜索。新的收信路径单独入库，并用来源 `mail` 加投递编号交给 `ev-events`。
+- [ ] 收信用推送、定时查看还是别的方式，这一份计划没有选定。做到这一刀再定。不要把未选定的方式写成已经锁定。新邮件单独收下。`search_meeting_mail` 继续只给会前准备做只读搜索。新的收信路径用来源 `mail` 加投递编号交给 `ev-events`。
 - [ ] 发信必须先有确认凭据。`FollowupCard` 今天生成的是 `mailto` 链接。不要把打开链接当成已经发送，也不要把它写成 `external_success`。真正发送要等对方接受之后再标外部成功。
 - [ ] 停止不撤回已经发出的邮件。
 - [ ] 不要接微信、Telegram、Slack 或 WhatsApp。不要做手机客户端。
@@ -869,7 +874,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 **Build.**
 
-- [ ] 仓库里现在没有 Playwright、Selenium 或 Puppeteer。不要把浏览器塞进 `api` 容器。新服务只接受办事任务，并使用 `ev-plug` 的未知结果核对。
+- [ ] 浏览器具体用哪一个库，这一份计划没有选定。做到这一刀再定。不要把 Playwright、Selenium 或 Puppeteer 写成已经选定。仓库里现在也没有这三个库。不要把浏览器塞进 `api` 容器。新服务只接受办事任务，并使用 `ev-plug` 的未知结果核对。登录和付款仍要用户确认。
 - [ ] 先找连接器。没有连接器才打开服务器上的浏览器做搜索、加购、填表和结账。
 - [ ] 登录、付款和发送必须先过确认闸，或者读取保险柜。模型提示词里不放登录秘密。
 - [ ] 只有手机应用里才有的墙，停下来告诉人。不要做云手机，不要在应用里自动点击。
@@ -927,16 +932,16 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] 新增桌面安装包目录和 `scripts/desktop-dev.sh`。
 - [ ] 包内放聊天窗和本机执行器。网页构建不包含这个执行器。
-- [ ] 本机工具只在安装包内注册，并先过 `ev-gate`，再由 `invoke` 按 `desktop` 标记放行。
-- [ ] 不要改 `docker-compose.yml` 里已有服务的职责。
+- [ ] 本机工具只在安装包内注册，并先过 `ev-gate`。服务器因为认出这个安装包才把表面写成 `desktop`。客户端把 `ChatRequest` 填成 `desktop` 不算数。
+- [ ] 不要改 `docker-compose.yml` 里已有服务的职责。允许保留 `ev-errands` 新增的那一个专用浏览器服务。
 - [ ] 新建 `backend/tests/test_desktop_surface.py`。
 
 **Build.**
 
-- [ ] 读 `docker-compose.yml`。已有 `postgres`、`qdrant`、`redis`、`minio`、`sandbox`、`sandbox-runner`、`eval`、`api`、`worker`、`beat`、`nginx`。这些服务保持原样。向量库继续用 Qdrant。不要换成 pgvector 或 LanceDB。
-- [ ] 仓库没有 Electron 或 Tauri 目录。`frontend/package-lock.json` 里的 `electron-to-chromium` 是浏览器兼容表。桌面应用还不存在。
+- [ ] 读 `docker-compose.yml`。写作时已有 `postgres`、`qdrant`、`redis`、`minio`、`sandbox`、`sandbox-runner`、`eval`、`api`、`worker`、`beat`、`nginx`。这些服务的职责保持原样。向量库继续用 Qdrant。不要换成 pgvector 或 LanceDB。验收时对照 `ev-errands` 完成后的服务名单，不要对照写作时的 `release`。那份名单上多出来的只能是 `ev-errands` 的那一个浏览器服务。
+- [ ] 仓库没有 Electron 或 Tauri 目录。`frontend/package-lock.json` 里的 `electron-to-chromium` 是浏览器兼容表。桌面应用还不存在。打包方式仍待定。建议用 Electron，因为现有 Vite 前端可以嵌进去，而且 PR #77 更靠近这个选择。做到这一刀时可以按 Electron 做，除非当时发现明显不合适。这个建议不是定案，也不要把它写成已经否决 Tauri。
 - [ ] 安装包里的本机动作包括打开文件和运行程序。看屏幕再点击的视觉操控不在这一刀里。
-- [ ] 网页构建即使能在工具清单里看到本机名字，执行端仍按 `ev-webblock` 拒绝。
+- [ ] 网页构建即使能在工具清单里看到本机名字，执行端仍按 `ev-webblock` 拒绝。网页会话把 `ChatRequest` 填成 `desktop` 时也拒绝。
 - [ ] `sandbox-runner` 继续是服务器上的断网跑代码服务。不要把它换成 Khoj 的 Terrarium，也不要把 Khoj 代码并进仓库。
 - [ ] Leon 的 `apps/web` 和 Eigent 的 `electron/` 是仅文档，用来对照「聊天和本机在同一个应用里」。不要把这两个仓库叉进本仓库。
 - [ ] 定时 beat 继续不当助手核，也不签发确认凭据。
@@ -945,11 +950,11 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] `scripts/desktop-dev.sh` 打开的窗口里可以聊天，也可以在确认之后打开一个测试文件。
 - [ ] 同一套界面的网页构建里没有这个打开文件的按钮，接口调用也被拒绝。
-- [ ] Compose 的服务名单与主干一致。
+- [ ] Compose 的服务名单与 `ev-errands` 完成后的名单一致，包含那一个浏览器服务。已有服务的职责不变。
 
 **Verify, unit.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
-- [ ] 新建 `tests/test_desktop_surface.py`。网页标记拒绝本机工具。桌面标记无凭据拒绝。桌面标记有凭据才执行测试动作。用启动配方运行 `python -m pytest tests/test_desktop_surface.py tests/test_web_blocks_local.py -q`。
+- [ ] 新建 `tests/test_desktop_surface.py`。网页会话拒绝本机工具。网页会话自报 `desktop` 也拒绝。只有服务器认出的安装包，并且有凭据，才执行测试动作。用启动配方运行 `python -m pytest tests/test_desktop_surface.py tests/test_web_blocks_local.py -q`。
 
 **Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `grok-4.7-high` at the PR head, per the boot recipe.
 
@@ -957,12 +962,12 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Lane 2. Run `scripts/desktop-dev.sh` and ask an ordinary question. Save `ev-desktop-chat.png`. Pass when the desktop window shows the answer.
 - [ ] Lane 3. In that window, ask to open a test file and confirm the card. Save `ev-desktop-file.png`. Pass when the file opens only after the click.
 - [ ] Lane 4. Ask to open the file and press stop before the click. Save `ev-desktop-stop.png`. Pass when the file does not open.
-- [ ] Lane 5. From the web build, call the same local tool. Save `ev-desktop-web.png`. Pass when the call is denied and the web page shows no local button.
+- [ ] Lane 5. From the web build, call the same local tool while the JSON says `desktop`. Save `ev-desktop-web.png`. Pass when the call is denied and the web page shows no local button.
 - [ ] Lane 6. Confirm a local action, then press stop. Save `ev-desktop-keep.png`. Pass when a file action that already finished is not reverted by stop.
 - [ ] Lane 7. Sign in as a second user in the desktop window. Save `ev-desktop-identity.png`. Pass when the second user cannot confirm the first user's local card.
 - [ ] Lane 8. Click the local confirm card twice. Save `ev-desktop-twice.png`. Pass when the action runs once.
 - [ ] Lane 9. Reload the desktop window after the answer. Save `ev-desktop-reload.png`. Pass when the transcript remains and the local tool does not run again.
-- [ ] Lane 10. Compare Compose services with trunk and search the package for Khoj and for screen-click automation. Save `ev-desktop-scope.png`. Pass when the service list matches trunk, the package has no Khoj tree, and it has no screen-click automation.
+- [ ] Lane 10. Compare Compose services with the `ev-errands` head and search the package for Khoj and for screen-click automation. Save `ev-desktop-scope.png`. Pass when the service list matches that head, including its one browser service, existing service duties are unchanged, the package has no Khoj tree, and it has no screen-click automation.
 
 **Verify, perf.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -1003,12 +1008,14 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - `asyncio.to_thread` 上的取消只从源码读到 `chat.py` 第 288 行和第 494 行。本轮没有计时。
 - 桌面安装包不存在，所以没有启动时间。
 - DeepSeek 自带联网的请求字段本轮没有从厂商文档核对。`ev-net` 要求动工时再读。
-- 服务器浏览器选用哪一个库，本轮没有定。`ev-errands` 只定了独立 Compose 服务和确认闸。
+- 服务器浏览器选用哪一个库，本轮没有定。`ev-errands` 只定了独立 Compose 服务和确认闸。这是待定，不是定案。
+- 邮件用推送、定时查看还是别的方式收进来，本轮没有定。做到 `ev-mail` 再定。新邮件单独收下，以及 `mailto` 不等于已经发出，这两条已经定了。
+- 桌面怎么打包，本轮没有定。建议用 Electron，因为现有 Vite 前端可以嵌进去，PR #77 也更靠近这个选择。做到 `ev-desktop` 时可以按这个建议做，除非当时发现明显不合适。建议不是定案。
 
 图上留下的两处做法，本计划选定如下，避免执行时再发明一次。
 
 - 事件撞上正在等人确认的任务时，投递编号重复就忽略。指纹相同就保留原卡。指纹不同就作废旧卡并只重签一张。重签期间新来的不同事件只排队，不执行。
-- 已经停止的代次不写长期记忆。会话原文可以留下。
+- 已经 `stopped` 的代次不写长期记忆，也不为记忆再调模型。这条在 `ev-stop` 做。会话原文可以留下。`ev-memory` 只加账本。
 
 ## Appendix B. Alternatives rejected
 
@@ -1042,7 +1049,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 `ev-events`、`ev-memory` 和 `ev-watch` 都可能碰到同一张打开的卡。`publish` 必须按指纹幂等。看门狗不能成为第四个写入者。
 
-从 `ev-stop` 合入到 `ev-memory` 合入之前，`chat.py` 第 681 到 687 行仍会在停止后的回合写记忆。这是计划中的中间状态。不要在 `ev-stop` 里顺手改掉它，否则两个 PR 抢 `chat.py` 的同一段。
+`ev-stop` 如果只取消 asyncio 外壳，`chat.py` 第 681 到 687 行仍会在停止后的回合写记忆，并可能为此再调模型。停止标志必须在这个 `finally` 里可见。不要把「停止后不写记忆」留到 `ev-memory`。
 
 `ev-webblock` 用测试工具名证明拒绝。真正的本机程序要等 `ev-desktop`。网页车道不能把「没有按钮」写成「执行器已经存在」。
 
@@ -1069,6 +1076,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - `docs/envisioned-product/envisioned-oss-map-product.md` 和同名 JSON
 - `docs/envisioned-product/envisioned-oss-map-harness.md` 和同名 JSON
 - `docs/envisioned-product/personal-agent-oss-comparison.md`
+- `docs/envisioned-product/decision-trail.md`
 
 本仓库的产品主干是 `release`。写作时的提交是 `f567fdd`。2026-11-10 读到的插件缓存根目录是 `/home/ubuntu/.cursor/plugins/cache/cursor-public/9717366/de8ee15dd1194627d21eb5fcd41cb1873208dabb/skills/`。
 
@@ -1084,7 +1092,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 下面是执行时的查找表。步骤以各 PR 的 Build 为准。
 
-① 入口。现在只有网页。`ChatRequest` 在 `chat.py` 第 46 行。邮件搜索在 `gmail.py` 第 57 行，只读。没有桌面目录。抄 Leon 和 AnythingLLM 属于仅文档。Khoj 网页只可侧车。
+① 入口。现在只有网页。`ChatRequest` 在 `chat.py` 第 46 行。邮件搜索在 `gmail.py` 第 57 行，只读。没有桌面目录。表面由服务器根据登录和安装包判定，不信客户端自报。抄 Leon 和 AnythingLLM 属于仅文档。Khoj 网页只可侧车。
 
 ④ 派活。`plan_tools` 在 `workflow.py` 第 239 行，位于 `plan_node`。它今天不直接调工具。DSH 无路径。
 
@@ -1098,9 +1106,9 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 ③ 事件。本仓库没有收件箱。抄 `O-EVENT` 和 `O-RECEIPT`。`G-EVENT` 说完整闭环没有单一实现。
 
-⑤ 任务和授权。没有任务行。`ToolContext` 在 `types.py` 第 12 行。身份在 `auth.py`。白名单在章程里。本回合允许列表由 `ev-task` 写下。
+⑤ 任务和授权。没有任务行。`ToolContext` 在 `types.py` 第 12 行。身份在 `auth.py`。白名单在章程里。本回合允许列表由 `ev-task` 写下。五种状态是 `running`、`waiting_person`、`waiting_resource`、`completed`、`stopped`。正常做完是 `completed`。
 
-⑦ 确认闸。`consume_schedule_claim` 在 `schedule_confirm.py` 第 96 行对空 token 直接返回。`test_create_without_a_token_still_writes` 在测试文件第 54 行。外壳在 `chat.py` 第 533 行签发。抄 `O-CONFIRM`、`O-LIVE`、`D-APPROVAL`。作用范围和代次是本仓库要补的，见 `G-GATE`。
+⑦ 确认闸。`consume_schedule_claim` 在 `schedule_confirm.py` 第 96 行对空 token 直接返回。`test_create_without_a_token_still_writes` 在测试文件第 54 行。外壳在 `chat.py` 第 533 行签发。抄 `O-CONFIRM`、`O-LIVE`、`D-APPROVAL`。作用范围在本仓库补，见 `G-GATE`。同一件写的唯一键是用户、动作和参数指纹。代次不在这把钥匙里。
 
 ⑧ 插头。`ToolSpec` 在 `registry.py` 第 12 行。日历真写入在 `api/calendar.py`，不经过 `invoke`。未知结果见 `calendar_google.py` 第 1190 行和 `calendar_secrets.py` 第 357 行。三类契约是本图的目标。上游只核验了可重放分支。
 
