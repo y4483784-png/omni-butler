@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -12,7 +13,9 @@ from app.agents.harness.critique import (
     should_ground_answer,
 )
 from app.agents.harness import gateway
-from app.agents.harness.types import ToolContext
+from app.agents.harness.effects import decide_replay
+from app.agents.harness.execution import execution_denial
+from app.agents.harness.types import ToolContext, ToolResult, UnknownWrite
 from app.agents.harness.verify import verify_state
 from app.agents.context import ContextBundle, compose_answer_messages
 from app.agents.dispatch import TurnAssignment, sse_intent
@@ -28,11 +31,94 @@ from app.core.prompts import (
 )
 from app.core.generation_stop import GenerationStopped, is_stopped
 from app.core.llm import Role, Spoken, answer_pair, complete_text
+from app.services.calendar_factory import calendar_provider_for
 from app.services.memory import load_memory_prompt
+from app.services.schedule_confirm import CONFIRM_DETAIL, schedule_card_needs_claim
 
 ToolName = Literal["kb", "web", "calendar", "sandbox"]
 
 _MAX_ITERATIONS = 4
+
+
+@dataclass(frozen=True)
+class LoopStep:
+    tool: str
+    user_id: int
+    task_id: int | None
+    args: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class Halted:
+    pass
+
+
+@dataclass(frozen=True)
+class Denied:
+    tool: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class ReadDone:
+    tool: str
+
+
+@dataclass(frozen=True)
+class ConfirmDraft:
+    sentence: str
+    card: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class UnsettledUnknown:
+    report: UnknownWrite
+
+
+@dataclass(frozen=True)
+class Reconciled:
+    external_id: str
+    found_event_id: str | None
+    sentence: str
+
+
+@dataclass(frozen=True)
+class Refused:
+    sentence: str
+
+
+StepOutcome = Halted | Denied | ReadDone | ConfirmDraft | UnsettledUnknown | Reconciled | Refused
+
+
+@dataclass(frozen=True)
+class RunRead:
+    step: LoopStep
+
+
+@dataclass(frozen=True)
+class RunConfirm:
+    step: LoopStep
+
+
+@dataclass(frozen=True)
+class Stopped:
+    pass
+
+
+@dataclass(frozen=True)
+class Blocked:
+    prior: StepOutcome
+
+
+@dataclass(frozen=True)
+class NotAllowed:
+    tool: str
+    reason: str
+
+
+Admission = RunRead | RunConfirm | Stopped | Blocked | NotAllowed
+
+_CLOSED = (ConfirmDraft, Reconciled, Refused, Denied, UnsettledUnknown, Halted)
 
 
 class WorkflowState(TypedDict, total=False):
@@ -75,6 +161,7 @@ class WorkflowState(TypedDict, total=False):
     analysis_uncomputable: bool
     sandbox_replanned: bool
     sandbox_feedback: str
+    step_outcome: StepOutcome
 
 
 class WorkflowResult(TypedDict):
@@ -198,6 +285,104 @@ def _halted_result() -> WorkflowResult:
     }
 
 
+def admit(
+    step: LoopStep,
+    prior: StepOutcome | None,
+    *,
+    db: object,
+) -> Admission:
+    stopped = is_stopped()
+    reason = execution_denial(
+        db,
+        user_id=step.user_id,
+        task_id=step.task_id,
+        tool=step.tool,
+    )
+    if stopped:
+        return Stopped()
+    if isinstance(prior, (Reconciled, Refused, ConfirmDraft, Denied, Halted, UnsettledUnknown)):
+        return Blocked(prior)
+    if reason:
+        return NotAllowed(step.tool, reason)
+    if step.tool == "calendar":
+        return RunConfirm(step)
+    return RunRead(step)
+
+
+def classify_tool_result(
+    admission: RunConfirm | RunRead,
+    result: ToolResult,
+) -> StepOutcome:
+    if result.unknown_write is not None:
+        return UnsettledUnknown(result.unknown_write)
+    card = result.schedule_card
+    if (
+        isinstance(admission, RunConfirm)
+        and isinstance(card, dict)
+        and schedule_card_needs_claim(card)
+    ):
+        return ConfirmDraft(sentence=result.direct_answer or "", card=card)
+    return ReadDone(admission.step.tool)
+
+
+def settle_unknown(
+    report: UnknownWrite,
+    *,
+    db: Session,
+    user_id: int,
+) -> Reconciled | Refused:
+    choice = decide_replay(
+        report.effect,
+        attempt=report.attempt,
+        external_id=report.external_id,
+        prior_external_id=report.prior_external_id,
+    )
+    sentence = CONFIRM_DETAIL["unknown"]
+    if choice != "reconcile":
+        return Refused(sentence)
+    provider = calendar_provider_for(db, user_id)
+    lookup = getattr(provider, "lookup_inserted_event", None)
+    item = lookup(report.external_id) if lookup is not None else None
+    found = None
+    if isinstance(item, dict) and str(item.get("id") or "").strip():
+        found = str(item["id"]).strip()
+    return Reconciled(report.external_id, found, sentence)
+
+
+def project_reply(outcome: StepOutcome, drafted: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(outcome, ConfirmDraft):
+        drafted["direct_answer"] = outcome.sentence
+        drafted["llm_messages"] = []
+        drafted["schedule_card"] = outcome.card
+        return drafted
+    if isinstance(outcome, (Reconciled, Refused)):
+        drafted["direct_answer"] = outcome.sentence
+        drafted["llm_messages"] = []
+        drafted["schedule_card"] = None
+        return drafted
+    if isinstance(outcome, Denied):
+        drafted["direct_answer"] = outcome.reason
+        drafted["llm_messages"] = []
+        drafted["schedule_card"] = None
+        return drafted
+    if isinstance(outcome, UnsettledUnknown):
+        drafted["direct_answer"] = CONFIRM_DETAIL["unknown"]
+        drafted["llm_messages"] = []
+        drafted["schedule_card"] = None
+        return drafted
+    if isinstance(outcome, Halted):
+        drafted["direct_answer"] = None
+        drafted["llm_messages"] = []
+        drafted["schedule_card"] = None
+        return drafted
+    card = drafted.get("schedule_card")
+    if isinstance(card, dict) and schedule_card_needs_claim(card):
+        drafted["schedule_card"] = None
+    if drafted.get("direct_answer"):
+        drafted["llm_messages"] = []
+    return drafted
+
+
 def run_agent_workflow(
     db: Session,
     *,
@@ -221,8 +406,6 @@ def run_agent_workflow(
     )
 
     def retrieve_node(state: WorkflowState) -> dict[str, Any]:
-        if is_stopped():
-            return _cutoff()
         tool = state.get("next_tool")
         ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
         hist = list(ctx.get("tool_history") or state.get("history") or [])
@@ -231,15 +414,46 @@ def run_agent_workflow(
         it = int(state.get("iteration") or 1)
         evidence = list(state.get("evidence") or [])
 
+        if is_stopped():
+            return {**_cutoff(), "step_outcome": Halted()}
         if not tool:
             steps.append(f"第 {it} 轮：无可用工具，跳过")
             return {"thinking_steps": steps, "evidence": _reindex(evidence)}
+
+        # Extra args reserved for governance checks (e.g. deny sandbox network escapes).
+        tool_args: dict[str, Any] = {}
+        if tool == "sandbox":
+            tool_args = {"network": "none", "read_only": True}
+            if state.get("sandbox_feedback"):
+                tool_args["feedback"] = state.get("sandbox_feedback")
+            if state.get("analysis_ir"):
+                tool_args["prior_ir"] = state.get("analysis_ir")
+
+        step = LoopStep(
+            tool=tool,
+            user_id=state.get("user_id") or 1,
+            task_id=state.get("task_id"),
+            args=tool_args,
+        )
+        admission = admit(step, state.get("step_outcome"), db=db)
+        if isinstance(admission, Stopped):
+            return {**_cutoff(), "step_outcome": Halted()}
+        if isinstance(admission, Blocked):
+            return {"next_tool": None, "need_more": False, "step_outcome": admission.prior}
+        if isinstance(admission, NotAllowed):
+            return {
+                "next_tool": None,
+                "need_more": False,
+                "direct_answer": admission.reason,
+                "schedule_card": None,
+                "step_outcome": Denied(step.tool, admission.reason),
+            }
 
         tool_ctx = ToolContext(
             db=db,
             message=msg,
             history=hist,
-            user_id=state.get("user_id") or 1,
+            user_id=step.user_id,
             document_ids=state.get("document_ids") or None,
             iteration=it,
             pending_calendar=state.get("pending_calendar"),
@@ -254,26 +468,53 @@ def run_agent_workflow(
             task_id=state.get("task_id"),
             generation=state.get("generation"),
         )
-        # Extra args reserved for governance checks (e.g. deny sandbox network escapes).
-        tool_args: dict[str, Any] = {}
-        if tool == "sandbox":
-            tool_args = {"network": "none", "read_only": True}
-            if state.get("sandbox_feedback"):
-                tool_args["feedback"] = state.get("sandbox_feedback")
-            if state.get("analysis_ir"):
-                tool_args["prior_ir"] = state.get("analysis_ir")
-
-        result = gateway.invoke(tool, tool_ctx, tool_args)
+        result = gateway.invoke(step.tool, tool_ctx, step.args)
+        if is_stopped():
+            return {**_cutoff(), "step_outcome": Halted()}
+        outcome = classify_tool_result(admission, result)
         prior_steps = list(steps)
         update = result.as_state_update(base_evidence=evidence)
         update["thinking_steps"] = prior_steps + list(update.get("thinking_steps") or [])
+        update["step_outcome"] = outcome
+        if isinstance(outcome, UnsettledUnknown):
+            update["schedule_card"] = None
+            update["direct_answer"] = None
+            update["answer_reasoning"] = None
+        if isinstance(outcome, ConfirmDraft):
+            update["schedule_card"] = outcome.card
+            update["direct_answer"] = outcome.sentence
+        if isinstance(outcome, ReadDone):
+            card = update.get("schedule_card")
+            if isinstance(card, dict) and schedule_card_needs_claim(card):
+                update["schedule_card"] = None
         if result.denied and "calendar_reply" not in update:
             update.setdefault("need_more", False)
         return update
 
     def reflect_node(state: WorkflowState) -> dict[str, Any]:
         if is_stopped():
-            return _cutoff()
+            return {**_cutoff(), "step_outcome": Halted()}
+        outcome = state.get("step_outcome")
+        if isinstance(outcome, UnsettledUnknown):
+            settled = settle_unknown(
+                outcome.report,
+                db=db,
+                user_id=state.get("user_id") or 1,
+            )
+            steps = list(state.get("thinking_steps") or [])
+            steps.append("写入结果未知，改为核对，不再写入")
+            return {
+                "next_tool": None,
+                "pending_tools": [],
+                "need_more": False,
+                "schedule_card": None,
+                "direct_answer": settled.sentence,
+                "answer_reasoning": None,
+                "step_outcome": settled,
+                "thinking_steps": steps,
+            }
+        if isinstance(outcome, (ConfirmDraft, Denied, Halted, Reconciled, Refused)):
+            return {"next_tool": None, "need_more": False, "step_outcome": outcome}
         steps = list(state.get("thinking_steps") or [])
         pending = list(state.get("pending_tools") or [])
         it = int(state.get("iteration") or 1)
@@ -337,7 +578,31 @@ def run_agent_workflow(
 
     def answer_node(state: WorkflowState) -> dict[str, Any]:
         if is_stopped():
-            return _cutoff()
+            return {**_cutoff(), "step_outcome": Halted()}
+        outcome = state.get("step_outcome")
+        if isinstance(outcome, _CLOSED):
+            ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
+            evidence = list(state.get("evidence") or [])
+            shell = {
+                "intent": sse_intent(
+                    forced=bool(state.get("forced")),
+                    evidence=evidence,
+                    pending_had_kb=bool(state.get("needs_kb")) or bool(state.get("forced")),
+                    pending_had_web=bool(state.get("needs_web")),
+                    pending_had_calendar=bool(state.get("needs_calendar")),
+                    pending_had_sandbox=bool(state.get("needs_sandbox")),
+                ),
+                "thinking_steps": list(state.get("thinking_steps") or []),
+                "artifact": state.get("artifact"),
+                "context_stats": dict(ctx.get("stats") or {}),
+                "answer_reasoning": state.get("answer_reasoning"),
+                "pending_calendar": state.get("pending_calendar"),
+                "citations": [],
+                "llm_messages": [],
+                "direct_answer": state.get("direct_answer"),
+                "schedule_card": state.get("schedule_card"),
+            }
+            return project_reply(outcome, shell)
         ctx = state.get("context") if isinstance(state.get("context"), dict) else ctx_state
         hist = list(state.get("history") or ctx.get("answer_history") or [])
         msg = state.get("message") or ""
@@ -387,18 +652,21 @@ def run_agent_workflow(
                 thinking = list(state.get("thinking_steps") or [])
                 thinking.append("沙箱标明指标不可算，直接拒答")
                 canned = answer_pair(canned=direct)
-                return {
-                    "intent": intent,
-                    "citations": [],
-                    "llm_messages": [],
-                    "thinking_steps": thinking,
-                    "schedule_card": state.get("schedule_card"),
-                    "direct_answer": canned["direct_answer"],
-                    "answer_reasoning": canned["answer_reasoning"],
-                    "pending_calendar": state.get("pending_calendar"),
-                    "artifact": state.get("artifact"),
-                    "context_stats": compose_stats,
-                }
+                return project_reply(
+                    outcome or ReadDone(tool=""),
+                    {
+                        "intent": intent,
+                        "citations": [],
+                        "llm_messages": [],
+                        "thinking_steps": thinking,
+                        "schedule_card": state.get("schedule_card"),
+                        "direct_answer": canned["direct_answer"],
+                        "answer_reasoning": canned["answer_reasoning"],
+                        "pending_calendar": state.get("pending_calendar"),
+                        "artifact": state.get("artifact"),
+                        "context_stats": compose_stats,
+                    },
+                )
             pool_text, included = build_pool_prompt(evidence)
             sandbox_note = ""
             if any(e.get("source_type") == "sandbox" for e in evidence):
@@ -506,18 +774,21 @@ def run_agent_workflow(
             state = {**state, **paired}
             llm_messages = []
 
-        return {
-            "intent": intent,
-            "citations": citations,
-            "llm_messages": llm_messages,
-            "thinking_steps": thinking,
-            "schedule_card": state.get("schedule_card"),
-            "direct_answer": direct,
-            "answer_reasoning": state.get("answer_reasoning"),
-            "pending_calendar": state.get("pending_calendar"),
-            "artifact": state.get("artifact"),
-            "context_stats": compose_stats,
-        }
+        return project_reply(
+            outcome or ReadDone(tool=""),
+            {
+                "intent": intent,
+                "citations": citations,
+                "llm_messages": llm_messages,
+                "thinking_steps": thinking,
+                "schedule_card": state.get("schedule_card"),
+                "direct_answer": direct,
+                "answer_reasoning": state.get("answer_reasoning"),
+                "pending_calendar": state.get("pending_calendar"),
+                "artifact": state.get("artifact"),
+                "context_stats": compose_stats,
+            },
+        )
 
     def after_plan(state: WorkflowState) -> Literal["retrieve_node", "answer_node"]:
         return "retrieve_node" if state.get("next_tool") else "answer_node"

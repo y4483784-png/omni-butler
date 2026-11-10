@@ -603,7 +603,7 @@ async def chat(
                             ttft_logged = True
                         acc.append(direct_answer)
                         yield _sse({"type": "token", "content": direct_answer})
-                else:
+                elif llm_messages:
                     answer_buf = RedactBuffer()
                     reason_buf = RedactBuffer()
                     def _note_ttft() -> str | None:
