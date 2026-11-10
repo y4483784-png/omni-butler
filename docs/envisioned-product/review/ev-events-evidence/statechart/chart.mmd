@@ -1,0 +1,78 @@
+---
+title: "事件收件箱"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 接收
+    lg1: 直通
+    lg2: 派活
+    lg3: 确认卡
+    lg4: 停止
+    lg5: 成功
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 yellow
+  class lg3 orange
+  class lg4 tan
+  class lg5 purple
+  s0: 还没有事件
+  s1: 模型决定不动
+  s2: 噪声只被接收
+  s3: 任务已经完成
+  s4: 任务正在进行
+  s5: 任务已经停止
+  s6: 任务正在等人确认
+  s7: 没有进行中的任务就新开一代
+  s8: 指纹相同所以原卡还在
+  s9: 完成后另开了新任务
+  s10: 事件进入正在进行的这一代
+  s11: 事件在排队
+  s12: 旧卡已作废且只剩一张新卡
+  s13: 停止的这一代没有写
+  s14: 后来的事件只排队
+  s15: 对方接受后记下外部成功
+  [*] --> s0
+  s0 --> s1: 模型决定不动
+  s0 --> s2: 程序丢掉噪声
+  s0 --> s3: 这一代已经做完
+  s0 --> s4: 这一代正在进行
+  s0 --> s5: 这一代已经停止
+  s0 --> s6: 这一代正在等人
+  s0 --> s7: 没有进行中的任务就另开一代
+  s3 --> s1: 模型决定不动
+  s3 --> s2: 程序丢掉噪声
+  s3 --> s9: 完成后另开新任务
+  s4 --> s1: 模型决定不动
+  s4 --> s2: 程序丢掉噪声
+  s4 --> s10: 进入正在进行的这一代
+  s5 --> s1: 模型决定不动
+  s5 --> s2: 程序丢掉噪声
+  s5 --> s13: 停止的这一代不写
+  s6 --> s1: 模型决定不动
+  s6 --> s8: 指纹相同就保留原卡
+  s6 --> s2: 程序丢掉噪声
+  s6 --> s11: 没有新卡就先排队
+  s6 --> s12: 指纹不同就作废旧卡并重签一张
+  s8 --> s12: 后来又来一条不同的事件
+  s11 --> s12: 后来又来一条不同的事件
+  s12 --> s11: 后来又来一条不同的事件
+  s11 --> s14: 这一条收件结束
+  s8 --> s15: 这时才记下外部成功
+  s12 --> s15: 这时才记下外部成功
+  s15 --> s12: 后来又来一条不同的事件
+  s15 --> s11: 后来又来一条不同的事件
+  class s0 blue
+  class s3 blue
+  class s4 teal
+  class s5 tan
+  class s6 orange
+  class s7 yellow
+  class s8 orange
+  class s9 yellow
+  class s10 teal
+  class s11 orange
+  class s12 orange
+  class s13 tan
+  class s14 orange
+  class s15 purple
