@@ -142,9 +142,20 @@ def test_chat_rejects_sensitive_input(auth_client: TestClient, monkeypatch):
     monkeypatch.setattr(mod.settings, "sensitive_use_builtin", False)
     monkeypatch.setattr(mod.settings, "sensitive_words", "forbiddenxyz")
     sid = _seed_session_with_kb()
+    from app.models.models import User
+    from app.services import task_run
+
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.external_id == "admin").one()
+        admin_id = admin.id
+    finally:
+        db.close()
+    before = task_run.list_for_user(user_id=admin_id)
     r = auth_client.post("/api/chat", json={"session_id": sid, "message": "tell me forbiddenxyz"})
     assert r.status_code == 400
     assert "违规" in r.json()["detail"]
+    assert task_run.list_for_user(user_id=admin_id) == before
 
 
 def test_chat_redacts_direct_answer(auth_client: TestClient, monkeypatch):
