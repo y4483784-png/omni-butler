@@ -54,7 +54,7 @@ def anchors() -> None:
     require("task_run.begin_turn" in chat, "chat.py no longer starts a turn")
     require("task_run.wait_for_person" in chat, "chat.py no longer waits on a confirm card")
     require("task_run.finish" in chat, "chat.py no longer finishes a turn")
-    require("task_run.stop" not in chat, "chat.py calls stop. This knife leaves that to tests.")
+    require("task_run.stop(" in chat, "chat.py no longer records stop when the client leaves")
 
 
 def write_cfg(directory: Path, break_completed_stop: bool) -> Path:

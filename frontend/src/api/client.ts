@@ -317,6 +317,7 @@ export async function* streamChat(
       if (!json) continue;
       try {
         const evt = JSON.parse(json);
+        if (handlers?.signal?.aborted) return;
         if (evt.type === "token") yield evt.content as string;
         else if (evt.type === "session_title") handlers?.onTitle?.(evt.content as string);
         else if (evt.type === "citations") handlers?.onCitations?.(evt.citations || []);
