@@ -1,0 +1,4 @@
+nproc 4
+ 16:13:06 up 9 min,  0 user,  load average: 0.07, 0.14, 0.06
+3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]
+pytest 8.4.2

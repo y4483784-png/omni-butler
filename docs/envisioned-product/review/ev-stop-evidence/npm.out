@@ -1,0 +1,194 @@
+
+> omni-butler-frontend@0.1.0 test
+> TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs tests/scheduleCard.test.mjs tests/scheduleCardMerge.test.mjs tests/thinkingFold.test.mjs tests/briefingCard.test.mjs tests/followupCard.test.mjs
+
+TAP version 13
+# Subtest: meeting brief card does not write or invent a confirm action
+ok 1 - meeting brief card does not write or invent a confirm action
+  ---
+  duration_ms: 0.767156
+  type: 'test'
+  ...
+# Subtest: schedule card returns null before a confirm label for a non-write mode
+ok 2 - schedule card returns null before a confirm label for a non-write mode
+  ---
+  duration_ms: 1.129494
+  type: 'test'
+  ...
+# Subtest: old stored brief still has a mail section and an empty docs section
+ok 3 - old stored brief still has a mail section and an empty docs section
+  ---
+  duration_ms: 28.415022
+  type: 'test'
+  ...
+# Subtest: chat renders the brief above the markdown answer
+ok 4 - chat renders the brief above the markdown answer
+  ---
+  duration_ms: 0.255022
+  type: 'test'
+  ...
+# Subtest: followup card names the official source and does not reconnect for Meet
+ok 5 - followup card names the official source and does not reconnect for Meet
+  ---
+  duration_ms: 0.820909
+  type: 'test'
+  ...
+# Subtest: chat passes onAsk into the followup card
+ok 6 - chat passes onAsk into the followup card
+  ---
+  duration_ms: 0.2326
+  type: 'test'
+  ...
+# Subtest: cancel card title is read only
+ok 7 - cancel card title is read only
+  ---
+  duration_ms: 1.984255
+  type: 'test'
+  ...
+# Subtest: a slot click asks for a source card and does not write
+ok 8 - a slot click asks for a source card and does not write
+  ---
+  duration_ms: 0.286656
+  type: 'test'
+  ...
+# Subtest: list card is time and title without a confirm button
+ok 9 - list card is time and title without a confirm button
+  ---
+  duration_ms: 0.262826
+  type: 'test'
+  ...
+# Subtest: block form shows duration and hides participants
+ok 10 - block form shows duration and hides participants
+  ---
+  duration_ms: 0.230432
+  type: 'test'
+  ...
+# Subtest: google confirm submits the card external id
+ok 11 - google confirm submits the card external id
+  ---
+  duration_ms: 0.337003
+  type: 'test'
+  ...
+# Subtest: non-block form adds guests beside the schedule form
+ok 12 - non-block form adds guests beside the schedule form
+  ---
+  duration_ms: 0.293973
+  type: 'test'
+  ...
+# Subtest: named guest round-trips as email and name
+ok 13 - named guest round-trips as email and name
+  ---
+  duration_ms: 30.133107
+  type: 'test'
+  ...
+# Subtest: list card renders above the advice text
+ok 14 - list card renders above the advice text
+  ---
+  duration_ms: 0.212182
+  type: 'test'
+  ...
+# Subtest: formatFollowUtterance matches the pointed minutes sentence
+ok 15 - formatFollowUtterance matches the pointed minutes sentence
+  ---
+  duration_ms: 1.831407
+  type: 'test'
+  ...
+# Subtest: follow mail buttons stay in the browser
+ok 16 - follow mail buttons stay in the browser
+  ---
+  duration_ms: 0.368653
+  type: 'test'
+  ...
+# Subtest: chat renders followup outside the schedule card
+ok 17 - chat renders followup outside the schedule card
+  ---
+  duration_ms: 0.167139
+  type: 'test'
+  ...
+# Subtest: list rows offer follow-up beside prep
+ok 18 - list rows offer follow-up beside prep
+  ---
+  duration_ms: 0.138653
+  type: 'test'
+  ...
+# Subtest: a stream refresh keeps a confirmed card
+ok 19 - a stream refresh keeps a confirmed card
+  ---
+  duration_ms: 0.68745
+  type: 'test'
+  ...
+# Subtest: a stream refresh keeps a cancelled card
+ok 20 - a stream refresh keeps a cancelled card
+  ---
+  duration_ms: 0.090513
+  type: 'test'
+  ...
+# Subtest: a stream refresh keeps an expired draft
+ok 21 - a stream refresh keeps an expired draft
+  ---
+  duration_ms: 0.159532
+  type: 'test'
+  ...
+# Subtest: a stream refresh still replaces a live draft
+ok 22 - a stream refresh still replaces a live draft
+  ---
+  duration_ms: 0.115232
+  type: 'test'
+  ...
+# Subtest: hydration keeps the confirmed card on the same claim
+ok 23 - hydration keeps the confirmed card on the same claim
+  ---
+  duration_ms: 0.145235
+  type: 'test'
+  ...
+# Subtest: offset-less expiry is UTC, so a new card is not already expired in UTC+8
+ok 24 - offset-less expiry is UTC, so a new card is not already expired in UTC+8
+  ---
+  duration_ms: 0.918042
+  type: 'test'
+  ...
+# Subtest: non-drafts and blank expiry stay open
+ok 25 - non-drafts and blank expiry stay open
+  ---
+  duration_ms: 0.107788
+  type: 'test'
+  ...
+# Subtest: ScheduleCard writes expiresAt with toISOString
+ok 26 - ScheduleCard writes expiresAt with toISOString
+  ---
+  duration_ms: 0.405333
+  type: 'test'
+  ...
+# Subtest: a finished reasoning-only row hydrates collapsed
+ok 27 - a finished reasoning-only row hydrates collapsed
+  ---
+  duration_ms: 0.620984
+  type: 'test'
+  ...
+# Subtest: reasoning opens the block and the first answer token collapses it
+ok 28 - reasoning opens the block and the first answer token collapses it
+  ---
+  duration_ms: 0.100942
+  type: 'test'
+  ...
+# Subtest: an unsaved warning does not replace the previous answer
+ok 29 - an unsaved warning does not replace the previous answer
+  ---
+  duration_ms: 0.157549
+  type: 'test'
+  ...
+# Subtest: a saved partial from this turn keeps the warning until the error row exists
+ok 30 - a saved partial from this turn keeps the warning until the error row exists
+  ---
+  duration_ms: 0.128773
+  type: 'test'
+  ...
+1..30
+# tests 30
+# suites 0
+# pass 30
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 153.726511
