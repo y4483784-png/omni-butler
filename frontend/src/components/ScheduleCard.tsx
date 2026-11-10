@@ -252,6 +252,7 @@ export function ScheduleCard({
     if (card.phase === "cancelled") return "未确认";
     if (card.status === "cancelled") return "已撤销";
     if (card.phase === "confirmed" || legacy) return card.status === "cancelled" ? "已撤销" : "已安排";
+    if (card.phase === "unknown") return "结果未知，未再次写入";
     if (mode === "cancel") return "待确认删除";
     if (mode === "choose") return "请选择";
     return "待确认";

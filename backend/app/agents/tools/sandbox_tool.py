@@ -71,6 +71,7 @@ register(
     ToolSpec(
         name="sandbox",
         risk="high",
+        effect="read",
         execute=execute_sandbox,
         description="Run tabular analysis inside the Docker sandbox",
     )

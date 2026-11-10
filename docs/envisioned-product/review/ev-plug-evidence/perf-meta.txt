@@ -1,0 +1,4 @@
+nproc 4
+load 0.52 0.24 0.13 1/251 11875
+uptime  15:49:17 up 52 min,  0 user,  load average: 0.52, 0.24, 0.13
+method wall clock date +%s.%N around pytest -q of one file. Fresh sqlite per run. Boot recipe env. Absolute seconds. Not a ratio across files. The durations run is a profile and is not a gate number.

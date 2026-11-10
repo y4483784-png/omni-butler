@@ -81,6 +81,7 @@ class ScheduleConfirmClaim(Base):
     fingerprint = Column(String, nullable=False, default="")
     scope = Column(String, nullable=False, default="")
     generation_ids = Column(Text, nullable=False, default="[]")
+    remote_request_id = Column(String, nullable=False, default="")
 
 
 TASK_RUN_STATUSES = (

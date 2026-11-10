@@ -966,6 +966,7 @@ register(
     ToolSpec(
         name="calendar",
         risk="medium",
+        effect="read",
         execute=execute_calendar,
         description="Prepare a local calendar change for the user to confirm",
     )

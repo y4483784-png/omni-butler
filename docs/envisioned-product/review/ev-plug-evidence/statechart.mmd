@@ -1,0 +1,34 @@
+---
+title: "一次确认会不会写第二次"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 待确认
+    lg1: 结果未知
+    lg2: 已经写入
+    lg3: 已停止
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 teal
+  class lg3 tan
+  s0: 可以确认
+  s1: 已停止且还没写
+  s2: 结果未知
+  s3: 已经写入
+  s4: 已停止且结果未知
+  s5: 已停止且已经写入
+  [*] --> s0
+  s0 --> s1: 停止这一代
+  s0 --> s2: 没有得到答复
+  s0 --> s3: 发送成功
+  s2 --> s4: 停止这一代
+  s2 --> s3: 按编号查询
+  s3 --> s5: 停止这一代
+  s4 --> s5: 按编号查询
+  class s0 blue
+  class s1 tan
+  class s2 orange
+  class s3 teal
+  class s4 tan
+  class s5 tan

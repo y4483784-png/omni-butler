@@ -154,6 +154,11 @@ def _ensure_schedule_confirm_fingerprint() -> None:
                     "ALTER TABLE schedule_confirm_claims "
                     "ADD COLUMN generation_ids TEXT NOT NULL DEFAULT '[]'"
                 )
+            if "remote_request_id" not in names:
+                statements.append(
+                    "ALTER TABLE schedule_confirm_claims "
+                    "ADD COLUMN remote_request_id TEXT NOT NULL DEFAULT ''"
+                )
             for statement in statements:
                 conn.execute(text(statement))
         else:
@@ -162,6 +167,7 @@ def _ensure_schedule_confirm_fingerprint() -> None:
                 ("fingerprint", "VARCHAR DEFAULT ''"),
                 ("scope", "VARCHAR DEFAULT ''"),
                 ("generation_ids", "TEXT DEFAULT '[]'"),
+                ("remote_request_id", "VARCHAR DEFAULT ''"),
             ):
                 conn.execute(
                     text(

@@ -14,6 +14,7 @@ _DEFAULT_OMNI: dict[str, Any] = {
     "mode": "standard",
     "allowed_tools": ["kb", "web", "calendar", "sandbox"],
     "tool_risk": {"kb": "low", "web": "medium", "calendar": "medium", "sandbox": "high"},
+    "tool_effect": {"kb": "read", "web": "read", "calendar": "read", "sandbox": "read"},
     "limits": {
         "web_snippet_max_chars": 400,
         "web_content_max_chars": 2000,

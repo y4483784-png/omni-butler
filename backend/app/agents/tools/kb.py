@@ -39,6 +39,7 @@ register(
     ToolSpec(
         name="kb",
         risk="low",
+        effect="read",
         execute=execute_kb,
         description="Retrieve passages from the local knowledge base",
     )

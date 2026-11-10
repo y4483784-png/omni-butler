@@ -191,13 +191,16 @@ def create_calendar_event(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    _consume_schedule_claim(
+    found = _consume_schedule_claim(
         db,
         current_user.id,
         body.confirm_token,
         action="calendar.create",
         raw=_write_raw(body),
+        adopt=lambda: _keep_found_create(db, current_user.id, body),
     )
+    if found is not None:
+        return serialize_event_card(found)
     title = (body.title or "").strip()
     start_at = _parse_dt(body.start_at)
     end_at = _parse_dt(body.end_at)
@@ -222,6 +225,7 @@ def create_calendar_event(
         )
     conflicts = check_conflict(db, current_user.id, start_at, end_at)
     if conflicts:
+        _release_unsent(db)
         slots = free_slots_for(db, current_user.id, start_at, end_at)
         raise HTTPException(status_code=409, detail=_conflict_payload(conflicts, slots))
     event = create_event(
@@ -235,6 +239,7 @@ def create_calendar_event(
         description=description,
         meet=body.meet,
     )
+    _seal_schedule_write(db, body.confirm_token)
     return serialize_event_card(event)
 
 
@@ -266,13 +271,17 @@ def _create_connected_event(
     except CalendarOverlapError as exc:
         _conflict_http(db, user_id, start_at, end_at, exc.conflicts)
     except CalendarRemoteReadError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarRemoteWriteError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from None
+        _answer_remote_failure(db, exc)
     except CalendarTokenError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=401, detail=str(exc)) from None
     except CalendarTransientError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc)) from None
+    _seal_schedule_write(db, db.info.get("confirm_token"))
     return serialize_event_card(event)
 
 
@@ -306,6 +315,7 @@ def patch_event(
             if row.id != event_id
         ]
         if conflicts:
+            _release_unsent(db)
             slots = _slots_or_empty(
                 db, current_user.id, start_at, end_at, exclude_event_id=event_id
             )
@@ -330,15 +340,19 @@ def patch_event(
             db, current_user.id, start_at, end_at, exc.conflicts, exclude_event_id=event_id
         )
     except CalendarRemoteReadError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarRemoteWriteError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from None
+        _answer_remote_failure(db, exc)
     except CalendarTokenError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=401, detail=str(exc)) from None
     except CalendarTransientError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
+    _seal_schedule_write(db, body.confirm_token)
     return serialize_event_card(event)
 
 
@@ -362,15 +376,19 @@ def delete_event(
     except CalendarReconnectRequired as exc:
         raise HTTPException(status_code=409, detail=exc.message) from None
     except CalendarRemoteWriteError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from None
+        _answer_remote_failure(db, exc)
     except CalendarRemoteReadError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarTokenError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=401, detail=str(exc)) from None
     except CalendarTransientError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc)) from None
     if not event:
         raise HTTPException(status_code=404, detail="日程不存在")
+    _seal_schedule_write(db, confirm_token)
     return serialize_event_card(event)
 
 
@@ -403,19 +421,24 @@ def rsvp_google_event(
     if not calendar_writes_remote(db, current_user.id):
         raise HTTPException(status_code=400, detail="未连接 Google 日历")
     try:
-        return answer_invitation(
+        result = answer_invitation(
             db, current_user.id, external_id=external_id, status=status
         )
     except CalendarReconnectRequired as exc:
         raise HTTPException(status_code=409, detail=exc.message) from None
     except CalendarRemoteReadError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarRemoteWriteError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from None
+        _answer_remote_failure(db, exc)
     except CalendarTokenError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=401, detail=str(exc)) from None
     except CalendarTransientError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc)) from None
+    _seal_schedule_write(db, body.confirm_token)
+    return result
 
 
 class ConfirmClaimOpen(BaseModel):
@@ -459,12 +482,80 @@ def _consume_schedule_claim(
     *,
     action: str,
     raw: dict,
-) -> None:
+    adopt=None,
+):
     try:
         consume_schedule_claim(db, user_id, token, action=action, raw=raw)
     except ScheduleConfirmClosed as exc:
+        saved = adopt() if exc.reason == "unknown" and adopt is not None else None
+        if saved is not None:
+            return saved
         detail = CONFIRM_DETAIL.get(exc.reason, CONFIRM_DETAIL["closed"])
         raise HTTPException(status_code=409, detail=detail) from None
+    return None
+
+
+def _seal_schedule_write(db: Session, token: str | None) -> None:
+    from app.services.schedule_confirm import finish_confirm
+
+    finish_confirm(db, token)
+
+
+def _release_unsent(db: Session) -> None:
+    from app.services.schedule_confirm import reopen_unsent_claim
+
+    reopen_unsent_claim(db, db.info.get("confirm_token"))
+
+
+def _answer_remote_failure(db: Session, exc: CalendarRemoteWriteError) -> None:
+    from app.services.schedule_confirm import reopen_known_rejection
+
+    if not exc.unknown:
+        reopen_known_rejection(db, db.info.get("confirm_token"))
+        raise HTTPException(status_code=502, detail=str(exc))
+    raise HTTPException(status_code=409, detail=CONFIRM_DETAIL["unknown"])
+
+
+def _keep_found_create(db: Session, user_id: int, body: CalendarWrite):
+    """Save a create Google already has. The lookup is a GET, not another insert."""
+    from app.models.models import ScheduleConfirmClaim
+
+    token = str(body.confirm_token or "").strip()
+    claim = db.get(ScheduleConfirmClaim, token) if token else None
+    if claim is None or claim.user_id != user_id or claim.status != "unknown":
+        return None
+    if claim.action != "calendar.create":
+        return None
+    marker = (claim.remote_request_id or "").strip()
+    if not marker or not calendar_writes_remote(db, user_id):
+        return None
+    provider = calendar_provider_for(db, user_id)
+    lookup = getattr(provider, "lookup_inserted_event", None)
+    save = getattr(provider, "save_found_event", None)
+    if lookup is None or save is None:
+        return None
+    item = lookup(marker)
+    if not isinstance(item, dict):
+        return None
+    google_id = str(item.get("id") or "").strip()
+    start_at = _parse_dt(body.start_at)
+    end_at = _parse_dt(body.end_at)
+    if not google_id or start_at is None:
+        return None
+    if end_at is None:
+        end_at = start_at + timedelta(hours=1)
+    saved = save(
+        user_id,
+        title=(body.title or "").strip(),
+        start_at=start_at,
+        end_at=end_at,
+        participants=list(body.participants or []),
+        location=body.location or "",
+        description=body.description or "",
+        google_id=google_id,
+    )
+    _seal_schedule_write(db, token)
+    return saved
 
 
 def _expiry_stamp(expires_at: datetime | None) -> str:
@@ -616,13 +707,17 @@ def confirm_google_title_change(
             db, current_user.id, start_at, end_at, exc.conflicts
         )
     except CalendarRemoteReadError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc) or _READ_FAILED) from None
     except CalendarRemoteWriteError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from None
+        _answer_remote_failure(db, exc)
     except CalendarTokenError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=401, detail=str(exc)) from None
     except CalendarTransientError as exc:
+        _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc)) from None
+    _seal_schedule_write(db, body.confirm_token)
     return serialize_event_card(event)
 
 

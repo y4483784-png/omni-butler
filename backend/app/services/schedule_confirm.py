@@ -38,6 +38,7 @@ CONFIRM_DETAIL = {
     "missing": "缺少确认，未写入。",
     "mismatch": "参数已变，旧确认不能写入。",
     "closed": "这张确认已经失效，未写入。",
+    "unknown": "结果未知，未再次写入。请先核对日历。",
     "no-generation": "没有进行中的任务，未签发确认。",
     "source": "这张卡片不能发起这次确认。",
 }
@@ -343,6 +344,9 @@ def consume_schedule_claim(
     if claim is None or claim.user_id != user_id:
         db.rollback()
         raise ScheduleConfirmClosed("closed")
+    if claim.status == "unknown":
+        db.rollback()
+        raise ScheduleConfirmClosed("unknown")
     if claim.status != "open" or _expired(claim.expires_at, now):
         db.rollback()
         raise ScheduleConfirmClosed("closed")
@@ -372,13 +376,84 @@ def consume_schedule_claim(
                 TaskRun.status.in_(tuple(_LIVE)),
             )
         )
-        .values(status="written")
+        .values(status="unknown")
     )
     if result.rowcount != 1:
         db.rollback()
         raise ScheduleConfirmClosed("closed")
+    claim.status = "unknown"
+    db.info["confirm_token"] = key
+
+
+def arm_remote_claim(db: Session, token: str, request_id: str) -> None:
+    """Remember the external key and commit it before the request is sent.
+
+    A later rollback cannot reopen this claim. An empty key means the remote
+    call has not been armed, so a failed refresh can still roll the claim back.
+    """
+    key = str(token or "").strip()
+    marker = str(request_id or "").strip()
+    if not key or not marker:
+        return
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == key)
+        .with_for_update()
+        .one_or_none()
+    )
+    if claim is None or claim.status not in {"unknown", "open"}:
+        return
+    if (claim.remote_request_id or "").strip():
+        return
+    claim.status = "unknown"
+    claim.remote_request_id = marker
+    _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
+    db.commit()
+
+
+def reopen_unsent_claim(db: Session, token: str) -> None:
+    """Return a claim to open when the remote call was never armed."""
+    claim = _claim_for_update(db, token)
+    if claim is None or claim.status != "unknown":
+        return
+    if (claim.remote_request_id or "").strip():
+        return
+    claim.status = "open"
+    _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
+    db.commit()
+
+
+def reopen_known_rejection(db: Session, token: str) -> None:
+    """A definite rejection did not create the event. The same claim may try again."""
+    claim = _claim_for_update(db, token)
+    if claim is None or claim.status != "unknown":
+        return
+    claim.status = "open"
+    claim.remote_request_id = ""
+    _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
+    db.commit()
+
+
+def finish_confirm(db: Session, token: str | None) -> None:
+    """Mark a successful write. Repeating this leaves the claim written."""
+    claim = _claim_for_update(db, token)
+    if claim is None or claim.status not in {"unknown", "written"}:
+        return
     claim.status = "written"
     _stamp_claim_phase(db, claim.session_id, claim.token, "confirmed")
+    db.commit()
+
+
+def _claim_for_update(db: Session, token: str | None) -> ScheduleConfirmClaim | None:
+    key = str(token or "").strip()
+    if not key:
+        return None
+    return (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == key)
+        .with_for_update()
+        .one_or_none()
+    )
 
 
 def release_schedule_claim(db: Session, user_id: int, token: str) -> None:
@@ -427,6 +502,8 @@ def phase_for_stored_card(db: Session, card: dict | None) -> dict | None:
     )
     if claim is None:
         return card
+    if claim.status == "unknown" and card.get("phase") != "unknown":
+        return {**card, "phase": "unknown"}
     if claim.status == "written" and card.get("phase") != "confirmed":
         return {**card, "phase": "confirmed"}
     if claim.status == "cancelled" and card.get("phase") == "draft":
@@ -600,6 +677,19 @@ def _bind_open_claim(
     task_run_ids: list[int],
     expires_at: datetime | None,
 ) -> tuple[str, datetime | None]:
+    unknown = (
+        db.query(ScheduleConfirmClaim)
+        .filter(
+            ScheduleConfirmClaim.user_id == key.user_id,
+            ScheduleConfirmClaim.action == key.action,
+            ScheduleConfirmClaim.fingerprint == key.fingerprint,
+            ScheduleConfirmClaim.status == "unknown",
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+    if unknown is not None:
+        raise ScheduleConfirmClosed("unknown")
     existing = (
         db.query(ScheduleConfirmClaim)
         .filter(
@@ -734,9 +824,22 @@ def _stamp_claim_phase(db: Session, session_id: int, token: str, phase: str) -> 
             card = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if not isinstance(card, dict) or card.get("confirm_token") != token:
+        if not isinstance(card, dict):
             continue
-        if card.get("phase") == phase:
+        changed = False
+        if card.get("confirm_token") == token and card.get("phase") != phase:
+            card["phase"] = phase
+            changed = True
+        actions = card.get("actions")
+        if isinstance(actions, list):
+            for item in actions:
+                if (
+                    isinstance(item, dict)
+                    and item.get("confirm_token") == token
+                    and item.get("phase") != phase
+                ):
+                    item["phase"] = phase
+                    changed = True
+        if not changed:
             continue
-        card["phase"] = phase
         row.schedule_card = json.dumps(card, ensure_ascii=False)
