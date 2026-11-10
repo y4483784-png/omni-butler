@@ -1,0 +1,66 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": ""Noto Sans CJK SC", "Noto Sans SC", Inter, system-ui, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#E8F1FF",
+    "primaryTextColor": "#0F172A",
+    "primaryBorderColor": "#3B82F6",
+    "secondaryColor": "#FEF3C7",
+    "secondaryTextColor": "#0F172A",
+    "secondaryBorderColor": "#D97706",
+    "tertiaryColor": "#ECFDF5",
+    "tertiaryTextColor": "#0F172A",
+    "tertiaryBorderColor": "#059669",
+    "lineColor": "#64748B",
+    "textColor": "#0F172A",
+    "mainBkg": "#F8FAFC",
+    "nodeBorder": "#94A3B8",
+    "clusterBkg": "#FFFBEB",
+    "clusterBorder": "#F59E0B",
+    "titleColor": "#0F172A",
+    "edgeLabelBackground": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "padding": 18,
+    "nodeSpacing": 28,
+    "rankSpacing": 36,
+    "htmlLabels": true
+  }
+}}%%
+flowchart LR
+  subgraph R2["派活、任务与干活"]
+    direction LR
+
+    subgraph DISPATCH["④ 派活（只编排）"]
+      direction TB
+      observe["观察来意 / 事件要干什么"]
+      assign["分派这一轮任务<br/>自己不调工具、不出确认卡"]
+      observe --> assign
+    end
+
+    subgraph AUTH["⑤ 这一轮任务与授权"]
+      direction TB
+      task["任务包：要干什么 + 本轮代次<br/>共享状态：运行 / 等人 / 等资源 / 停止<br/>停止后旧代结果不能复活"]
+      stack["授权叠三层<br/>身份 → 工具白名单 → 本轮允许"]
+      note["上下文变长不抬权"]
+      webflag["白名单里的「上网」：<br/>只开 DeepSeek 模型自带联网开关<br/>同轮不另调旧搜索工具"]
+      task --> stack --> note --> webflag
+    end
+
+    subgraph WORK["⑥ 干活内核"]
+      direction TB
+      plan["规划：用哪些能力、排顺序"]
+      has{还有下一步？}
+      pick["按授权选能力 → 交⑦⑧"]
+      reflect["工具结果回这里：看结果够不够"]
+      answer["写最终回复"]
+      plan --> has
+      has -->|有| pick
+      has -->|无| answer
+      pick --> reflect
+    end
+
+    DISPATCH --> AUTH --> WORK
+  end

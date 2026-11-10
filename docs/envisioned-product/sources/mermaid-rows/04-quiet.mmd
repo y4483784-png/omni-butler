@@ -1,0 +1,58 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": ""Noto Sans CJK SC", "Noto Sans SC", Inter, system-ui, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#E8F1FF",
+    "primaryTextColor": "#0F172A",
+    "primaryBorderColor": "#3B82F6",
+    "secondaryColor": "#FEF3C7",
+    "secondaryTextColor": "#0F172A",
+    "secondaryBorderColor": "#D97706",
+    "tertiaryColor": "#ECFDF5",
+    "tertiaryTextColor": "#0F172A",
+    "tertiaryBorderColor": "#059669",
+    "lineColor": "#64748B",
+    "textColor": "#0F172A",
+    "mainBkg": "#F8FAFC",
+    "nodeBorder": "#94A3B8",
+    "clusterBkg": "#FFFBEB",
+    "clusterBorder": "#F59E0B",
+    "titleColor": "#0F172A",
+    "edgeLabelBackground": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "padding": 18,
+    "nodeSpacing": 28,
+    "rankSpacing": 36,
+    "htmlLabels": true
+  }
+}}%%
+flowchart LR
+  subgraph R4["结果、记忆与运行守护"]
+    direction LR
+
+    subgraph QUIET["⑨ 少打扰 · 长记忆 · 主动脉搏"]
+      direction TB
+      conf{把握够高？}
+      audit["低把握：先记账到审计账本<br/>可读，不出草稿卡刷屏"]
+      speak["有结果或要人动手时才开口"]
+      mem["长记忆（要做）：可查的偏好 / 要点档案<br/>读写可审计；不默默抬权<br/>变更账本：来源 / 修改者 / 前后值<br/>待提交恢复；冲突时不强行撤销"]
+      mem_note["比「浅整理」深；改记忆不能绕过授权<br/>仍不做整套第二大脑乱改记忆"]
+      pulse["主动脉搏：到点提醒 / 催办<br/>经外壳推给你"]
+      pulse_note["写操作仍走确认闸<br/>脉搏、事件、看门狗、定时后台是四路叫醒<br/>同一件要改世界的事只走一轮确认"]
+      conf -->|低| audit --> speak
+      conf -->|高或已有结果| speak
+      speak --> mem --> mem_note --> pulse --> pulse_note
+    end
+
+    subgraph WATCH["⑩ 看门狗（简化要做）"]
+      direction TB
+      wd["主系统外的独立会话<br/>定时叫醒；只读任务状态，不调会改世界的工具"]
+      wd_check["复用同一任务状态看实质进展<br/>等人 / 等资源不误判卡死；休眠不计超时"]
+      wd_act["异常：提醒你或沿取消链安全停住<br/>不自动改授权、不绕过确认闸"]
+      wd_note["先不做：看门狗自己改提示词 / Trigger 规则"]
+      wd --> wd_check --> wd_act --> wd_note
+    end
+  end

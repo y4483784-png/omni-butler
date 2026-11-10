@@ -1,0 +1,10 @@
+ts	phase	decision	why	evidence	result
+2026-11-10T04:17:40Z	start	opened the decision log for this plan run	the operator asked for one durable plan and a docs-only PR	https://cursor.com/agents/bc-e75defa0-5f38-563c-8af4-fa816d260a44	open
+2026-11-10T04:17:40Z	frame	wrote one plan for all twelve modules, sequenced as ten PRs	the operator asked for the whole product in waves, not one half	docs/envisioned-product/PLAN.md	open
+2026-11-10T04:17:40Z	frame	skipped prototypes	this run may not implement features, and the product shape is already locked	docs/envisioned-product/PLAN.md Appendix A	skipped
+2026-11-10T04:17:40Z	frame	put task generation and the execute gate first as H1	later waves share that state, so the tables land before features	docs/envisioned-product/PLAN.md H1	open
+2026-11-10T04:17:40Z	frame	defaulted the desktop shell to Electron	the frontend is already Vite, and Eigent is only a shape reference	docs/envisioned-product/PLAN.md P4	open
+2026-11-10T04:17:40Z	explore	read repo anchors in the parent chat	this run has no Task tool, so subagents could not be spawned	backend/app/agents/harness/gateway.py invoke	anchors in Appendix E
+2026-11-10T04:17:40Z	check	ran check-plan.mjs	the plan has to keep the required headings and ten lanes	/tmp/check-plan.out	0 problems
+2026-11-10T04:17:57Z	check	supersede the check-plan evidence path	the /tmp output is not in the repo, so the proof is the plan file plus a clean re-run of the script	docs/envisioned-product/PLAN.md	0 problems
+2026-11-10T04:37:40Z	explore	supersede the earlier explore row	before the docs commit no Task call was sent. The tool list and a search had no Task entry, and the commit turn skipped the probe so the commit would not share a turn with an unknown tool. This later probe went through CallDynamicTool and returned Tool not found Task.	docs/envisioned-product/decisions.tsv	call was absent before commit; probe now returns tool not found
