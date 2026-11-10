@@ -1,8 +1,9 @@
 """
 Tool routing / intent evaluation for Omni-Butler (strict LLM router).
 
-Uses production ``plan_tools`` (same entry as ``workflow.plan_node``). Optional
-disk cache avoids re-hitting the API on every eval run.
+Scoring calls production ``plan_tools`` so confidence remains visible.
+The production entry that writes the turn assignment is ``assign_turn``.
+Optional disk cache avoids re-hitting the API on every eval run.
 """
 
 from __future__ import annotations

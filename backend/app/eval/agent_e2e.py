@@ -235,6 +235,7 @@ def run_task(
     retries: int = 4,
     key_to_id: dict[str, int] | None = None,
 ) -> TaskResult:
+    from app.agents.dispatch import assign_turn
     from app.agents.workflow import run_agent_workflow
 
     ctx = _task_context(task)
@@ -255,7 +256,17 @@ def run_task(
     t0 = time.monotonic()
     try:
         with trace_gateway(trace):
-            out = run_agent_workflow(db, **workflow_kwargs(task, document_ids))
+            kw = workflow_kwargs(task, document_ids)
+            assignment = assign_turn(
+                kw["message"],
+                kw["history"],
+                context=None,
+                use_kb=kw["use_kb"],
+                has_kb_docs=kw["has_kb_docs"],
+                has_tabular_docs=kw["has_tabular_docs"],
+                document_ids=kw["document_ids"],
+            )
+            out = run_agent_workflow(db, assignment=assignment, **kw)
         answer = out.get("direct_answer") or ""
         if not answer and out.get("llm_messages"):
             # With usage, so the report can attribute token cost per question.

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.agents.harness.types import ToolContext
 from app.agents.tools import calendar_tool
 from app.agents.tools.calendar_tool import execute_calendar
+from app.agents.dispatch import TurnAssignment, assign_turn
 from app.agents.workflow import run_agent_workflow
 from app.core.db import SessionLocal, init_db
 from app.models.models import CalendarEvent, Message, Session as ChatSession, User
@@ -25,6 +26,10 @@ def _plan():
         "needs_web": False,
         "needs_calendar": True,
     }
+
+
+def _assignment() -> TurnAssignment:
+    return TurnAssignment.from_plan(_plan(), forced=False)
 
 
 def _cleanup(db, event_ids: list[int]) -> None:
@@ -164,10 +169,9 @@ def test_create_phrase_returns_draft_and_writes_nothing():
     try:
         before = db.query(CalendarEvent).count()
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
         ):
-            result = run_agent_workflow(db, message="明天三点开周会", history=[], user_id=1)
+            result = run_agent_workflow(db, message="明天三点开周会", history=[], user_id=1, assignment=_assignment())
         assert result["pending_calendar"] is None
         card = result["schedule_card"]
         assert card["mode"] == "create"
@@ -192,13 +196,12 @@ def test_blank_draft_when_title_and_start_are_missing():
     try:
         before = db.query(CalendarEvent).count()
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch(
                 "app.agents.tools.calendar_tool.extract_event",
                 return_value=EventDraft(title="", participants=[]),
             ),
         ):
-            result = run_agent_workflow(db, message="帮我约一下", history=[], user_id=1)
+            result = run_agent_workflow(db, message="帮我约一下", history=[], user_id=1, assignment=_assignment())
         card = result["schedule_card"]
         assert card["title"] == ""
         assert card["start_at"] == ""
@@ -232,14 +235,13 @@ def test_conflict_preview_offers_slots_without_insert():
         )
         before = db.query(CalendarEvent).count()
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
             patch(
                 "app.agents.tools.calendar_tool.calendar_now",
                 lambda *_a, **_k: datetime(2026, 8, 6, 9, 0),
             ),
         ):
-            result = run_agent_workflow(db, message="明天三点开周会", history=[], user_id=1)
+            result = run_agent_workflow(db, message="明天三点开周会", history=[], user_id=1, assignment=_assignment())
         slots = result["schedule_card"]["suggested_slots"]
         assert 1 <= len(slots) <= 3
         assert result["schedule_card"]["conflicts"]
@@ -267,14 +269,13 @@ def test_cancel_one_match_is_a_card_not_a_delete():
         created.append(event.id)
         draft = EventDraft(title="面试", start_at=datetime(2026, 8, 7, 15, 0), end_at=datetime(2026, 8, 7, 16, 0))
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
             patch(
                 "app.agents.tools.calendar_tool.calendar_now",
                 lambda *_a, **_k: datetime(2026, 8, 6, 9, 0),
             ),
         ):
-            result = run_agent_workflow(db, message="取消明天的面试", history=[], user_id=1)
+            result = run_agent_workflow(db, message="取消明天的面试", history=[], user_id=1, assignment=_assignment())
         card = result["schedule_card"]
         assert card["mode"] == "cancel"
         assert card["event_id"] == event.id
@@ -304,14 +305,13 @@ def test_cancel_multiple_matches_lists_choices():
             created.append(event.id)
         draft = EventDraft(title="周会", start_at=datetime(2026, 8, 7, 9, 0))
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
             patch(
                 "app.agents.tools.calendar_tool.calendar_now",
                 lambda *_a, **_k: datetime(2026, 8, 6, 9, 0),
             ),
         ):
-            result = run_agent_workflow(db, message="取消周会", history=[], user_id=1)
+            result = run_agent_workflow(db, message="取消周会", history=[], user_id=1, assignment=_assignment())
         card = result["schedule_card"]
         assert card is None or card.get("mode") != "choose"
         for event_id in created:
@@ -329,7 +329,10 @@ def test_legacy_pending_still_routes_and_does_not_create(monkeypatch):
         called["n"] += 1
         return _plan()
 
-    monkeypatch.setattr("app.agents.workflow.plan_tools", plan_tools)
+    monkeypatch.setattr("app.agents.dispatch.plan_tools", plan_tools)
+    pending = {"title": "旧草稿", "missing_fields": ["end_at", "participants"]}
+    assign_turn("明天三点开周会", [])
+    assert called["n"] == 1
     monkeypatch.setattr(
         "app.agents.tools.calendar_tool.extract_event",
         lambda *_a, **_k: EventDraft(title="周会", start_at=datetime(2026, 8, 7, 15, 0), end_at=datetime(2026, 8, 7, 16, 0)),
@@ -343,7 +346,8 @@ def test_legacy_pending_still_routes_and_does_not_create(monkeypatch):
             message="明天三点开周会",
             history=[],
             user_id=1,
-            pending_calendar={"title": "旧草稿", "missing_fields": ["end_at", "participants"]},
+            pending_calendar=pending,
+            assignment=_assignment(),
         )
         assert called["n"] == 1
         assert result["pending_calendar"] is None
@@ -474,8 +478,13 @@ def test_update_finds_event_on_reference_day_not_target_day(monkeypatch):
             participants=[],
         )
         created.append(wednesday.id)
-        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
-            result = run_agent_workflow(db, message="把周三的周会改到周四三点", history=[], user_id=1)
+        result = run_agent_workflow(
+            db,
+            message="把周三的周会改到周四三点",
+            history=[],
+            user_id=1,
+            assignment=_assignment(),
+        )
         card = result["schedule_card"]
         assert card["mode"] == "update"
         assert card["event_id"] == wednesday.id
@@ -524,8 +533,13 @@ def test_title_only_update_skips_events_that_already_ended(monkeypatch):
             participants=[],
         )
         created.extend([past.id, upcoming.id])
-        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
-            result = run_agent_workflow(db, message="把周会改到四点", history=[], user_id=1)
+        result = run_agent_workflow(
+            db,
+            message="把周会改到四点",
+            history=[],
+            user_id=1,
+            assignment=_assignment(),
+        )
         card = result["schedule_card"]
         assert card["mode"] == "update"
         assert card["event_id"] == upcoming.id
@@ -550,11 +564,14 @@ def test_draft_confirm_conflict_patch_and_delete(auth_client: TestClient):
     created: list[int] = []
     try:
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch("app.agents.tools.calendar_tool.extract_event", return_value=draft),
         ):
             prepared = run_agent_workflow(
-                db, message="11月4日上午十点开往返会", history=[], user_id=owner_id
+                db,
+                message="11月4日上午十点开往返会",
+                history=[],
+                user_id=owner_id,
+                assignment=_assignment(),
             )
         card = prepared["schedule_card"]
         assert card["phase"] == "draft"
@@ -655,8 +672,13 @@ def test_list_is_read_only_text(monkeypatch):
             participants=[],
         )
         created.append(event.id)
-        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
-            result = run_agent_workflow(db, message="这周有哪些会", history=[], user_id=1)
+        result = run_agent_workflow(
+            db,
+            message="这周有哪些会",
+            history=[],
+            user_id=1,
+            assignment=_assignment(),
+        )
         card = result["schedule_card"]
         assert card["mode"] == "list"
         assert card["phase"] == "info"
@@ -686,8 +708,13 @@ def test_suggest_returns_slot_card_without_writing(monkeypatch):
     db = SessionLocal()
     try:
         before = db.query(CalendarEvent).count()
-        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
-            result = run_agent_workflow(db, message="明天下午有空吗", history=[], user_id=1)
+        result = run_agent_workflow(
+            db,
+            message="明天下午有空吗",
+            history=[],
+            user_id=1,
+            assignment=_assignment(),
+        )
         card = result["schedule_card"]
         assert card["mode"] == "list"
         assert card["phase"] == "info"
@@ -729,7 +756,6 @@ def test_unconfirmed_create_then_reschedule_does_not_move_the_event(monkeypatch)
         )
         created.append(event.id)
         with (
-            patch("app.agents.workflow.plan_tools", return_value=_plan()),
             patch(
                 "app.agents.tools.calendar_tool.extract_event",
                 return_value=EventDraft(
@@ -739,7 +765,7 @@ def test_unconfirmed_create_then_reschedule_does_not_move_the_event(monkeypatch)
                 ),
             ),
         ):
-            drafted = run_agent_workflow(db, message="明天下午三点开新会", history=[], user_id=1)
+            drafted = run_agent_workflow(db, message="明天下午三点开新会", history=[], user_id=1, assignment=_assignment())
         assert drafted["schedule_card"]["phase"] == "draft"
         session = ChatSession(user_id=1, title="改期")
         db.add(session)
@@ -757,8 +783,13 @@ def test_unconfirmed_create_then_reschedule_does_not_move_the_event(monkeypatch)
         )
         db.commit()
         assert void_draft_schedule_cards(db, session.id) == 1
-        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
-            moved = run_agent_workflow(db, message="把周会改到四点", history=[], user_id=1)
+        moved = run_agent_workflow(
+            db,
+            message="把周会改到四点",
+            history=[],
+            user_id=1,
+            assignment=_assignment(),
+        )
         assert moved["schedule_card"]["mode"] == "update"
         assert moved["schedule_card"]["event_id"] == event.id
         db.refresh(event)
@@ -791,8 +822,13 @@ def test_confirmed_event_shows_up_in_list(auth_client: TestClient, monkeypatch):
         )
         assert saved.status_code == 200, saved.text
         created.append(saved.json()["id"])
-        with patch("app.agents.workflow.plan_tools", return_value=_plan()):
-            listed = run_agent_workflow(db, message="这周有哪些会", history=[], user_id=owner_id)
+        listed = run_agent_workflow(
+            db,
+            message="这周有哪些会",
+            history=[],
+            user_id=owner_id,
+            assignment=_assignment(),
+        )
         card = listed["schedule_card"]
         assert card["mode"] == "list"
         assert card["items"][0]["title"] == "已确认周会"

@@ -79,9 +79,9 @@ def test_router_infra_is_infra_error_not_workflow_error(monkeypatch):
     def boom(*_a, **_k):
         raise RouterInfraError("工具规划失败：RateLimitError: slow down")
 
-    # Through the real graph, not a pre-wrapped workflow exception: a wrapper
-    # that dropped the RouterInfraError type would score this as workflow_error.
-    monkeypatch.setattr("app.agents.workflow.plan_tools", boom)
+    # assign_turn runs inside run_task's try. Patching the workflow function
+    # would hide whether RouterInfraError still leaves that try as infra_error.
+    monkeypatch.setattr("app.agents.dispatch.plan_tools", boom)
     res = run_task(object(), _chat_task())
     assert res.failed_layer == "infra_error"
     assert res.completion_ok is False
