@@ -4,13 +4,11 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 from typing import NoReturn
 
@@ -18,13 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC_DIR = Path(__file__).resolve().parent
 WRITER = ROOT / "backend" / "app" / "services" / "task_run.py"
 CHAT = ROOT / "backend" / "app" / "api" / "chat.py"
-
-TLA_VERSION = "1.8.0"
-JAR_URL = "https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar"
-# The v1.8.0 release URL served this asset on 2026-11-10.
-# Implementation-Version 2.0, revision d8fb231, built 2026-11-06.
-JAR_SHA256 = "e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f"
-JAR_CACHE = SPEC_DIR / ".tools" / "tla2tools.jar"
+sys.path.insert(0, str(ROOT))
+from verification.tlc_jar import jar_path
 
 HELD = (
     "TypeOK",
@@ -62,25 +55,6 @@ def anchors() -> None:
     require("task_run.wait_for_person" in chat, "chat.py no longer waits on a confirm card")
     require("task_run.finish" in chat, "chat.py no longer finishes a turn")
     require("task_run.stop" not in chat, "chat.py calls stop. This knife leaves that to tests.")
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    digest.update(path.read_bytes())
-    return digest.hexdigest()
-
-
-def jar_path() -> Path:
-    if JAR_CACHE.is_file() and sha256(JAR_CACHE) == JAR_SHA256:
-        return JAR_CACHE
-    JAR_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = JAR_CACHE.with_suffix(".jar.partial")
-    urllib.request.urlretrieve(JAR_URL, tmp)
-    if sha256(tmp) != JAR_SHA256:
-        tmp.unlink(missing_ok=True)
-        fail_model(f"tla2tools.jar sha256 does not match the {TLA_VERSION} pin")
-    tmp.replace(JAR_CACHE)
-    return JAR_CACHE
 
 
 def write_cfg(directory: Path, break_completed_stop: bool) -> Path:

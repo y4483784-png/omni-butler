@@ -29,6 +29,6 @@ python3 verification/task-run/check.py --break-completed-stop
 
 Exit 1. `CompletedStays` is violated because stop rewrites a finished turn.
 
-The script downloads the pinned `tla2tools.jar`. On 2026-11-10 the v1.8.0 asset hashed to `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f` and reported revision `d8fb231`. A missing file, a TLC timeout, a deadlock, or an anchor that no longer matches the code exits 2.
+The script loads `verification/tlc/tla2tools.jar`. The pin is sha256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, manifest `2.0 2026-11-06`, revision `d8fb231de4e4b5d02c1b2ed1ac759c086f694021`. A missing file, a hash or manifest mismatch, a TLC timeout, a deadlock, or an anchor that no longer matches the code exits 2.
 
-To draw the chart, read the statechart skill and run it on `verification/task-run/TaskRun.tla` with `verification/task-run/statechart/view.mjs`. The last chart is `verification/task-run/statechart/chart.mmd`.
+To draw the chart, read the statechart skill and run it on `verification/task-run/TaskRun.tla` with `verification/task-run/statechart/view.mjs`. Set `TLA2TOOLS` to `verification/tlc/tla2tools.jar`. The last chart is `verification/task-run/statechart/chart.mmd`. The raw TLC log from the last drawing is `docs/envisioned-product/review/ev-task-evidence/tlc.out`.

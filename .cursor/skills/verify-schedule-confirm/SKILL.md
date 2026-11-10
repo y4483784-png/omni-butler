@@ -37,7 +37,7 @@ python3 verification/schedule-confirm/check.py --break-confirmed-lock
 
 Exit 1 when `writes` becomes 2 without a stream restore. The violated invariant is `SecondWriteImpliesRestore`.
 
-The script downloads the pinned `tla2tools.jar` from the v1.8.0 release URL, checks sha256 `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf`, checks the source anchors, and runs TLC with one worker. GitHub replaced that asset on 2026-11-03. The jar reports Implementation-Version 2.0, revision 309e489. A deleted submit `disabled` expression makes the default command exit 1. A missing file, a TLC timeout, a deadlock, or an anchor that no longer matches the code exits 2.
+The script loads `verification/tlc/tla2tools.jar`, checks sha256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, checks manifest version `2.0 2026-11-06` and revision `d8fb231de4e4b5d02c1b2ed1ac759c086f694021`, checks the source anchors, and runs TLC with one worker. That file is the v1.8.0 asset GitHub published on 2026-11-06. The previous pin `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf` was the 2026-11-03 upload, and the release URL no longer serves it. A deleted submit `disabled` expression makes the default command exit 1. A missing file, a hash or manifest mismatch, a TLC timeout, a deadlock, or an anchor that no longer matches the code exits 2.
 
 CI runs the same three commands in `.github/workflows/schedule-confirm-tla.yml` and requires the two flag statuses to be 1.
 
