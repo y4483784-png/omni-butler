@@ -227,6 +227,10 @@ async function runStreamLoop(
         updateLastAssistant(sessionId, acc, { artifact: a });
       },
     })) {
+      if (ac.signal.aborted) {
+        aborted = true;
+        break;
+      }
       patchSession(sessionId, { thinking: false, phaseHint: "" });
       acc += delta;
       const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
-from app.agents.harness.constitution import load_constitution
 from app.core.db import SessionLocal, set_rls_context
 from app.models.models import TASK_RUN_STATUSES, Session as ChatSession, TaskRun
 
@@ -158,11 +157,20 @@ def card_action_marker(message_id: int) -> str:
     return json.dumps([f"{_CARD_ACTION}:{int(message_id)}"], separators=(",", ":"))
 
 
-def is_card_action(allowed_tools: str) -> bool:
-    try:
-        parsed = json.loads(allowed_tools or "")
-    except json.JSONDecodeError:
-        return False
+class BadAllowList(Exception):
+    def __init__(self, generation: int) -> None:
+        self.generation = generation
+        super().__init__(str(generation))
+
+
+def is_card_action(allowed_tools: str | tuple) -> bool:
+    if isinstance(allowed_tools, tuple):
+        parsed: object = list(allowed_tools)
+    else:
+        try:
+            parsed = json.loads(allowed_tools or "")
+        except json.JSONDecodeError:
+            return False
     if not isinstance(parsed, list) or len(parsed) != 1 or not isinstance(parsed[0], str):
         return False
     kind, sep, message_id = parsed[0].partition(":")
@@ -195,6 +203,8 @@ def _insert_running(db, *, user_id: int, session_id: int) -> Turn:
             continue
         _apply_event(db, row, "stop")
     generation = max((row.generation for row in rows), default=0) + 1
+    from app.agents.harness.constitution import load_constitution
+
     allowed_tools = json.dumps(list(load_constitution()["allowed_tools"]))
     created = TaskRun(
         user_id=user_id,
@@ -290,6 +300,31 @@ def wait_for_resource(*, user_id: int, generation: int) -> Turn:
 
 def stop(*, user_id: int, generation: int) -> Turn:
     return _mutate(user_id=user_id, generation=generation, event="stop")
+
+
+def load_turn(*, user_id: int, task_id: int) -> Turn | None:
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        row = db.get(TaskRun, task_id)
+        if row is None or row.user_id != user_id:
+            return None
+        try:
+            parsed = json.loads(row.allowed_tools or "")
+        except json.JSONDecodeError as exc:
+            raise BadAllowList(int(row.generation)) from exc
+        if not isinstance(parsed, list):
+            parsed = []
+        return Turn(
+            id=row.id,
+            user_id=row.user_id,
+            session_id=row.session_id,
+            generation=row.generation,
+            status=row.status,
+            allowed_tools=tuple(parsed),
+        )
+    finally:
+        db.close()
 
 
 def get(*, user_id: int, generation: int) -> Turn | None:

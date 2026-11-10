@@ -35,7 +35,7 @@ Read a failing TLC trace with `/statechart`. Pass `TLA2TOOLS` as the pinned jar 
 
 `NoBlindPost` says a click while the claim is unknown does not send another insert. The harm is two remote events for one confirmation. In the trace, `Blind` is that second click. In the code, that is `consume_schedule_claim` raising `unknown`, and `_insert_google_event` looking the request id up instead of posting again.
 
-`NoStoppedExecute` says a tool does not run after the generation is stopped. The harm is a side effect after the user or the watchdog stopped the turn. In the trace, `BrokenRun` is that call. In the code, `execution_denial` returns before `spec.execute`.
+`NoStoppedExecute` says a tool does not run after the generation is stopped. The harm is a side effect after the user or the watchdog stopped the turn. In the trace, `BrokenRun` is that call. In the code, `execution_denial` returns before `spec.execute`. The status it reads is `turn.status` from `task_run.load_turn`, a new session, because the workflow session can still show the row as running after stop commits.
 
 `AtMostOneRemote` says the model stores at most one remote event. A known rejection does not store one, so a later send from `open` still stores one.
 
@@ -47,4 +47,4 @@ The model has one claim and one tool call. It does not model Google's network, t
 
 ## Keep the check with the code
 
-The anchors were confirmed at `8c5db6cc5f08419222362196d63bfc6205d8e20a`, the commit that added `arm_remote_claim` and `execution_denial`. They were run again after 408, 409, 412, 429, and a quota 403 were classified as unknown, and after the occupied index started covering `unknown`. That later edit does not move the arm or the stop check. Move the confirmation forward only after reading those functions at the new commit and seeing that the model still describes them. If `consume_schedule_claim` stops refusing `unknown`, or the insert is posted before `_arm_user_write`, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `8c5db6cc5f08419222362196d63bfc6205d8e20a`, the commit that added `arm_remote_claim` and `execution_denial`. They were run again after 408, 409, 412, 429, and a quota 403 were classified as unknown, and after the occupied index started covering `unknown`. ev-stop changed the stop read from `row.status` on the workflow session to `turn.status` from `load_turn`. The invariant is the same. The checker exits 2 if that call or the stopped comparison disappears. Move the confirmation forward only after reading those functions at the new commit and seeing that the model still describes them. If `consume_schedule_claim` stops refusing `unknown`, or the insert is posted before `_arm_user_write`, the checker exits 2. That is drift, not a passing run.

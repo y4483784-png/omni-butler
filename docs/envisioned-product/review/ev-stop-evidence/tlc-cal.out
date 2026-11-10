@@ -1,0 +1,49 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Running breadth-first search Model-Checking with fp 63 and seed 3694785197834236785 with 1 worker on 4 cores with 3330MB heap and 64MB offheap memory [pid: 7122] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/stop-before-send/StopBeforeSend.tla
+Parsing file /tmp/tlc-2168628168641650890/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-2168628168641650890/_TLCTrace.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-2168628168641650890/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-2168628168641650890/TLC.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-2168628168641650890/TLCExt.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-2168628168641650890/Sequences.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-2168628168641650890/FiniteSets.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module StopBeforeSend
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module StopBeforeSend
+Starting... (2026-11-10 17:28:34)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-10 17:28:34.
+Error: Invariant CalendarStays is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ request = "none"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = FALSE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = FALSE
+
+State 2: <DropCalendar line 112, col 5 to line 115, col 80 of module StopBeforeSend>
+/\ request = "none"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = FALSE
+/\ memory = FALSE
+/\ calendar = 0
+/\ stopped = FALSE
+
+5 states generated, 5 distinct states found, 3 states left on queue.
+The depth of the complete state graph search is 2.
+Finished in 00s at (2026-11-10 17:28:34)
+Trace exploration spec path: ./StopBeforeSend_TTrace_1794331714.tla
+

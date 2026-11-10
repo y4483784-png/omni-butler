@@ -1,0 +1,58 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Running breadth-first search Model-Checking with fp 87 and seed 3829457643019476569 with 1 worker on 4 cores with 3330MB heap and 64MB offheap memory [pid: 7096] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/stop-before-send/StopBeforeSend.tla
+Parsing file /tmp/tlc-484539127031582239/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-484539127031582239/_TLCTrace.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-484539127031582239/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-484539127031582239/TLC.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-484539127031582239/TLCExt.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-484539127031582239/Sequences.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-484539127031582239/FiniteSets.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module StopBeforeSend
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module StopBeforeSend
+Starting... (2026-11-10 17:28:34)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-10 17:28:34.
+Error: Invariant NoMemoryWhenStopped is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ request = "none"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = FALSE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = FALSE
+
+State 2: <Stop line 51, col 5 to line 55, col 72 of module StopBeforeSend>
+/\ request = "none"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = FALSE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = TRUE
+
+State 3: <RememberStopped line 104, col 5 to line 109, col 74 of module StopBeforeSend>
+/\ request = "none"
+/\ bubble = "empty"
+/\ closed = TRUE
+/\ startedBeforeStop = FALSE
+/\ memory = TRUE
+/\ calendar = 1
+/\ stopped = TRUE
+
+8 states generated, 7 distinct states found, 3 states left on queue.
+The depth of the complete state graph search is 3.
+Finished in 00s at (2026-11-10 17:28:34)
+Trace exploration spec path: ./StopBeforeSend_TTrace_1794331713.tla
+

@@ -1,0 +1,85 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Running breadth-first search Model-Checking with fp 29 and seed 1168596925863715328 with 1 worker on 4 cores with 3330MB heap and 64MB offheap memory [pid: 7070] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/stop-before-send/StopBeforeSend.tla
+Parsing file /tmp/tlc-16877905273398163508/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-16877905273398163508/_TLCTrace.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-16877905273398163508/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-16877905273398163508/TLC.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-16877905273398163508/TLCExt.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-16877905273398163508/Sequences.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-16877905273398163508/FiniteSets.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module StopBeforeSend
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module StopBeforeSend
+Starting... (2026-11-10 17:28:33)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-10 17:28:33.
+Error: Invariant NoLateChunk is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ request = "none"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = FALSE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = FALSE
+
+State 2: <Queue line 36, col 5 to line 40, col 81 of module StopBeforeSend>
+/\ request = "queued"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = FALSE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = FALSE
+
+State 3: <Create line 43, col 5 to line 48, col 62 of module StopBeforeSend>
+/\ request = "flying"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = TRUE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = FALSE
+
+State 4: <Stop line 51, col 5 to line 55, col 72 of module StopBeforeSend>
+/\ request = "flying"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = TRUE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = TRUE
+
+State 5: <Return line 66, col 5 to line 69, col 81 of module StopBeforeSend>
+/\ request = "back"
+/\ bubble = "empty"
+/\ closed = FALSE
+/\ startedBeforeStop = TRUE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = TRUE
+
+State 6: <AppendLate line 80, col 5 to line 86, col 82 of module StopBeforeSend>
+/\ request = "back"
+/\ bubble = "late"
+/\ closed = FALSE
+/\ startedBeforeStop = TRUE
+/\ memory = FALSE
+/\ calendar = 1
+/\ stopped = TRUE
+
+21 states generated, 15 distinct states found, 3 states left on queue.
+The depth of the complete state graph search is 6.
+Finished in 00s at (2026-11-10 17:28:33)
+Trace exploration spec path: ./StopBeforeSend_TTrace_1794331713.tla
+

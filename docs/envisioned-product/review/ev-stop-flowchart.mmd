@@ -1,0 +1,31 @@
+%%{init: {"flowchart": {"wrappingWidth": 900, "htmlLabels": false, "nodeSpacing": 48, "rankSpacing": 32}}}%%
+flowchart TB
+  subgraph mainPath [主路径]
+    direction TB
+    sendTurn[用户发送一句]
+    recordGen[记下这一代正在做]
+    readStop[发出前读取停止标记]
+    sendModel[未停止就发出请求]
+    writeBubble[回答写入当前气泡]
+    finishTurn[这一代正常结束]
+    pad[" "]
+    sendTurn --> recordGen
+    recordGen --> readStop
+    readStop --> sendModel
+    sendModel --> writeBubble
+    writeBubble --> finishTurn
+    finishTurn --> pad
+  end
+  skipSend[已经停止就不发请求]
+  cannotPull[已经发出的请求不能撤回]
+  dropLate[迟到文字不写入气泡]
+  skipMemory[已经停止就不写长期记忆]
+  keepEvent[已确认的日历保持原样]
+  readStop --> skipSend
+  sendModel --> cannotPull
+  writeBubble --> dropLate
+  finishTurn --> skipMemory
+  skipMemory --> keepEvent
+  classDef hide fill:#ffffde,stroke:#ffffde,color:#ffffde
+  class pad hide
+  linkStyle 5 stroke:#ffffde,fill:#ffffde

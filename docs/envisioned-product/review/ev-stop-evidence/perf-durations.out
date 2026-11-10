@@ -1,0 +1,16 @@
+.........                                                                [100%]
+=============================== warnings summary ===============================
+tests/test_chat_sse_routing.py::test_agent_path_yields_early_progress
+  /tmp/ev-stop-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 8 durations ==============================
+1.04s setup    tests/test_chat_sse_routing.py::test_agent_path_yields_early_progress
+0.23s setup    tests/test_chat_sse_routing.py::test_chat_rejects_sensitive_input
+0.23s setup    tests/test_chat_sse_routing.py::test_first_turn_replaces_title_after_reply
+0.22s setup    tests/test_chat_sse_routing.py::test_chat_redacts_direct_answer
+0.22s setup    tests/test_chat_sse_routing.py::test_context_summary_injected_and_ui_keeps_full_history
+0.22s setup    tests/test_chat_sse_routing.py::test_plain_chat_still_goes_through_agent_path
+0.22s setup    tests/test_chat_sse_routing.py::test_chat_timeout_uses_prd_copy
+0.22s setup    tests/test_chat_sse_routing.py::test_chat_sse_runs_real_workflow_with_fake_llm

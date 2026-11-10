@@ -1,0 +1,51 @@
+---
+title: "停止会不会在请求发出前拦住"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 进行中
+    lg1: 已停止
+    lg2: 已结束
+  }
+  class lg0 blue
+  class lg1 tan
+  class lg2 teal
+  s0: 这一代刚开始
+  s1: 正常结束
+  s2: 停止后不再发出
+  s3: 请求还在排队
+  s4: 请求正在发出
+  s5: 停止后结束
+  s6: 模型已经返回
+  s7: 请求已发出后才停止
+  s8: 回答已写入气泡
+  s9: 停止后丢掉迟到文字
+  [*] --> s0
+  s0 --> s1: 提取长期记忆
+  s0 --> s2: 停止这一代
+  s0 --> s3: 排入一个模型请求
+  s2 --> s5: 结束且不写记忆
+  s3 --> s2: 停止这一代
+  s3 --> s4: 发出模型请求
+  s3 --> s1: 提取长期记忆
+  s4 --> s6: 模型返回
+  s4 --> s1: 提取长期记忆
+  s4 --> s7: 停止这一代
+  s6 --> s1: 提取长期记忆
+  s6 --> s8: 写入当前气泡
+  s6 --> s9: 停止这一代
+  s7 --> s9: 模型返回
+  s7 --> s5: 结束且不写记忆
+  s8 --> s1: 提取长期记忆
+  s8 --> s9: 停止这一代
+  s9 --> s5: 结束且不写记忆
+  class s0 blue
+  class s1 teal
+  class s2 tan
+  class s3 blue
+  class s4 blue
+  class s5 teal
+  class s6 blue
+  class s7 tan
+  class s8 blue
+  class s9 tan

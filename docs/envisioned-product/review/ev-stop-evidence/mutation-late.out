@@ -1,0 +1,11 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+/agent/repos/omni-butler/backend/tests/test_stop_before_send.py:208: assert 'LATE_CHUNK_...D_NOT_APPEAR' not in 'data: {"typ... "done"}\n\n'
+=============================== warnings summary ===============================
+tests/test_stop_before_send.py::test_late_chunk_stays_out_of_the_reply
+  /tmp/ev-stop-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_stop_before_send.py::test_late_chunk_stays_out_of_the_reply
