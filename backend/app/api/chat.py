@@ -16,6 +16,7 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
 from app.core.deps import get_db_scoped
+from app.core.generation_stop import GenerationStopped, bind, is_stopped, reset
 from app.core.llm import AnswerDelta, LLMInfraError, ReasoningDelta, Role, stream_chat
 from app.core.moderation import INPUT_BLOCKED_MESSAGE, RedactBuffer, contains_sensitive, redact_text
 from app.core.messages import llm_user_error
@@ -471,120 +472,142 @@ async def chat(
     workflow_history = list(ctx_bundle.answer_history)
 
     async def agent_event_gen():
-        acc: list[str] = []
-        reasoning_parts: list[str] = []
-        ttft_logged = False
-        wf: dict | None = None
-        wf_task: asyncio.Task | None = None
-        extra_artifact: dict | None = None
-        artifact_stored: dict | None = None
-        stream_usage: dict = {}
+        stop_token = bind(user_id=uid, generation=turn.generation)
         try:
-            yield _sse({"type": "ack", "path": "agent"})
-            if new_title:
-                yield _sse({"type": "session_title", "content": new_title})
-            yield _sse({"type": "status", "phase": "planning"})
-
-            wf_task = asyncio.create_task(
-                _run_workflow_with_heartbeat(
-                    message=user_message,
-                    history=workflow_history,
-                    use_kb=req.use_kb,
-                    has_kb_docs=has_kb_docs,
-                    has_tabular_docs=tabular,
-                    document_ids=req.document_ids or None,
-                    user_id=uid,
-                    pending_calendar=pending_calendar,
-                    context=ctx_state,
-                    task_id=turn.id,
-                    generation=turn.generation,
+            acc: list[str] = []
+            reasoning_parts: list[str] = []
+            ttft_logged = False
+            wf: dict | None = None
+            wf_task: asyncio.Task | None = None
+            extra_artifact: dict | None = None
+            artifact_stored: dict | None = None
+            stream_usage: dict = {}
+            try:
+                yield _sse({"type": "ack", "path": "agent"})
+                if new_title:
+                    yield _sse({"type": "session_title", "content": new_title})
+                yield _sse({"type": "status", "phase": "planning"})
+                wf_task = asyncio.create_task(
+                    _run_workflow_with_heartbeat(
+                        message=user_message,
+                        history=workflow_history,
+                        use_kb=req.use_kb,
+                        has_kb_docs=has_kb_docs,
+                        has_tabular_docs=tabular,
+                        document_ids=req.document_ids or None,
+                        user_id=uid,
+                        pending_calendar=pending_calendar,
+                        context=ctx_state,
+                        task_id=turn.id,
+                        generation=turn.generation,
+                    )
                 )
-            )
-            while not wf_task.done():
-                if await request.is_disconnected():
-                    wf_task.cancel()
-                    try:
-                        await wf_task
-                    except (asyncio.CancelledError, Exception):
-                        pass
-                    return
-                done, _ = await asyncio.wait({wf_task}, timeout=2.0)
-                if not done:
-                    yield ": ping\n\n"
-            wf = await wf_task
-
-            if isinstance(wf.get("context_stats"), dict):
-                for k in ("compose_level", "compose_dropped_turns", "compose_tokens"):
-                    if k in wf["context_stats"]:
-                        ctx_stats[k] = wf["context_stats"][k]
-
-            intent = wf["intent"]
-            forced = wf["forced"]
-            citations_payload = wf["citations"]
-            thinking_steps = wf.get("thinking_steps") or []
-            llm_messages = wf["llm_messages"]
-            schedule_card = wf.get("schedule_card")
-            if isinstance(schedule_card, dict):
-                schedule_card = {**schedule_card, "task_generation": turn.generation}
-                wf["schedule_card"] = schedule_card
-            artifact = wf.get("artifact")
-            artifact_stored = prepare_artifact_for_storage(artifact)
-            direct_answer = redact_text(wf.get("direct_answer") or "")
-            direct_reasoning = redact_text(wf.get("answer_reasoning") or "")
-            pending_json = (
-                json.dumps(wf.get("pending_calendar"), ensure_ascii=False) if wf.get("pending_calendar") else ""
-            )
-            session.pending_calendar = pending_json
-
-            yield _sse({"type": "intent", "intent": intent, "forced": forced})
-            if thinking_steps:
-                yield _sse({"type": "thinking", "steps": thinking_steps})
-            if citations_payload:
-                yield _sse({"type": "citations", "citations": citations_payload})
-            if schedule_card:
-                needs_person = isinstance(schedule_card, dict) and (
-                    schedule_card_needs_claim(schedule_card) or followup_needs_claim(schedule_card)
+                while not wf_task.done():
+                    if await request.is_disconnected():
+                        task_run.stop(user_id=uid, generation=turn.generation)
+                        wf_task.cancel()
+                        return
+                    done, _ = await asyncio.wait({wf_task}, timeout=2.0)
+                    if not done:
+                        yield ": ping\n\n"
+                wf = await wf_task
+                if isinstance(wf.get("context_stats"), dict):
+                    for k in ("compose_level", "compose_dropped_turns", "compose_tokens"):
+                        if k in wf["context_stats"]:
+                            ctx_stats[k] = wf["context_stats"][k]
+                intent = wf["intent"]
+                forced = wf["forced"]
+                citations_payload = wf["citations"]
+                thinking_steps = wf.get("thinking_steps") or []
+                llm_messages = wf["llm_messages"]
+                schedule_card = wf.get("schedule_card")
+                if isinstance(schedule_card, dict):
+                    schedule_card = {**schedule_card, "task_generation": turn.generation}
+                    wf["schedule_card"] = schedule_card
+                artifact = wf.get("artifact")
+                artifact_stored = prepare_artifact_for_storage(artifact)
+                direct_answer = redact_text(wf.get("direct_answer") or "")
+                direct_reasoning = redact_text(wf.get("answer_reasoning") or "")
+                pending_json = (
+                    json.dumps(wf.get("pending_calendar"), ensure_ascii=False) if wf.get("pending_calendar") else ""
                 )
-                if needs_person:
-                    try:
-                        task_run.wait_for_person(user_id=uid, generation=turn.generation)
-                    except task_run.LateResult:
-                        schedule_card = None
-                        wf["schedule_card"] = None
-                if schedule_card and isinstance(schedule_card, dict) and followup_needs_claim(schedule_card):
-                    try:
-                        schedule_card = publish_followup_claims(
-                            uid, session.id, schedule_card, task_run_id=turn.id
-                        )
-                    except ScheduleConfirmClosed:
-                        schedule_card = None
-                    wf["schedule_card"] = schedule_card
-                elif schedule_card:
-                    try:
-                        schedule_card = publish_schedule_claim(
-                            uid, session.id, schedule_card, task_run_id=turn.id
-                        )
-                    except ScheduleConfirmClosed:
-                        schedule_card = None
-                    wf["schedule_card"] = schedule_card
+                session.pending_calendar = pending_json
+                yield _sse({"type": "intent", "intent": intent, "forced": forced})
+                if thinking_steps:
+                    yield _sse({"type": "thinking", "steps": thinking_steps})
+                if citations_payload:
+                    yield _sse({"type": "citations", "citations": citations_payload})
                 if schedule_card:
-                    yield _sse({"type": "schedule_card", "card": schedule_card})
-            if artifact_stored:
-                yield _sse({"type": "artifact", "artifact": artifact_stored})
-
-            if direct_answer or direct_reasoning:
-                if direct_reasoning:
-                    reasoning_parts.append(direct_reasoning)
-                    yield _sse({"type": "reasoning", "content": direct_reasoning})
-                if direct_answer:
-                    if not ttft_logged:
+                    needs_person = isinstance(schedule_card, dict) and (
+                        schedule_card_needs_claim(schedule_card) or followup_needs_claim(schedule_card)
+                    )
+                    if needs_person:
+                        try:
+                            task_run.wait_for_person(user_id=uid, generation=turn.generation)
+                        except task_run.LateResult:
+                            schedule_card = None
+                            wf["schedule_card"] = None
+                    if schedule_card and isinstance(schedule_card, dict) and followup_needs_claim(schedule_card):
+                        try:
+                            schedule_card = publish_followup_claims(
+                                uid, session.id, schedule_card, task_run_id=turn.id
+                            )
+                        except ScheduleConfirmClosed:
+                            schedule_card = None
+                        wf["schedule_card"] = schedule_card
+                    elif schedule_card:
+                        try:
+                            schedule_card = publish_schedule_claim(
+                                uid, session.id, schedule_card, task_run_id=turn.id
+                            )
+                        except ScheduleConfirmClosed:
+                            schedule_card = None
+                        wf["schedule_card"] = schedule_card
+                    if schedule_card:
+                        yield _sse({"type": "schedule_card", "card": schedule_card})
+                if artifact_stored:
+                    yield _sse({"type": "artifact", "artifact": artifact_stored})
+                if is_stopped() or await request.is_disconnected():
+                    task_run.stop(user_id=uid, generation=turn.generation)
+                elif direct_answer or direct_reasoning:
+                    if direct_reasoning:
+                        reasoning_parts.append(direct_reasoning)
+                        yield _sse({"type": "reasoning", "content": direct_reasoning})
+                    if direct_answer:
+                        if not ttft_logged:
+                            ttft_ms = int((time.perf_counter() - t0) * 1000)
+                            logger.info(
+                                "chat_ttft path=agent_direct ttft_ms=%d intent=%s "
+                                "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
+                                "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
+                                ttft_ms,
+                                intent,
+                                int(ctx_stats.get("tokens") or 0),
+                                ctx_stats.get("level") or "safe",
+                                int(ctx_stats.get("dropped_turns") or 0),
+                                ctx_stats.get("compose_level") or "-",
+                                int(ctx_stats.get("compose_dropped_turns") or 0),
+                                is_regenerate,
+                            )
+                            yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
+                            ttft_logged = True
+                        acc.append(direct_answer)
+                        yield _sse({"type": "token", "content": direct_answer})
+                else:
+                    answer_buf = RedactBuffer()
+                    reason_buf = RedactBuffer()
+                    def _note_ttft() -> str | None:
+                        nonlocal ttft_logged
+                        if ttft_logged:
+                            return None
                         ttft_ms = int((time.perf_counter() - t0) * 1000)
                         logger.info(
-                            "chat_ttft path=agent_direct ttft_ms=%d intent=%s "
+                            "chat_ttft path=agent_stream ttft_ms=%d intent=%s history_len=%d "
                             "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
                             "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
                             ttft_ms,
                             intent,
+                            len(workflow_history),
                             int(ctx_stats.get("tokens") or 0),
                             ctx_stats.get("level") or "safe",
                             int(ctx_stats.get("dropped_turns") or 0),
@@ -592,202 +615,196 @@ async def chat(
                             int(ctx_stats.get("compose_dropped_turns") or 0),
                             is_regenerate,
                         )
-                        yield _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
                         ttft_logged = True
-                    acc.append(direct_answer)
-                    yield _sse({"type": "token", "content": direct_answer})
-            else:
-                answer_buf = RedactBuffer()
-                reason_buf = RedactBuffer()
-
-                def _note_ttft() -> str | None:
-                    nonlocal ttft_logged
-                    if ttft_logged:
-                        return None
-                    ttft_ms = int((time.perf_counter() - t0) * 1000)
-                    logger.info(
-                        "chat_ttft path=agent_stream ttft_ms=%d intent=%s history_len=%d "
-                        "ctx_tokens=%d ctx_level=%s ctx_dropped=%d "
-                        "ctx_compose_level=%s ctx_compose_dropped=%d regenerate=%s",
-                        ttft_ms,
-                        intent,
-                        len(workflow_history),
-                        int(ctx_stats.get("tokens") or 0),
-                        ctx_stats.get("level") or "safe",
-                        int(ctx_stats.get("dropped_turns") or 0),
-                        ctx_stats.get("compose_level") or "-",
-                        int(ctx_stats.get("compose_dropped_turns") or 0),
-                        is_regenerate,
-                    )
-                    ttft_logged = True
-                    return _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
-
-                try:
-                    async for delta in stream_chat(
-                        llm_messages, role=Role.CHAT, usage_out=stream_usage
-                    ):
-                        if isinstance(delta, ReasoningDelta):
-                            for piece in reason_buf.push(delta.text):
+                        return _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
+                    try:
+                        leave_stream = False
+                        async for delta in stream_chat(
+                            llm_messages, role=Role.CHAT, usage_out=stream_usage
+                        ):
+                            if is_stopped() or await request.is_disconnected():
+                                task_run.stop(user_id=uid, generation=turn.generation)
+                                leave_stream = True
+                                break
+                            if isinstance(delta, ReasoningDelta):
+                                for piece in reason_buf.push(delta.text):
+                                    if is_stopped() or await request.is_disconnected():
+                                        task_run.stop(user_id=uid, generation=turn.generation)
+                                        leave_stream = True
+                                        break
+                                    reasoning_parts.append(piece)
+                                    yield _sse({"type": "reasoning", "content": piece})
+                            elif isinstance(delta, AnswerDelta):
+                                for piece in answer_buf.push(delta.text):
+                                    if is_stopped() or await request.is_disconnected():
+                                        task_run.stop(user_id=uid, generation=turn.generation)
+                                        leave_stream = True
+                                        break
+                                    marker = _note_ttft()
+                                    if marker:
+                                        yield marker
+                                    acc.append(piece)
+                                    yield _sse({"type": "token", "content": piece})
+                            if leave_stream:
+                                break
+                        if not leave_stream:
+                            for piece in reason_buf.finish():
                                 reasoning_parts.append(piece)
                                 yield _sse({"type": "reasoning", "content": piece})
-                        elif isinstance(delta, AnswerDelta):
-                            for piece in answer_buf.push(delta.text):
+                            for piece in answer_buf.finish():
                                 marker = _note_ttft()
                                 if marker:
                                     yield marker
                                 acc.append(piece)
                                 yield _sse({"type": "token", "content": piece})
-                        if await request.is_disconnected():
-                            break
-                    for piece in reason_buf.finish():
-                        reasoning_parts.append(piece)
-                        yield _sse({"type": "reasoning", "content": piece})
-                    for piece in answer_buf.finish():
-                        marker = _note_ttft()
-                        if marker:
-                            yield marker
-                        acc.append(piece)
-                        yield _sse({"type": "token", "content": piece})
-                except LLMInfraError as exc:
-                    for piece in reason_buf.finish():
-                        reasoning_parts.append(piece)
-                        yield _sse({"type": "reasoning", "content": piece})
-                    err_content = llm_user_error(exc)
-                    acc.clear()
-                    acc.append(err_content)
-                    yield _sse({"type": "error", "content": err_content})
-            if not artifact_stored:
-                inferred = infer_workspace_artifact(redact_text("".join(acc)))
-                if inferred and inferred.get("kind") != "image":
-                    extra_artifact = prepare_artifact_for_storage(inferred)
-                    if extra_artifact and extra_artifact.get("kind") != "image":
-                        yield _sse({"type": "artifact", "artifact": extra_artifact})
-        except asyncio.CancelledError:
-            if wf_task is not None and not wf_task.done():
-                wf_task.cancel()
-                try:
-                    await wf_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-            raise
-        except RouterError as e:
-            err_content = str(e) if str(e).startswith("工具规划失败") else f"工具规划失败：{e}"
-            logger.warning("router failed: %s", e)
-            if not acc:
-                acc.append(err_content)
-            yield _sse({"type": "error", "content": err_content})
-        except Exception as e:
-            err_content = llm_user_error(e)
-            if not acc:
-                acc.append(err_content)
-            yield _sse({"type": "error", "content": err_content})
-        finally:
-            assistant_content = redact_text("".join(acc))
-            assistant_reasoning = "".join(reasoning_parts)
-            persisted = False
-            if wf is not None:
-                persist_artifact = prepare_artifact_for_storage(wf.get("artifact")) or extra_artifact
-                pending_json = (
-                    json.dumps(wf.get("pending_calendar"), ensure_ascii=False)
-                    if wf.get("pending_calendar")
-                    else ""
-                )
-                set_rls_context(db, uid)
-                _finish_persist(
-                    assistant_content,
-                    reasoning=assistant_reasoning,
-                    citations_payload=wf.get("citations"),
-                    schedule_card=wf.get("schedule_card"),
-                    pending_calendar_json=pending_json,
-                    artifact_stored=persist_artifact,
-                )
-                persisted = True
-            elif acc:
-                set_rls_context(db, uid)
-                _finish_persist(
-                    assistant_content,
-                    reasoning=assistant_reasoning,
-                    artifact_stored=extra_artifact,
-                )
-                persisted = True
-            elif not is_regenerate:
-                set_rls_context(db, uid)
-                _commit_user_turn(db, session, user_message)
-            if persisted:
-                try:
-                    task_run.finish(user_id=uid, generation=turn.generation)
-                except task_run.LateResult as exc:
-                    logger.warning(
-                        "late task finish user_id=%s generation=%s status=%s",
-                        uid,
-                        turn.generation,
-                        exc.turn.status,
-                    )
-                try:
-                    await asyncio.to_thread(
-                        _remember_turn_isolated,
-                        uid,
-                        user_message,
-                        assistant_content,
-                    )
-                except Exception:
-                    logger.exception("memory extract thread failed")
-                try:
-                    await asyncio.to_thread(
-                        _refresh_context_isolated,
-                        uid,
-                        session.id,
-                        citations=wf.get("citations") if wf else None,
-                        document_ids=req.document_ids or None,
-                        analysis_summary=wf.get("analysis_summary") if wf else None,
-                        artifact=(
-                            prepare_artifact_for_storage(wf.get("artifact"))
-                            if wf
-                            else extra_artifact
-                        ),
-                    )
-                except Exception:
-                    logger.exception("context refresh thread failed")
-                try:
-                    est = int(ctx_stats.get("tokens") or 0)
-                    actual = stream_usage.get("prompt_tokens")
-                    err_pct = None
-                    if actual is not None and int(actual) > 0:
-                        err_pct = round(abs(est - int(actual)) / float(actual) * 100.0, 2)
-                    logger.info(
-                        "chat_ctx session_id=%s ctx_est_tokens=%d ctx_actual_tokens=%s "
-                        "ctx_err_pct=%s ctx_level=%s ctx_compose_level=%s "
-                        "summary_status=%s",
-                        session.id,
-                        est,
-                        actual if actual is not None else "-",
-                        err_pct if err_pct is not None else "-",
-                        ctx_stats.get("level") or "safe",
-                        ctx_stats.get("compose_level") or "-",
-                        "deferred",
-                    )
-                except Exception:
-                    logger.exception("chat_ctx log failed")
-                if new_title and not is_regenerate:
+                    except LLMInfraError as exc:
+                        if is_stopped() or await request.is_disconnected():
+                            task_run.stop(user_id=uid, generation=turn.generation)
+                        else:
+                            for piece in reason_buf.finish():
+                                reasoning_parts.append(piece)
+                                yield _sse({"type": "reasoning", "content": piece})
+                            err_content = llm_user_error(exc)
+                            acc.clear()
+                            acc.append(err_content)
+                            yield _sse({"type": "error", "content": err_content})
+                if not artifact_stored:
+                    inferred = infer_workspace_artifact(redact_text("".join(acc)))
+                    if inferred and inferred.get("kind") != "image":
+                        extra_artifact = prepare_artifact_for_storage(inferred)
+                        if extra_artifact and extra_artifact.get("kind") != "image":
+                            yield _sse({"type": "artifact", "artifact": extra_artifact})
+            except GenerationStopped:
+                pass
+            except asyncio.CancelledError:
+                task_run.stop(user_id=uid, generation=turn.generation)
+                if wf_task is not None and not wf_task.done():
+                    wf_task.cancel()
                     try:
-                        llm_title = await asyncio.to_thread(
-                            generate_session_title,
+                        await wf_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+                raise
+            except RouterError as e:
+                err_content = str(e) if str(e).startswith("工具规划失败") else f"工具规划失败：{e}"
+                logger.warning("router failed: %s", e)
+                if not acc:
+                    acc.append(err_content)
+                yield _sse({"type": "error", "content": err_content})
+            except Exception as e:
+                err_content = llm_user_error(e)
+                if not acc:
+                    acc.append(err_content)
+                yield _sse({"type": "error", "content": err_content})
+            finally:
+                assistant_content = redact_text("".join(acc))
+                assistant_reasoning = "".join(reasoning_parts)
+                persisted = False
+                if wf is not None:
+                    persist_artifact = prepare_artifact_for_storage(wf.get("artifact")) or extra_artifact
+                    pending_json = (
+                        json.dumps(wf.get("pending_calendar"), ensure_ascii=False)
+                        if wf.get("pending_calendar")
+                        else ""
+                    )
+                    set_rls_context(db, uid)
+                    _finish_persist(
+                        assistant_content,
+                        reasoning=assistant_reasoning,
+                        citations_payload=wf.get("citations"),
+                        schedule_card=wf.get("schedule_card"),
+                        pending_calendar_json=pending_json,
+                        artifact_stored=persist_artifact,
+                    )
+                    persisted = True
+                elif acc:
+                    set_rls_context(db, uid)
+                    _finish_persist(
+                        assistant_content,
+                        reasoning=assistant_reasoning,
+                        artifact_stored=extra_artifact,
+                    )
+                    persisted = True
+                elif not is_regenerate:
+                    set_rls_context(db, uid)
+                    _commit_user_turn(db, session, user_message)
+                if persisted and not is_stopped():
+                    try:
+                        task_run.finish(user_id=uid, generation=turn.generation)
+                    except task_run.LateResult as exc:
+                        logger.warning(
+                            "late task finish user_id=%s generation=%s status=%s",
+                            uid,
+                            turn.generation,
+                            exc.turn.status,
+                        )
+                    try:
+                        await asyncio.to_thread(
+                            _remember_turn_isolated,
+                            uid,
                             user_message,
                             assistant_content,
                         )
-                        if llm_title and llm_title != new_title:
-                            replaced = await asyncio.to_thread(
-                                _replace_session_title,
-                                session.id,
-                                new_title,
-                                llm_title,
-                                uid,
-                            )
-                            if replaced:
-                                session.title = llm_title
-                                yield _sse({"type": "session_title", "content": llm_title})
                     except Exception:
-                        logger.exception("session title llm failed")
-            yield _sse({"type": "done"})
+                        logger.exception("memory extract thread failed")
+                    try:
+                        await asyncio.to_thread(
+                            _refresh_context_isolated,
+                            uid,
+                            session.id,
+                            citations=wf.get("citations") if wf else None,
+                            document_ids=req.document_ids or None,
+                            analysis_summary=wf.get("analysis_summary") if wf else None,
+                            artifact=(
+                                prepare_artifact_for_storage(wf.get("artifact"))
+                                if wf
+                                else extra_artifact
+                            ),
+                        )
+                    except Exception:
+                        logger.exception("context refresh thread failed")
+                    try:
+                        est = int(ctx_stats.get("tokens") or 0)
+                        actual = stream_usage.get("prompt_tokens")
+                        err_pct = None
+                        if actual is not None and int(actual) > 0:
+                            err_pct = round(abs(est - int(actual)) / float(actual) * 100.0, 2)
+                        logger.info(
+                            "chat_ctx session_id=%s ctx_est_tokens=%d ctx_actual_tokens=%s "
+                            "ctx_err_pct=%s ctx_level=%s ctx_compose_level=%s "
+                            "summary_status=%s",
+                            session.id,
+                            est,
+                            actual if actual is not None else "-",
+                            err_pct if err_pct is not None else "-",
+                            ctx_stats.get("level") or "safe",
+                            ctx_stats.get("compose_level") or "-",
+                            "deferred",
+                        )
+                    except Exception:
+                        logger.exception("chat_ctx log failed")
+                    if new_title and not is_regenerate:
+                        try:
+                            llm_title = await asyncio.to_thread(
+                                generate_session_title,
+                                user_message,
+                                assistant_content,
+                            )
+                            if llm_title and llm_title != new_title:
+                                replaced = await asyncio.to_thread(
+                                    _replace_session_title,
+                                    session.id,
+                                    new_title,
+                                    llm_title,
+                                    uid,
+                                )
+                                if replaced:
+                                    session.title = llm_title
+                                    yield _sse({"type": "session_title", "content": llm_title})
+                        except Exception:
+                            logger.exception("session title llm failed")
+                yield _sse({"type": "done"})
+        finally:
+            reset(stop_token)
 
     return StreamingResponse(agent_event_gen(), media_type="text/event-stream", headers=SSE_HEADERS)
