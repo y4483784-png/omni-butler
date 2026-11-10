@@ -53,6 +53,6 @@ The model is one generation. It does not model a second user, `verify_state` add
 
 ## Keep the check with the code
 
-The anchors were confirmed against the work-loop change that adds `admit` and `settle_unknown`. Move the confirmation forward only after reading `retrieve_node`, `admit`, `settle_unknown`, `reflect_node`, and the `elif llm_messages` branch, and seeing that the model still describes them. If `retrieve_node` calls `gateway.invoke` before `if is_stopped():`, or `settle_unknown` looks up before `decide_replay` refuses, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `8d59f5f46d0e4a9a5d97b273982bfbeeb62ea139`, the commit that adds `admit` and `settle_unknown`. Move the confirmation forward only after reading `retrieve_node`, `admit`, `settle_unknown`, `reflect_node`, and the `elif llm_messages` branch, and seeing that the model still describes them. If `retrieve_node` calls `gateway.invoke` before `if is_stopped():`, or `settle_unknown` looks up before `decide_replay` refuses, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.
