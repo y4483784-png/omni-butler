@@ -1,0 +1,1255 @@
+{
+  "title": "Omni-Butler envisioned → OSS reference map (merged)",
+  "generated_at": "2026-11-06T11:44:44.764335+08:00",
+  "timezone": "Asia/Singapore",
+  "purpose": "Cursor cloud agent planning input: prefer copy with anchors; pin Omni-Butler anchors at implement.",
+  "parts": {
+    "product_md": "/workspace/flow-diagrams/envisioned-oss-map-product.md",
+    "product_json": "/workspace/flow-diagrams/envisioned-oss-map-product.json",
+    "harness_md": "/workspace/flow-diagrams/envisioned-oss-map-harness.md",
+    "harness_json": "/workspace/flow-diagrams/envisioned-oss-map-harness.json"
+  },
+  "fixed_shas": {
+    "OpenMausBot": "083fd7b51405e6d0c01e189b2f65ab0322509b5a",
+    "DS-Bot": "71d344bf193f3f18185f25de3d8e5c483046910a"
+  },
+  "constraints": [
+    "不做外接聊天总机",
+    "不做手机端",
+    "不做云手机",
+    "不整仓换底座",
+    "模式借鉴不 fork 根仓",
+    "AGPL（Khoj）勿并进闭源发行",
+    "脉搏/事件不绕确认闸"
+  ],
+  "gaps": {
+    "product": [
+      "Leon/Letta 无本地 oss-sources 摘录：OWNER.md、PULSE.md、turn-lifecycle、MemFS 以 comparison.md/上游文档为准，未落盘校验",
+      "DSH 原型无本地文件：派活≠干活、Mandate/安静档位为概念级；编码半边需补 Router/Worker/Ticket 路径",
+      "AnythingLLM 本地仅 google-calendar/index.js、aibitat/index.js、stream.js；gmail/outlook/memory/create-scheduled-job 正文未摘",
+      "确认闸⑦按任务不入本半边主抄；Pi 确认问法/OpenMausBot decision-log 留给编码或壳子半边",
+      "③事件驱动/⑩看门狗/②外壳不在本次范围；编码半边可补 DSH 直通、OpenMausBot turn-watchdog.ts/app-events.ts",
+      "Khoj AGPL 法务落地未展开：仅侧车/参考，闭源发行勿并代码"
+    ],
+    "harness": [
+      {
+        "id": "G-OMNI",
+        "scope": "全部六节点",
+        "detail": "未对 Omni-Butler 当前源码、部署、授权路径做核验；此文是目标图的机制对照，不是现状缺陷清单。"
+      },
+      {
+        "id": "G-SECONDARY",
+        "scope": "先前 Personal Agent 参考",
+        "detail": "本地报告与 Page 均存在并已读；先前 PA 项目无本次固定 SHA/代码行级核验，部分仅 README/目录/架构说明。仅按二手材料使用；Page 的产品现状与许可概括未核验，不作为选型或法律结论。"
+      },
+      {
+        "id": "G-SHELL",
+        "scope": "②",
+        "detail": "未证明完整流式中断/暂停恢复/更改方向均已实现；已发出的 HTTP/外部动作不可因 Stop 保证撤销。两 bot 的机制覆盖不同层，需自行打通。"
+      },
+      {
+        "id": "G-EVENT",
+        "scope": "③",
+        "detail": "两级过滤+订阅直通+邮件持久回执的完整闭环无单一已核验实现。mmd 把 inbox 放在 f2 后：若要在模型判断前避免重复消耗，可另设计 ingress 去重，但本次不改图且不声称已有实现。"
+      },
+      {
+        "id": "G-GATE",
+        "scope": "⑤/⑦/⑧",
+        "detail": "尚无统一“身份×工具×本轮范围×参数×代次”的全栈凭据及原子消费证据；routine 本地提交回执不能确保外部服务副作用原子/恰好一次。"
+      },
+      {
+        "id": "G-WATCH",
+        "scope": "⑩ wd",
+        "detail": "当前图写“主系统外的独立会话”；优先参考 OpenMausBot 实际为进程内 setInterval。外部 supervisor、主进程崩溃恢复、状态持久性需另证；监测规则不必由独立 LLM 执行。"
+      },
+      {
+        "id": "G-NET",
+        "scope": "⑤ webflag / ⑧ dsknet、err_stop、local",
+        "detail": "本次未核验 DeepSeek 自带联网、App墙判断或桌面包本机能力的具体代码。保留预想边界，不用第三方通道/电脑工具反向扩张范围。"
+      },
+      {
+        "id": "G-MEM",
+        "scope": "⑨关联但非本次六条",
+        "detail": "此前 DS-Bot 记忆提交/恢复/审计证据仍有效，但本次不扩成第七条；不拿记忆事务推导外部动作事务。"
+      }
+    ]
+  },
+  "counts": {
+    "product_items": 27,
+    "harness_entries": 6,
+    "total": 33
+  },
+  "entries": [
+    {
+      "side": "product",
+      "section_id": "1_entry",
+      "section_title": "① 入口形态",
+      "node": "desk",
+      "behavior": "桌面安装包=完整产品：聊天窗+本机动手同一应用",
+      "prefer": {
+        "project": "Leon",
+        "what": "本机个人助手 OS；apps/web + Satellite 本机工具",
+        "path_or_ref": "leon-ai/leon develop: core/context/ARCHITECTURE.md, LEON.md, apps/web"
+      },
+      "alt": [
+        {
+          "project": "Eigent",
+          "what": "Electron 桌面壳形态对照",
+          "path_or_ref": "eigent-ai/eigent electron/"
+        },
+        {
+          "project": "OpenMausBot",
+          "what": "同应用内嵌本机能力形状（次选）",
+          "path_or_ref": "oss-sources/OpenMausBot/electron/main.mjs"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "OpenClaw/Hermes/ZeroClaw",
+          "why": "外接多聊总机产品形态，不做"
+        },
+        {
+          "project": "千问Go",
+          "why": "云手机形态，不做"
+        },
+        {
+          "project": "Open Interpreter",
+          "why": "编码助手非生活助手底座"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "1_entry",
+      "section_title": "① 入口形态",
+      "node": "web",
+      "behavior": "网页版瘦：对话/日历确认卡/知识库；无本机动手",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "Vite+React frontend + server 工作区聊天瘦能力",
+        "path_or_ref": "Mintplex-Labs/anything-llm frontend/, server/"
+      },
+      "alt": [
+        {
+          "project": "Khoj",
+          "what": "网页 RAG/对话侧车",
+          "path_or_ref": "khoj-ai/khoj src/khoj/interface/web"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "网页遥控本机助手",
+          "why": "已废弃；本机动手仅安装包内"
+        },
+        {
+          "project": "Khoj Phone/WhatsApp clients",
+          "why": "不做手机端/外接总机主入口"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "1_entry",
+      "section_title": "① 入口形态",
+      "node": "mailin",
+      "behavior": "邮件当一等入口；来信也可当事件",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "gmail/outlook 与日历同级 AIbitat 插件形状；对照 nanobot 邮件一等入口外形",
+        "path_or_ref": "server/utils/agents/aibitat/plugins/ (gmail, outlook); Page nanobot"
+      },
+      "alt": [
+        {
+          "project": "OpenMausBot",
+          "what": "邮件工具宿主+scope验权+内部MCP",
+          "path_or_ref": "oss-sources/OpenMausBot/server/email/host.ts"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "OpenClaw/Letta channels",
+          "why": "外接微信/Slack/TG/WhatsApp 总机不做产品主入口"
+        },
+        {
+          "project": "Hermes mail channel",
+          "why": "仅概念；默认全机权限别学"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "4_dispatch",
+      "section_title": "④ 派活≠干活",
+      "node": "observe",
+      "behavior": "观察来意/事件要干什么；只理解不执行",
+      "prefer": {
+        "project": "DSH SuperAgent",
+        "what": "Router 常驻筛触发、听人与事件，自己不干活",
+        "path_or_ref": "deepseek-ai/dsh-superagent-prototype (Router); Page harness"
+      },
+      "alt": [
+        {
+          "project": "Leon",
+          "what": "brain 入口理解",
+          "path_or_ref": "core/brain/brain.ts"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "Hermes",
+          "why": "主循环一把梭调工具"
+        },
+        {
+          "project": "派活层",
+          "why": "不可直接调写工具或出确认卡"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "4_dispatch",
+      "section_title": "④ 派活≠干活",
+      "node": "assign",
+      "behavior": "分派本轮任务；自己不调工具、不出确认卡",
+      "prefer": {
+        "project": "DSH SuperAgent",
+        "what": "Worker 按 Ticket 隔离；任务带授权范围；相关通知可直通干活侧",
+        "path_or_ref": "dsh-superagent-prototype Router/Worker/Mandate/Subscription 概念"
+      },
+      "alt": [
+        {
+          "project": "NanoClaw",
+          "what": "宿主薄、干活关容器、钥匙留宿主",
+          "path_or_ref": "nanocoai/nanoclaw (Page gateway)"
+        },
+        {
+          "project": "Eigent",
+          "what": "多助手并行 UX 对照（非底座）",
+          "path_or_ref": "eigent-ai/eigent"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "DSH",
+          "why": "别抄 PR/分支/裸用户进程当管家边界"
+        },
+        {
+          "project": "Eigent/Open Interpreter",
+          "why": "不当 personal/日历管家根仓"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "6_work_loop",
+      "section_title": "⑥ 规划-执行-反思",
+      "node": "plan",
+      "behavior": "规划用哪些能力、排顺序",
+      "prefer": {
+        "project": "Leon",
+        "what": "Skills→Actions→Tools→Functions；react-llm-duty + toolkit-registry",
+        "path_or_ref": "core/brain/ llm-duties/react-llm-duty.ts; tool-manager/toolkit-registry.ts"
+      },
+      "alt": [
+        {
+          "project": "AnythingLLM",
+          "what": "AIbitat 多 agent 图引导",
+          "path_or_ref": "oss-sources/AnythingLLM/server/utils/agents/aibitat/index.js"
+        },
+        {
+          "project": "Letta",
+          "what": "子代理 general/forked/recall",
+          "path_or_ref": "letta-ai/letta-code src/"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "确认闸",
+          "why": "闸本身非本半边 OSS 主抄点"
+        },
+        {
+          "project": "满分异步 ReAct",
+          "why": "预想先用简化可打断"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "6_work_loop",
+      "section_title": "⑥ 规划-执行-反思",
+      "node": "has",
+      "behavior": "还有下一步？循环闸",
+      "prefer": {
+        "project": "Leon",
+        "what": "回合生命周期",
+        "path_or_ref": "core/turn-lifecycle/"
+      },
+      "alt": [
+        {
+          "project": "AnythingLLM",
+          "what": "AIbitat maxRounds + abort 边界",
+          "path_or_ref": "aibitat/index.js _aborted / maxRounds"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "投机执行",
+          "why": "预想先不做"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "6_work_loop",
+      "section_title": "⑥ 规划-执行-反思",
+      "node": "pick",
+      "behavior": "按授权选能力",
+      "prefer": {
+        "project": "Leon",
+        "what": "progressive tool loading；agent/smart/controlled 模式；对照 DSH Mandate",
+        "path_or_ref": "tool-manager/; modes in ARCHITECTURE.md"
+      },
+      "alt": [
+        {
+          "project": "AnythingLLM",
+          "what": "plugin use() 安装与工具可见",
+          "path_or_ref": "aibitat/index.js use(plugin)"
+        },
+        {
+          "project": "OpenMausBot",
+          "what": "connector scope 验权（次选）",
+          "path_or_ref": "oss-sources/OpenMausBot/server/email/host.ts emailAccess"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "Hermes",
+          "why": "默认全机权限"
+        },
+        {
+          "project": "任意栈",
+          "why": "上下文变长不抬权；隐藏工具当授权"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "6_work_loop",
+      "section_title": "⑥ 规划-执行-反思",
+      "node": "reflect",
+      "behavior": "看结果够不够",
+      "prefer": {
+        "project": "Leon",
+        "what": "agent 环结果回流反思",
+        "path_or_ref": "core/brain/ + turn-lifecycle"
+      },
+      "alt": [
+        {
+          "project": "AnythingLLM",
+          "what": "tool 结果回流聊天",
+          "path_or_ref": "aibitat/index.js"
+        },
+        {
+          "project": "Letta",
+          "what": "dreaming/sleeptime 巩固思路（偏记忆）",
+          "path_or_ref": "docs.letta.com/letta-code/memory /dream /sleeptime"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "不可重放写",
+          "why": "结果未知不盲目重发"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "6_work_loop",
+      "section_title": "⑥ 规划-执行-反思",
+      "node": "answer",
+      "behavior": "写最终回复",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "流式回复形状",
+        "path_or_ref": "oss-sources/AnythingLLM/server/utils/chats/stream.js"
+      },
+      "alt": [
+        {
+          "project": "Leon",
+          "what": "Socket.IO/HTTP 回客户端",
+          "path_or_ref": "server/ + apps/web"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "派活层",
+          "why": "不可代写最终回复并绕过干活内核"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "9_quiet_memory_pulse",
+      "section_title": "⑨ 长记忆/少打扰/主动脉搏",
+      "node": "conf",
+      "behavior": "把握够高？开口前门槛",
+      "prefer": {
+        "project": "DSH SuperAgent",
+        "what": "主动档位：关/先记账给人看/自动；默认先记账",
+        "path_or_ref": "dsh-superagent-prototype 主动档位（Page）"
+      },
+      "alt": [
+        {
+          "project": "Leon",
+          "what": "pulse 从拒绝中学习",
+          "path_or_ref": "PULSE.md 有界脉搏"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "低把握刷屏",
+          "why": "不出草稿卡刷屏；无人确认不自动写入"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "9_quiet_memory_pulse",
+      "section_title": "⑨ 长记忆/少打扰/主动脉搏",
+      "node": "audit",
+      "behavior": "低把握先记账到审计账本；可读，不出草稿卡",
+      "prefer": {
+        "project": "DSH SuperAgent",
+        "what": "安静默认+记账给人看",
+        "path_or_ref": "dsh 主动档位/ledger 概念"
+      },
+      "alt": [
+        {
+          "project": "OpenMausBot",
+          "what": "允许/拒绝/出卡 NDJSON 审计（次选，偏授权留痕）",
+          "path_or_ref": "oss-sources/OpenMausBot/server/decision-log.ts"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "提示词恢复",
+          "why": "别学用提示词恢复代替幂等账本"
+        },
+        {
+          "project": "内存审批表",
+          "why": "不当持久队列"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "9_quiet_memory_pulse",
+      "section_title": "⑨ 长记忆/少打扰/主动脉搏",
+      "node": "speak",
+      "behavior": "有结果或要人动手时才开口",
+      "prefer": {
+        "project": "Leon",
+        "what": "有界脉搏 + 少事/tick",
+        "path_or_ref": "PULSE.md ≤1 matter/tick"
+      },
+      "alt": [
+        {
+          "project": "DSH SuperAgent",
+          "what": "少打扰默认",
+          "path_or_ref": "Page: 没事不说话"
+        },
+        {
+          "project": "nanobot",
+          "what": "默认拒收陌生人消息（入口安静）",
+          "path_or_ref": "HKUDS/nanobot (Page)"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "脉搏/事件",
+          "why": "不可绕确认闸后直接写世界"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "9_quiet_memory_pulse",
+      "section_title": "⑨ 长记忆/少打扰/主动脉搏",
+      "node": "mem",
+      "behavior": "可查偏好/要点档案；读写可审计；不默默抬权；变更账本",
+      "prefer": {
+        "project": "Leon",
+        "what": "分层记忆 + OWNER.md 策展档案 + QMD；经验 SKILL.md 有上限",
+        "path_or_ref": "OWNER.md; layered persistent/daily/discussion; QMD"
+      },
+      "alt": [
+        {
+          "project": "Letta",
+          "what": "MemFS git 背书记忆 + dreaming/sleeptime",
+          "path_or_ref": "letta-code MemFS; docs.letta.com/letta-code/memory"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "AnythingLLM memory",
+          "why": "浅 facts（≤20/≤5）不当深记忆"
+        },
+        {
+          "project": "Letta AgentFile",
+          "why": ".af 已废弃/移除"
+        },
+        {
+          "project": "Khoj RAG",
+          "why": "文档第二大脑 ≠ 身份偏好档案"
+        },
+        {
+          "project": "整套乱改记忆",
+          "why": "预想不做整套第二大脑乱改"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "9_quiet_memory_pulse",
+      "section_title": "⑨ 长记忆/少打扰/主动脉搏",
+      "node": "pulse",
+      "behavior": "主动脉搏：到点提醒/催办经外壳推；写操作仍走确认闸",
+      "prefer": {
+        "project": "Leon",
+        "what": "PULSE.md 有界脉搏，拒绝可学",
+        "path_or_ref": "PULSE.md; ARCHITECTURE.md proactivity"
+      },
+      "alt": [
+        {
+          "project": "Letta",
+          "what": "crons/reminders/hooks",
+          "path_or_ref": "letta-code schedules/heartbeats"
+        },
+        {
+          "project": "AnythingLLM",
+          "what": "create-scheduled-job 插件形状",
+          "path_or_ref": "server/utils/agents/aibitat/plugins/ create-scheduled-job"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "cron-as-core",
+          "why": "定时不当助手核、不定确认闸"
+        },
+        {
+          "project": "脉搏绕闸",
+          "why": "写操作必须确认闸"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "kb",
+      "behavior": "知识库插头（文档 RAG，非身份记忆）",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "collector + 多向量后端；MIT 活跃",
+        "path_or_ref": "collector/; server vector DB (LanceDB/PGVector/…)"
+      },
+      "alt": [
+        {
+          "project": "Khoj",
+          "what": "content ingestion + embeddings + pgvector",
+          "path_or_ref": "oss-sources/Khoj/docker-compose.yml; src/khoj/processor/content, embeddings.py"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "Khoj fork-as-root",
+          "why": "AGPL-3.0 传染；仅侧车/参考"
+        },
+        {
+          "project": "RAG-as-mem",
+          "why": "勿用文档 RAG 顶替 mem 身份档案"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "cal",
+      "behavior": "日历插头；会前文档/会后纪要；写仍走确认闸",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "google-calendar 插件：读写分列 list/get/create/update",
+        "path_or_ref": "oss-sources/AnythingLLM/server/utils/agents/aibitat/plugins/google-calendar/index.js"
+      },
+      "alt": [
+        {
+          "project": "AnythingLLM",
+          "what": "同仓 gmail/outlook 插件形状",
+          "path_or_ref": "aibitat/plugins/ gmail, outlook"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "插件=产品",
+          "why": "插件级日历 ≠ 确认卡产品深度"
+        },
+        {
+          "project": "无人确认写入",
+          "why": "GCalCreateEvent 等写操作必须确认闸"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "sandbox",
+      "behavior": "沙箱跑代码插头；断网、受控",
+      "prefer": {
+        "project": "Khoj",
+        "what": "Terrarium 沙箱容器 + KHOJ_TERRARIUM_URL",
+        "path_or_ref": "oss-sources/Khoj/docker-compose.yml sandbox; processor/tools/run_code.py"
+      },
+      "alt": [
+        {
+          "project": "Open Interpreter",
+          "what": "沙箱/本机编码对照（非 PA 底座）",
+          "path_or_ref": "openinterpreter/openinterpreter README"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "Hermes",
+          "why": "默认全机 shell"
+        },
+        {
+          "project": "沙箱当授权",
+          "why": "沙箱≠授权或隐藏工具"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "runner",
+      "behavior": "跑代码小服务",
+      "prefer": {
+        "project": "Khoj",
+        "what": "独立 sandbox 服务进程",
+        "path_or_ref": "docker-compose.yml service sandbox (Terrarium)"
+      },
+      "alt": [],
+      "avoid": [
+        {
+          "project": "主进程内裸 exec",
+          "why": "需独立受控小服务"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "api",
+      "behavior": "主服务",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "Express+Prisma server 形状对照",
+        "path_or_ref": "server/"
+      },
+      "alt": [
+        {
+          "project": "Khoj",
+          "what": "Django server 形状",
+          "path_or_ref": "src/khoj/ main/manage"
+        },
+        {
+          "project": "Leon",
+          "what": "server/ runtime",
+          "path_or_ref": "server/"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "整仓换底座",
+          "why": "继续演进 Omni-Butler，不换根"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "pg",
+      "behavior": "数据库",
+      "prefer": {
+        "project": "Khoj",
+        "what": "Postgres + pgvector 明示 compose",
+        "path_or_ref": "oss-sources/Khoj/docker-compose.yml database: pgvector/pgvector:pg15"
+      },
+      "alt": [
+        {
+          "project": "AnythingLLM",
+          "what": "Prisma 多库习惯",
+          "path_or_ref": "server Prisma"
+        }
+      ],
+      "avoid": []
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "vec",
+      "behavior": "向量库",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "默认 LanceDB，可选 PGVector 等",
+        "path_or_ref": "server vector DB backends"
+      },
+      "alt": [
+        {
+          "project": "Khoj",
+          "what": "pgvector 一体",
+          "path_or_ref": "docker-compose.yml database"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "Khoj code merge",
+          "why": "AGPL 勿并闭源"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "q",
+      "behavior": "队列缓存",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "scheduled jobs / agent cron 形状",
+        "path_or_ref": "create-scheduled-job plugin; agent ephemeral jobs"
+      },
+      "alt": [
+        {
+          "project": "Letta",
+          "what": "schedules",
+          "path_or_ref": "letta-code crons"
+        },
+        {
+          "project": "OpenMausBot",
+          "what": "routines 节奏对照（次选）",
+          "path_or_ref": "oss-sources/OpenMausBot/server/routines.ts"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "内存队列",
+          "why": "不当持久投递"
+        },
+        {
+          "project": "投机执行",
+          "why": "先不做"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "files",
+      "behavior": "文件存储",
+      "prefer": {
+        "project": "Khoj",
+        "what": "文档同步卷/配置卷形状",
+        "path_or_ref": "docker-compose volumes khoj_config/khoj_db"
+      },
+      "alt": [
+        {
+          "project": "AnythingLLM",
+          "what": "workspace 文件",
+          "path_or_ref": "collector + workspace storage"
+        },
+        {
+          "project": "Leon",
+          "what": "工作区/context files",
+          "path_or_ref": "core/context/ runtime context files"
+        }
+      ],
+      "avoid": []
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "cron",
+      "behavior": "定时后台；不当助手核、不定确认闸",
+      "prefer": {
+        "project": "Letta",
+        "what": "crons/reminders；心跳调度",
+        "path_or_ref": "letta-code schedules/heartbeats"
+      },
+      "alt": [
+        {
+          "project": "Leon",
+          "what": "pulse 调度边界",
+          "path_or_ref": "PULSE.md"
+        },
+        {
+          "project": "AnythingLLM",
+          "what": "create-scheduled-job",
+          "path_or_ref": "aibitat/plugins/ create-scheduled-job"
+        },
+        {
+          "project": "DSH SuperAgent",
+          "what": "订阅直通不定每次绕派活",
+          "path_or_ref": "Subscription/直通概念"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "cron写世界",
+          "why": "定时不直接写日历/付钱"
+        },
+        {
+          "project": "看门狗改权",
+          "why": "cron 叫醒看门狗不可改授权"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "mail_tools",
+      "behavior": "邮件读写作为工具/事件源（PA 对比已有点）",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "gmail/outlook agent plugins",
+        "path_or_ref": "server/utils/agents/aibitat/plugins/ gmail, outlook"
+      },
+      "alt": [
+        {
+          "project": "OpenMausBot",
+          "what": "email host + internal MCP",
+          "path_or_ref": "oss-sources/OpenMausBot/server/email/host.ts"
+        },
+        {
+          "project": "nanobot",
+          "what": "邮件通道一等入口外形",
+          "path_or_ref": "HKUDS/nanobot (Page)"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "外接聊天总机",
+          "why": "不做"
+        },
+        {
+          "project": "无人确认发信",
+          "why": "写/发仍确认闸"
+        }
+      ]
+    },
+    {
+      "side": "product",
+      "section_id": "11_services",
+      "section_title": "⑪ 服务侧",
+      "node": "plugin_shape",
+      "behavior": "统一工具插头旁的插件安装形态",
+      "prefer": {
+        "project": "AnythingLLM",
+        "what": "AIbitat use(plugin) + google-calendar 插件包",
+        "path_or_ref": "aibitat/index.js use(); plugins/google-calendar/"
+      },
+      "alt": [
+        {
+          "project": "Leon",
+          "what": "Skills→Tools 分层",
+          "path_or_ref": "skills/; tool-manager/"
+        }
+      ],
+      "avoid": [
+        {
+          "project": "Letta/OpenClaw channels",
+          "why": "通道插件概念可学，多聊总机产品形态不搬"
+        }
+      ]
+    },
+    {
+      "side": "harness",
+      "id": "02-shell",
+      "node": {
+        "request_number": "②",
+        "mmd_subgraph_id": "SHELL",
+        "mmd_title": "② 外壳：收发与可打断交互（简化要做）",
+        "mmd_lines": [
+          41,
+          49
+        ],
+        "node_ids": [
+          "duplex",
+          "stream",
+          "chan",
+          "shellnote"
+        ],
+        "cross_node_mapping": [
+          "⑤ task：运行代次/旧结果隔离",
+          "⑧ contract：请求前取消检查"
+        ],
+        "numbering_note": "请求编号与 mmd 分区编号一致；跨区关联保留原编号。"
+      },
+      "behavior": "桌面/网页/邮件共用可打断任务会话；Stop 向子任务、排队项与请求前传播，旧结果不得复活；外壳只负责交互，不替确认闸批准。",
+      "preferred": [
+        {
+          "source_ids": [
+            "D-CANCEL",
+            "D-LATE"
+          ],
+          "mechanism": "子任务追踪、取消传播、清掉排队通知、抑制迟到完成。",
+          "omni_butler_integration": "在 Omni-Butler 任务层实现父子 run 关联与取消代次；外壳 Stop 调同一取消入口，不引入 DS-Bot 群聊。",
+          "evidence_boundary": "证明了回合/子 agent 层处理，不证明所有外部工具在途请求可中止或撤销。"
+        }
+      ],
+      "alternatives": [
+        {
+          "source_ids": [
+            "O-CANCEL",
+            "O-HTTP"
+          ],
+          "mechanism": "每次工具调用绑定活动检查；等待后和真正发请求前再次检查。",
+          "omni_butler_integration": "统一插头接受任务有效性检查，在退避/限流/异步准备后复查；取消和 HTTP 超时分开。",
+          "evidence_boundary": "该 client 的 fetch 使用超时 signal；不是完整链路 AbortSignal 传播。"
+        },
+        {
+          "source_ids": [
+            "PA-PI",
+            "PA-LETTA",
+            "PA-NANOBOT",
+            "PA-OPENCLAW",
+            "PA-EIGENT"
+          ],
+          "mechanism": "壳子/通道补充：Pi 会话嵌入、Letta CLI/App Server 与通道分层、nanobot 邮件总线、OpenClaw 收发/执行分离、Eigent 桌面壳形态。",
+          "omni_butler_integration": "只读这些先前机制线索，映射到现有桌面壳+瘦网页+邮件 adapter；是否采用包另行评估。",
+          "evidence_boundary": "全部为先前报告/Page 二手证据；未复核取消 API，也不能作为群聊总机或整仓换底座理由。"
+        }
+      ],
+      "do_not_copy": [
+        "Stop=撤销已发送请求/外部动作。",
+        "把外壳确认框当全产品确认闸，或让外壳绕过授权。",
+        "完整群聊总机、跨 App 聊天入口、满分全双工/异步 ReAct；本版仍简化可打断。"
+      ]
+    },
+    {
+      "side": "harness",
+      "id": "03-events",
+      "node": {
+        "request_number": "③",
+        "mmd_subgraph_id": "TRIGGER",
+        "mmd_title": "③ 事件驱动主动（要做）",
+        "mmd_lines": [
+          51,
+          62
+        ],
+        "node_ids": [
+          "src",
+          "f1",
+          "f2",
+          "inbox",
+          "route",
+          "direct",
+          "newjob",
+          "receipt",
+          "tnote"
+        ],
+        "cross_node_mapping": [],
+        "numbering_note": "请求编号与 mmd 分区编号一致；跨区关联保留原编号。"
+      },
+      "behavior": "邮件/日程等订阅事件经两级过滤后进入事件收件箱；按来源和投递号取得持久回执，关联事件直达正在执行任务；接收、派活和外部成功分别记账，写操作仍过闸。",
+      "preferred": [
+        {
+          "source_ids": [
+            "O-EVENT",
+            "O-RECEIPT"
+          ],
+          "mechanism": "事件键→run 回执；run/回执同次保存，保存失败回滚，成功才调度；有容量与保留窗口。",
+          "omni_butler_integration": "在现有后端用事件表/唯一键+事务/outbox 实现同等语义；回执与业务外部效果账分开。",
+          "evidence_boundary": "源码证明 webhook/app 事件去重与本地保存，不证明跨进程数据库事务、邮件投递语义或外部动作 exactly-once。"
+        }
+      ],
+      "alternatives": [
+        {
+          "source_ids": [
+            "PA-DSH",
+            "PA-NANOBOT",
+            "PA-HERMES",
+            "PA-LETTA"
+          ],
+          "mechanism": "DeepSeek 原型的关联事件直通；nanobot/Hermes 的邮件入口；Letta 通道配对/路由/访问控制。",
+          "omni_butler_integration": "把邮件当 typed event adapter；保留来源/信任级别/关联任务/投递键；只借通道适配，不建设聊天总机。",
+          "evidence_boundary": "二手材料未证明持久事件回执、两级过滤具体实现或邮件 OAuth 产品闭环。"
+        }
+      ],
+      "do_not_copy": [
+        "收到 webhook 或派活成功就显示外部动作已成功。",
+        "去重窗口=永远 exactly-once；事件去重代替业务副作用幂等。",
+        "模型投机执行或通道消息直接触发写操作；外部文本不能自带授权。"
+      ]
+    },
+    {
+      "side": "harness",
+      "id": "05-auth",
+      "node": {
+        "request_number": "⑤",
+        "mmd_subgraph_id": "AUTH",
+        "mmd_title": "⑤ 这一轮任务与授权",
+        "mmd_lines": [
+          70,
+          76
+        ],
+        "node_ids": [
+          "task",
+          "stack",
+          "note",
+          "webflag"
+        ],
+        "cross_node_mapping": [
+          "⑧ mcp：工具可见 ≠ 有执行权限；执行端独立验权",
+          "⑦ go：作用范围/代次的确认凭据"
+        ],
+        "numbering_note": "请求编号与 mmd 分区编号一致；跨区关联保留原编号。"
+      },
+      "behavior": "任务带本轮代次与身份→工具白名单→本轮允许；工具列表只是展示/模型可见集合，执行端独立验权；上下文增长和委派都不能抬权。",
+      "preferred": [
+        {
+          "source_ids": [
+            "O-RPC"
+          ],
+          "mechanism": "tools/list 与 tools/call 分别按策略判定，执行入口另查任务仍有效。",
+          "omni_butler_integration": "把三层授权合成执行时 policy；每个工具入口都验主体、白名单、本轮范围和取消状态。",
+          "evidence_boundary": "已读的是单个 HighLevel 适配器，不能宣称该仓或 Omni-Butler 已全面覆盖三层授权。"
+        }
+      ],
+      "alternatives": [
+        {
+          "source_ids": [
+            "D-SCOPE",
+            "D-GUARD"
+          ],
+          "mechanism": "Session 级工具注册/注销；可见性过滤之外追加执行 guard。",
+          "omni_butler_integration": "服务端/桌面分别装配能力集合；生命周期结束解除工具，执行端仍必须 fail closed。",
+          "evidence_boundary": "guard 的已读具体范围是提问/委派工具，不能泛化成万能安全沙箱。"
+        },
+        {
+          "source_ids": [
+            "PA-DSH",
+            "PA-NANOCLAW",
+            "PA-OPENCLAW",
+            "PA-ZEROCLAW"
+          ],
+          "mechanism": "先前 PA：任务授权范围、薄宿主/执行隔离、配对信任、自治档位与操作留痕。",
+          "omni_butler_integration": "以 DeepSeek 原型作为角色分离概念参考；隔离与证据链作为执行边界设计输入。",
+          "evidence_boundary": "均未复核源码；无证据证明它们与当前三层授权严格等价或提供 OS 级安全保证。"
+        }
+      ],
+      "do_not_copy": [
+        "隐藏工具=禁止执行，或 deny 列表=OS 沙箱。",
+        "把上下文/agent 消息/群管理员角色当作用户授权。",
+        "把容器/薄宿主设计照搬成本机独立遥控助手；本机能力仍只在桌面安装包内。"
+      ]
+    },
+    {
+      "side": "harness",
+      "id": "07-gate",
+      "node": {
+        "request_number": "⑦",
+        "mmd_subgraph_id": "GATE",
+        "mmd_title": "⑦ 确认闸（嵌在干活里）",
+        "mmd_lines": [
+          87,
+          93
+        ],
+        "node_ids": [
+          "side",
+          "card",
+          "instances",
+          "go"
+        ],
+        "cross_node_mapping": [],
+        "numbering_note": "请求编号与 mmd 分区编号一致；跨区关联保留原编号。"
+      },
+      "behavior": "有副作用先给人看；同一件写按用户、动作、参数指纹只留一条，代次不在这把钥匙里；执行前复验，改参数重批，已停止的一轮不能消费；日历/邮件/办事/本机共用一闸。",
+      "preferred": [
+        {
+          "source_ids": [
+            "O-CONFIRM",
+            "O-LIVE"
+          ],
+          "mechanism": "routine 回执绑定动作/消息/bot/线程/内容指纹；审批读取当前保存等级；提交失败回滚。",
+          "omni_butler_integration": "在现有确认卡后端增加受信任凭据与消费回执；执行时按最新权限复验，改参数不复用旧批准。",
+          "evidence_boundary": "不是完整可移植凭据协议。此处只核验 routine 回执字段。用户图中的作用范围、停止作废，以及代次不参与同一件写的钥匙，需在 Omni-Butler 自己实现并测试。"
+        }
+      ],
+      "alternatives": [
+        {
+          "source_ids": [
+            "D-APPROVAL"
+          ],
+          "mechanism": "审批请求有归属、细节、取消与 stale-answer 处理。",
+          "omni_butler_integration": "确认等待纳入任务生命周期；取消令 UI 卡与后端 pending 同时失效；持久状态另建。",
+          "evidence_boundary": "pending 是内存 Map；本文件未提供跨重启审批恢复。"
+        },
+        {
+          "source_ids": [
+            "PA-PI",
+            "PA-GOOSE",
+            "PA-ZEROCLAW"
+          ],
+          "mechanism": "Pi 扩展确认问法、Goose 工具审批、ZeroClaw 操作留痕作为产品/接口参考。",
+          "omni_butler_integration": "只借确认交互与操作摘要表达，不把交互组件当授权协议。",
+          "evidence_boundary": "先前 Page 二手证据，未复核凭据、原子消费或持久化。"
+        }
+      ],
+      "do_not_copy": [
+        "内存审批表当持久确认队列。",
+        "Pi 示例 confirm 弹窗=全局安全闸；静态等级=永久批准。",
+        "拿已批准的旧参数执行新动作，或进程重启自动恢复批准执行。"
+      ]
+    },
+    {
+      "side": "harness",
+      "id": "08-bus",
+      "node": {
+        "request_number": "⑧",
+        "mmd_subgraph_id": "BUS",
+        "mmd_title": "⑧ 统一工具插头与能力",
+        "mmd_lines": [
+          95,
+          111
+        ],
+        "node_ids": [
+          "mcp",
+          "contract",
+          "unknown",
+          "cal",
+          "errands",
+          "err_api",
+          "err_web",
+          "err_stop",
+          "local",
+          "web_limit",
+          "dsknet"
+        ],
+        "cross_node_mapping": [],
+        "numbering_note": "请求编号与 mmd 分区编号一致；跨区关联保留原编号。"
+      },
+      "behavior": "自有工具统一入口，执行端验权与取消检查；声明只读/幂等写/不可重放写并按契约重试；结果未知先核对，停止不等于撤销；接口优先、App墙停、本机仅桌面。",
+      "preferred": [
+        {
+          "source_ids": [
+            "O-RPC",
+            "O-HTTP",
+            "O-CANCEL"
+          ],
+          "mechanism": "API 插头集中参数校验/授权/活动检查；非可重放写在网络失败/5xx 后给 unknown outcome，而非盲重发。",
+          "omni_butler_integration": "为自有工具定义副作用与 replay/reconcile 能力；记录外部请求/结果标识，未知结果转核对流程，不能只凭模型判断重试。",
+          "evidence_boundary": "三类统一 contract 是图的目标设计，不能说该仓已经实现全产品三分类框架；这里只核验 HighLevel 的 repeatable 分支。"
+        }
+      ],
+      "alternatives": [
+        {
+          "source_ids": [
+            "D-SCOPE",
+            "D-GUARD"
+          ],
+          "mechanism": "按会话安装/卸载工具与执行 guard，防止无归属工具泄露。",
+          "omni_butler_integration": "把注册生命周期、可见性与调用授权分为三件事；桌面工具不在网页服务注册。",
+          "evidence_boundary": "不是操作系统级隔离；也未证明某个工具可绕开 App 墙。"
+        },
+        {
+          "source_ids": [
+            "PA-ANYTHING",
+            "PA-LEON",
+            "PA-GOOSE",
+            "PA-NANOCLAW"
+          ],
+          "mechanism": "AnythingLLM 邮件/日历插件形状；Leon Skills→Actions→Tools→Functions；Goose 标准扩展；NanoClaw 薄宿主/执行分离。",
+          "omni_butler_integration": "借领域 adapter 与分层结构，嵌入 Omni-Butler 自有工具总线；不替换业务后端。",
+          "evidence_boundary": "报告仅插件目录/入口或架构文档；未复核发送/改日历实现、幂等或确认保证。"
+        }
+      ],
+      "do_not_copy": [
+        "所有失败都自动重试；不可重放写超时直接重发。",
+        "普通失败有限重试+提示词检查旧动作=可靠幂等账本。",
+        "照搬全套工具/裸命令权限；把 DeepSeek 自带联网当另一个旧搜索插头或同轮开两条联网路。",
+        "扩展云手机/手机端/网页遥控独立本机助手，或把看屏操控拉进本版主链。"
+      ]
+    },
+    {
+      "side": "harness",
+      "id": "10-watch",
+      "node": {
+        "request_number": "⑩",
+        "mmd_subgraph_id": "WATCH",
+        "mmd_title": "⑩ 看门狗（简化要做）",
+        "mmd_lines": [
+          124,
+          130
+        ],
+        "node_ids": [
+          "wd",
+          "wd_check",
+          "wd_act",
+          "wd_note"
+        ],
+        "cross_node_mapping": [
+          "⑤ task：复用运行/等人/等资源/停止状态",
+          "② duplex / ⑧ contract：统一取消链与执行前检查"
+        ],
+        "numbering_note": "请求编号与 mmd 分区编号一致；跨区关联保留原编号。"
+      },
+      "behavior": "监测同一任务的实质进展；等待人/资源和机器休眠不误判；异常提醒或沿取消链安全停，不改授权、提示词或 Trigger 规则。当前图还要求主系统外独立会话/定时叫醒。",
+      "preferred": [
+        {
+          "source_ids": [
+            "O-WATCH",
+            "O-STALL"
+          ],
+          "mechanism": "按事件更新时间与工具运行集合；区分等待状态与工具超时，抵扣休眠；卡死撤销能力、interrupt，按代次释放资源。",
+          "omni_butler_integration": "将监测器做成任务状态只读消费者+受限 stop 接口；停止前后以任务代次防误伤新工作，复用授权系统不越权。",
+          "evidence_boundary": "已核验是进程内 class/setInterval 与 host 接线，不是图中“主系统外的独立会话”；也不等于主进程崩溃时仍可工作。"
+        }
+      ],
+      "alternatives": [
+        {
+          "source_ids": [
+            "O-RETRY"
+          ],
+          "mechanism": "失败恢复明确区分 busy/owner/final/retry；用户停止/拒绝/cap 不自动重试。",
+          "omni_butler_integration": "把安全停止与可恢复临时故障分开；看门狗终止不自动变成重新开工授权。",
+          "evidence_boundary": "该恢复器含有限自动重试与提示词防重复，不能整段当业务幂等策略。"
+        },
+        {
+          "source_ids": [
+            "PA-DSH",
+            "PA-NANOBOT",
+            "PA-LEON",
+            "PA-LETTA"
+          ],
+          "mechanism": "先前 PA 的任务隔离、定时/脉搏/心跳只作调度概念对照。",
+          "omni_butler_integration": "如保留独立监测需求，用宿主/外部 supervisor 读持久任务状态；不必让另一个 LLM 会话介入每次巡检。",
+          "evidence_boundary": "这是设计建议；二手材料不证明独立安全看门狗。Leon pulse/Letta dreaming 不等于进展监控。"
+        }
+      ],
+      "do_not_copy": [
+        "把 OpenMausBot 进程内 timer 写成已经实现的外部独立看门狗。",
+        "无输出就 kill；等人/等资源算卡死；睡眠后马上判超时。",
+        "安全停后自动重启危险动作、自动抬权/改提示词/Trigger 规则；旧任务释放新代次资源。"
+      ]
+    }
+  ]
+}

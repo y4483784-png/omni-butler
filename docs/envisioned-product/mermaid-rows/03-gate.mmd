@@ -1,0 +1,78 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": ""Noto Sans CJK SC", "Noto Sans SC", Inter, system-ui, sans-serif",
+    "fontSize": "15px",
+    "primaryColor": "#E8F1FF",
+    "primaryTextColor": "#0F172A",
+    "primaryBorderColor": "#3B82F6",
+    "secondaryColor": "#FEF3C7",
+    "secondaryTextColor": "#0F172A",
+    "secondaryBorderColor": "#D97706",
+    "tertiaryColor": "#ECFDF5",
+    "tertiaryTextColor": "#0F172A",
+    "tertiaryBorderColor": "#059669",
+    "lineColor": "#64748B",
+    "textColor": "#0F172A",
+    "mainBkg": "#F8FAFC",
+    "nodeBorder": "#94A3B8",
+    "clusterBkg": "#FFFBEB",
+    "clusterBorder": "#F59E0B",
+    "titleColor": "#0F172A",
+    "edgeLabelBackground": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "basis",
+    "padding": 18,
+    "nodeSpacing": 28,
+    "rankSpacing": 36,
+    "htmlLabels": true
+  }
+}}%%
+flowchart LR
+  subgraph R3["动手前确认与能力执行"]
+    direction LR
+
+    subgraph GATE["⑦ 确认闸（嵌在干活里）"]
+      direction TB
+      side{会改世界？}
+      card["先出页面确认卡<br/>人看见、点了才继续"]
+      instances["同一道闸：日历新建改删 · 会前简报 · 会后跟进<br/>办事登录/付款/发消息 · 本机动手前批准"]
+      go["同一件写：同一用户 + 动作 + 参数指纹，只留一条<br/>代次不参与这把钥匙，只表示这一轮有没有被停<br/>执行前复验；改参数重批；已停止的一轮不能消费"]
+      side -->|要确认| card --> instances --> go
+      side -->|只读或已有有效凭据| go
+    end
+
+    subgraph BUS["⑧ 统一工具插头与能力"]
+      direction TB
+      mcp["统一工具插头<br/>干活内核只经此调用你们自己的工具"]
+      vis["工具可见 ≠ 有执行权限<br/>执行端独立验权；发出前再看任务是否已停止"]
+      contract["副作用契约：只读 / 幂等写 / 不可重放写<br/>集中验权、取消检查、按契约重试<br/>结果回⑥；停止与旧代检查复用⑤"]
+      unknown["外部动作结果未知：先核对是否生效<br/>核对本身也不能变成再下一单<br/>不可重放写不盲目重发；停止不等于撤销"]
+      sandbox["沙箱跑代码插头<br/>断网、受控"]
+      cal["日历插头<br/>会前文档 / 会后纪要"]
+      errands["办事插头"]
+      kb["知识库插头"]
+      local["本机动手插头<br/>仅桌面安装包内"]
+      dsknet["模型自带联网 DeepSeek<br/>非插头、开模型开关<br/>同轮只走这一条上网路<br/>由⑤白名单开关，不经工具插头"]
+      err_api["有连接器：直接调服务接口"]
+      err_web["没有：服务器上的受控浏览器<br/>搜 · 加购 · 填表 · 结账"]
+      err_stop["只有 App 里才有 → 停下来告诉你<br/>不做云手机点 App"]
+      local_do["同一应用：聊天窗下指令<br/>本机去点 / 开文件 / 跑程序；先过确认闸"]
+      web_limit["网页版：无本机动手插头<br/>只做对话、日历确认卡、知识库等瘦功能<br/>模型就算看见本机工具，执行端也必须拦住"]
+      mcp --> vis --> contract
+      contract --> sandbox
+      contract --> unknown
+      contract --> cal
+      contract --> errands
+      contract --> kb
+      contract --> local
+      unknown --- dsknet
+      errands --> err_api
+      errands --> err_web --> err_stop
+      local --> local_do
+      local_do --- web_limit
+    end
+
+    GATE --> BUS
+  end
