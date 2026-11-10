@@ -22,6 +22,7 @@ from app.core.messages import llm_user_error
 from app.core.ownership import require_owned_session
 from app.core.redis import sliding_window_allow_async
 from app.models.models import Document, Message, Session as ChatSession, User
+from app.services import task_run
 from app.services.artifact import infer_workspace_artifact, prepare_artifact_for_storage
 from app.services.message_format import model_turn
 from app.services.session import auto_name, generate_session_title
@@ -31,6 +32,7 @@ from app.services.schedule_confirm import (
     cancel_open_schedule_claims,
     phase_for_stored_card,
     publish_schedule_claim,
+    schedule_card_needs_claim,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -401,6 +403,8 @@ async def chat(
     if contains_sensitive(user_message):
         return JSONResponse({"detail": INPUT_BLOCKED_MESSAGE}, status_code=400)
 
+    turn = task_run.begin_turn(user_id=uid, session_id=session.id)
+
     def _finish_persist(
         assistant_content: str,
         *,
@@ -489,6 +493,8 @@ async def chat(
                     user_id=uid,
                     pending_calendar=pending_calendar,
                     context=ctx_state,
+                    task_id=turn.id,
+                    generation=turn.generation,
                 )
             )
             while not wf_task.done():
@@ -530,9 +536,16 @@ async def chat(
             if citations_payload:
                 yield _sse({"type": "citations", "citations": citations_payload})
             if schedule_card:
-                schedule_card = publish_schedule_claim(uid, session.id, schedule_card)
-                wf["schedule_card"] = schedule_card
-                yield _sse({"type": "schedule_card", "card": schedule_card})
+                if isinstance(schedule_card, dict) and schedule_card_needs_claim(schedule_card):
+                    try:
+                        task_run.wait_for_person(user_id=uid, generation=turn.generation)
+                    except task_run.LateResult:
+                        schedule_card = None
+                        wf["schedule_card"] = None
+                if schedule_card:
+                    schedule_card = publish_schedule_claim(uid, session.id, schedule_card)
+                    wf["schedule_card"] = schedule_card
+                    yield _sse({"type": "schedule_card", "card": schedule_card})
             if artifact_stored:
                 yield _sse({"type": "artifact", "artifact": artifact_stored})
 
@@ -678,6 +691,15 @@ async def chat(
                 set_rls_context(db, uid)
                 _commit_user_turn(db, session, user_message)
             if persisted:
+                try:
+                    task_run.finish(user_id=uid, generation=turn.generation)
+                except task_run.LateResult as exc:
+                    logger.warning(
+                        "late task finish user_id=%s generation=%s status=%s",
+                        uid,
+                        turn.generation,
+                        exc.turn.status,
+                    )
                 try:
                     await asyncio.to_thread(
                         _remember_turn_isolated,

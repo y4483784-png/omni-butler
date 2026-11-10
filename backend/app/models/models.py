@@ -9,6 +9,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 
@@ -64,6 +65,34 @@ class ScheduleConfirmClaim(Base):
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
     status = Column(String, default="open")
     expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+TASK_RUN_STATUSES = (
+    "running",
+    "waiting_person",
+    "waiting_resource",
+    "completed",
+    "stopped",
+)
+
+
+class TaskRun(Base):
+    __tablename__ = "task_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ({})".format(", ".join(repr(status) for status in TASK_RUN_STATUSES)),
+            name="ck_task_runs_status",
+        ),
+        UniqueConstraint("user_id", "generation", name="uq_task_runs_user_generation"),
+        Index("ix_task_runs_session_status", "user_id", "session_id", "status"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False, index=True)
+    generation = Column(Integer, nullable=False)
+    status = Column(String, nullable=False)
+    allowed_tools = Column(Text, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 
 

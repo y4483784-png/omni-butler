@@ -56,6 +56,8 @@ backend/tests/YZ测试文档/*.docx
 backend/tests/YZ测试文档/~$*
 
 verification/followup-confirm/.tools/
+verification/task-run/.tools/
+verification/task-run/TaskRun_TTrace_*
 verification/followup-confirm/FollowupConfirm_TTrace_*
 verification/schedule-confirm/.tools/
 verification/schedule-confirm/ScheduleConfirm_TTrace_*

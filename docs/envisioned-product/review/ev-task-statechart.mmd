@@ -1,0 +1,73 @@
+---
+title: "Task turn"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: none
+    lg1: open
+    lg2: waiting
+    lg3: finished
+    lg4: stopped
+  }
+  class lg0 yellow
+  class lg1 blue
+  class lg2 orange
+  class lg3 teal
+  class lg4 tan
+  s0: No turn
+  s1: Running
+  s2: Waiting on the person
+  s3: Waiting on a resource
+  s4: Stopped
+  s5: Stopped, then Running
+  s6: Completed
+  s7: Completed, then Running
+  s8: Stopped, then Waiting on the person
+  s9: Stopped, then Waiting on a resource
+  s10: Stopped, then Stopped
+  s11: Stopped, then Completed
+  s12: Completed, then Waiting on the person
+  s13: Completed, then Waiting on a resource
+  s14: Completed, then Stopped
+  s15: Completed, then Completed
+  [*] --> s0
+  s0 --> s1: a new message arrives
+  s1 --> s2: a confirm card is about to show
+  s1 --> s3: the turn waits on a resource
+  s1 --> s4: stop is called
+  s1 --> s5: a new message arrives
+  s1 --> s6: the answer is stored
+  s2 --> s4: stop is called
+  s2 --> s5: a new message arrives
+  s3 --> s4: stop is called
+  s3 --> s5: a new message arrives
+  s4 --> s5: a new message arrives
+  s5 --> s8: a confirm card is about to show
+  s5 --> s9: the turn waits on a resource
+  s5 --> s10: stop is called
+  s5 --> s11: the answer is stored
+  s6 --> s7: a new message arrives
+  s7 --> s12: a confirm card is about to show
+  s7 --> s13: the turn waits on a resource
+  s7 --> s14: stop is called
+  s7 --> s15: the answer is stored
+  s8 --> s10: stop is called
+  s9 --> s10: stop is called
+  s12 --> s14: stop is called
+  s13 --> s14: stop is called
+  class s0 yellow
+  class s1 blue
+  class s2 orange
+  class s3 orange
+  class s4 tan
+  class s5 blue
+  class s6 teal
+  class s7 blue
+  class s8 orange
+  class s9 orange
+  class s10 tan
+  class s11 teal
+  class s12 orange
+  class s13 orange
+  class s14 tan
+  class s15 teal

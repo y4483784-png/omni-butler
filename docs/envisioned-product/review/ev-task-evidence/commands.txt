@@ -1,0 +1,7 @@
+python3 verification/tlc_jar.py
+python3 verification/schedule-confirm/check.py
+python3 verification/followup-confirm/check.py
+python3 verification/task-run/check.py
+python3 verification/task-run/check.py --break-completed-stop
+
+TLA2TOOLS=/agent/repos/omni-butler/verification/tlc/tla2tools.jar JAVA=java node --experimental-strip-types /home/ubuntu/.cursor/plugins/cache/cursor-public/9717366/de8ee15dd1194627d21eb5fcd41cb1873208dabb/skills/statechart/scripts/statechart.ts /agent/repos/omni-butler/verification/task-run/TaskRun.tla --config /agent/repos/omni-butler/verification/task-run/TaskRun.cfg --view /agent/repos/omni-butler/verification/task-run/statechart/view.mjs --out /tmp/task-run-chart-rerun

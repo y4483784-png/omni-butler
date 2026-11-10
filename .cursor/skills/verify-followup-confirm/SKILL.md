@@ -23,11 +23,11 @@ From the repo root, with Java 21 or newer on `PATH`:
 python3 verification/followup-confirm/check.py
 ```
 
-The script downloads TLC 1.8.0 from the pinned `tla2tools.jar` on first use, checks sha256 `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf`, checks the source anchors, and runs TLC with one worker. A pass prints `pass: follow-up confirm holds`.
+The script loads `verification/tlc/tla2tools.jar`, checks sha256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, checks manifest version `2.0 2026-11-06` and revision `d8fb231de4e4b5d02c1b2ed1ac759c086f694021`, checks the source anchors, and runs TLC with one worker. A pass prints `pass: follow-up confirm holds`.
 
 CI runs that command, then `--break-claim`, then `--drop-overlap`, in `.github/workflows/followup-confirm-tla.yml`.
 
-GitHub replaces the v1.8.0 `tla2tools.jar` asset and keeps the same URL. A run on 2026-10-23 matched sha256 `5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2`. The asset published on 2026-10-28 had sha256 `fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e` and sha1 `bdfd4b754eee174f0bcdeaaffb96fa4d04bfbda8`. That sha1 was the checksum in the v1.8.0 release notes for that asset. That jar reported TLC2 Version 2026.10.28.014557, revision 56d37a9, and on this model it generated 149 states, 58 of them distinct. GitHub replaced the asset again on 2026-11-03. The bytes now served are sha256 `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf`. The jar reports Implementation-Version 2.0, revision 309e489. TLC2 reports Version 2026.11.03.180953. On this model it still generates 149 states, 58 of them distinct. When the release asset digest changes, update the pin in `check.py` and the hash in this skill. Keep the hash check.
+GitHub replaces the v1.8.0 `tla2tools.jar` asset and keeps the same URL. A run on 2026-10-23 matched sha256 `5bd7b64db99ae4c6c35f290de5e809c0ee41af43f8699cf696099ffb6452b1e2`. The asset published on 2026-10-28 had sha256 `fc6878c603f0fdc18b9fe3e5bf51860cb90ab5b1154e3c371660c036d6bdd63e` and sha1 `bdfd4b754eee174f0bcdeaaffb96fa4d04bfbda8`. The 2026-11-03 upload was sha256 `e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf`, revision 309e489. On 2026-11-06 GitHub published the release again. The asset digest on that release is sha256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, and those bytes are stored at `verification/tlc/tla2tools.jar`. The checks no longer download the release URL. On this model the vendored jar still generates 149 states.
 
 To show the property failing without editing product code:
 
@@ -48,7 +48,7 @@ That command exits 0 only when TLC violates `AtMostOneEvent`. The default comman
 You can also run TLC on the committed config, which keeps `ATOMIC_CLAIM` and `OVERLAP_CHECK` true:
 
 ```
-java -XX:+UseParallelGC -cp verification/followup-confirm/.tools/tla2tools.jar tlc2.TLC -workers 1 -nowarning -config FollowupConfirm.cfg FollowupConfirm.tla
+java -XX:+UseParallelGC -cp verification/tlc/tla2tools.jar tlc2.TLC -workers 1 -nowarning -config FollowupConfirm.cfg FollowupConfirm.tla
 ```
 
 Run that from `verification/followup-confirm` after the script has downloaded the jar.

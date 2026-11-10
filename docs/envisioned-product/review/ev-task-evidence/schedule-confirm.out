@@ -1,0 +1,1 @@
+pass: NoWriteBeforeConfirm, NoReentryWhileBusy, SecondWriteImpliesRestore, AtMostOneSuccessfulWrite, and NoWriteAfterRetire hold. 1594 states generated, 452 distinct. TLC v1.8.0.

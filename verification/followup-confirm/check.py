@@ -3,22 +3,18 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC_DIR = Path(__file__).resolve().parent
-
-TLA_VERSION = "1.8.0"
-JAR_URL = f"https://github.com/tlaplus/tlaplus/releases/download/v{TLA_VERSION}/tla2tools.jar"
-JAR_SHA256 = "e20447644bfabd29d6bd0fc2c0eb1473fb301c1a0e4dfe1961938ce5a191edbf"
-JAR_CACHE = SPEC_DIR / ".tools" / "tla2tools.jar"
+sys.path.insert(0, str(ROOT))
+from verification.tlc_jar import RELEASE_TAG as TLA_VERSION
+from verification.tlc_jar import jar_path
 
 PROPERTY = ("AtMostOneEvent", "NoWriteBeforeConfirm", "NeedsPasteWritesNothing")
 MODEL_HEALTH = ("TypeOK", "OneRequestPerLoop")
@@ -225,25 +221,6 @@ def check_anchors() -> tuple[bool, bool]:
         ):
             fail_model("removing the overlap checks did not flip the model.")
     return atomic, overlap
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    digest.update(path.read_bytes())
-    return digest.hexdigest()
-
-
-def jar_path() -> Path:
-    if JAR_CACHE.is_file() and sha256(JAR_CACHE) == JAR_SHA256:
-        return JAR_CACHE
-    JAR_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = JAR_CACHE.with_suffix(".jar.partial")
-    urllib.request.urlretrieve(JAR_URL, tmp)
-    if sha256(tmp) != JAR_SHA256:
-        tmp.unlink(missing_ok=True)
-        fail_model(f"tla2tools.jar sha256 does not match the {TLA_VERSION} pin")
-    tmp.replace(JAR_CACHE)
-    return JAR_CACHE
 
 
 def write_cfg(directory: Path, atomic: bool, overlap: bool) -> Path:
