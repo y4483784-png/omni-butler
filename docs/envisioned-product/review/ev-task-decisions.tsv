@@ -1,0 +1,7 @@
+ts	phase	decision	why	evidence	result
+2026-11-10T09:51:44Z	start	Started ev-task from release 10e8105 on cursor/ev-task-5950	The operator asked for only the first knife, with five states and generation not used as the same-write key	docs/envisioned-product/envisioned-product-plan.md	open
+2026-11-10T09:51:44Z	design	Picked one status column and one writer, with generation unique per user	A later same-write lookup needs user, action, and fingerprint, so those columns stay off the turn row	/tmp/arena-ev-task/synthesis.md	open
+2026-11-10T09:51:44Z	verify	TLC holds the five-state rules, and the break of stop-on-completed fails CompletedStays	The chart has to show completed and stopped as different ends	verification/task-run/check.py	tests green
+2026-11-10T09:51:44Z	perf	Chat routing on the head took 4.28 seconds and task generation took 2.68 seconds	The plan fails the head at 60 seconds and the task file at 30 seconds	docs/envisioned-product/review/ev-task.md	under the fail lines
+2026-11-10T09:51:44Z	live	Did not drive the ten page lanes	control-ui is not in this repo or the plugin cache, and docker is not installed	docs/envisioned-product/review/ev-task.md	INCONCLUSIVE
+2026-11-10T09:52:13Z	code	Committed the table, the writer, the chat calls, and the tests	The integrated pytest run was already green on this tree	ca5fe61	tests green
