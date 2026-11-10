@@ -420,7 +420,6 @@ def run_agent_workflow(
             steps.append(f"第 {it} 轮：无可用工具，跳过")
             return {"thinking_steps": steps, "evidence": _reindex(evidence)}
 
-        # Extra args reserved for governance checks (e.g. deny sandbox network escapes).
         tool_args: dict[str, Any] = {}
         if tool == "sandbox":
             tool_args = {"network": "none", "read_only": True}
