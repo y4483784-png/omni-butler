@@ -184,7 +184,7 @@ def _turn_key_conflict(exc: IntegrityError) -> bool:
     return "task_runs.user_id" in message and "generation" in message
 
 
-def _insert_running(db, *, user_id: int, session_id: int) -> Turn:
+def _insert_running(db, *, user_id: int, session_id: int, stop_others: bool = True) -> Turn:
     owned = (
         db.query(ChatSession.id)
         .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
@@ -198,10 +198,11 @@ def _insert_running(db, *, user_id: int, session_id: int) -> Turn:
         .with_for_update()
         .all()
     )
-    for row in rows:
-        if row.session_id != session_id or row.status not in _OPEN or is_card_action(row.allowed_tools):
-            continue
-        _apply_event(db, row, "stop")
+    if stop_others:
+        for row in rows:
+            if row.session_id != session_id or row.status not in _OPEN or is_card_action(row.allowed_tools):
+                continue
+            _apply_event(db, row, "stop")
     generation = max((row.generation for row in rows), default=0) + 1
     from app.agents.harness.constitution import load_constitution
 
@@ -247,6 +248,15 @@ def insert_card_action(db, *, user_id: int, session_id: int, message_id: int) ->
     db.add(created)
     db.flush()
     return _apply_event(db, created, "wait_person")
+
+
+def open_alongside(db, *, user_id: int, session_id: int) -> Turn:
+    """Open one generation without stopping another open generation.
+
+    The caller commits. An event inbox uses this so a new task does not cancel
+    work that is already running in the same session.
+    """
+    return _insert_running(db, user_id=user_id, session_id=session_id, stop_others=False)
 
 
 def begin_turn(*, user_id: int, session_id: int) -> Turn:

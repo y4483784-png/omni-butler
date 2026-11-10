@@ -217,6 +217,72 @@ class ToolAuditLog(Base):
     created_at = Column(DateTime, default=_utcnow, index=True)
 
 
+EVENT_RECEIPT_STATES = (
+    "received",
+    "dispatched",
+    "external_success",
+)
+
+EVENT_RECEIPT_ROUTES = (
+    "noise",
+    "held",
+    "passthrough",
+    "opened",
+    "stopped",
+    "queued",
+    "kept",
+    "reissued",
+)
+
+
+class EventReceipt(Base):
+    """One inbound delivery. State is not a task status.
+
+    ``received`` is acceptance into the inbox. ``dispatched`` is a new task.
+    ``external_success`` is a confirmed write the other side accepted.
+    ``route`` records which inbox rule fired. It does not merge ``completed``
+    and ``stopped``.
+    """
+
+    __tablename__ = "event_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "source",
+            "delivery_id",
+            name="uq_event_receipts_delivery",
+        ),
+        CheckConstraint(
+            "state IN ({})".format(", ".join(repr(item) for item in EVENT_RECEIPT_STATES)),
+            name="ck_event_receipts_state",
+        ),
+        CheckConstraint(
+            "route IN ({})".format(", ".join(repr(item) for item in EVENT_RECEIPT_ROUTES)),
+            name="ck_event_receipts_route",
+        ),
+        CheckConstraint(
+            "state <> 'external_success' OR external_request_id <> ''",
+            name="ck_event_receipts_external",
+        ),
+        Index("ix_event_receipts_user_generation", "user_id", "generation"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False, index=True)
+    source = Column(String, nullable=False)
+    delivery_id = Column(String, nullable=False)
+    fingerprint = Column(String, nullable=False, default="")
+    state = Column(String, nullable=False, default="received")
+    route = Column(String, nullable=False)
+    generation = Column(Integer, nullable=True)
+    task_run_id = Column(Integer, ForeignKey("task_runs.id"), nullable=True)
+    claim_token = Column(String, nullable=False, default="")
+    external_request_id = Column(String, nullable=False, default="")
+    body = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class MemoryItem(Base):
     """Cross-session long-term memory (LangGraph-store inspired: user namespace + key)."""
 

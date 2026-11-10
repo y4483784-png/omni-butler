@@ -1,0 +1,17 @@
+Machine: 4 cores. Load during the four timed runs stayed under 0.40.
+Python: /tmp/omni-venv. pytest 8.4.2.
+Command: python -m pytest <file> -q, from backend, with a fresh sqlite file.
+Env: DATABASE_URL=sqlite+pysqlite:///./ci-eval.db REDIS_ENABLED=false CELERY_TASK_ALWAYS_EAGER=true SANDBOX_RUNNER_URL= SECRET_KEY=test-secret-key ADMIN_PASSWORD=test-admin-pass
+Trunk is release b5a1fd471e33d4a51023a2704472656cc2c41957 in /tmp/ev-events-trunk.
+One run each. No repeats, no ratio.
+
+The unit command on the head tree ran before this gate. It is a different pair of files. The routing file itself starts with the trunk run below.
+
+trunk before the head, tests/test_chat_sse_routing.py: 4.521s, exit 0, 9 passed
+head, tests/test_chat_sse_routing.py: 4.358s, exit 0, 9 passed
+trunk again, tests/test_chat_sse_routing.py, same commit: 4.282s, exit 0, 9 passed
+head, tests/test_event_inbox.py: 5.786s, exit 0, 14 passed
+
+Fail lines: head test_chat_sse_routing.py at or above 60s, head test_event_inbox.py at or above 30s. Both head runs are under those lines.
+
+The trunk-to-trunk spread is 0.239s. The head routing run is 0.163s under the first trunk run and 0.076s above the second. That sits inside the spread.
