@@ -47,4 +47,4 @@ The model has one claim and one tool call. It does not model Google's network, t
 
 ## Keep the check with the code
 
-The anchors were confirmed against the implementation that added `arm_remote_claim` and `execution_denial`. Move that confirmation forward only after reading those functions at the new commit and seeing that the model still describes them. If `consume_schedule_claim` stops refusing `unknown`, or the insert is posted before `_arm_user_write`, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `8c5db6cc5f08419222362196d63bfc6205d8e20a`, the commit that added `arm_remote_claim` and `execution_denial`. Move that confirmation forward only after reading those functions at the new commit and seeing that the model still describes them. If `consume_schedule_claim` stops refusing `unknown`, or the insert is posted before `_arm_user_write`, the checker exits 2. That is drift, not a passing run.
