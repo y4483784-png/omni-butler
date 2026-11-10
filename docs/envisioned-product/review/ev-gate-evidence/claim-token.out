@@ -1,0 +1,25 @@
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ match = TRUE
+/\ foreign = FALSE
+/\ rows = 0
+/\ claim = "none"
+/\ link1 = FALSE
+/\ link2 = FALSE
+/\ sawLive = FALSE
+/\ writes = 0
+/\ g1 = "idle"
+/\ g2 = "idle"
+
+State 2: <Consume line 124, col 3 to line 148, col 55 of module ClaimGate>
+/\ match = TRUE
+/\ foreign = FALSE
+/\ rows = 0
+/\ claim = "none"
+/\ link1 = FALSE
+/\ link2 = FALSE
+/\ sawLive = FALSE
+/\ writes = 1
+/\ g1 = "idle"
+/\ g2 = "idle"
+NoWriteWithoutToken violated, as required. 4 states generated, 4 distinct.

@@ -29,8 +29,11 @@ from app.services.session import auto_name, generate_session_title
 from app.services.data_analysis import has_tabular_docs
 from app.services.memory import load_memory_prompt, remember_from_turn
 from app.services.schedule_confirm import (
+    ScheduleConfirmClosed,
     cancel_open_schedule_claims,
+    followup_needs_claim,
     phase_for_stored_card,
+    publish_followup_claims,
     publish_schedule_claim,
     schedule_card_needs_claim,
 )
@@ -521,6 +524,9 @@ async def chat(
             thinking_steps = wf.get("thinking_steps") or []
             llm_messages = wf["llm_messages"]
             schedule_card = wf.get("schedule_card")
+            if isinstance(schedule_card, dict):
+                schedule_card = {**schedule_card, "task_generation": turn.generation}
+                wf["schedule_card"] = schedule_card
             artifact = wf.get("artifact")
             artifact_stored = prepare_artifact_for_storage(artifact)
             direct_answer = redact_text(wf.get("direct_answer") or "")
@@ -536,15 +542,32 @@ async def chat(
             if citations_payload:
                 yield _sse({"type": "citations", "citations": citations_payload})
             if schedule_card:
-                if isinstance(schedule_card, dict) and schedule_card_needs_claim(schedule_card):
+                needs_person = isinstance(schedule_card, dict) and (
+                    schedule_card_needs_claim(schedule_card) or followup_needs_claim(schedule_card)
+                )
+                if needs_person:
                     try:
                         task_run.wait_for_person(user_id=uid, generation=turn.generation)
                     except task_run.LateResult:
                         schedule_card = None
                         wf["schedule_card"] = None
-                if schedule_card:
-                    schedule_card = publish_schedule_claim(uid, session.id, schedule_card)
+                if schedule_card and isinstance(schedule_card, dict) and followup_needs_claim(schedule_card):
+                    try:
+                        schedule_card = publish_followup_claims(
+                            uid, session.id, schedule_card, task_run_id=turn.id
+                        )
+                    except ScheduleConfirmClosed:
+                        schedule_card = None
                     wf["schedule_card"] = schedule_card
+                elif schedule_card:
+                    try:
+                        schedule_card = publish_schedule_claim(
+                            uid, session.id, schedule_card, task_run_id=turn.id
+                        )
+                    except ScheduleConfirmClosed:
+                        schedule_card = None
+                    wf["schedule_card"] = schedule_card
+                if schedule_card:
                     yield _sse({"type": "schedule_card", "card": schedule_card})
             if artifact_stored:
                 yield _sse({"type": "artifact", "artifact": artifact_stored})

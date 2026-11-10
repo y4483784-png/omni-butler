@@ -64,6 +64,7 @@ export interface FollowAction {
   evidence: string;
   start_at: string;
   end_at: string;
+  confirm_token?: string;
 }
 
 export interface FollowMailDraft {
@@ -545,11 +546,39 @@ export function localStampFromDate(date: Date): string {
   return localStamp(date);
 }
 
-export async function openConfirmClaim(sessionId: number): Promise<{ confirm_token: string; expires_at: string }> {
+export async function openConfirmClaim(body: {
+  sessionId: number;
+  sourceMessageId?: number;
+  action: string;
+  title?: string;
+  start_at?: string;
+  end_at?: string;
+  participants?: WireInvitee[];
+  location?: string;
+  description?: string;
+  meet?: boolean;
+  event_id?: number | null;
+  external_id?: string;
+  response?: string;
+}): Promise<{ confirm_token: string; expires_at: string }> {
   const r = await apiFetch("/api/calendar/confirm-claims", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId }),
+    body: JSON.stringify({
+      session_id: body.sessionId,
+      source_message_id: body.sourceMessageId,
+      action: body.action,
+      title: body.title ?? "",
+      start_at: body.start_at ?? "",
+      end_at: body.end_at ?? "",
+      participants: body.participants ?? [],
+      location: body.location ?? "",
+      description: body.description ?? "",
+      meet: Boolean(body.meet),
+      event_id: body.event_id ?? null,
+      external_id: body.external_id ?? "",
+      response: body.response ?? "",
+    }),
   });
   if (!r.ok) throw new Error(await parseError(r, "无法打开确认"));
   return r.json();
@@ -583,12 +612,13 @@ export async function createCalendarEvent(payload: {
 
 export async function rsvpCalendarEvent(
   externalId: string,
-  response: "accepted" | "declined" | "tentative"
+  response: "accepted" | "declined" | "tentative",
+  confirmToken?: string
 ): Promise<ScheduleCard & { rsvp?: string }> {
   const r = await apiFetch("/api/calendar/google/rsvp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ external_id: externalId, response }),
+    body: JSON.stringify({ external_id: externalId, response, confirm_token: confirmToken }),
   });
   if (!r.ok) await readCalendarError(r, "回复邀请失败");
   return r.json();

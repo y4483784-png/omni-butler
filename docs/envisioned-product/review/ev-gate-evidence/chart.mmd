@@ -1,0 +1,56 @@
+---
+title: "确认凭证"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 未签发
+    lg1: 待确认
+    lg2: 已写入
+    lg3: 已失效
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 teal
+  class lg3 tan
+  s0: 还没有确认
+  s1: 任务进行中
+  s2: 待确认
+  s3: 参数已改
+  s4: 做完后失效
+  s5: 停止后失效
+  s6: 已经写入
+  s7: 还剩一代
+  s8: 停止并且做完后失效
+  [*] --> s0
+  s0 --> s1: 后一代开始 or 前一代开始
+  s1 --> s0: 这一代结束
+  s1 --> s2: 签发确认
+  s2 --> s3: 改了时间
+  s2 --> s4: 做完后确认失效
+  s2 --> s5: 停止后确认失效
+  s2 --> s6: 写入日程
+  s3 --> s2: 改回原来的时间
+  s3 --> s4: 做完后确认失效
+  s3 --> s5: 停止后确认失效
+  s2 --> s7: 结束一代后另一代还能写
+  s2 --> s8: 结束后确认失效
+  s4 --> s2: 失效后重新签发
+  s4 --> s8: 结束后确认失效
+  s7 --> s3: 改了时间
+  s7 --> s4: 做完后确认失效
+  s7 --> s8: 结束后确认失效
+  s7 --> s6: 写入日程
+  s5 --> s2: 失效后重新签发
+  s5 --> s8: 结束后确认失效
+  s7 --> s5: 停止后确认失效
+  s3 --> s8: 结束后确认失效
+  s3 --> s7: 改回原来的时间后仍只剩一代
+  class s0 blue
+  class s1 blue
+  class s2 orange
+  class s3 orange
+  class s4 tan
+  class s5 tan
+  class s6 teal
+  class s7 orange
+  class s8 tan

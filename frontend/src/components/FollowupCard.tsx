@@ -204,6 +204,7 @@ async function postFollowAction(action: FollowAction): Promise<void> {
     end_at: action.end_at,
     participants: [],
     meet: false,
-    description: `follow_action: ${action.id}\n${action.evidence}`,
+    description: `follow_action: ${action.id}\n${action.evidence ?? ""}`,
+    confirm_token: action.confirm_token,
   });
 }

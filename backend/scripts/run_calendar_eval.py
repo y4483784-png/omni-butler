@@ -550,7 +550,32 @@ def _restore_clock(previous) -> None:
     calendar.calendar_now, tool.calendar_now, api.calendar_now, google.datetime = previous
 
 
-def _confirm(client, case: dict, card: dict | None) -> tuple[int | None, str]:
+def _issue_confirm(client, user_id: int, action: str, raw: dict) -> str:
+    from app.core.db import SessionLocal
+    from app.models.models import Session as ChatSession
+    from app.services import task_run
+
+    db = SessionLocal()
+    try:
+        row = ChatSession(user_id=user_id, title="评测确认")
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        session_id = row.id
+    finally:
+        db.close()
+    task_run.begin_turn(user_id=user_id, session_id=session_id)
+    opened = client.post(
+        "/api/calendar/confirm-claims",
+        json={"session_id": session_id, "action": action, **raw},
+    )
+    if opened.status_code != 200:
+        return ""
+    token = opened.json().get("confirm_token")
+    return token if isinstance(token, str) else ""
+
+
+def _confirm(client, case: dict, card: dict | None, *, user_id: int) -> tuple[int | None, str]:
     expect = case.get("expect") or {}
     action = expect.get("confirm")
     if action == "do_not_confirm":
@@ -570,12 +595,27 @@ def _confirm(client, case: dict, card: dict | None) -> tuple[int | None, str]:
     if connected and mode in {"update", "cancel"}:
         body["action"] = "cancel" if mode == "cancel" or action == "confirm_cancel" else "update"
         body["external_id"] = card.get("external_id") or ""
+        body["confirm_token"] = _issue_confirm(
+            client,
+            user_id,
+            "cancel" if body["action"] == "cancel" else "update",
+            body,
+        )
         response = client.post("/api/calendar/google/confirm", json=body)
     elif not connected and mode == "update" and card.get("event_id"):
+        body["confirm_token"] = _issue_confirm(
+            client,
+            user_id,
+            "update",
+            {**body, "event_id": card["event_id"]},
+        )
         response = client.patch(f"/api/calendar/{card['event_id']}", json=body)
     elif not connected and mode == "cancel" and card.get("event_id"):
-        response = client.delete(f"/api/calendar/{card['event_id']}")
+        token = _issue_confirm(client, user_id, "delete", {"event_id": card["event_id"]})
+        query = f"?confirm_token={token}" if token else ""
+        response = client.delete(f"/api/calendar/{card['event_id']}{query}")
     else:
+        body["confirm_token"] = _issue_confirm(client, user_id, "create", body)
         response = client.post("/api/calendar", json=body)
     detail = ""
     try:
@@ -639,7 +679,7 @@ def _run_case(case: dict, *, db, client, fake: FakeGoogle, bridge: _LLMBridge, u
         if not bridge.infra:
             fake.reset_calls()
             _arm_confirm_fault(fake, case)
-            http_status, detail = _confirm(client, case, card)
+            http_status, detail = _confirm(client, case, card, user_id=user_id)
             confirm_writes = _attach_status(fake, _write_rows(fake.calls))
         local_final = _snap_local(db, user_id)
     finally:

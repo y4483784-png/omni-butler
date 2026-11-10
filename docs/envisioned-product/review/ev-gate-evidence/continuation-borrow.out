@@ -1,0 +1,25 @@
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ rows = 0
+/\ borrowed = FALSE
+/\ claim = "none"
+/\ click = "absent"
+/\ writes = 0
+/\ unrelated = "idle"
+
+State 2: <StartUnrelated line 35, col 3 to line 37, col 55 of module CardContinue>
+/\ rows = 0
+/\ borrowed = FALSE
+/\ claim = "none"
+/\ click = "absent"
+/\ writes = 0
+/\ unrelated = "live"
+
+State 3: <Continue line 45, col 3 to line 55, col 36 of module CardContinue>
+/\ rows = 1
+/\ borrowed = TRUE
+/\ claim = "open"
+/\ click = "waiting"
+/\ writes = 0
+/\ unrelated = "live"
+NoBorrow violated, as required. 6 states generated, 5 distinct.

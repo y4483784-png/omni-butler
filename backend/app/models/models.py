@@ -60,12 +60,27 @@ class Message(Base):
 
 class ScheduleConfirmClaim(Base):
     __tablename__ = "schedule_confirm_claims"
+    __table_args__ = (
+        Index(
+            "uq_schedule_confirm_open_write",
+            "user_id",
+            "action",
+            "fingerprint",
+            unique=True,
+            sqlite_where=text("status = 'open'"),
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
     token = Column(String, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True)
     status = Column(String, default="open")
     expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+    action = Column(String, nullable=False, default="")
+    fingerprint = Column(String, nullable=False, default="")
+    scope = Column(String, nullable=False, default="")
+    generation_ids = Column(Text, nullable=False, default="[]")
 
 
 TASK_RUN_STATUSES = (

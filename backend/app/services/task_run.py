@@ -151,6 +151,24 @@ def _apply_event(db, row: TaskRun, event: str) -> Turn:
     raise MissingTurn()
 
 
+_CARD_ACTION = "card_action"
+
+
+def card_action_marker(message_id: int) -> str:
+    return json.dumps([f"{_CARD_ACTION}:{int(message_id)}"], separators=(",", ":"))
+
+
+def is_card_action(allowed_tools: str) -> bool:
+    try:
+        parsed = json.loads(allowed_tools or "")
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(parsed, list) or len(parsed) != 1 or not isinstance(parsed[0], str):
+        return False
+    kind, sep, message_id = parsed[0].partition(":")
+    return kind == _CARD_ACTION and sep == ":" and message_id.isdigit()
+
+
 def _turn_key_conflict(exc: IntegrityError) -> bool:
     message = str(getattr(exc, "orig", exc)).lower()
     if "uq_task_runs_user_generation" in message:
@@ -173,8 +191,9 @@ def _insert_running(db, *, user_id: int, session_id: int) -> Turn:
         .all()
     )
     for row in rows:
-        if row.session_id == session_id and row.status in _OPEN:
-            _apply_event(db, row, "stop")
+        if row.session_id != session_id or row.status not in _OPEN or is_card_action(row.allowed_tools):
+            continue
+        _apply_event(db, row, "stop")
     generation = max((row.generation for row in rows), default=0) + 1
     allowed_tools = json.dumps(list(load_constitution()["allowed_tools"]))
     created = TaskRun(
@@ -187,6 +206,37 @@ def _insert_running(db, *, user_id: int, session_id: int) -> Turn:
     db.add(created)
     db.flush()
     return _to_turn(created)
+
+
+def insert_card_action(db, *, user_id: int, session_id: int, message_id: int) -> Turn:
+    owned = (
+        db.query(ChatSession.id)
+        .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
+        .one_or_none()
+    )
+    if owned is None:
+        raise UnownedSession()
+    rows = (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == user_id)
+        .with_for_update()
+        .all()
+    )
+    marker = card_action_marker(message_id)
+    for row in rows:
+        if row.session_id == session_id and row.allowed_tools == marker and row.status == "waiting_person":
+            return _to_turn(row)
+    generation = max((row.generation for row in rows), default=0) + 1
+    created = TaskRun(
+        user_id=user_id,
+        session_id=session_id,
+        generation=generation,
+        status="running",
+        allowed_tools=marker,
+    )
+    db.add(created)
+    db.flush()
+    return _apply_event(db, created, "wait_person")
 
 
 def begin_turn(*, user_id: int, session_id: int) -> Turn:
