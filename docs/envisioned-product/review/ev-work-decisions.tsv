@@ -1,0 +1,13 @@
+ts	phase	decision	why	evidence	result
+2026-11-10T19:28:00Z	ground	Read the current loop instead of the plan's old line numbers	The plan was written before ev-dispatch moved planning out of the graph	docs/envisioned-product/review/ev-work.md	open
+2026-11-10T19:40:00Z	design	Skipped the cross-family design judge	This run may use only grok-4.7-high	/tmp/arena-ev-work/candidate-1/rationale.md	open
+2026-11-10T20:04:00Z	design	Took candidate 2 as the base and kept the outcome as objects on step_outcome	A dict tag plus a parser is a second representation, and reply_channel is a pass-through	/tmp/arena-ev-work/synthesis.md	open
+2026-11-10T20:04:00Z	design	Spoke CONFIRM_DETAIL unknown even when lookup finds an event	The loop does not call save_found_event, so a sentence that the local calendar already has the event would be false	backend/app/agents/workflow.py settle_unknown	open
+2026-11-10T20:04:00Z	design	Added ToolResult.unknown_write	reflect_node cannot see an unknown write on the old ToolResult	backend/app/agents/harness/types.py	open
+2026-11-10T20:04:00Z	design	Changed the chat else branch to elif llm_messages	An empty work result must not start stream_chat	backend/app/api/chat.py	open
+2026-11-10T20:20:00Z	design	Left the early if is_stopped check inside retrieve_node	admit also reads the bit, and the dispatch checker looks for that line before gateway.invoke	verification/dispatch-boundary/check.py	open
+2026-11-10T20:32:00Z	verify	Modeled one generation in WorkLoop.tla and required each break flag to fail its own invariant	A check that cannot fail does not guard the loop	verification/work-loop/check.py	tests green
+2026-11-10T20:36:00Z	perf	Recorded one trunk, head, trunk probe and did not claim a speedup	The trunk spread is wider than the head gap, and the slowest setup is pytest import	docs/envisioned-product/review/ev-work.md	open
+2026-11-10T20:36:00Z	review	Marked live lanes and the review video as deferred	The operator moved live lanes to after all fourteen cuts	docs/envisioned-product/review/ev-work.md	deferred
+2026-11-10T20:40:00Z	design	Removed the new type docstrings that only restated the class names	The names already say the constraint, and the comment reviewer spawned for this diff did not return a report	backend/app/agents/workflow.py	open
+2026-11-10T20:45:00Z	review	Deleted the sandbox extra-args comment after the comment review	The next lines assign network and read_only, so the line is not a reservation. The eight type docstrings were already gone. The Reconciled return for a missing lookup stays, because that sentence is the chosen settlement	docs/envisioned-product/review/ev-work-decisions.tsv	open

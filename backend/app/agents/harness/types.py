@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from app.core.llm import Spoken, answer_pair
 
@@ -29,6 +29,24 @@ class ToolContext:
     generation: int | None = None
 
 
+@dataclass(frozen=True)
+class UnknownWrite:
+    effect: Literal["non_replayable_write"]
+    external_id: str
+    prior_external_id: str | None
+    attempt: int
+
+    def __post_init__(self) -> None:
+        if (
+            self.effect != "non_replayable_write"
+            or not isinstance(self.external_id, str)
+            or not self.external_id.strip()
+            or type(self.attempt) is not int
+            or self.attempt <= 0
+        ):
+            raise ValueError("unknown write requires a sent non-replayable effect")
+
+
 @dataclass
 class ToolResult:
     ok: bool = True
@@ -50,6 +68,7 @@ class ToolResult:
     analysis_summary: dict[str, Any] | None = None
     analysis_asked_ids: list[str] | None = None
     analysis_uncomputable: bool | None = None
+    unknown_write: UnknownWrite | None = None
 
     def as_state_update(self, *, base_evidence: list[dict] | None = None) -> dict[str, Any]:
         """Merge into LangGraph state (retrieve_node return)."""

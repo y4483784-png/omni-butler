@@ -62,6 +62,7 @@ verification/followup-confirm/FollowupConfirm_TTrace_*
 verification/schedule-confirm/.tools/
 verification/schedule-confirm/ScheduleConfirm_TTrace_*
 verification/dispatch-boundary/DispatchBoundary_TTrace_*
+verification/work-loop/WorkLoop_TTrace_*
 
 .cursor/*
 !.cursor/skills/

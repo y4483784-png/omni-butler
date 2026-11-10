@@ -1,0 +1,37 @@
+---
+title: "干活循环会不会再写一次"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 还没调用
+    lg1: 确认卡
+    lg2: 未知
+    lg3: 已停止
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 tan
+  s0: 还没调用工具
+  s1: 干活路径已经回答
+  s2: 日历步骤还没出卡
+  s3: 已停止且没有调用
+  s4: 确认卡已出还没写入
+  s5: 结果未知还没核对
+  s6: 核对过了没有再写入
+  s7: 拒绝重发没有再写入
+  [*] --> s0
+  s0 --> s3: 进入干活 or 停止后结束循环 or 没有工具就回答
+  s0 --> s2: 调用这一个工具
+  s0 --> s1: 没有工具就回答 or 只读问题直接回答
+  s2 --> s4: 先出确认卡
+  s2 --> s5: 结果变成未知
+  s5 --> s6: 按核对查找不再插入
+  s5 --> s7: 不重发也不查找
+  class s1 blue
+  class s2 blue
+  class s3 tan
+  class s4 teal
+  class s5 orange
+  class s6 orange
+  class s7 orange
