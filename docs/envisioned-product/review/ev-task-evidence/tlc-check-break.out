@@ -1,0 +1,78 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Running breadth-first search Model-Checking with fp 118 and seed -7687903234276332578 with 1 worker on 4 cores with 3330MB heap and 64MB offheap memory [pid: 7062] (Linux 6.12.113+ amd64, Ubuntu 21.0.12.1 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/task-run/TaskRun.tla
+Parsing file /tmp/tlc-7408693152620823737/_TLCTrace.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-7408693152620823737/TLC.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-7408693152620823737/TLCExt.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-7408693152620823737/Sequences.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-7408693152620823737/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-7408693152620823737/FiniteSets.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-7408693152620823737/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Integers
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module TaskRun
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module TaskRun
+Starting... (2026-11-10 10:55:45)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-10 10:55:45.
+Error: Invariant CompletedStays is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ left1 = FALSE
+/\ left2 = FALSE
+/\ done1 = FALSE
+/\ done2 = FALSE
+/\ halted1 = FALSE
+/\ halted2 = FALSE
+/\ waited1 = FALSE
+/\ waited2 = FALSE
+/\ s1 = "absent"
+/\ s2 = "absent"
+
+State 2: <Begin line 61, col 8 to line 62, col 27 of module TaskRun>
+/\ left1 = FALSE
+/\ left2 = FALSE
+/\ done1 = FALSE
+/\ done2 = FALSE
+/\ halted1 = FALSE
+/\ halted2 = FALSE
+/\ waited1 = FALSE
+/\ waited2 = FALSE
+/\ s1 = "running"
+/\ s2 = "absent"
+
+State 3: <Finish1 line 86, col 8 to line 87, col 29 of module TaskRun>
+/\ left1 = TRUE
+/\ left2 = FALSE
+/\ done1 = TRUE
+/\ done2 = FALSE
+/\ halted1 = FALSE
+/\ halted2 = FALSE
+/\ waited1 = FALSE
+/\ waited2 = FALSE
+/\ s1 = "completed"
+/\ s2 = "absent"
+
+State 4: <Stop1 line 101, col 8 to line 102, col 74 of module TaskRun>
+/\ left1 = TRUE
+/\ left2 = FALSE
+/\ done1 = TRUE
+/\ done2 = FALSE
+/\ halted1 = TRUE
+/\ halted2 = FALSE
+/\ waited1 = FALSE
+/\ waited2 = FALSE
+/\ s1 = "stopped"
+/\ s2 = "absent"
+
+18 states generated, 13 distinct states found, 8 states left on queue.
+The depth of the complete state graph search is 4.
+Finished in 00s at (2026-11-10 10:55:45)
+Trace exploration spec path: ./TaskRun_TTrace_1794308145.tla

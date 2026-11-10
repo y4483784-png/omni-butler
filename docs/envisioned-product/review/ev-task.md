@@ -33,6 +33,10 @@ Both head times are under the fail lines. This is not a claim that the head is f
 
 ## Live lanes
 
-Lanes 1 through 9 were not driven. This product repo has no `control-ui` skill, and that skill is not in the plugin cache used for this run. The plan says to drive the page with that skill. A substitute click path was not used.
+The operator moved running-product checks to the end of the whole envisioned-product plan. Lanes 1 through 10 of this knife are deferred. They are not passed.
 
-Lane 10 was not driven as written. `docker` is not installed, so `docker compose config --services` did not run. A search of the diff for Khoj found no matches. That search is only the second half of the lane.
+This repo still has no `control-ui` skill, and `docker` is not installed here. Those facts are why the lanes were not driven on the first pass. They are not a pass, and the deferral does not close them.
+
+## Formal evidence
+
+Raw logs, exit codes, the jar identity, and the rendered chart are in `ev-task-evidence/` in this directory. `chart.png` is the statechart script's Mermaid, rendered for review. The Mermaid source remains `ev-task-statechart.mmd`.
