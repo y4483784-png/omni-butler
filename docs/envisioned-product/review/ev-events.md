@@ -23,7 +23,7 @@ The table is `event_receipts` in Alembic revision `0014_event_receipt`. Revision
 
 ## Formal check
 
-The question is whether these steps can store two receipts, mark success on arrival, write a stopped generation, reuse a completed generation, open a second card, or open a new dispatch for a running generation. That is an order of steps, so the check is TLC on a small model. The jar is the vendored `verification/tlc/tla2tools.jar`, SHA256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, 4,510,215 bytes, manifest `2.0 2026-11-06`, revision `d8fb231de4e4b5d02c1b2ed1ac759c086f694021`.
+The checker anchors were confirmed at `acf29b7ec17298604eb7f1f68970380ae2a47eb9`. The question is whether these steps can store two receipts, mark success on arrival, write a stopped generation, reuse a completed generation, open a second card, or open a new dispatch for a running generation. That is an order of steps, so the check is TLC on a small model. The jar is the vendored `verification/tlc/tla2tools.jar`, SHA256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, 4,510,215 bytes, manifest `2.0 2026-11-06`, revision `d8fb231de4e4b5d02c1b2ed1ac759c086f694021`.
 
 Held run, 126 states generated, 81 distinct states, no error:
 

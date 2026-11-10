@@ -63,6 +63,6 @@ The model is one user and one delivery, with at most one later event and one rep
 
 ## Keep the check with the code
 
-The anchors were confirmed at the commit that adds this skill. Move the confirmation forward only after reading `submit_event`, `note_external_success`, `_route_act`, `_while_waiting`, and `search_meeting_mail`, and seeing that the model still describes them. If `submit_event` loses `if existing is not None:`, marks success itself, or `gmail.py` imports the inbox, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at acf29b7ec17298604eb7f1f68970380ae2a47eb9. Move the confirmation forward only after reading `submit_event`, `note_external_success`, `_route_act`, `_while_waiting`, and `search_meeting_mail`, and seeing that the model still describes them. If `submit_event` loses `if existing is not None:`, marks success itself, or `gmail.py` imports the inbox, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.
