@@ -40,6 +40,7 @@ register(
     ToolSpec(
         name="web",
         risk="medium",
+        effect="read",
         execute=execute_web,
         description="Search the open web for fresh facts",
     )

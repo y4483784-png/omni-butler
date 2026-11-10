@@ -13,6 +13,7 @@ class ToolSpec:
     name: str
     risk: str
     execute: Callable[[ToolContext, dict], ToolResult]
+    effect: str
     description: str = ""
 
 

@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from app.agents.harness.audit import write_audit
+from app.agents.harness.execution import effect_denial, execution_denial
 from app.agents.harness.constitution import (
     autoharness_available,
     get_autoharness_pipeline,
@@ -222,6 +223,46 @@ def invoke(tool_name: str | None, ctx: ToolContext, args: dict[str, Any] | None 
                 "reason": "unregistered",
                 "risk": risk,
                 "engine": engine,
+                "args": args,
+                "elapsed_ms": result.elapsed_ms,
+            }
+        )
+        return result
+
+    stop_reason = execution_denial(
+        getattr(ctx, "db", None),
+        user_id=getattr(ctx, "user_id", None) or 0,
+        task_id=getattr(ctx, "task_id", None),
+        tool=tool,
+    )
+    if stop_reason:
+        result = _deny(tool, stop_reason, risk=risk)
+        result.elapsed_ms = int((time.time() - started) * 1000)
+        _emit(
+            {
+                "tool": tool,
+                "decision": "deny",
+                "reason": stop_reason,
+                "risk": risk,
+                "engine": f"{engine}+task",
+                "args": args,
+                "elapsed_ms": result.elapsed_ms,
+            }
+        )
+        return result
+
+    declared = (constitution.get("tool_effect") or {}).get(tool)
+    contract_reason = effect_denial(spec.effect, None if declared is None else str(declared))
+    if contract_reason:
+        result = _deny(tool, contract_reason, risk=risk)
+        result.elapsed_ms = int((time.time() - started) * 1000)
+        _emit(
+            {
+                "tool": tool,
+                "decision": "deny",
+                "reason": contract_reason,
+                "risk": risk,
+                "engine": f"{engine}+contract",
                 "args": args,
                 "elapsed_ms": result.elapsed_ms,
             }

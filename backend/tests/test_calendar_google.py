@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
-from app.models.models import CalendarConnection, CalendarEvent, ToolAuditLog, User
+from app.models.models import CalendarConnection, CalendarEvent, ScheduleConfirmClaim, ToolAuditLog, User
 from app.agents.harness.types import ToolContext
 from app.agents.tools import calendar_tool
 from app.agents.tools.calendar_tool import execute_calendar
@@ -313,6 +313,9 @@ def _cleanup(*user_ids: int) -> None:
                 synchronize_session=False
             )
             db.query(CalendarEvent).filter(CalendarEvent.user_id.in_(user_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(ScheduleConfirmClaim).filter(ScheduleConfirmClaim.user_id.in_(user_ids)).delete(
                 synchronize_session=False
             )
         db.commit()
@@ -1673,9 +1676,9 @@ def test_google_insert_failure_writes_no_local_row(
                 "end_at": "2026-08-06T16:00:00",
             },
         )
-        assert failed.status_code == 502
+        assert failed.status_code == 409
         assert failed.status_code != 200
-        assert "未保存" in failed.json()["detail"]
+        assert failed.json()["detail"] == "结果未知，未再次写入。请先核对日历。"
         assert _insert_calls(fake_google)
         assert fake_google.deleted_ids == []
         assert db.query(CalendarEvent).filter(CalendarEvent.title == "写失败").count() == 0
@@ -1831,7 +1834,7 @@ def test_local_insert_failure_deletes_google_event(
                 "end_at": "2026-08-08T16:00:00",
             },
         )
-        assert again.status_code == 502
+        assert again.status_code == 409
         assert again.status_code != 200
         assert fake_google.deleted_ids == ["evt-created"]
         assert "event_id=evt-created" in caplog.text
@@ -2252,9 +2255,9 @@ def test_update_patches_google_before_local_and_failure_keeps_row(
                 "end_at": "2026-12-02T18:00:00",
             },
         )
-        assert failed.status_code == 502
+        assert failed.status_code == 409
         assert failed.status_code != 200
-        assert "未保存" in failed.json()["detail"]
+        assert failed.json()["detail"] == "结果未知，未再次写入。请先核对日历。"
         assert _patch_calls(fake_google)
         assert _list_calls(fake_google)
         assert fake_google.calls.index(_list_calls(fake_google)[0]) < fake_google.calls.index(
@@ -2794,8 +2797,8 @@ def test_local_row_inserts_on_first_confirmed_update(
             f"/api/calendar/{row.id}",
             json={"title": "不该写上", "start_at": "2026-12-02T19:30:00", "end_at": "2026-12-02T20:30:00"},
         )
-        assert broken.status_code == 502
-        assert "未保存" in broken.json()["detail"]
+        assert broken.status_code == 409
+        assert broken.json()["detail"] == "结果未知，未再次写入。请先核对日历。"
         assert _insert_calls(fake_google)
         db.refresh(row)
         assert row.title == "旧本地会"
@@ -2875,48 +2878,61 @@ def test_cancel_deletes_google_first_and_disconnect_refuses_linked_rows(
         user_id = _connect_admin(auth_client, db, fake_google)
         row = _google_row(db, user_id, title="要取消的会", start=start, external_id="evt-cancel")
 
-        def _still_active(status_code: int) -> None:
-            failed = auth_client.delete(f"/api/calendar/{row.id}")
+        def _still_active(target, status_code: int, detail_part: str) -> None:
+            failed = auth_client.delete(f"/api/calendar/{target.id}")
             assert failed.status_code == status_code
             assert failed.status_code != 200
-            assert "未改" in failed.json()["detail"]
+            assert detail_part in failed.json()["detail"]
             assert _list_calls(fake_google) == []
-            db.refresh(row)
-            assert row.status == "active"
-            assert db.get(CalendarEvent, row.id) is not None
+            db.refresh(target)
+            assert target.status == "active"
+            assert db.get(CalendarEvent, target.id) is not None
 
         fake_google.calls.clear()
         fake_google.delete_status = 500
-        _still_active(502)
+        _still_active(row, 409, "结果未知")
+        fake_google.calls.clear()
+        with pytest.raises(AssertionError, match="结果未知"):
+            auth_client.delete(f"/api/calendar/{row.id}")
+        assert _delete_calls(fake_google) == []
+        refused = _google_row(
+            db, user_id, title="明确拒绝取消", start=start + timedelta(hours=3), external_id="evt-forbidden"
+        )
         fake_google.calls.clear()
         fake_google.delete_status = 403
-        _still_active(502)
+        _still_active(refused, 502, "未改")
+        offline = _google_row(
+            db, user_id, title="取消时断网", start=start + timedelta(hours=4), external_id="evt-offline"
+        )
         fake_google.calls.clear()
         fake_google.delete_status = 204
         fake_google.network_on.add("DELETE")
-        _still_active(502)
+        _still_active(offline, 409, "结果未知")
         fake_google.network_on.clear()
 
+        missing_row = _google_row(
+            db, user_id, title="远端已不在", start=start + timedelta(hours=5), external_id="evt-missing"
+        )
         fake_google.calls.clear()
         fake_google.delete_status = 404
-        missing = auth_client.delete(f"/api/calendar/{row.id}")
+        missing = auth_client.delete(f"/api/calendar/{missing_row.id}")
         assert missing.status_code == 200, missing.text
         assert missing.json()["status"] == "cancelled"
-        assert missing.json()["id"] == row.id
+        assert missing.json()["id"] == missing_row.id
         assert _list_calls(fake_google) == []
         assert [call["method"] for call in _event_calls(fake_google)] == ["DELETE"]
-        db.refresh(row)
-        assert row.status == "cancelled"
+        db.refresh(missing_row)
+        assert missing_row.status == "cancelled"
 
-        row.status = "active"
+        missing_row.status = "active"
         db.commit()
         fake_google.calls.clear()
         fake_google.delete_status = 410
-        gone = auth_client.delete(f"/api/calendar/{row.id}")
+        gone = auth_client.delete(f"/api/calendar/{missing_row.id}")
         assert gone.status_code == 200, gone.text
         assert gone.json()["status"] == "cancelled"
-        db.refresh(row)
-        assert row.status == "cancelled"
+        db.refresh(missing_row)
+        assert missing_row.status == "cancelled"
         assert _list_calls(fake_google) == []
 
         other = _google_row(db, user_id, title="成功取消", start=start + timedelta(days=1), external_id="evt-gone")

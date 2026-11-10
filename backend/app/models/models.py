@@ -67,8 +67,8 @@ class ScheduleConfirmClaim(Base):
             "action",
             "fingerprint",
             unique=True,
-            sqlite_where=text("status = 'open'"),
-            postgresql_where=text("status = 'open'"),
+            sqlite_where=text("status IN ('open', 'unknown')"),
+            postgresql_where=text("status IN ('open', 'unknown')"),
         ),
     )
     token = Column(String, primary_key=True)
@@ -81,6 +81,7 @@ class ScheduleConfirmClaim(Base):
     fingerprint = Column(String, nullable=False, default="")
     scope = Column(String, nullable=False, default="")
     generation_ids = Column(Text, nullable=False, default="[]")
+    remote_request_id = Column(String, nullable=False, default="")
 
 
 TASK_RUN_STATUSES = (

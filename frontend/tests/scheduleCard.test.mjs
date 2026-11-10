@@ -13,6 +13,8 @@ test("cancel card title is read only", () => {
   assert.match(titleField, /disabled=\{locked \|\| mode === "cancel"\}/);
   assert.match(startField, /disabled=\{locked \|\| mode === "cancel"\}/);
   assert.match(source, /待确认删除/);
+  assert.match(source, /card\.phase === "unknown"/);
+  assert.match(source, /结果未知，未再次写入/);
   assert.match(source, /确认删除/);
   assert.match(source, /先不删/);
   assert.match(source, /phase: "cancelled"/);

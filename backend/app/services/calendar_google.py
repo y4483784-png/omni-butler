@@ -87,8 +87,42 @@ class CalendarRemoteReadError(CalendarRemoteError):
 
 
 class CalendarRemoteWriteError(CalendarRemoteError):
-    def __init__(self, message: str = _WRITE_FAILED) -> None:
+    def __init__(self, message: str = _WRITE_FAILED, *, unknown: bool = False) -> None:
         super().__init__(message)
+        self.unknown = unknown
+
+
+_DEFINITE_REJECTION = frozenset({400, 401, 403, 404})
+_QUOTA_REASONS = frozenset({"rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"})
+
+
+def _google_error_reason(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return ""
+    errors = error.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if isinstance(item, dict) and item.get("reason"):
+                return str(item["reason"])
+    return ""
+
+
+def _write_result_unknown(status: int, payload: dict | None) -> bool:
+    """True when the status does not prove that nothing was stored.
+
+    400, 401, and 404 are definite rejections. A 403 is definite unless Google
+    names a quota or rate limit. 408, 409, 412, 429, and 5xx stay unknown.
+    """
+    if status >= 500 or status in {408, 409, 412, 429}:
+        return True
+    if status == 403 and _google_error_reason(payload) in _QUOTA_REASONS:
+        return True
+    if status in _DEFINITE_REJECTION:
+        return False
+    return True
 
 
 class CalendarOverlapError(Exception):
@@ -263,31 +297,42 @@ class GoogleCalendarProvider:
         """
         start_at = _as_naive(start_at)
         end_at = _as_naive(end_at)
-        zone_name = self.timezone_name()
-        conflicts = self.conflicts_for_create(user_id, start_at, end_at, zone_name=zone_name)
-        if conflicts:
-            raise CalendarOverlapError(conflicts)
-        google_id, meet_link, meet_status = self._insert_google_event(
-            title=title,
-            start_at=start_at,
-            end_at=end_at,
-            location=location,
-            description=description,
-            zone_name=zone_name,
-            participants=participants,
-            meet=meet,
-        )
-        saved = self._save_local_row(
-            user_id,
-            title=title,
-            start_at=start_at,
-            end_at=end_at,
-            participants=participants,
-            location=location,
-            description=description,
-            zone_name=zone_name,
-            google_id=google_id,
-        )
+        try:
+            zone_name = self.timezone_name()
+            conflicts = self.conflicts_for_create(user_id, start_at, end_at, zone_name=zone_name)
+            if conflicts:
+                raise CalendarOverlapError(conflicts)
+            google_id, meet_link, meet_status = self._insert_google_event(
+                title=title,
+                start_at=start_at,
+                end_at=end_at,
+                location=location,
+                description=description,
+                zone_name=zone_name,
+                participants=participants,
+                meet=meet,
+            )
+            saved = self._save_local_row(
+                user_id,
+                title=title,
+                start_at=start_at,
+                end_at=end_at,
+                participants=participants,
+                location=location,
+                description=description,
+                zone_name=zone_name,
+                google_id=google_id,
+            )
+        except CalendarOverlapError:
+            self._reopen_unsent()
+            raise
+        except CalendarRemoteWriteError as exc:
+            if not exc.unknown:
+                self._reopen_known()
+            raise
+        except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
+            self._reopen_unsent()
+            raise
         if meet_link or meet_status:
             return replace(saved, meet_link=meet_link, meet_status=meet_status)
         return saved
@@ -1142,15 +1187,18 @@ class GoogleCalendarProvider:
             params["sendUpdates"] = "all"
         if "conferenceData" in body:
             params["conferenceDataVersion"] = "1"
+        self._access_token()
+        self._arm_user_write(event_id)
         try:
             response = self._call("PATCH", url, json=body, params=params or None)
         except CalendarRemoteReadError:
             logger.warning("google calendar events patch failed status=network")
-            raise CalendarRemoteWriteError() from None
+            raise CalendarRemoteWriteError(unknown=True) from None
+        payload = _json_object(response) or {}
         if response.status_code not in (200, 201):
             logger.warning("google calendar events patch failed status=%s", response.status_code)
-            raise CalendarRemoteWriteError()
-        return _json_object(response) or {}
+            raise CalendarRemoteWriteError(unknown=_write_result_unknown(response.status_code, payload))
+        return payload
 
     def _restore_patch(self, event_id: str, body: dict) -> None:
         """Best-effort undo of a patch when the local commit fails. Log only the event id."""
@@ -1158,6 +1206,117 @@ class GoogleCalendarProvider:
             self._patch_google_event(event_id, body)
         except CalendarRemoteError:
             logger.error("google calendar compensate patch failed event_id=%s", event_id)
+
+    def _arm_user_write(self, key: str) -> None:
+        token = self.db.info.get("confirm_token")
+        if not token or not str(key or "").strip():
+            return
+        from app.services.schedule_confirm import arm_remote_claim
+
+        arm_remote_claim(self.db, str(token), str(key).strip())
+
+    def _reopen_unsent(self) -> None:
+        token = self.db.info.get("confirm_token")
+        if not token:
+            return
+        from app.services.schedule_confirm import reopen_unsent_claim
+
+        reopen_unsent_claim(self.db, str(token))
+
+    def _reopen_known(self) -> None:
+        token = self.db.info.get("confirm_token")
+        if not token:
+            return
+        from app.services.schedule_confirm import reopen_known_rejection
+
+        reopen_known_rejection(self.db, str(token))
+
+    def lookup_inserted_event(self, request_id: str) -> dict | None:
+        """GET one event by the private request id. This method never inserts."""
+        marker = str(request_id or "").strip()
+        if not marker:
+            return None
+        try:
+            response = self._call(
+                "GET",
+                _EVENTS_URL,
+                params={
+                    "privateExtendedProperty": f"requestId={marker}",
+                    "maxResults": "10",
+                    "singleEvents": "true",
+                },
+            )
+        except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
+            return None
+        if response.status_code != 200:
+            return None
+        payload = _json_object(response) or {}
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            extended = item.get("extendedProperties")
+            private = extended.get("private") if isinstance(extended, dict) else None
+            if not isinstance(private, dict):
+                continue
+            if str(private.get("requestId") or "") != marker:
+                continue
+            if str(item.get("id") or "").strip():
+                return item
+        return None
+
+    def _adopt_inserted(self, request_id: str, meet: bool) -> tuple[str, str, str] | None:
+        from app.agents.harness.effects import decide_replay
+
+        choice = decide_replay(
+            "non_replayable_write",
+            attempt=1,
+            external_id=request_id,
+            prior_external_id=request_id,
+        )
+        if choice != "reconcile":
+            return None
+        item = self.lookup_inserted_event(request_id)
+        if item is None:
+            return None
+        google_id = str(item.get("id") or "").strip()
+        if not google_id:
+            return None
+        link, status = conference_view(item) if meet else ("", "")
+        return google_id, link, status
+
+    def save_found_event(
+        self,
+        user_id: int,
+        *,
+        title: str,
+        start_at: datetime,
+        end_at: datetime,
+        participants: list[str],
+        location: str,
+        description: str,
+        google_id: str,
+    ) -> CalendarEvent:
+        """Store an event Google already has. Does not call insert."""
+        zone_name = self.timezone_name()
+        rows = self._local.rows_for_external_ids(user_id, [google_id], status="all")
+        if rows:
+            return rows[0]
+        saved = self._save_local_row(
+            user_id,
+            title=title,
+            start_at=start_at,
+            end_at=end_at,
+            participants=participants,
+            location=location,
+            description=description,
+            zone_name=zone_name,
+            google_id=google_id,
+        )
+        row = self.get_row(saved.id)
+        if row is None:
+            raise CalendarRemoteWriteError(_LOCAL_SAVE_FAILED)
+        return row
 
     def _insert_google_event(
         self,
@@ -1184,24 +1343,39 @@ class GoogleCalendarProvider:
             body["attendees"] = attendees
             params["sendUpdates"] = "all"
         request_id = uuid.uuid4().hex
+        private = {"requestId": request_id}
+        body["extendedProperties"] = {"private": private}
         if meet:
             body["conferenceData"] = _meet_request(request_id)
             params["conferenceDataVersion"] = "1"
+        self._access_token()
+        self._arm_user_write(request_id)
         try:
             response = self._call("POST", _EVENTS_URL, json=body, params=params or None)
         except CalendarRemoteReadError:
             logger.warning("google calendar events insert failed status=network")
-            raise CalendarRemoteWriteError() from None
+            found = self._adopt_inserted(request_id, meet)
+            if found is not None:
+                return found
+            raise CalendarRemoteWriteError(unknown=True) from None
+        payload = _json_object(response) or {}
         if response.status_code not in (200, 201):
             logger.warning(
                 "google calendar events insert failed status=%s", response.status_code
             )
+            if _write_result_unknown(response.status_code, payload):
+                found = self._adopt_inserted(request_id, meet)
+                if found is not None:
+                    return found
+                raise CalendarRemoteWriteError(unknown=True)
             raise CalendarRemoteWriteError()
-        payload = _json_object(response) or {}
         google_id = str(payload.get("id") or "").strip()
         if not google_id:
             logger.warning("google calendar events insert failed status=missing-id")
-            raise CalendarRemoteWriteError()
+            found = self._adopt_inserted(request_id, meet)
+            if found is not None:
+                return found
+            raise CalendarRemoteWriteError(unknown=True)
         link, status = conference_view(payload) if meet else ("", "")
         return google_id, link, status
 
@@ -1241,8 +1415,8 @@ class GoogleCalendarProvider:
             raise
         except Exception:
             self.db.rollback()
-            self._delete_google_event(google_id)
-            raise CalendarRemoteWriteError(_LOCAL_SAVE_FAILED) from None
+            deleted = self._delete_google_event(google_id)
+            raise CalendarRemoteWriteError(_LOCAL_SAVE_FAILED, unknown=not deleted) from None
         self.db.refresh(event)
         return event_to_dto(event)
 
@@ -1259,28 +1433,33 @@ class GoogleCalendarProvider:
         Any other failure leaves the caller to keep the local row active.
         """
         url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
+        self._access_token()
+        self._arm_user_write(event_id)
         try:
             response = self._call("DELETE", url)
         except CalendarRemoteReadError:
             logger.warning("google calendar events delete failed status=network")
-            raise CalendarRemoteWriteError(_CANCEL_FAILED) from None
+            raise CalendarRemoteWriteError(_CANCEL_FAILED, unknown=True) from None
         if response.status_code in (200, 204, 404, 410):
             return
         logger.warning("google calendar events delete failed status=%s", response.status_code)
-        raise CalendarRemoteWriteError(_CANCEL_FAILED)
+        unknown = _write_result_unknown(response.status_code, _json_object(response))
+        raise CalendarRemoteWriteError(_CANCEL_FAILED, unknown=unknown)
 
-    def _delete_google_event(self, event_id: str) -> None:
+    def _delete_google_event(self, event_id: str) -> bool:
         """Best-effort compensate. On failure the log keeps only the event id."""
         if not event_id:
-            return
+            return False
         url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
         try:
             response = self._call("DELETE", url)
         except CalendarRemoteError:
             logger.error("google calendar compensate delete failed event_id=%s", event_id)
-            return
+            return False
         if response.status_code not in (200, 204, 404, 410):
             logger.error("google calendar compensate delete failed event_id=%s", event_id)
+            return False
+        return True
 
     def _call(
         self,

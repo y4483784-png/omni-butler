@@ -1,0 +1,47 @@
+%%{init: {"flowchart": {"wrappingWidth": 280, "htmlLabels": true, "nodeSpacing": 28, "rankSpacing": 36}}}%%
+flowchart TD
+  startNode[用户确认一次日历写入，或模型调用一个工具]
+  stopped{这一代任务已经停止}
+  denyStopped[拒绝执行，审计记下代数，不产生外部写入]
+  listed{名称仍在这一代的允许名单里}
+  denyListed[拒绝执行，目录里看得见也不等于可以执行]
+  kind{这次动作的副作用}
+  readAgain[只读可以再执行，不写入外部日历]
+  sameId[相同的外部编号可以再发一次]
+  refreshFail{访问令牌刷新失败，写入还没发出}
+  rolledBack[确认回到可再试，没有插入]
+  armNode[先把外部编号写入确认并提交]
+  sendOnce[向日历发送这一次]
+  outcome{对方怎么回答}
+  saved[确认改为已写入]
+  rejected[明确拒绝，确认回到可再试]
+  unknownNode[结果未知，按编号查询，查询不会插入]
+  found{查询找到这一次}
+  adopted[保存已经存在的事件，不再插入]
+  stayUnknown[保持未知，再次点击也不发送]
+
+  startNode --> stopped
+  stopped -->|是| denyStopped
+  stopped -->|否| listed
+  listed -->|否| denyListed
+  listed -->|是| kind
+  kind -->|只读| readAgain
+  kind -->|相同外部编号| sameId
+  kind -->|不可重放的写入| refreshFail
+  refreshFail -->|是| rolledBack
+  refreshFail -->|否| armNode
+  armNode --> sendOnce
+  sendOnce --> outcome
+  outcome -->|成功| saved
+  outcome -->|明确拒绝| rejected
+  outcome -->|没有答复| unknownNode
+  unknownNode --> found
+  found -->|找到| adopted
+  found -->|没有| stayUnknown
+
+  classDef path fill:#c3e0ff,stroke:#2f5f93,color:#1c3348
+  classDef gate fill:#bfe3df,stroke:#2f6f68,color:#1c3348
+  classDef stop fill:#f0d3bf,stroke:#8a4b2f,color:#3f2418
+  class startNode,readAgain,sameId,armNode,sendOnce,saved,adopted path
+  class stopped,listed,kind,refreshFail,outcome,found gate
+  class denyStopped,denyListed,rolledBack,rejected,unknownNode,stayUnknown stop

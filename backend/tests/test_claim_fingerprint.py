@@ -265,3 +265,9 @@ def test_two_consumes_race_to_one_event(plain_client: TestClient):
         assert _count(title) == 1
     finally:
         _delete_title(title)
+        done = SessionLocal()
+        try:
+            done.query(ScheduleConfirmClaim).filter(ScheduleConfirmClaim.token == token).delete()
+            done.commit()
+        finally:
+            done.close()
