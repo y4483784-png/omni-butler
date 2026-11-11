@@ -15,6 +15,7 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.ingestion.ingest_document_task": {"queue": "ingest"},
         "app.tasks.ingestion.recover_stale_ingests_task": {"queue": "maintenance"},
+        "app.tasks.pulse.run_pulse": {"queue": "maintenance"},
     },
     task_ignore_result=True,
     task_acks_late=True,
@@ -39,12 +40,18 @@ celery_app.conf.update(
             "task": "app.tasks.ingestion.recover_stale_ingests_task",
             "schedule": max(60, settings.celery_stale_check_seconds),
             "options": {"queue": "maintenance"},
-        }
+        },
+        "memory-schedule-pulse": {
+            "task": "app.tasks.pulse.run_pulse",
+            "schedule": max(60, settings.celery_stale_check_seconds),
+            "options": {"queue": "maintenance"},
+        },
     },
 )
 
 # Register tasks after celery_app exists (avoids circular import on Celery()).
 import app.tasks.ingestion as _ingestion  # noqa: E402,F401
+import app.tasks.pulse as _pulse  # noqa: E402,F401
 
 from celery.signals import worker_init, worker_process_init  # noqa: E402
 

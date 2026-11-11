@@ -294,3 +294,72 @@ class MemoryItem(Base):
     content = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+LEDGER_SOURCES = ("turn", "panel", "store", "settle")
+LEDGER_ACTORS = ("turn", "person")
+LEDGER_DECISIONS = ("restored", "discarded")
+SOURCE_ACTOR = {
+    "turn": "turn",
+    "panel": "person",
+    "store": "person",
+    "settle": "person",
+}
+LEDGER_SOURCE_ACTOR_SQL = "(" + " OR ".join(
+    f"(source = {source!r} AND actor = {actor!r})" for source, actor in SOURCE_ACTOR.items()
+) + ")"
+
+
+class MemoryLedger(Base):
+    """One append-only statement of a memory change. Settle flips pending and decision only."""
+
+    __tablename__ = "memory_ledger"
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ({})".format(", ".join(repr(item) for item in LEDGER_SOURCES)),
+            name="ck_memory_ledger_source",
+        ),
+        CheckConstraint(
+            "actor IN ({})".format(", ".join(repr(item) for item in LEDGER_ACTORS)),
+            name="ck_memory_ledger_actor",
+        ),
+        CheckConstraint(LEDGER_SOURCE_ACTOR_SQL, name="ck_memory_ledger_source_actor"),
+        CheckConstraint(
+            "decision IS NULL OR decision IN ({})".format(
+                ", ".join(repr(item) for item in LEDGER_DECISIONS)
+            ),
+            name="ck_memory_ledger_decision",
+        ),
+        CheckConstraint("pending IN (0, 1)", name="ck_memory_ledger_pending"),
+        Index(
+            "uq_memory_ledger_turn",
+            "user_id",
+            "source_ref",
+            "kind",
+            "key",
+            unique=True,
+            sqlite_where=text("source = 'turn'"),
+            postgresql_where=text("source = 'turn'"),
+        ),
+        Index(
+            "uq_memory_ledger_settle",
+            "user_id",
+            "source_ref",
+            unique=True,
+            sqlite_where=text("source = 'settle'"),
+            postgresql_where=text("source = 'settle'"),
+        ),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind = Column(String, nullable=False, default="")
+    key = Column(String, nullable=False, default="")
+    source = Column(String, nullable=False)
+    actor = Column(String, nullable=False)
+    before = Column(Text, nullable=False, default="")
+    after = Column(Text, nullable=False, default="")
+    pending = Column(Integer, nullable=False, default=0)
+    decision = Column(String, nullable=True)
+    source_ref = Column(String, nullable=False, default="")
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

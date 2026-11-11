@@ -671,13 +671,26 @@ export async function updateCalendarEvent(
 
 export type MemoryKind = "identity" | "preference" | "entity" | string;
 
-export interface MemoryItem {
+export interface MemoryChange {
   id: number;
+  kind: MemoryKind;
+  key: string;
+  source: string;
+  actor: string;
+  before: string;
+  after: string;
+  pending: boolean;
+  decision: string | null;
+}
+
+export interface MemoryItem {
+  id: number | null;
   kind: MemoryKind;
   key: string;
   content: string;
   created_at: string;
   updated_at: string;
+  changes?: MemoryChange[];
 }
 
 export async function listMemories(): Promise<MemoryItem[]> {
@@ -716,4 +729,17 @@ export async function updateMemory(
 export async function deleteMemory(id: number): Promise<void> {
   const r = await apiFetch(`/api/memory/${id}`, { method: "DELETE" });
   if (!r.ok) throw new Error(await parseError(r, "删除记忆失败"));
+}
+
+export async function settleMemory(
+  id: number,
+  decision: "restored" | "discarded"
+): Promise<MemoryChange> {
+  const r = await apiFetch(`/api/memory/ledger/${id}/settle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
+  if (!r.ok) throw new Error(await parseError(r, "处理记忆变更失败"));
+  return r.json();
 }

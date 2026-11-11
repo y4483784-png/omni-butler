@@ -3,6 +3,7 @@ import {
   createMemory,
   deleteMemory,
   listMemories,
+  settleMemory,
   updateMemory,
   type MemoryItem,
   type MemoryKind,
@@ -80,6 +81,19 @@ export function MemoryPanel() {
     }
   }
 
+  async function onSettle(id: number, decision: "restored" | "discarded") {
+    setBusy(true);
+    setErr("");
+    try {
+      await settleMemory(id, decision);
+      await refresh();
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : "处理记忆变更失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onDelete(id: number) {
     if (!window.confirm("确定删除这条记忆？删除后新会话将不再使用它。")) return;
     setErr("");
@@ -138,13 +152,13 @@ export function MemoryPanel() {
       <ul className="kb-list">
         {items.length === 0 ? <li className="kb-empty">暂无记忆条目</li> : null}
         {items.map((item) => (
-          <li key={item.id} className="kb-item memory-item">
+          <li key={item.id ?? `${item.kind}/${item.key}`} className="kb-item memory-item">
             <div className="kb-item-main">
               <span className="kb-name">
                 {kindLabel(item.kind)}
                 <span className="memory-key">/{item.key}</span>
               </span>
-              {editingId === item.id ? (
+              {item.id != null && editingId === item.id ? (
                 <>
                   <textarea
                     className="memory-textarea"
@@ -157,7 +171,7 @@ export function MemoryPanel() {
                       type="button"
                       className="ghost-btn"
                       disabled={busy}
-                      onClick={() => void onSaveEdit(item.id)}
+                      onClick={() => void onSaveEdit(item.id as number)}
                     >
                       保存
                     </button>
@@ -169,8 +183,35 @@ export function MemoryPanel() {
               ) : (
                 <span className="memory-content">{item.content}</span>
               )}
+              {(item.changes ?? []).map((change) => (
+                <div key={change.id} className="memory-content">
+                  <div>变更前：{change.before || "（空）"}</div>
+                  <div>变更后：{change.after || "（空）"}</div>
+                  {change.pending ? (
+                    <div className="memory-edit-actions">
+                      <span>待确认</span>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        disabled={busy}
+                        onClick={() => void onSettle(change.id, "restored")}
+                      >
+                        恢复
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        disabled={busy}
+                        onClick={() => void onSettle(change.id, "discarded")}
+                      >
+                        放弃
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
             </div>
-            {editingId === item.id ? null : (
+            {item.id == null || editingId === item.id ? null : (
               <div className="kb-item-actions">
                 <button
                   type="button"
@@ -183,7 +224,7 @@ export function MemoryPanel() {
                 >
                   编辑
                 </button>
-                <button type="button" className="del-btn" onClick={() => void onDelete(item.id)} title="删除">
+                <button type="button" className="del-btn" onClick={() => void onDelete(item.id as number)} title="删除">
                   ×
                 </button>
               </div>

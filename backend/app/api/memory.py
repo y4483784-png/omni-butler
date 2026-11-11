@@ -28,6 +28,10 @@ class MemoryUpdate(BaseModel):
     content: str | None = Field(default=None, max_length=240)
 
 
+class LedgerSettle(BaseModel):
+    decision: str = ""
+
+
 def _guard_text(*parts: str | None) -> None:
     blob = " ".join(p for p in parts if p)
     if contains_sensitive(blob):
@@ -39,8 +43,27 @@ def list_memory(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    rows = memory_svc.list_memories(db, current_user.id, limit=100)
-    return [memory_svc.serialize_memory(r) for r in rows]
+    return memory_svc.panel_view(db, current_user.id)
+
+
+@router.post("/ledger/{ledger_id}/settle")
+def settle_ledger(
+    ledger_id: int,
+    body: LedgerSettle,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    if body.decision not in {"restored", "discarded"}:
+        raise HTTPException(status_code=400, detail="无法处理这个决定")
+    row = memory_svc.settle_pending(
+        db,
+        user_id=current_user.id,
+        ledger_id=ledger_id,
+        decision=body.decision,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="记忆变更不存在")
+    return memory_svc.serialize_change(row)
 
 
 @router.post("")

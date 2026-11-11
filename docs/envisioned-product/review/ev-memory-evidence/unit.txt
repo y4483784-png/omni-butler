@@ -1,0 +1,7 @@
+.................................                                        [100%]
+=============================== warnings summary ===============================
+../../../../tmp/omni-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18
+  /tmp/omni-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
