@@ -1,0 +1,12 @@
+Machine: 4 cores. Load average 0.06 0.08 0.04 at the start.
+One run each, in this order. Wall clock is the bash time of the pytest process.
+Interpreter: backend/.venv/bin/python. Trunk import path: /tmp/errand-trunk/backend.
+Env: DATABASE_URL=sqlite+pysqlite:///./ci-eval.db REDIS_ENABLED=false CELERY_TASK_ALWAYS_EAGER=true SANDBOX_RUNNER_URL empty SECRET_KEY=test-secret-key ADMIN_PASSWORD=test-admin-pass.
+
+trunk tests/test_tool_contract.py before the head: 5.564 seconds. 16 passed. exit 0.
+head tests/test_tool_contract.py: 4.425 seconds. 16 passed. exit 0.
+trunk tests/test_tool_contract.py after the head: 4.424 seconds. 16 passed. exit 0.
+head tests/test_errands.py: 9.562 seconds. 11 passed. exit 0.
+
+Caps: 60 seconds for the contract file, 30 seconds for the new file. Both head runs are under the cap.
+This file does not call the gap a speedup. The first trunk run is the cold one. The second trunk run matches the head. No profiler was attached.

@@ -1,0 +1,50 @@
+---
+title: "办事下单"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 确认
+    lg1: 发出
+    lg2: 记下
+    lg3: 停下
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 tan
+  class lg3 orange
+  s0: 还没有这一单
+  s1: 确认卡已出示
+  s2: 编号已记下还没发出
+  s3: 没有凭据所以拒绝
+  s4: 没有支付凭证
+  s5: 对方已接受
+  s6: 结果未知
+  s7: 应用墙已停止
+  s8: 核对到这一单
+  s9: 再点一次不再下单
+  s10: 停止后仍然接受
+  s11: 已下单但不是这一单
+  [*] --> s0
+  s0 --> s1: 出示确认卡
+  s1 --> s2: 记下外部编号
+  s1 --> s3: 没有凭据就提交
+  s1 --> s4: 没有支付凭证
+  s2 --> s5: 对方接受
+  s2 --> s6: 这一次没有答复
+  s2 --> s7: 遇到应用墙
+  s5 --> s10: 停止
+  s6 --> s8: 核对到这一单
+  s6 --> s9: 再点一次
+  s6 --> s11: 页面写着已下单
+  class s0 blue
+  class s1 blue
+  class s2 blue
+  class s3 orange
+  class s4 orange
+  class s5 tan
+  class s6 teal
+  class s7 orange
+  class s8 tan
+  class s9 teal
+  class s10 tan
+  class s11 orange
