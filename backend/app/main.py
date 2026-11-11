@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import audit, auth, calendar, chat, events, kb, memory, messages, sessions
+from app.api import audit, auth, calendar, chat, events, kb, mail, memory, messages, sessions
 from app.core.bootstrap import ensure_bootstrap_users
 from app.core.config import check_zhipu_endpoints, settings
 from app.core.db import SessionLocal, init_db
@@ -50,6 +50,7 @@ app.include_router(calendar.router)
 app.include_router(memory.router)
 app.include_router(audit.router)
 app.include_router(events.router)
+app.include_router(mail.router)
 
 
 @app.on_event("startup")

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from uuid import uuid4
 
 from app.core.auth import hash_password
 from app.core.db import SessionLocal
-from app.models.models import EventReceipt, Message, Session as ChatSession, TaskRun, User
+from app.models.models import EventReceipt, MailAcceptance, Message, ScheduleConfirmClaim, TaskRun, User
 from app.services import task_run
 from fastapi.testclient import TestClient
 from tests.test_event_inbox import _calendar_count, _claim_status, _open_tokens
@@ -257,6 +259,212 @@ def test_completed_mail_stays_filed(plain_client: TestClient):
     assert body["route"] == "filed"
     assert body["generation"] is None
     assert _generations(session_id) == [(turn.generation, "completed")]
+
+
+def _subject() -> str:
+    return f"纪要-{uuid4().hex[:8]}"
+
+
+def _propose(client: TestClient, session_id: int, **extra):
+    payload = {
+        "session_id": session_id,
+        "to": ["a@example.com"],
+        "subject": extra.pop("subject"),
+        "body": "请查收。",
+    }
+    payload.update(extra)
+    return client.post("/api/mail/proposal", json=payload)
+
+
+def _send(client: TestClient, token: str, **extra):
+    payload = {
+        "confirm_token": token,
+        "to": ["a@example.com"],
+        "subject": extra.pop("subject"),
+        "body": "请查收。",
+    }
+    payload.update(extra)
+    return client.post("/api/mail/send", json=payload)
+
+
+def _acceptance_rows(user_id: int, delivery_id: str) -> list[str]:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(MailAcceptance)
+            .filter(MailAcceptance.user_id == user_id, MailAcceptance.delivery_id == delivery_id)
+            .all()
+        )
+        return [row.remote_request_id for row in rows]
+    finally:
+        db.close()
+
+
+def _receipt_state(user_id: int, delivery_id: str) -> str:
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(EventReceipt)
+            .filter(
+                EventReceipt.user_id == user_id,
+                EventReceipt.source == "mail",
+                EventReceipt.delivery_id == delivery_id,
+            )
+            .one()
+        )
+        return row.state
+    finally:
+        db.close()
+
+
+def _send_card_count(session_id: int) -> int:
+    db = SessionLocal()
+    try:
+        rows = db.query(Message).filter(Message.session_id == session_id, Message.role == "assistant").all()
+    finally:
+        db.close()
+    count = 0
+    for row in rows:
+        try:
+            card = json.loads(row.schedule_card or "")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(card, dict) and card.get("mode") == "send":
+            count += 1
+    return count
+
+
+def _mail_claim_count(session_id: int) -> int:
+    db = SessionLocal()
+    try:
+        return (
+            db.query(ScheduleConfirmClaim)
+            .filter(
+                ScheduleConfirmClaim.session_id == session_id,
+                ScheduleConfirmClaim.action == "mail.send",
+            )
+            .count()
+        )
+    finally:
+        db.close()
+
+
+def test_proposal_writes_no_acceptance(plain_client: TestClient):
+    session_id = _session()
+    offered = _propose(plain_client, session_id, subject=_subject())
+    assert offered.status_code == 200, offered.text
+    body = offered.json()
+    assert body["state"] == "received"
+    assert body["route"] == "filed"
+    assert body["state"] != "external_success"
+    assert body["token"]
+    assert _receipt_state(_admin_id(), body["delivery_id"]) == "received"
+    assert _acceptance_rows(_admin_id(), body["delivery_id"]) == []
+    assert _send_card_count(session_id) == 1
+
+
+def test_repeat_proposal_returns_the_same_card(plain_client: TestClient):
+    session_id = _session()
+    subject = _subject()
+    first = _propose(plain_client, session_id, subject=subject)
+    second = _propose(plain_client, session_id, subject=subject)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["token"] == second.json()["token"]
+    assert first.json()["delivery_id"] == second.json()["delivery_id"]
+    assert _mail_claim_count(session_id) == 1
+    assert _send_card_count(session_id) == 1
+    assert _acceptance_rows(_admin_id(), first.json()["delivery_id"]) == []
+
+
+def test_commit_without_a_token_writes_nothing(plain_client: TestClient):
+    session_id = _session()
+    subject = _subject()
+    offered = _propose(plain_client, session_id, subject=subject)
+    assert offered.status_code == 200, offered.text
+    delivery_id = offered.json()["delivery_id"]
+    saved = _send(plain_client, "", subject=subject)
+    assert saved.status_code == 409, saved.text
+    assert saved.json()["detail"] == "缺少确认，未写入。"
+    assert _acceptance_rows(_admin_id(), delivery_id) == []
+    assert _receipt_state(_admin_id(), delivery_id) == "received"
+
+
+def test_mailto_body_stays_received(plain_client: TestClient):
+    session_id = _session()
+    saved = _submit(plain_client, session_id, _delivery(), body="请打开 mailto:ada@example.com")
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["state"] == "received"
+    assert body["state"] != "external_success"
+    assert body["route"] == "filed"
+    assert _acceptance_rows(_admin_id(), saved.json()["delivery_id"]) == []
+
+
+def test_commit_accepts_once(plain_client: TestClient):
+    session_id = _session()
+    subject = _subject()
+    offered = _propose(plain_client, session_id, subject=subject)
+    assert offered.status_code == 200, offered.text
+    token = offered.json()["token"]
+    delivery_id = offered.json()["delivery_id"]
+    sent = _send(plain_client, token, subject=subject)
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["state"] == "external_success"
+    assert len(_acceptance_rows(_admin_id(), delivery_id)) == 1
+    again = _send(plain_client, token, subject=subject)
+    assert again.status_code == 200, again.text
+    assert again.json()["state"] == "external_success"
+    assert len(_acceptance_rows(_admin_id(), delivery_id)) == 1
+
+
+def test_armed_claim_without_a_row_accepts_once(plain_client: TestClient):
+    session_id = _session()
+    subject = _subject()
+    offered = _propose(plain_client, session_id, subject=subject)
+    assert offered.status_code == 200, offered.text
+    token = offered.json()["token"]
+    delivery_id = offered.json()["delivery_id"]
+    db = SessionLocal()
+    try:
+        claim = db.get(ScheduleConfirmClaim, token)
+        claim.status = "unknown"
+        claim.remote_request_id = f"armed-{uuid4().hex}"
+        remote_id = claim.remote_request_id
+        db.commit()
+    finally:
+        db.close()
+    sent = _send(plain_client, token, subject=subject)
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["state"] == "external_success"
+    assert _acceptance_rows(_admin_id(), delivery_id) == [remote_id]
+    assert _receipt_state(_admin_id(), delivery_id) == "external_success"
+
+
+def test_stop_leaves_the_accepted_send(plain_client: TestClient):
+    session_id = _session()
+    subject = _subject()
+    offered = _propose(plain_client, session_id, subject=subject)
+    token = offered.json()["token"]
+    delivery_id = offered.json()["delivery_id"]
+    sent = _send(plain_client, token, subject=subject)
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["state"] == "external_success"
+    stopped = False
+    for generation, status in _generations(session_id):
+        if status not in {"completed", "stopped"}:
+            task_run.stop(user_id=_admin_id(), generation=generation)
+            stopped = True
+    assert stopped
+    assert len(_acceptance_rows(_admin_id(), delivery_id)) == 1
+    assert _receipt_state(_admin_id(), delivery_id) == "external_success"
+
+
+def test_mail_entry_does_not_name_google():
+    text = (Path(__file__).resolve().parents[1] / "app/services/mail_entry.py").read_text(encoding="utf-8")
+    assert "gmail" not in text
+    assert "calendar_secrets" not in text
+    assert "googleapis" not in text
 
 
 def test_outbound_prefix_is_rejected(plain_client: TestClient):

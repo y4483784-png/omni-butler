@@ -32,6 +32,7 @@ _ACTIONS = {
     "calendar.rsvp": "calendar.rsvp",
     "choose": "calendar.choose",
     "calendar.choose": "calendar.choose",
+    "mail.send": "mail.send",
 }
 
 CONFIRM_DETAIL = {
@@ -89,6 +90,12 @@ def parse_card_expiry(value: object) -> datetime | None:
 
 def write_parts(action: str, raw: dict | None) -> dict:
     body = raw or {}
+    if action == "mail.send":
+        return {
+            "mail_to": _mail_recipients(body.get("mail_to")),
+            "subject": _text(body.get("subject")),
+            "body": _text(body.get("body")),
+        }
     title = _text(body.get("title"))
     start_at = _time(body.get("start_at"))
     end_at = _time(body.get("end_at"))
@@ -143,6 +150,8 @@ def write_fingerprint(parts: dict) -> str:
 
 
 def write_scope(user_id: int, parts: dict) -> str:
+    if "mail_to" in parts:
+        return f"mail:user:{user_id}"
     external_id = parts.get("external_id") or ""
     event_id = parts.get("event_id") or ""
     if external_id:
@@ -802,6 +811,25 @@ def _event_id(value: object) -> str:
         return str(int(value))
     except (TypeError, ValueError):
         return str(value).strip()
+
+
+def _mail_recipients(value: object) -> list[str]:
+    if isinstance(value, str):
+        items = [value]
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        items = []
+    found: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            text = _text(item.get("email"))
+        else:
+            text = _text(item)
+        if text:
+            found.append(text)
+    found.sort(key=str.casefold)
+    return found
 
 
 def _people(value: object) -> list[dict[str, str]]:
