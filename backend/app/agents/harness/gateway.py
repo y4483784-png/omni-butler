@@ -16,6 +16,7 @@ from app.agents.harness.constitution import (
     get_autoharness_pipeline,
     load_constitution,
 )
+from app.agents.harness.surface import coerce_surface, local_tool_denial
 from app.agents.harness.types import ToolContext, ToolResult
 from app.agents.tools.registry import ensure_builtin_tools, get_tool
 
@@ -139,6 +140,7 @@ def invoke(tool_name: str | None, ctx: ToolContext, args: dict[str, Any] | None 
 
     def _emit(event: dict[str, Any]) -> None:
         event.setdefault("user_id", getattr(ctx, "user_id", None))
+        event["server_surface"] = coerce_surface(getattr(ctx, "surface", None)).value
         write_audit(event)
 
     if not tool:
@@ -155,6 +157,25 @@ def invoke(tool_name: str | None, ctx: ToolContext, args: dict[str, Any] | None 
             }
         )
         return result
+
+    registered = get_tool(tool)
+    if registered is not None:
+        denial = local_tool_denial(local=registered.local, surface=getattr(ctx, "surface", None))
+        if denial is not None:
+            result = _deny(tool, denial)
+            result.elapsed_ms = int((time.time() - started) * 1000)
+            _emit(
+                {
+                    "tool": tool,
+                    "decision": "deny",
+                    "reason": denial,
+                    "risk": result.risk,
+                    "engine": engine,
+                    "args": args,
+                    "elapsed_ms": result.elapsed_ms,
+                }
+            )
+            return result
 
     # Official AutoHarness pre-check (when installed)
     ah_deny, ah_risk, engine = _autoharness_precheck(tool, args)

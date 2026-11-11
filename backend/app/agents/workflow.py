@@ -15,6 +15,7 @@ from app.agents.harness.critique import (
 from app.agents.harness import gateway
 from app.agents.harness.effects import decide_replay
 from app.agents.harness.execution import execution_denial
+from app.agents.harness.surface import ServerSurface, coerce_surface
 from app.agents.harness.types import ToolContext, ToolResult, UnknownWrite
 from app.agents.harness.verify import verify_state
 from app.agents.context import ContextBundle, compose_answer_messages
@@ -131,6 +132,7 @@ class WorkflowState(TypedDict, total=False):
     user_id: int
     task_id: int | None
     generation: int | None
+    surface: ServerSurface
     context: dict
     intent: Intent
     forced: bool
@@ -398,6 +400,7 @@ def run_agent_workflow(
     context: dict | None = None,
     task_id: int | None = None,
     generation: int | None = None,
+    surface: ServerSurface | None = None,
 ) -> WorkflowResult:
     if is_stopped():
         return _halted_result()
@@ -466,6 +469,7 @@ def run_agent_workflow(
             working_state=None,
             task_id=state.get("task_id"),
             generation=state.get("generation"),
+            surface=coerce_surface(state.get("surface")),
         )
         result = gateway.invoke(step.tool, tool_ctx, step.args)
         if is_stopped():
@@ -824,6 +828,7 @@ def run_agent_workflow(
                 "user_id": user_id,
                 "task_id": task_id,
                 "generation": generation,
+                "surface": coerce_surface(surface),
                 "pending_calendar": pending_calendar,
                 "context": ctx_state,
                 "next_tool": assignment.next_tool,
