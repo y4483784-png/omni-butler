@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     google_oauth_client_secret: str = ""
     google_oauth_redirect_uri: str = ""
     calendar_token_key: str = ""
+    errand_vault_key: str = ""
+    errand_compose_url: str = ""
+    errand_compose_token: str = ""
+    errand_http_timeout: float = 10.0
 
     # CORS
     cors_origins: str = "http://localhost:5173"

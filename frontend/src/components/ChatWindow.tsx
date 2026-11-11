@@ -4,6 +4,7 @@ import { hydrateSessionMessages, startChatStream, stopChatStream } from "../serv
 import type { ChatMsg, MeetingBrief } from "../api/client";
 import { Markdown } from "./Markdown";
 import { FollowupCard } from "./FollowupCard";
+import { ErrandCard } from "./ErrandCard";
 import { MailSendCard } from "./MailSendCard";
 import { MeetingBriefCard } from "./MeetingBriefCard";
 import { ScheduleCard } from "./ScheduleCard";
@@ -213,6 +214,8 @@ function MessageRow({
               <FollowupCard card={m.scheduleCard} onAsk={onAsk} sessionId={sessionId} />
             ) : m.scheduleCard?.mode === "send" ? (
               <MailSendCard card={m.scheduleCard} onChange={onScheduleChange} />
+            ) : m.scheduleCard?.mode === "errand" ? (
+              <ErrandCard card={m.scheduleCard} onChange={onScheduleChange} />
             ) : null}
             {m.content ? (
               <Markdown content={m.content} citations={m.citations} />
@@ -232,7 +235,7 @@ function MessageRow({
                 {artifactButtonLabel(m.artifact)}
               </button>
             ) : null}
-            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "followup" && m.scheduleCard.mode !== "send" && m.scheduleCard.mode !== "brief" ? (
+            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "followup" && m.scheduleCard.mode !== "send" && m.scheduleCard.mode !== "brief" && m.scheduleCard.mode !== "errand" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} sessionId={sessionId} messageId={m.id} />
             ) : null}
             <MessageActions

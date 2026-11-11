@@ -73,6 +73,27 @@ export interface FollowMailDraft {
   body: string;
 }
 
+export interface ErrandLine {
+  sku: string;
+  qty: number;
+  query: string;
+}
+
+export interface ErrandShip {
+  name: string;
+  phone: string;
+  region: string;
+  address: string;
+}
+
+export interface ErrandDraft {
+  merchant_key: string;
+  lines: ErrandLine[];
+  ship_to: ErrandShip;
+  pay_method: string;
+  amount_cap: number;
+}
+
 export interface WireInvitee {
   email: string;
   name: string;
@@ -108,6 +129,7 @@ export interface ScheduleCard {
   points?: string[];
   actions?: FollowAction[];
   mail?: FollowMailDraft;
+  errand?: ErrandDraft;
   source?: { kind?: string; title?: string; url?: string };
   checked?: string[];
   consent?: string;
@@ -609,6 +631,16 @@ export async function proposeMailSend(draft: {
     }),
   });
   if (!r.ok) throw new Error(await parseError(r, "无法准备发送"));
+  return r.json();
+}
+
+export async function commitErrand(draft: ErrandDraft & { confirm_token: string }): Promise<{ order_id?: string; status?: string }> {
+  const r = await apiFetch("/api/errand/commit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft),
+  });
+  if (!r.ok) throw new Error(await parseError(r, "下单失败"));
   return r.json();
 }
 

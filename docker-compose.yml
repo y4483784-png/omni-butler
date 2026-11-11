@@ -232,6 +232,30 @@ services:
         limits:
           memory: 2G
 
+  errand-compose:
+    image: omni-butler-errand-compose:local
+    build:
+      context: ./services/errand-compose
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      ERRAND_COMPOSE_TOKEN: ${ERRAND_COMPOSE_TOKEN:-}
+    expose:
+      - "8010"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health')",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
   api:
     <<: *backend-env
     image: omni-butler-backend:local
@@ -246,6 +270,7 @@ services:
       <<: *backend-environment
       MODE: api
       SANDBOX_RUNNER_URL: http://sandbox-runner:8002
+      ERRAND_COMPOSE_URL: http://errand-compose:8010
     expose:
       - "8001"
     volumes:
@@ -260,6 +285,8 @@ services:
       minio:
         condition: service_healthy
       sandbox-runner:
+        condition: service_healthy
+      errand-compose:
         condition: service_healthy
     healthcheck:
       test:
