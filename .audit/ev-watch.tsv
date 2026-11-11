@@ -1,0 +1,11 @@
+ts	phase	decision	why	evidence	result
+2026-11-11T01:50:37Z	frame	picked the ledger sketch over the one-gap sketch	sleep credit has to survive the next 60 second sweep or the slept time becomes silence	docs/envisioned-product/review/ev-watch.md	base is SweepLedger
+2026-11-11T01:50:37Z	code	stop only a running generation after 20 minutes minus credit	waiting and completed must stay put and the sweep must not publish	commit 89b536df825b8fc9120fe1d77e7fa63b7a40476d	tests green
+2026-11-11T01:50:37Z	unit	ran the required pytest pair	the plan names both files with the boot env	docs/envisioned-product/review/ev-watch.md	15 passed exit 0
+2026-11-11T01:50:37Z	perf	recorded trunk then head then trunk then the watchdog file	the gate is 60 seconds and 30 seconds and the files are not ratioed	docs/envisioned-product/review/ev-watch-evidence/perf.txt	2.116 then 2.036 then 2.089 then 1.977 all exit 0
+2026-11-11T01:50:37Z	formal	held TLC and six broken variants	each break has to violate its own invariant or the check proves nothing	verification/task-watch/check.py	88 generated 38 distinct exit 0 and each break exit 1
+2026-11-11T01:50:37Z	formal	a scratch edit of waiting_person to stop	the checker has to fail when the code no longer matches the model	verification/task-watch/check.py	exit 2 then restored and held exit 0
+2026-11-11T01:50:37Z	chart	drew the operator flowchart and the held statechart	the first arrow must not be labeled no and the formal chart stays separate	docs/envisioned-product/review/ev-watch-flowchart.png	1640x1560 Noto Sans CJK SC
+2026-11-11T01:50:37Z	live	left lanes 1 through 10 deferred	screenshots and the review video are not invented	docs/envisioned-product/review/ev-watch.md	deferred
+2026-11-11T01:50:37Z	process	skipped the cross-family judge	the parent is Grok and the lock forbids Claude	docs/envisioned-product/review/ev-watch.md	scored on the written rubric
+2026-11-11T01:50:37Z	process	deslop skill was not in the plugin cache	the commit still got a direct read of the diff	.cursor/skills/verify-task-watch/SKILL.md	open

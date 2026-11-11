@@ -64,6 +64,7 @@ verification/schedule-confirm/ScheduleConfirm_TTrace_*
 verification/dispatch-boundary/DispatchBoundary_TTrace_*
 verification/work-loop/WorkLoop_TTrace_*
 verification/event-inbox/EventInbox_TTrace_*
+verification/task-watch/TaskWatch_TTrace_*
 
 .cursor/*
 !.cursor/skills/

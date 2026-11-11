@@ -1,0 +1,17 @@
+machine cores 4
+load before the first trunk run 0.04 0.07 0.03
+one run each, in the order the plan names
+boot env from the plan line 89
+fail if head tests/test_celery_ingest.py is 60 seconds or more
+fail if head tests/test_watchdog.py is 30 seconds or more
+the two files are not ratioed
+
+trunk tests/test_celery_ingest.py before the head 2.116 exit 0
+head tests/test_celery_ingest.py 2.036 exit 0
+trunk tests/test_celery_ingest.py after the head 2.089 exit 0
+head tests/test_watchdog.py 1.977 exit 0
+
+The head ingest run is under 60 seconds. The watchdog file is under 30 seconds.
+The two trunk runs differ by 0.027 seconds. The head ingest run is 0.080 seconds under the first trunk run.
+That gap is inside the rerun spread. This pass does not show a slowdown.
+No profiler was attached. The gate is an absolute ceiling, not a speedup claim.
