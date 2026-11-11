@@ -54,6 +54,6 @@ The model is one generation and one schedule fingerprint. It does not model a se
 
 ## Keep the check with the code
 
-Move the confirmation forward only after reading `decide_apply`, `remember_from_turn`, the completed check in `chat.py`, and `push_pulse`, and seeing that the model still describes them. If the stop line moves after `_remember_turn_isolated`, if `decide_apply` applies a low-confidence write, or if `push_pulse` publishes again when the token is already on the message, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `71b5206d99cbfbf330aacb63c507cca47a029b8c`. Move the confirmation forward only after reading `decide_apply`, `remember_from_turn`, the completed check in `chat.py`, and `push_pulse`, and seeing that the model still describes them. If the stop line moves after `_remember_turn_isolated`, if `decide_apply` applies a low-confidence write, or if `push_pulse` publishes again when the token is already on the message, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.

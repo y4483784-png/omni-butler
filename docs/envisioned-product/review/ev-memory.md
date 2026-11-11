@@ -20,7 +20,7 @@ DS-Bot at `71d344bf193f3f18185f25de3d8e5c483046910a` has `ds-bot/src/host/memory
 
 ## Formal check
 
-The question is whether a generation that is not completed can append a ledger row, whether a low-confidence extract can open a confirm card, whether a second pulse can add a claim, and whether a turn can replace a value a person already applied. That is an order of steps, so the check is TLC on a small model. The jar is the vendored `verification/tlc/tla2tools.jar`, SHA256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, 4,510,215 bytes, manifest `2.0 2026-11-06`, revision `d8fb231`.
+The question is whether a generation that is not completed can append a ledger row, whether a low-confidence extract can open a confirm card, whether a second pulse can add a claim, and whether a turn can replace a value a person already applied. That is an order of steps, so the check is TLC on a small model. The checker anchors were confirmed at `71b5206d99cbfbf330aacb63c507cca47a029b8c`. The jar is the vendored `verification/tlc/tla2tools.jar`, SHA256 `e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f`, 4,510,215 bytes, manifest `2.0 2026-11-06`, revision `d8fb231`.
 
 Held run, 71 states generated, 40 distinct states, no error:
 
