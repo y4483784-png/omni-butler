@@ -22,7 +22,7 @@ from app.core.db import SessionLocal
 from app.models.models import Message, ScheduleConfirmClaim, TaskRun, User
 from app.services import task_run
 from app.services.local_action import LOCAL_ACTIONS, LocalAction, LocalClosed, propose_local
-from app.services.schedule_confirm import canonical_action, write_scope
+from app.services.schedule_confirm import canonical_action, write_parts, write_scope
 from app.tasks.celery_app import celery_app
 from tests.test_schedule_confirm_claims import _admin_id, _session
 
@@ -308,6 +308,9 @@ def test_recognized_package_opens_once(plain_client: TestClient, monkeypatch: py
     transport = _Transport(plain_client)
     assert confirm_local(transport, offered, open_file=open_file, run_program=run_program) is True
     assert calls == [PROBE]
+    audit = (BACKEND / "data" / "harness" / "harness-audit.jsonl").read_text(encoding="utf-8")
+    assert '"server_surface": "desktop"' in audit
+    assert '"tool": "desktop.open"' in audit
     status, remote, _scope = _claim(offered["confirm_token"])
     assert status == "written"
     assert remote
@@ -429,6 +432,11 @@ def test_run_starts_the_program_once(plain_client: TestClient, monkeypatch: pyte
     assert runs == [("/usr/bin/true", ())]
 
 
+def test_a_shell_string_is_not_an_argument_list() -> None:
+    with pytest.raises(ValueError):
+        write_parts("desktop.run", {"local_target": "/bin/true", "local_args": "echo hi"})
+
+
 def test_desktop_scope_wins_over_merchant() -> None:
     assert write_scope(7, {"local_target": PROBE, "local_args": [], "merchant_key": "shop", "mail_to": ["a@b.c"]}) == (
         "desktop:user:7"
@@ -473,8 +481,13 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
     assert "contextIsolation: true" in main
     assert "DESKTOP_PACKAGE_TOKEN" in main
     assert "shell: false" in main
+    assert "desktop-propose" in main
+    assert "desktop-confirm" in main
+    assert '"propose"' in main
     assert "打开测试文件" in preload
     assert "运行测试程序" in preload
+    assert "desktop-propose" in preload
+    assert "desktop-confirm" in preload
     assert "DESKTOP_PACKAGE_TOKEN" not in preload
 
 

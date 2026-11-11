@@ -69,34 +69,49 @@ def _session_id(transport: UrllibTransport) -> int:
     return int(created["id"])
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv if argv is None else argv)
-    action = args[1] if len(args) > 1 else ""
-    if action not in _PROBES:
-        print("本地动作无效", file=sys.stderr)
-        return 2
-    target, local_args = _PROBES[action]
-    transport = UrllibTransport(
+def _transport() -> UrllibTransport:
+    return UrllibTransport(
         os.environ.get("DESKTOP_API_URL", "http://127.0.0.1:8001"),
         os.environ.get("DESKTOP_PACKAGE_TOKEN", ""),
         os.environ.get("DESKTOP_COOKIE", ""),
     )
+
+
+def propose_probe(transport: UrllibTransport, action: str) -> dict:
+    target, local_args = _PROBES[action]
+    session_id = _session_id(transport)
+    return transport.post(
+        "/api/desktop/propose",
+        {
+            "session_id": session_id,
+            "action": action,
+            "local_target": target,
+            "local_args": local_args,
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv if argv is None else argv)
+    command = args[1] if len(args) > 1 else ""
+    transport = _transport()
     try:
-        session_id = _session_id(transport)
-        offer = transport.post(
-            "/api/desktop/propose",
-            {
-                "session_id": session_id,
-                "action": action,
-                "local_target": target,
-                "local_args": local_args,
-            },
-        )
-        opened = confirm_local(transport, offer, open_file=open_with_xdg, run_program=run_argv)
+        if command == "propose":
+            action = args[2] if len(args) > 2 else ""
+            if action not in _PROBES:
+                print("本地动作无效", file=sys.stderr)
+                return 2
+            json.dump(propose_probe(transport, action), sys.stdout)
+            return 0
+        if command == "confirm":
+            offer = json.loads(sys.stdin.read() or "{}")
+            opened = confirm_local(transport, offer, open_file=open_with_xdg, run_program=run_argv)
+            return 0 if opened else 1
     except urllib.error.HTTPError as exc:
         print(exc.read().decode("utf-8", errors="replace"), file=sys.stderr)
         return 1
-    return 0 if opened else 1
+    print("本地动作无效", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

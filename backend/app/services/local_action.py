@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.agents.harness.audit import write_audit
 from app.agents.harness.desktop_channel import PackageProof
 from app.agents.harness.surface import ServerSurface, local_tool_denial
 from app.core.db import set_rls_context
@@ -193,6 +194,15 @@ def commit_local(
     armed = "" if stored is None else (stored.remote_request_id or "").strip()
     if armed != request_id:
         raise LocalClosed(409, CONFIRM_DETAIL["unknown"])
+    write_audit(
+        {
+            "tool": action.action,
+            "decision": "allow",
+            "server_surface": proof.audit_word(),
+            "user_id": user_id,
+            "args": action.as_claim(),
+        }
+    )
     return _license("armed", armed, action)
 
 
@@ -213,17 +223,13 @@ def finish_local(
     marker = str(request_id or "").strip()
     claim = (
         db.query(ScheduleConfirmClaim)
-        .filter(ScheduleConfirmClaim.token == key)
+        .filter(ScheduleConfirmClaim.token == key, ScheduleConfirmClaim.action.in_(LOCAL_ACTIONS))
         .with_for_update()
         .one_or_none()
     )
     if claim is None or claim.user_id != user_id:
         db.rollback()
         raise LocalClosed(409, CONFIRM_DETAIL["closed"])
-    # A calendar or mail claim must not be closed by this finish.
-    if claim.action not in LOCAL_ACTIONS:
-        db.rollback()
-        raise LocalClosed(409, CONFIRM_DETAIL["mismatch"])
     if not marker or (claim.remote_request_id or "").strip() != marker:
         db.rollback()
         raise LocalClosed(409, CONFIRM_DETAIL["mismatch"])

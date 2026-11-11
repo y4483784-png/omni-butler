@@ -27,11 +27,11 @@ async function cookieHeader() {
   return [...seen.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
 }
 
-function runPackage(action, cookie) {
+function runPackage(args, cookie, stdin) {
   const python = process.env.PYTHON || "python3";
   const repo = path.join(__dirname, "..");
   return new Promise((resolve) => {
-    const child = spawn(python, ["-m", "desktop.confirm_local", action], {
+    const child = spawn(python, ["-m", "desktop.confirm_local", ...args], {
       cwd: repo,
       env: {
         ...process.env,
@@ -42,15 +42,34 @@ function runPackage(action, cookie) {
       },
       shell: false,
     });
-    child.on("exit", (code) => resolve(code ?? 1));
-    child.on("error", () => resolve(1));
+    let out = "";
+    child.stdout.on("data", (buf) => {
+      out += buf.toString("utf8");
+    });
+    if (stdin) {
+      child.stdin.write(stdin);
+      child.stdin.end();
+    }
+    child.on("exit", (code) => resolve({ code: code ?? 1, out }));
+    child.on("error", () => resolve({ code: 1, out: "" }));
   });
 }
 
-ipcMain.handle("desktop-local", async (_event, action) => {
-  if (!LOCAL_ACTIONS.includes(action)) return { ok: false };
-  const code = await runPackage(action, await cookieHeader());
-  return { ok: code === 0 };
+ipcMain.handle("desktop-propose", async (_event, action) => {
+  if (!LOCAL_ACTIONS.includes(action)) return null;
+  const result = await runPackage(["propose", action], await cookieHeader());
+  if (result.code !== 0) return null;
+  try {
+    return JSON.parse(result.out);
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle("desktop-confirm", async (_event, offer) => {
+  if (!offer || !LOCAL_ACTIONS.includes(offer.action)) return { ok: false };
+  const result = await runPackage(["confirm"], await cookieHeader(), JSON.stringify(offer));
+  return { ok: result.code === 0 };
 });
 
 app.whenReady().then(createWindow);

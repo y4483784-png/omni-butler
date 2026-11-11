@@ -161,7 +161,6 @@ def write_fingerprint(parts: dict) -> str:
 
 
 def write_scope(user_id: int, parts: dict) -> str:
-    # A desktop target is not a merchant, even when the body also names one.
     if "local_target" in parts:
         return f"desktop:user:{user_id}"
     merchant_key = str(parts.get("merchant_key") or "").strip()
@@ -831,9 +830,10 @@ def _event_id(value: object) -> str:
 
 
 def _local_args(value: object) -> list[str]:
-    # A string is a shell line, not an argument list.
-    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+    if value is None:
         return []
+    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        raise ValueError("local args must be a list")
     return [_text(item) for item in value]
 
 
