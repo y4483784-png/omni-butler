@@ -12,7 +12,7 @@ The plan file and its checkboxes are untouched. Live lanes are not passed. This 
 
 The silence clock is `TaskRun.created_at`. This table has no progress log and no sleep column. `ToolAuditLog` is not read, because it has no generation. Silence is `now - created_at - credit`, and it cannot go below zero. A row stops when that span is at least 20 minutes and the status is still `running` on a fresh `task_run.get`.
 
-Sleep credit lives on `SweepLedger` in the worker process. A gap between ticks is sleep only when it is strictly longer than three 60 second intervals. The whole gap is credit, not the excess over 180 seconds. The next sweep keeps that credit, so the slept time is not counted again. A passed ledger does not touch the module global, so tests do not depend on process order. The first sweep in a fresh process has no previous tick, so its credit is zero.
+Sleep credit lives on `SweepLedger` in the worker process. `SUSPENDED_SWEEPS` is 3. A gap between ticks is sleep only when it is strictly longer than that many check intervals. `_suspended_credit` returns the whole gap, not the excess over 180 seconds. The next sweep keeps that credit, so the slept time is not counted again. A passed ledger does not touch the module global, so tests do not depend on process order. The first sweep in a fresh process has no previous tick, so its credit is zero.
 
 `load_runs` uses `maintenance_session` and closes it before any stop. `run_sweep` does not call `publish_schedule_claim`, does not insert `CalendarEvent`, and does not call the tool gateway. Chat, the event inbox, and the pulse remain the card writers.
 

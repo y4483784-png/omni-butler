@@ -20,6 +20,7 @@ from app.tasks.celery_app import celery_app
 from app.tasks.watchdog import (
     CHECK_INTERVAL,
     ORDINARY_STALL,
+    SUSPENDED_SWEEPS,
     GenerationKey,
     RunView,
     SweepLedger,
@@ -265,4 +266,5 @@ def test_beat_schedule_registers_the_watch():
     assert watch["options"]["queue"] == "maintenance"
     assert celery_app.conf.task_routes["app.tasks.watchdog.sweep_task"] == {"queue": "maintenance"}
     assert CHECK_INTERVAL == timedelta(seconds=60)
+    assert SUSPENDED_SWEEPS == 3
     assert ORDINARY_STALL == timedelta(minutes=20)

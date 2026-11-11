@@ -1,10 +1,4 @@
 ---- MODULE TaskWatch ----
-\* One older generation, one newer generation of the same user, and one other user's running generation.
-\* The sweep stops only a running generation whose wall age is due and whose sleep credit does not cover it.
-\* Waiting, completed, and an already quiet slept row are not stops.
-\* Stopping the older generation does not stop the newer one or the other user.
-\* The sweep does not publish a confirm card.
-
 EXTENDS Integers
 
 CONSTANT breakWait, breakDone, breakSleep, breakNewer, breakOther, breakCard

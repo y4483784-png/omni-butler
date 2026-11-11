@@ -14,6 +14,7 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL = timedelta(seconds=60)
+SUSPENDED_SWEEPS = 3
 STALL_FLOOR = timedelta(seconds=60)
 ORDINARY_STALL = timedelta(minutes=20)
 
@@ -82,10 +83,7 @@ def _as_utc(moment: datetime) -> datetime:
     return moment.astimezone(timezone.utc)
 
 
-def _sleep_gap(previous_tick: datetime | None, now: datetime) -> timedelta:
-    # The whole gap is sleep credit, and only when it is strictly longer than
-    # three check intervals. Exactly three intervals adds nothing. The credit
-    # stays on the ledger for the next sweep.
+def _suspended_credit(previous_tick: datetime | None, now: datetime) -> timedelta:
     if previous_tick is None:
         return timedelta(0)
     current = _as_utc(now)
@@ -93,7 +91,7 @@ def _sleep_gap(previous_tick: datetime | None, now: datetime) -> timedelta:
     if current < previous:
         return timedelta(0)
     gap = current - previous
-    if gap > 3 * CHECK_INTERVAL:
+    if gap > SUSPENDED_SWEEPS * CHECK_INTERVAL:
         return gap
     return timedelta(0)
 
@@ -108,7 +106,7 @@ def decide(
     now: datetime,
     ledger: SweepLedger,
 ) -> tuple[Decision, SweepLedger]:
-    added = _sleep_gap(ledger.previous_tick, now)
+    added = _suspended_credit(ledger.previous_tick, now)
     credit: dict[GenerationKey, timedelta] = {}
     stops: set[GenerationKey] = set()
     for run in runs:

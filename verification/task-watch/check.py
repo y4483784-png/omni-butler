@@ -61,8 +61,9 @@ def anchors() -> None:
     require("ORDINARY_STALL = timedelta(minutes=20)" in watchdog, "the ordinary stall is not 20 minutes")
     require("CHECK_INTERVAL = timedelta(seconds=60)" in watchdog, "the check interval is not 60 seconds")
 
-    gap = between(watchdog, "def _sleep_gap", "def _silence")
-    require("if gap > 3 * CHECK_INTERVAL:" in gap, "a short tick gap is treated as sleep")
+    gap = between(watchdog, "def _suspended_credit", "def _silence")
+    require("SUSPENDED_SWEEPS = 3" in watchdog, "the suspended sweep count is not 3")
+    require("if gap > SUSPENDED_SWEEPS * CHECK_INTERVAL:" in gap, "a short tick gap is treated as sleep")
     require("return gap" in gap, "sleep credit is not the whole gap")
 
     decide = between(watchdog, "def decide", "def load_runs")

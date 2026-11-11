@@ -13,7 +13,7 @@ The question is an order of steps, so the check is TLC on a small model of those
 
 Run it when a change touches any of these:
 
-- `backend/app/tasks/watchdog.py` (`_EFFECT`, `_sleep_gap`, `decide`, `load_runs`, `run_sweep`)
+- `backend/app/tasks/watchdog.py` (`_EFFECT`, `_suspended_credit`, `decide`, `load_runs`, `run_sweep`)
 - `backend/app/tasks/celery_app.py` (the `watch-task-runs` beat entry)
 - `backend/app/services/task_run.py` (`stop`)
 
@@ -41,7 +41,7 @@ Read a failing TLC trace with `/statechart`. Set `TLA2TOOLS` to the jar from `ve
 
 `CompletedStays` says a generation that was finished is still `completed`. The harm is the sweep turning a finished generation into `stopped`. In the trace, `Sweep` sets `oldStatus` to `stopped` while `finished` is true when `breakDone` is true. In the code, `_EFFECT` maps `completed` to `leave`, and `task_run.stop` on `completed` keeps `completed`.
 
-`SleepNotSilence` says a watchdog stop happens only while sleep credit is still 0. The harm is a later sweep counting a slept gap as silence. In the trace, `Sweep` increments `watchStops` while `credit` is 1 when `breakSleep` is true. In the code, `_sleep_gap` returns the whole gap only when it is longer than three check intervals, and `decide` adds that gap to the credit already stored for the generation.
+`SleepNotSilence` says a watchdog stop happens only while sleep credit is still 0. The harm is a later sweep counting a slept gap as silence. In the trace, `Sweep` increments `watchStops` while `credit` is 1 when `breakSleep` is true. In the code, `_suspended_credit` returns the whole gap only when it is longer than `SUSPENDED_SWEEPS` check intervals, and `decide` adds that gap to the credit already stored for the generation.
 
 `NewerStays` says the newer generation is still `running`. The harm is a stop of the older generation also stopping the newer one. In the trace, `Sweep` sets `newer` to `stopped` when `breakNewer` is true. In the code, `task_run.stop` takes that `user_id` and that `generation` and does not query other generations.
 
@@ -59,6 +59,6 @@ The model is one older generation, one newer generation of the same user, and on
 
 ## Keep the check with the code
 
-The anchors were confirmed at `89b536df825b8fc9120fe1d77e7fa63b7a40476d`. Move the confirmation forward only after reading `_EFFECT`, `_sleep_gap`, `decide`, `run_sweep`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `waiting_person` or `completed` maps to `stop`, if the sleep credit is not added to the stored credit, or if `run_sweep` calls `publish_schedule_claim`, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `89b536df825b8fc9120fe1d77e7fa63b7a40476d`. Move the confirmation forward only after reading `_EFFECT`, `_suspended_credit`, `decide`, `run_sweep`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `waiting_person` or `completed` maps to `stop`, if the sleep credit is not added to the stored credit, or if `run_sweep` calls `publish_schedule_claim`, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.

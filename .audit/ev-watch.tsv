@@ -9,3 +9,4 @@ ts	phase	decision	why	evidence	result
 2026-11-11T01:50:37Z	live	left lanes 1 through 10 deferred	screenshots and the review video are not invented	docs/envisioned-product/review/ev-watch.md	deferred
 2026-11-11T01:50:37Z	process	skipped the cross-family judge	the parent is Grok and the lock forbids Claude	docs/envisioned-product/review/ev-watch.md	scored on the written rubric
 2026-11-11T01:50:37Z	process	deslop skill was not in the plugin cache	the commit still got a direct read of the diff	.cursor/skills/verify-task-watch/SKILL.md	open
+2026-11-11T01:54:36Z	comments	named the suspended sweep count and deleted the restating comments	the bare 3 and the whole-gap return had no name	backend/app/tasks/watchdog.py	SUSPENDED_SWEEPS is 3 and _suspended_credit returns the gap
