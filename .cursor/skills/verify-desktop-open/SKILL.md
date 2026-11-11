@@ -67,9 +67,9 @@ If an anchor exits 2, the source moved away from the model. Open the named file 
 
 ## Sync
 
-The anchors were confirmed against the commit that adds `verification/desktop-open/check.py`. Move this sentence to the new commit only after you rerun the held check and a scratch deletion of the armed-license test still exits 2.
+The anchors were confirmed at `a80be6771ab5ffb1e589e2175738d27ddf0b66b3`. Move this sentence to the new commit only after you rerun the held check and a scratch deletion of the armed-license test still exits 2.
 
-Last confirmed: the commit that introduces `verification/desktop-open/check.py`.
+Last confirmed: `a80be6771ab5ffb1e589e2175738d27ddf0b66b3`.
 
 ## Left out
 

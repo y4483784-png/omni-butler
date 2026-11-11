@@ -1,0 +1,41 @@
+---
+title: "桌面本机动作"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 认出
+    lg1: 执行
+    lg2: 拒绝
+    lg3: 留下
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 tan
+  s0: 还没有本地动作
+  s1: 自报桌面被拒绝
+  s2: 确认卡已出示
+  s3: 凭据已记下还没打开
+  s4: 确认前已停止
+  s5: 文件已经打开
+  s6: 未知之后不再打开
+  s7: 再点一次不再打开
+  s8: 停止后文件仍在
+  [*] --> s0
+  s0 --> s1: 请求体自报桌面
+  s0 --> s2: 出示确认卡
+  s2 --> s3: 记下这次动作
+  s2 --> s4: 确认前停止
+  s3 --> s5: 打开文件
+  s3 --> s6: 未知后再点
+  s5 --> s7: 再点一次
+  s5 --> s8: 做完后再停止
+  class s0 blue
+  class s1 orange
+  class s2 blue
+  class s3 blue
+  class s4 orange
+  class s5 teal
+  class s6 orange
+  class s7 teal
+  class s8 tan

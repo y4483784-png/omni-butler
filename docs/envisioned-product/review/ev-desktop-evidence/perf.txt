@@ -1,0 +1,17 @@
+machine: 4 cores
+load average at 2026-11-11T07:42:37Z: 0.35, 0.18, 0.07
+order: trunk, head, trunk, then the new file on the head
+one run each
+caps: head tests/test_web_blocks_local.py under 60s, head tests/test_desktop_surface.py under 30s
+this file does not claim a speedup
+
+trunk tests/test_web_blocks_local.py before the head: 2.200 seconds, exit 0
+head tests/test_web_blocks_local.py: 1.856 seconds, exit 0
+trunk tests/test_web_blocks_local.py after the head: 1.759 seconds, exit 0
+head tests/test_desktop_surface.py in that same order: 4.756 seconds, exit 0
+
+A later single run of the shipped desktop file, after one more test was added, was 4.679 seconds, exit 0.
+Both desktop timings are under 30 seconds. The 0.077 second gap is inside one-run noise.
+The web-block head time sits between the two trunk times. That spread is the noise floor.
+The wall clock is the pytest process, including import and sqlite setup.
+No profiler was attached.
