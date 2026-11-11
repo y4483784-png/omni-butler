@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from app.agents.harness.surface import ServerSurface
 from app.core.llm import Spoken, answer_pair
 
 
@@ -27,6 +28,7 @@ class ToolContext:
     working_state: dict | None = None
     task_id: int | None = None
     generation: int | None = None
+    surface: ServerSurface = ServerSurface.WEB
 
 
 @dataclass(frozen=True)

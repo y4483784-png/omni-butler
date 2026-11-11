@@ -15,6 +15,7 @@ class ToolSpec:
     execute: Callable[[ToolContext, dict], ToolResult]
     effect: str
     description: str = ""
+    local: bool = False
 
 
 _REGISTRY: dict[str, ToolSpec] = {}
