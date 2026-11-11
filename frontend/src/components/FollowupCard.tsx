@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { connectGoogle, createCalendarEvent, type FollowAction, type ScheduleCard } from "../api/client";
+import { connectGoogle, createCalendarEvent, proposeMailSend, type FollowAction, type ScheduleCard } from "../api/client";
+import { reloadSessionMessages } from "../services/chatStream";
 import { isExpired } from "../utils/scheduleExpiry";
 import { claimFollowRows, formatFollowUtterance, mailtoHref } from "../utils/followMail";
 
@@ -19,7 +20,15 @@ function ownerLabel(owner: string): string {
   return owner || "未指定";
 }
 
-export function FollowupCard({ card, onAsk }: { card: ScheduleCard; onAsk?: (text: string) => void }) {
+export function FollowupCard({
+  card,
+  onAsk,
+  sessionId,
+}: {
+  card: ScheduleCard;
+  onAsk?: (text: string) => void;
+  sessionId: number;
+}) {
   const expired = isExpired(card);
   const actions = card.actions ?? [];
   const points = card.points ?? [];
@@ -96,6 +105,17 @@ export function FollowupCard({ card, onAsk }: { card: ScheduleCard; onAsk?: (tex
     });
   }
 
+  async function proposeSend() {
+    if (!mail) return;
+    const to = mail.to.map((person) => person.email.trim()).filter((email) => email.includes("@"));
+    try {
+      await proposeMailSend({ sessionId, to, subject: mail.subject, body: mail.body });
+      await reloadSessionMessages(sessionId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "无法准备发送");
+    }
+  }
+
   async function confirm() {
     if (expired) return;
     const picked = actions.filter((action) => ticked.has(action.id) && action.start_at).map((action) => action.id);
@@ -163,6 +183,9 @@ export function FollowupCard({ card, onAsk }: { card: ScheduleCard; onAsk?: (tex
             <a className="ghost-btn" href={mailtoHref(mail)}>
               用邮件应用打开
             </a>
+            <button type="button" className="ghost-btn" onClick={() => void proposeSend()}>
+              发送
+            </button>
           </div>
         </div>
       ) : null}

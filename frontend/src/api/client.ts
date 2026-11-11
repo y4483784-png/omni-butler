@@ -592,6 +592,41 @@ export async function releaseConfirmClaim(token: string): Promise<void> {
   if (!r.ok) await readCalendarError(r, "无法关闭确认");
 }
 
+export async function proposeMailSend(draft: {
+  sessionId: number;
+  to: string[];
+  subject: string;
+  body: string;
+}): Promise<{ confirm_token: string; state: string; route: string; delivery_id: string }> {
+  const r = await apiFetch("/api/mail/proposal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: draft.sessionId,
+      to: draft.to,
+      subject: draft.subject,
+      body: draft.body,
+    }),
+  });
+  if (!r.ok) throw new Error(await parseError(r, "无法准备发送"));
+  return r.json();
+}
+
+export async function commitMailSend(draft: {
+  to: string[];
+  subject: string;
+  body: string;
+  confirm_token: string;
+}): Promise<{ state: string }> {
+  const r = await apiFetch("/api/mail/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(draft),
+  });
+  if (!r.ok) throw new Error(await parseError(r, "发送失败"));
+  return r.json();
+}
+
 export async function createCalendarEvent(payload: {
   title: string;
   start_at: string;

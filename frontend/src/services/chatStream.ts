@@ -277,6 +277,12 @@ export async function hydrateSessionMessages(sessionId: number) {
   patchSession(sessionId, { messages, hydrated: true });
 }
 
+export async function reloadSessionMessages(sessionId: number) {
+  const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
+  const messages = withHydratedFold(before, await loadMessages(sessionId));
+  patchSession(sessionId, { messages, hydrated: true });
+}
+
 /** Start streaming; continues in background if user switches sessions. */
 export async function startChatStream(
   sessionId: number,
