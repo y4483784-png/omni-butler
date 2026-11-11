@@ -5,7 +5,7 @@ description: "Check that a web login never executes a local tool, that a desktop
 
 # Verify the web execution surface
 
-A web login refuses a tool whose spec is marked local. `surface_for_login` returns `ServerSurface.WEB` for every authenticated user. `ChatRequest` does not store a desktop field. `invoke` peeks the registry and returns the local refusal before `spec.execute`. A name with no spec, such as `shell`, still fails the whitelist. A confirm token is not an argument of `invoke`.
+A web login refuses a tool whose spec is marked local. `surface_for_login` takes no arguments and returns `ServerSurface.WEB`. `chat` calls it only after the user is authenticated. `ChatRequest` does not store a desktop field. `invoke` peeks the registry and returns the local refusal before `spec.execute`. A name with no spec, such as `shell`, still fails the whitelist. A confirm token is not an argument of `invoke`.
 
 The question is an order of steps, so the check is TLC on a small model of those steps. The jar is the pinned file from `verification/tlc_jar.py`. Do not download another jar.
 
@@ -55,6 +55,6 @@ The model is one turn. The claim is `none`, `desktop`, or `token`. The tool is `
 
 ## Keep the check with the code
 
-The anchors were confirmed at `88f4511447cd770acb1b1004204d4b031cb86530`. Move the confirmation forward only after reading `surface_for_login`, `coerce_surface`, `local_tool_denial`, the peek in `invoke`, the `ChatRequest` fields, and the `surface=` argument on `ToolContext`, and seeing that the model still describes them. If the mint can return a value other than `ServerSurface.WEB`, if `ChatRequest` grows a desktop field, or if `spec.execute` runs before the local denial, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `fd42ebbcee8e106aa501adb9ac639fc54dd051a4`. Move the confirmation forward only after reading `surface_for_login`, `coerce_surface`, `local_tool_denial`, the peek in `invoke`, the `ChatRequest` fields, and the `surface=` argument on `ToolContext`, and seeing that the model still describes them. If the mint can return a value other than `ServerSurface.WEB`, if `ChatRequest` grows a desktop field, or if `spec.execute` runs before the local denial, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.

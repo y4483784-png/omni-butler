@@ -8,7 +8,7 @@ The plan file and its checkboxes are untouched. Live lanes are not passed. This 
 
 `ServerSurface` is an enum with one member, `WEB`. It does not subclass `str`, so it does not compare equal to the wire string `desktop`. `ServerSurface("desktop")` raises `ValueError`.
 
-`surface_for_login` takes the authenticated user id and returns `ServerSurface.WEB`. The request body is not a parameter. The user id is not read, because no install package is stored on the user. `ev-desktop` is the later change that can recognize a package.
+`surface_for_login` takes no arguments and returns `ServerSurface.WEB`. `chat` calls it only after the user is authenticated. The request body is not a parameter. `ev-desktop` is the later change that can recognize an install package.
 
 `coerce_surface` returns a `ServerSurface` unchanged, and returns `ServerSurface.WEB` for every other object. That includes the strings `desktop` and `web`. `ToolContext.surface` defaults to `ServerSurface.WEB`. Assigning the string `desktop` does not rewrite the field. `invoke` and the audit line both run `coerce_surface`, so the decision and the recorded word are web.
 
@@ -16,7 +16,7 @@ The plan file and its checkboxes are untouched. Live lanes are not passed. This 
 
 `invoke` peeks `get_tool` after the empty-name refusal and before AutoHarness and the whitelist. A spec with `local` true returns `服务端执行面是 web，拒绝本地工具` and does not call `spec.execute`. `shell` has no spec, so it still fails with `工具不在白名单`. Every audit event from `invoke` sets `server_surface` to the coerced value. `ToolAuditLog` gains no column. The JSONL line keeps the extra key because `write_audit` already spreads the event.
 
-`chat` calls `surface_for_login(current_user.id)` and passes it into the workflow. `run_agent_workflow` stores `coerce_surface(surface)` on the state and copies it into the existing `ToolContext` constructor. The router still cannot return `local_probe`. The unit drives `invoke` with the same mint the login uses.
+`chat` calls `surface_for_login()` and passes it into the workflow. `run_agent_workflow` stores `coerce_surface(surface)` on the state and copies it into the existing `ToolContext` constructor. The router still cannot return `local_probe`. The unit drives `invoke` with the same mint the login uses.
 
 ## Formal check
 
@@ -60,7 +60,7 @@ From `backend`, with `DATABASE_URL=sqlite+pysqlite:///./ci-eval.db`, `REDIS_ENAB
 
 `python3 -m pytest tests/test_web_blocks_local.py tests/test_harness_gateway.py -q` exited 0. 16 passed. The interpreter on this machine is `python3`. `python` is not on PATH.
 
-The new file denies `local_probe` for a surface minted by `surface_for_login(1)`. It denies the same call when `ChatRequest` is filled with `desktop` and when that body also carries `confirm_token`. The token is also passed in the `invoke` args. `shell` still contains `工具不在白名单` and does not contain `拒绝本地工具`. The four builtins stay registered with `local` false. The execute counter stays 0.
+The new file denies `local_probe` for a surface minted by `surface_for_login()`. It denies the same call when `ChatRequest` is filled with `desktop` and when that body also carries `confirm_token`. The token is also passed in the `invoke` args. `shell` still contains `工具不在白名单` and does not contain `拒绝本地工具`. The four builtins stay registered with `local` false. The execute counter stays 0.
 
 In `frontend`, `npm test` exited 0. 30 passed.
 
@@ -145,7 +145,7 @@ From this knife:
 
 - `verification/web-block/check.py` is not in GitHub Actions.
 - The formal model is one turn. It has no second user, no stopped generation, and no desktop package.
-- `surface_for_login` does not read the user id. A recognized install package does not exist yet.
+- `surface_for_login` takes no user id. A recognized install package does not exist yet.
 - A string assigned to `ToolContext.surface` stays on the object. The denial and the audit word use `coerce_surface`, so the string is not an allow.
 - The router cannot select `local_probe`. The unit calls `invoke` directly.
 - Live lanes 1 through 10 and `ev-webblock-review-web.png` / `ev-webblock-review.mp4` are deferred.
