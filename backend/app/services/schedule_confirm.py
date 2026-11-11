@@ -15,6 +15,7 @@ from app.models.models import TASK_RUN_STATUSES, Message, ScheduleConfirmClaim, 
 from app.services import task_run
 from app.services.calendar import draft_expires_at
 from app.services.calendar_provider import invitee_wire, parse_invitees
+from app.services.errand_order import ErrandOrder
 from app.services.task_run import UnfinishedWriteKey
 
 _CLAIM_MODES = frozenset({"create", "update", "cancel", "choose"})
@@ -33,6 +34,7 @@ _ACTIONS = {
     "choose": "calendar.choose",
     "calendar.choose": "calendar.choose",
     "mail.send": "mail.send",
+    "errand.place": "errand.place",
 }
 
 CONFIRM_DETAIL = {
@@ -90,6 +92,8 @@ def parse_card_expiry(value: object) -> datetime | None:
 
 def write_parts(action: str, raw: dict | None) -> dict:
     body = raw or {}
+    if action == "errand.place":
+        return ErrandOrder.parse(body).claim_parts()
     if action == "mail.send":
         return {
             "mail_to": _mail_recipients(body.get("mail_to")),
@@ -150,6 +154,9 @@ def write_fingerprint(parts: dict) -> str:
 
 
 def write_scope(user_id: int, parts: dict) -> str:
+    merchant_key = str(parts.get("merchant_key") or "").strip()
+    if merchant_key:
+        return f"errand:user:{user_id}:merchant:{merchant_key}"
     if "mail_to" in parts:
         return f"mail:user:{user_id}"
     external_id = parts.get("external_id") or ""

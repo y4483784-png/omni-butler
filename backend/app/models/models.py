@@ -300,6 +300,46 @@ class MailAcceptance(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class ErrandRecord(Base):
+    __tablename__ = "errand_records"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_errand_records_idempotency"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    idempotency_key = Column(String, nullable=False)
+    merchant_key = Column(String, nullable=False, default="")
+    order_id = Column(String, nullable=False, default="")
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class ErrandVault(Base):
+    __tablename__ = "errand_vault"
+    __table_args__ = (
+        UniqueConstraint("user_id", "merchant_key", "kind", name="uq_errand_vault_kind"),
+        CheckConstraint("kind IN ('login', 'pay')", name="ck_errand_vault_kind"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    merchant_key = Column(String, nullable=False)
+    kind = Column(String, nullable=False)
+    ciphertext = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class MerchantConnector(Base):
+    __tablename__ = "merchant_connectors"
+    __table_args__ = (
+        UniqueConstraint("merchant_key", name="uq_merchant_connectors_key"),
+    )
+    id = Column(Integer, primary_key=True)
+    merchant_key = Column(String, nullable=False)
+    place_url = Column(Text, nullable=False, default="")
+    lookup_url = Column(Text, nullable=False, default="")
+    needs_login = Column(Integer, nullable=False, default=0)
+
+
 class MemoryItem(Base):
     """Cross-session long-term memory (LangGraph-store inspired: user namespace + key)."""
 
