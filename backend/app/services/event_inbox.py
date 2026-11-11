@@ -427,6 +427,18 @@ def _open_task(
     fingerprint: str,
     body: str,
 ) -> EventReceipt:
+    if source == "mail":
+        return _insert(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            source=source,
+            delivery_id=delivery_id,
+            fingerprint=fingerprint,
+            state="received",
+            route="filed",
+            body=body,
+        )
     try:
         turn = open_alongside(db, user_id=user_id, session_id=session_id)
     except UnownedSession as exc:

@@ -8,6 +8,7 @@ from app.core.auth import get_current_user
 from app.core.deps import get_db_scoped
 from app.models.models import User
 from app.services.event_inbox import EventRejected, submit_event
+from app.services.mail_entry import CalendarCard, InboundMail, receive
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -46,20 +47,36 @@ def submit_inbox(
 ):
     card = None if body.card is None else body.card.model_dump()
     try:
-        view = submit_event(
-            db,
-            user_id=current_user.id,
-            source=body.source,
-            delivery_id=body.delivery_id,
-            session_id=body.session_id,
-            body=body.body,
-            model_decision=body.decision,
-            generation=body.generation,
-            automated=body.automated,
-            kind=body.kind,
-            action=body.action,
-            card=card,
-        )
+        if str(body.source or "").strip().casefold() == "mail":
+            view = receive(
+                db,
+                user_id=current_user.id,
+                session_id=body.session_id,
+                mail=InboundMail(
+                    delivery_id=body.delivery_id,
+                    body=body.body,
+                    automated=body.automated,
+                    kind=body.kind,
+                    generation=body.generation,
+                    action=body.action,
+                    card=None if body.card is None else CalendarCard(**card),
+                ),
+            )
+        else:
+            view = submit_event(
+                db,
+                user_id=current_user.id,
+                source=body.source,
+                delivery_id=body.delivery_id,
+                session_id=body.session_id,
+                body=body.body,
+                model_decision=body.decision,
+                generation=body.generation,
+                automated=body.automated,
+                kind=body.kind,
+                action=body.action,
+                card=card,
+            )
     except EventRejected as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
     return view.as_dict()

@@ -232,6 +232,7 @@ EVENT_RECEIPT_ROUTES = (
     "queued",
     "kept",
     "reissued",
+    "filed",
 )
 
 
