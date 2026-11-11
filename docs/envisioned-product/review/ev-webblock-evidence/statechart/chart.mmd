@@ -1,0 +1,29 @@
+---
+title: "网页执行面"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 到达
+    lg1: 网页
+    lg2: 拒绝
+    lg3: 执行
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 tan
+  s0: 请求刚到达
+  s1: 服务器写成网页
+  s2: 本机工具被拒绝
+  s3: 服务端工具已执行
+  s4: 名称不在白名单
+  [*] --> s0
+  s0 --> s1: 按登录写成网页
+  s1 --> s3: 执行服务端工具
+  s1 --> s2: 拒绝本机工具
+  s1 --> s4: 按白名单拒绝
+  class s0 blue
+  class s1 teal
+  class s2 orange
+  class s3 tan
+  class s4 orange

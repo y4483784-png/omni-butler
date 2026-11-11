@@ -1,0 +1,19 @@
+decision: fail if the head seconds for tests/test_harness_gateway.py are 60 or more. fail if tests/test_web_blocks_local.py takes 30 seconds or more. one run each, in the named order. this is a cap, not a speedup.
+machine: 4 cores, 03:05:48 up  1:05,  0 user,  load average: 0.22, 0.09, 0.03
+limiter: pytest process startup and module import. the added branch is one registry lookup before the existing whitelist.
+run: trunk tests/test_harness_gateway.py before head
+seconds: 1.863
+exit: 0
+tail: ...........                                                              [100%]
+run: head tests/test_harness_gateway.py
+seconds: 1.455
+exit: 0
+tail: ...........                                                              [100%]
+run: trunk tests/test_harness_gateway.py after head
+seconds: 1.489
+exit: 0
+tail: ...........                                                              [100%]
+run: head tests/test_web_blocks_local.py
+seconds: 1.841
+exit: 0
+tail:   /home/ubuntu/.local/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning. |     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer |  | -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
