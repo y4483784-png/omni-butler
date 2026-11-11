@@ -1,8 +1,3 @@
-"""Direct delivery. An authenticated caller names the session and the delivery id.
-
-The server does not poll or subscribe. The plan did not lock that choice.
-"""
-
 from __future__ import annotations
 
 import json

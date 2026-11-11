@@ -60,6 +60,6 @@ The model is one delivery id and one draft. It does not model a second user, a w
 
 ## Keep the check with the code
 
-The anchors were confirmed at the commit that added this skill. Move the confirmation forward only after reading `receive`, `commit_send`, `_seal`, the mail branch in `_open_task`, `write_scope`, the mailto anchor, and `calendar.py`, and seeing that the model still describes them. If the empty-token refusal moves below `_accept`, if `gmail.py` imports `event_inbox`, or if `calendar.py` calls `note_external_success`, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `77eae4229521b20a1332a6fe8cd2844135e2e63e`, including a scratch deletion of the empty-token refusal that made `check.py` exit 2. The restored file then exited 0. Move the confirmation forward only after reading `receive`, `commit_send`, `_seal`, the mail branch in `_open_task`, `write_scope`, the mailto anchor, and `calendar.py`, and seeing that the model still describes them. If the empty-token refusal moves below `_accept`, if `gmail.py` imports `event_inbox`, or if `calendar.py` calls `note_external_success`, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.
