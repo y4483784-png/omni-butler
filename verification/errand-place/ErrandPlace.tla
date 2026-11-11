@@ -1,11 +1,4 @@
 ---- MODULE ErrandPlace ----
-\* One errand order.
-\* An empty token does not place. A missing pay secret does not place.
-\* The remote id is armed before the one external call.
-\* A second click after an unknown result does not place again.
-\* A page that says the order was placed, but does not name this id, is not saved.
-\* An app wall does not click pay. Stop does not delete an accepted row.
-
 EXTENDS Integers
 
 CONSTANT
@@ -29,7 +22,6 @@ Init ==
   /\ record = FALSE
   /\ clicks = 0
 
-\* propose_errand. The card is shown. Nothing is sent.
 Offer ==
   /\ phase = "start"
   /\ phase' = "offered"
@@ -38,7 +30,6 @@ Offer ==
   /\ places' = 0
   /\ clicks' = 0
 
-\* commit_errand with an empty token. breakBare places anyway.
 Bare ==
   /\ phase = "offered"
   /\ phase' = "bare"
@@ -47,7 +38,6 @@ Bare ==
   /\ clicks' = 0
   /\ UNCHANGED claim
 
-\* A missing pay secret rolls back before arm. breakUnpaid places anyway.
 Unpaid ==
   /\ phase = "offered"
   /\ phase' = "unpaid"
@@ -56,7 +46,6 @@ Unpaid ==
   /\ claim' = "open"
   /\ clicks' = 0
 
-\* arm_remote_claim commits the id before the external call.
 Arm ==
   /\ phase = "offered"
   /\ phase' = "armed"
@@ -65,7 +54,6 @@ Arm ==
   /\ record' = FALSE
   /\ clicks' = 0
 
-\* The provider accepts. breakSuccess marks the claim written without the row.
 Place ==
   /\ phase = "armed"
   /\ phase' = "placed"
@@ -74,7 +62,6 @@ Place ==
   /\ claim' = "written"
   /\ clicks' = 0
 
-\* The first call times out. One attempt is already counted.
 Miss ==
   /\ phase = "armed"
   /\ phase' = "unknown"
@@ -83,7 +70,6 @@ Miss ==
   /\ record' = FALSE
   /\ clicks' = 0
 
-\* The same confirm is clicked again. breakAgain places a second time.
 Again ==
   /\ phase = "unknown"
   /\ phase' = "retried"
@@ -91,7 +77,6 @@ Again ==
   /\ record' = FALSE
   /\ UNCHANGED <<claim, clicks>>
 
-\* Lookup finds this armed id. breakSeen places again instead of saving the found row.
 Seen ==
   /\ phase = "unknown"
   /\ phase' = "adopted"
@@ -100,8 +85,6 @@ Seen ==
   /\ claim' = "written"
   /\ clicks' = 0
 
-\* The page says the order was placed, and the armed id is absent.
-\* breakPage saves that page as this order.
 BarePage ==
   /\ phase = "unknown"
   /\ phase' = "unnamed"
@@ -109,7 +92,6 @@ BarePage ==
   /\ record' = breakPage
   /\ UNCHANGED <<claim, clicks>>
 
-\* The page is an app wall before any pay click. breakWall clicks anyway.
 Wall ==
   /\ phase = "armed"
   /\ phase' = "wall"
@@ -118,7 +100,6 @@ Wall ==
   /\ record' = FALSE
   /\ claim' = "open"
 
-\* Stop after acceptance. breakStop deletes the row.
 Stop ==
   /\ phase = "placed"
   /\ record
