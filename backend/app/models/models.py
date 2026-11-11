@@ -232,6 +232,7 @@ EVENT_RECEIPT_ROUTES = (
     "queued",
     "kept",
     "reissued",
+    "filed",
 )
 
 
@@ -281,6 +282,22 @@ class EventReceipt(Base):
     body = Column(Text, nullable=False, default="")
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class MailAcceptance(Base):
+    __tablename__ = "mail_acceptances"
+    __table_args__ = (
+        UniqueConstraint("user_id", "remote_request_id", name="uq_mail_acceptances_remote"),
+        UniqueConstraint("user_id", "delivery_id", name="uq_mail_acceptances_delivery"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    remote_request_id = Column(String, nullable=False)
+    delivery_id = Column(String, nullable=False)
+    recipients = Column(Text, nullable=False, default="[]")
+    subject = Column(Text, nullable=False, default="")
+    body = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class MemoryItem(Base):

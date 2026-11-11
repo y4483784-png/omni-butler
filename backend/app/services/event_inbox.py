@@ -427,6 +427,18 @@ def _open_task(
     fingerprint: str,
     body: str,
 ) -> EventReceipt:
+    if source == "mail":
+        return _insert(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            source=source,
+            delivery_id=delivery_id,
+            fingerprint=fingerprint,
+            state="received",
+            route="filed",
+            body=body,
+        )
     try:
         turn = open_alongside(db, user_id=user_id, session_id=session_id)
     except UnownedSession as exc:
@@ -656,3 +668,74 @@ def _card_raw(card: dict) -> dict:
         "external_id": card.get("external_id") or "",
         "response": card.get("response") or "",
     }
+
+
+def _file_unrouted(
+    db: Session,
+    *,
+    user_id: int,
+    session_id: int,
+    delivery_id: str,
+    body: str,
+    fingerprint: str,
+) -> ReceiptView:
+    set_rls_context(db, user_id)
+    delivery = _delivery(delivery_id)
+    text = _body(body)
+    existing = _existing(db, user_id, "mail", delivery)
+    if existing is not None:
+        if existing.route != "filed":
+            raise EventRejected(409, "这封邮件已经走过别的路径")
+        return _view(db, existing, created=False)
+    _require_session(db, user_id, session_id)
+    saved = _insert(
+        db,
+        user_id=user_id,
+        session_id=session_id,
+        source="mail",
+        delivery_id=delivery,
+        fingerprint=fingerprint,
+        state="received",
+        route="filed",
+        body=text,
+    )
+    view = _view(db, saved, created=True)
+    db.commit()
+    return view
+
+
+def _bind_mail_claim(
+    db: Session,
+    *,
+    user_id: int,
+    delivery_id: str,
+    claim_token: str,
+) -> ReceiptView:
+    set_rls_context(db, user_id)
+    delivery = _delivery(delivery_id)
+    token = str(claim_token or "").strip()
+    receipt = _existing(db, user_id, "mail", delivery)
+    if receipt is None or receipt.route != "filed":
+        raise EventRejected(409, "回执不存在")
+    current = (receipt.claim_token or "").strip()
+    if current == token:
+        return _view(db, receipt, created=False)
+    if receipt.state == "external_success":
+        raise EventRejected(409, "回执已经绑定另一张确认")
+    if current:
+        bound = db.get(ScheduleConfirmClaim, current)
+        if bound is not None and bound.status != "cancelled":
+            raise EventRejected(409, "回执已经绑定另一张确认")
+    claim = db.get(ScheduleConfirmClaim, token)
+    if (
+        claim is None
+        or claim.user_id != user_id
+        or claim.action != "mail.send"
+        or claim.status not in {"open", "unknown", "written"}
+    ):
+        raise EventRejected(409, "这张确认不能绑定")
+    receipt.claim_token = token
+    db.flush()
+    view = _view(db, receipt, created=False)
+    db.commit()
+    return view

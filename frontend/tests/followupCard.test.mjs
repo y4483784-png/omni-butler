@@ -30,5 +30,16 @@ test("followup card names the official source and does not reconnect for Meet", 
 
 test("chat passes onAsk into the followup card", () => {
   const source = readFileSync(new URL("../src/components/ChatWindow.tsx", import.meta.url), "utf8");
-  assert.match(source, /<FollowupCard card=\{m\.scheduleCard\} onAsk=\{onAsk\} \/>/);
+  assert.match(source, /<FollowupCard card=\{m\.scheduleCard\} onAsk=\{onAsk\} sessionId=\{sessionId\} \/>/);
+});
+
+test("mailto stays an anchor and does not send", () => {
+  const source = readFileSync(new URL("../src/components/FollowupCard.tsx", import.meta.url), "utf8");
+  const openAt = source.indexOf("用邮件应用打开");
+  const anchor = source.slice(source.lastIndexOf("<a", openAt), source.indexOf("</a>", openAt));
+  assert.match(anchor, /href=\{mailtoHref\(mail\)\}/);
+  assert.doesNotMatch(anchor, /onClick/);
+  assert.doesNotMatch(source, /gmail\.send/);
+  assert.match(source, /proposeMailSend/);
+  assert.doesNotMatch(source, /commitMailSend/);
 });

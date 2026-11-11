@@ -1,0 +1,20 @@
+machine: 4 cores, load average 0.28 0.16 0.07 at 2026-11-11T04:31:54Z
+order: trunk, head, trunk, then tests/test_mail_entry.py on the head only
+timer: time.perf_counter around the pytest process
+env: DATABASE_URL=sqlite+pysqlite:///./ci-eval.db REDIS_ENABLED=false CELERY_TASK_ALWAYS_EAGER=true SANDBOX_RUNNER_URL empty SECRET_KEY=test-secret-key ADMIN_PASSWORD=test-admin-pass
+python: backend/.venv/bin/python
+
+trunk-1 tests/test_gmail_meeting_query.py 1.791 seconds exit 0 11 passed
+head-1 tests/test_gmail_meeting_query.py 1.679 seconds exit 0 11 passed
+trunk-2 tests/test_gmail_meeting_query.py 1.684 seconds exit 0 11 passed
+head tests/test_mail_entry.py 6.596 seconds exit 0
+
+caps: 60 seconds for the meeting-query file, 30 seconds for the new file
+head meeting-query 1.679 is under 60
+mail entry 6.596 is under 30
+trunk spread 1.791 to 1.684 is 0.107 seconds
+head is 0.112 seconds under the first trunk run and 0.005 seconds under the second
+that gap is inside the trunk spread
+not a speedup
+the meeting-query file patches scoped_access and does not call Google
+a LangGraph deprecation warning was printed on the mail file and is not a failure
