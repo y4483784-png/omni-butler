@@ -1,5 +1,3 @@
-"""A web login denies a local tool even when the body claims a desktop."""
-
 from __future__ import annotations
 
 import pytest
@@ -55,7 +53,7 @@ def _desktop_body(**extra: object) -> dict:
 
 
 def test_web_session_denies_local_probe(probe_calls: list[int]) -> None:
-    surface = surface_for_login(1)
+    surface = surface_for_login()
     assert surface is ServerSurface.WEB
     assert not isinstance(surface, str)
     with pytest.raises(ValueError):
@@ -89,7 +87,7 @@ def test_desktop_body_with_token_still_denies(probe_calls: list[int]) -> None:
 
 
 def test_shell_stays_on_the_whitelist(probe_calls: list[int]) -> None:
-    ctx = ToolContext(db=None, message="hi", history=[], surface=surface_for_login(1))
+    ctx = ToolContext(db=None, message="hi", history=[], surface=surface_for_login())
     result = gateway.invoke("shell", ctx, {})
     assert result.denied is True
     assert "工具不在白名单" in result.deny_reason

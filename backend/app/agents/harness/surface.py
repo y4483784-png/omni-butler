@@ -7,8 +7,7 @@ class ServerSurface(enum.Enum):
     WEB = "web"
 
 
-def surface_for_login(user_id: int) -> ServerSurface:
-    """The authenticated user has no install package, so the session is web."""
+def surface_for_login() -> ServerSurface:
     return ServerSurface.WEB
 
 

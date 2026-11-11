@@ -54,6 +54,7 @@ def anchors() -> None:
     require("(str, enum.Enum)" not in surface, "ServerSurface compares equal to a wire string")
     require('WEB = "web"' in surface, "the only server surface is not web")
     login = between(surface, "def surface_for_login", "def coerce_surface")
+    require("def surface_for_login() -> ServerSurface:" in login, "the mint takes an argument it does not read")
     require("return ServerSurface.WEB" in login, "the login mint can return a desktop surface")
     require("ChatRequest" not in surface, "the mint reads the chat body")
     coerce = between(surface, "def coerce_surface", "def local_tool_denial")
@@ -82,7 +83,7 @@ def anchors() -> None:
     request = between(chat, "class ChatRequest(BaseModel):", "\n\n")
     require("desktop" not in request, "ChatRequest stores a desktop field")
     require("confirm_token" not in request, "ChatRequest stores a confirm token")
-    require("surface_for_login(current_user.id)" in chat, "chat does not mint the surface from the login")
+    require("surface_for_login()" in chat, "chat does not mint the surface from the login")
 
     workflow = read("backend/app/agents/workflow.py")
     require("coerce_surface(surface)" in workflow, "the workflow does not coerce the carried surface")

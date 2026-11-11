@@ -519,7 +519,7 @@ async def chat(
                         context=ctx_state,
                         task_id=turn.id,
                         generation=turn.generation,
-                        surface=surface_for_login(current_user.id),
+                        surface=surface_for_login(),
                     )
                 )
                 while not wf_task.done():
