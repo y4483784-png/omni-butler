@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.agents.dispatch import assign_turn
 from app.agents.router import RouterError
+from app.agents.harness.surface import surface_for_login
 from app.agents.workflow import run_agent_workflow
 from app.agents.context import build_context, invalidate_summary_if_needed, refresh_session_context
 from app.core.auth import get_current_user
@@ -518,6 +519,7 @@ async def chat(
                         context=ctx_state,
                         task_id=turn.id,
                         generation=turn.generation,
+                        surface=surface_for_login(current_user.id),
                     )
                 )
                 while not wf_task.done():
