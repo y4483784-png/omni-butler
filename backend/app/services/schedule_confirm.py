@@ -35,6 +35,8 @@ _ACTIONS = {
     "calendar.choose": "calendar.choose",
     "mail.send": "mail.send",
     "errand.place": "errand.place",
+    "desktop.open": "desktop.open",
+    "desktop.run": "desktop.run",
 }
 
 CONFIRM_DETAIL = {
@@ -92,6 +94,11 @@ def parse_card_expiry(value: object) -> datetime | None:
 
 def write_parts(action: str, raw: dict | None) -> dict:
     body = raw or {}
+    if action in {"desktop.open", "desktop.run"}:
+        return {
+            "local_target": _text(body.get("local_target")),
+            "local_args": [] if action == "desktop.open" else _local_args(body.get("local_args")),
+        }
     if action == "errand.place":
         return ErrandOrder.parse(body).claim_parts()
     if action == "mail.send":
@@ -154,6 +161,9 @@ def write_fingerprint(parts: dict) -> str:
 
 
 def write_scope(user_id: int, parts: dict) -> str:
+    # A desktop target is not a merchant, even when the body also names one.
+    if "local_target" in parts:
+        return f"desktop:user:{user_id}"
     merchant_key = str(parts.get("merchant_key") or "").strip()
     if merchant_key:
         return f"errand:user:{user_id}:merchant:{merchant_key}"
@@ -818,6 +828,13 @@ def _event_id(value: object) -> str:
         return str(int(value))
     except (TypeError, ValueError):
         return str(value).strip()
+
+
+def _local_args(value: object) -> list[str]:
+    # A string is a shell line, not an argument list.
+    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        return []
+    return [_text(item) for item in value]
 
 
 def _mail_recipients(value: object) -> list[str]:
