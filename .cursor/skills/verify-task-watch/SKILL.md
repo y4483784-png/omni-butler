@@ -59,6 +59,6 @@ The model is one older generation, one newer generation of the same user, and on
 
 ## Keep the check with the code
 
-The anchors were confirmed at `89b536df825b8fc9120fe1d77e7fa63b7a40476d`. Move the confirmation forward only after reading `_EFFECT`, `_suspended_credit`, `decide`, `run_sweep`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `waiting_person` or `completed` maps to `stop`, if the sleep credit is not added to the stored credit, or if `run_sweep` calls `publish_schedule_claim`, the checker exits 2. That is drift, not a passing run.
+The anchors were confirmed at `1c13fb0027a0ba806c7af7c1e0af421412990904`. Move the confirmation forward only after reading `_EFFECT`, `_suspended_credit`, `decide`, `run_sweep`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `waiting_person` or `completed` maps to `stop`, if the sleep credit is not added to the stored credit, or if `run_sweep` calls `publish_schedule_claim`, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.
