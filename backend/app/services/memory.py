@@ -13,17 +13,24 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Any
+from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.llm import Role, complete_json
-from app.models.models import MemoryItem
+from app.models.models import SOURCE_ACTOR, MemoryItem, MemoryLedger
 
 logger = logging.getLogger(__name__)
+
+PLANNER_OPS = "planner_ops"
+PLANNER_FAILED = "planner_failed"
+HEURISTIC_ONLY = "heuristic_only"
 
 _VALID_KINDS = frozenset({"identity", "preference", "entity"})
 
@@ -224,20 +231,73 @@ def _items_from_llm_payload(parsed: dict[str, Any]) -> list[dict[str, str]]:
     return items
 
 
-def extract_memories(
+@dataclass(frozen=True)
+class Extraction:
+    origin: str
+    items: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True)
+class PersonWrite:
+    user_id: int
+    source: str
+    source_ref: str
+    kind: str
+    key: str
+    after: str
+    remove: bool = False
+    memory_id: int | None = None
+
+
+@dataclass(frozen=True)
+class TurnWrite:
+    user_id: int
+    generation: int | None
+    kind: str
+    key: str
+    after: str
+    origin: str
+
+
+def is_low_confidence(origin: str) -> bool:
+    return origin == PLANNER_FAILED
+
+
+def _classify_origin(parsed: object, *, llm_attempted: bool) -> str:
+    if not llm_attempted:
+        return HEURISTIC_ONLY
+    if isinstance(parsed, dict):
+        return PLANNER_OPS
+    return PLANNER_FAILED
+
+
+def decide_apply(
+    *,
+    low_confidence: bool,
+    latest_applied_actor: str | None,
+    incoming: str,
+) -> bool:
+    """True when this statement becomes the live profile value."""
+    if low_confidence:
+        return False
+    if incoming == "turn" and latest_applied_actor == "person":
+        return False
+    return True
+
+
+def extract_for_ledger(
     transcript: str,
     *,
     existing: list[MemoryItem] | list[dict[str, str]] | None = None,
-) -> list[dict[str, str]]:
-    """Extract durable profile facts. Empty is the correct result for ordinary turns."""
+) -> Extraction:
+    """Extract durable facts and record why the planner was or was not used."""
     text = (transcript or "").strip()
-    if not text or not settings.memory_enabled:
-        return []
-    if not is_durable_candidate(text):
-        return []
+    if not text or not settings.memory_enabled or not is_durable_candidate(text):
+        return Extraction(HEURISTIC_ONLY, ())
 
     existing_rows = existing or []
-    if settings.memory_use_llm and settings.llm_api_key:
+    llm_attempted = bool(settings.memory_use_llm and settings.llm_api_key)
+    if llm_attempted:
         existing_brief = []
         for row in existing_rows[:40]:
             if isinstance(row, MemoryItem):
@@ -266,11 +326,25 @@ def extract_memories(
             ],
             role=Role.PLANNER,
         )
-        if isinstance(parsed, dict):
-            return _dedupe_against_existing(_items_from_llm_payload(parsed), existing_rows)
-        # LLM call failed — fall back to heuristic. Empty JSON is not a failure.
+        origin = _classify_origin(parsed, llm_attempted=True)
+        # None means the planner call failed. An empty ops dict is a real answer.
+        if origin == PLANNER_OPS and isinstance(parsed, dict):
+            items = _dedupe_against_existing(_items_from_llm_payload(parsed), existing_rows)
+            return Extraction(origin, tuple(items))
+        items = _dedupe_against_existing(extract_memories_heuristic(text), existing_rows)
+        return Extraction(PLANNER_FAILED, tuple(items))
 
-    return _dedupe_against_existing(extract_memories_heuristic(text), existing_rows)
+    items = _dedupe_against_existing(extract_memories_heuristic(text), existing_rows)
+    return Extraction(HEURISTIC_ONLY, tuple(items))
+
+
+def extract_memories(
+    transcript: str,
+    *,
+    existing: list[MemoryItem] | list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
+    """Extract durable profile facts. Empty is the correct result for ordinary turns."""
+    return list(extract_for_ledger(transcript, existing=existing).items)
 
 
 def _existing_pairs(existing: list) -> list[tuple[str, str, str]]:
@@ -297,6 +371,174 @@ def _dedupe_against_existing(items: list[dict[str, str]], existing: list) -> lis
     return out
 
 
+def _locked_live(
+    db: Session,
+    user_id: int,
+    kind: str,
+    key: str,
+    memory_id: int | None,
+) -> MemoryItem | None:
+    if memory_id is not None:
+        row = (
+            db.query(MemoryItem)
+            .filter(MemoryItem.id == memory_id, MemoryItem.user_id == user_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if row is not None:
+            return row
+    return (
+        db.query(MemoryItem)
+        .filter(MemoryItem.user_id == user_id, MemoryItem.kind == kind, MemoryItem.key == key)
+        .with_for_update()
+        .one_or_none()
+    )
+
+
+def _latest_applied(db: Session, user_id: int, kind: str, key: str) -> MemoryLedger | None:
+    return (
+        db.query(MemoryLedger)
+        .filter(
+            MemoryLedger.user_id == user_id,
+            MemoryLedger.kind == kind,
+            MemoryLedger.key == key,
+            MemoryLedger.pending == 0,
+            MemoryLedger.decision.is_(None),
+        )
+        .order_by(MemoryLedger.id.desc())
+        .with_for_update()
+        .first()
+    )
+
+
+def _project_live(
+    db: Session,
+    *,
+    user_id: int,
+    kind: str,
+    key: str,
+    content: str,
+    remove: bool,
+    memory_id: int | None,
+) -> MemoryItem | None:
+    row: MemoryItem | None = None
+    if memory_id is not None:
+        row = (
+            db.query(MemoryItem)
+            .filter(MemoryItem.id == memory_id, MemoryItem.user_id == user_id)
+            .one_or_none()
+        )
+    if row is None:
+        row = (
+            db.query(MemoryItem)
+            .filter(MemoryItem.user_id == user_id, MemoryItem.kind == kind, MemoryItem.key == key)
+            .one_or_none()
+        )
+    if remove:
+        if row is not None:
+            db.delete(row)
+        return None
+    now = _utcnow()
+    if row is None:
+        row = MemoryItem(
+            user_id=user_id,
+            kind=kind,
+            key=key,
+            content=content,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+        return row
+    row.kind = kind
+    row.key = key
+    row.content = content
+    row.updated_at = now
+    return row
+
+
+def _commit_change(db: Session, write: PersonWrite | TurnWrite) -> MemoryLedger | None:
+    if isinstance(write, TurnWrite):
+        source = "turn"
+        source_ref = str(int(write.generation)) if write.generation is not None else uuid4().hex
+        remove = False
+        memory_id = None
+        origin = write.origin
+        user_id = int(write.user_id)
+        kind = write.kind
+        key = write.key
+        after = write.after
+    else:
+        source = write.source
+        source_ref = write.source_ref
+        remove = write.remove
+        memory_id = write.memory_id
+        origin = HEURISTIC_ONLY
+        user_id = int(write.user_id)
+        kind = write.kind
+        key = write.key
+        after = "" if remove else write.after
+    if user_id < 1 or source not in SOURCE_ACTOR:
+        return None
+    live = _locked_live(db, user_id, kind, key, memory_id)
+    before = (live.content or "") if live is not None else ""
+    if (
+        not remove
+        and live is not None
+        and (live.kind or "") == kind
+        and (live.key or "") == key
+        and before == after
+    ):
+        return None
+    latest = _latest_applied(db, user_id, kind, key)
+    apply = decide_apply(
+        low_confidence=is_low_confidence(origin),
+        latest_applied_actor=None if latest is None else latest.actor,
+        incoming=SOURCE_ACTOR[source],
+    )
+    now = _utcnow()
+    row = MemoryLedger(
+        user_id=user_id,
+        kind=kind,
+        key=key,
+        source=source,
+        actor=SOURCE_ACTOR[source],
+        before=before,
+        after=after,
+        pending=0 if apply else 1,
+        decision=None,
+        source_ref=source_ref,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    if apply:
+        _project_live(
+            db,
+            user_id=user_id,
+            kind=kind,
+            key=key,
+            content=after,
+            remove=remove,
+            memory_id=memory_id,
+        )
+    db.flush()
+    return row
+
+
+def _turn_recorded(db: Session, user_id: int, generation: int) -> bool:
+    found = (
+        db.query(MemoryLedger.id)
+        .filter(
+            MemoryLedger.user_id == user_id,
+            MemoryLedger.source == "turn",
+            MemoryLedger.source_ref == str(int(generation)),
+        )
+        .first()
+    )
+    return found is not None
+
+
 def store_memories(
     db: Session,
     user_id: int,
@@ -308,49 +550,37 @@ def store_memories(
     if not settings.memory_enabled or not items:
         return 0
     n = 0
-    uid = int(user_id or 1)
+    uid = int(user_id)
+    if uid < 1:
+        return 0
     existing = list_memories(db, uid, limit=max(40, int(settings.memory_max_items)))
     existing_keys = {(r.kind or "", r.key or "") for r in existing}
+    cap = int(settings.memory_max_items)
     for raw in items:
-        item = _normalize_item(raw, strict_keys=auto) if "kind" in raw else None
+        item = _normalize_item(raw, strict_keys=auto) if isinstance(raw, dict) and "kind" in raw else None
         if not item:
             continue
         key_pair = (item["kind"], item["key"])
-        if auto and key_pair not in existing_keys and len(existing_keys) >= int(settings.memory_max_items):
+        if auto and key_pair not in existing_keys and len(existing_keys) >= cap:
             continue
-        _upsert_memory(db, uid, item)
+        wrote = _commit_change(
+            db,
+            PersonWrite(
+                user_id=uid,
+                source="store",
+                source_ref="",
+                kind=item["kind"],
+                key=item["key"],
+                after=item["content"],
+            ),
+        )
+        if wrote is None:
+            continue
         existing_keys.add(key_pair)
         n += 1
     if n:
         db.commit()
     return n
-
-
-def _upsert_memory(db: Session, user_id: int, item: dict[str, str]) -> MemoryItem:
-    row = (
-        db.query(MemoryItem)
-        .filter(
-            MemoryItem.user_id == user_id,
-            MemoryItem.kind == item["kind"],
-            MemoryItem.key == item["key"],
-        )
-        .one_or_none()
-    )
-    now = _utcnow()
-    if row is None:
-        row = MemoryItem(
-            user_id=user_id,
-            kind=item["kind"],
-            key=item["key"],
-            content=item["content"],
-            created_at=now,
-            updated_at=now,
-        )
-        db.add(row)
-    else:
-        row.content = item["content"]
-        row.updated_at = now
-    return row
 
 
 def list_memories(db: Session, user_id: int, *, limit: int = 40) -> list[MemoryItem]:
@@ -414,6 +644,8 @@ def remember_from_turn(
     user_id: int,
     user_message: str,
     assistant_message: str = "",
+    generation: int | None = None,
+    status: str | None = None,
 ) -> int:
     """Extract + store durable profile facts from the user turn (best-effort).
 
@@ -422,15 +654,50 @@ def remember_from_turn(
     """
     if not settings.memory_enabled:
         return 0
+    if generation is not None and status != "completed":
+        return 0
+    uid = int(user_id)
+    if uid < 1:
+        return 0
+    if generation is not None and _turn_recorded(db, uid, generation):
+        return 0
     user_text = (user_message or "").strip()
     if not is_durable_candidate(user_text):
         return 0
     try:
-        existing = list_memories(db, user_id, limit=max(40, int(settings.memory_max_items)))
-        items = extract_memories(user_text, existing=existing)
-        return store_memories(db, user_id, items, auto=True)
+        existing = list_memories(db, uid, limit=max(40, int(settings.memory_max_items)))
+        found = extract_for_ledger(user_text, existing=existing)
+        existing_keys = {(r.kind or "", r.key or "") for r in existing}
+        cap = int(settings.memory_max_items)
+        n = 0
+        for raw in found.items:
+            item = _normalize_item(raw, strict_keys=True)
+            if not item:
+                continue
+            key_pair = (item["kind"], item["key"])
+            if key_pair not in existing_keys and len(existing_keys) >= cap:
+                continue
+            wrote = _commit_change(
+                db,
+                TurnWrite(
+                    user_id=uid,
+                    generation=generation,
+                    kind=item["kind"],
+                    key=item["key"],
+                    after=item["content"],
+                    origin=found.origin,
+                ),
+            )
+            if wrote is None:
+                continue
+            existing_keys.add(key_pair)
+            n += 1
+        if n:
+            db.commit()
+        return n
     except Exception:
         logger.exception("remember_from_turn failed")
+        db.rollback()
         return 0
 
 
@@ -456,9 +723,24 @@ def create_memory(
     item = _normalize_item({"kind": kind, "key": key, "content": content})
     if not item:
         raise ValueError("记忆条目无效：请填写类型、键名和内容")
-    row = _upsert_memory(db, int(user_id), item)
+    uid = int(user_id)
+    _commit_change(
+        db,
+        PersonWrite(
+            user_id=uid,
+            source="panel",
+            source_ref="",
+            kind=item["kind"],
+            key=item["key"],
+            after=item["content"],
+        ),
+    )
     db.commit()
-    db.refresh(row)
+    row = (
+        db.query(MemoryItem)
+        .filter(MemoryItem.user_id == uid, MemoryItem.kind == item["kind"], MemoryItem.key == item["key"])
+        .one()
+    )
     return row
 
 
@@ -490,15 +772,139 @@ def update_memory(
     if clash is not None:
         raise ValueError("已存在相同类型和键名的记忆")
 
-    row.kind = item["kind"]
-    row.key = item["key"]
-    row.content = item["content"]
-    row.updated_at = _utcnow()
+    _commit_change(
+        db,
+        PersonWrite(
+            user_id=int(row.user_id),
+            source="panel",
+            source_ref="",
+            kind=item["kind"],
+            key=item["key"],
+            after=item["content"],
+            memory_id=row.id,
+        ),
+    )
     db.commit()
     db.refresh(row)
     return row
 
 
 def delete_memory(db: Session, row: MemoryItem) -> None:
-    db.delete(row)
+    _commit_change(
+        db,
+        PersonWrite(
+            user_id=int(row.user_id),
+            source="panel",
+            source_ref="",
+            kind=row.kind or "",
+            key=row.key or "",
+            after="",
+            remove=True,
+            memory_id=row.id,
+        ),
+    )
     db.commit()
+
+
+def serialize_change(row: MemoryLedger) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "kind": row.kind or "",
+        "key": row.key or "",
+        "source": row.source or "",
+        "actor": row.actor or "",
+        "before": row.before or "",
+        "after": row.after or "",
+        "pending": bool(row.pending),
+        "decision": row.decision,
+    }
+
+
+def panel_view(db: Session, user_id: int) -> list[dict[str, Any]]:
+    uid = int(user_id or 0)
+    if uid < 1:
+        return []
+    memories = list_memories(db, uid, limit=100)
+    changes = (
+        db.query(MemoryLedger)
+        .filter(MemoryLedger.user_id == uid)
+        .order_by(MemoryLedger.id.asc())
+        .all()
+    )
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for change in changes:
+        grouped.setdefault((change.kind or "", change.key or ""), []).append(serialize_change(change))
+    seen: set[tuple[str, str]] = set()
+    items: list[dict[str, Any]] = []
+    for mem in memories:
+        pair = (mem.kind or "", mem.key or "")
+        seen.add(pair)
+        payload = serialize_memory(mem)
+        payload["changes"] = grouped.get(pair, [])
+        items.append(payload)
+    for pair, rows in grouped.items():
+        if pair in seen:
+            continue
+        items.append(
+            {
+                "id": None,
+                "kind": pair[0],
+                "key": pair[1],
+                "content": "",
+                "created_at": "",
+                "updated_at": "",
+                "changes": rows,
+            }
+        )
+    return items
+
+
+def settle_pending(
+    db: Session,
+    *,
+    user_id: int,
+    ledger_id: int,
+    decision: str,
+) -> MemoryLedger | None:
+    uid = int(user_id or 0)
+    if uid < 1 or decision not in {"restored", "discarded"}:
+        return None
+    row = (
+        db.query(MemoryLedger)
+        .filter(MemoryLedger.id == int(ledger_id), MemoryLedger.user_id == uid)
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    if row.pending != 1:
+        return row
+    if decision == "discarded":
+        row.pending = 0
+        row.decision = "discarded"
+        row.updated_at = _utcnow()
+        db.commit()
+        return row
+    try:
+        _commit_change(
+            db,
+            PersonWrite(
+                user_id=uid,
+                source="settle",
+                source_ref=str(row.id),
+                kind=row.kind or "",
+                key=row.key or "",
+                after=row.after or "",
+            ),
+        )
+        row.pending = 0
+        row.decision = "restored"
+        row.updated_at = _utcnow()
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return (
+            db.query(MemoryLedger)
+            .filter(MemoryLedger.id == int(ledger_id), MemoryLedger.user_id == uid)
+            .one_or_none()
+        )
+    return row

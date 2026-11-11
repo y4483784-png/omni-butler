@@ -259,7 +259,7 @@ def test_confirmed_event_remains_after_stop(plain_client: TestClient):
 
 def test_stopped_generation_writes_no_memory(plain_client: TestClient, monkeypatch):
     from app.core.config import settings
-    from app.models.models import MemoryItem
+    from app.models.models import MemoryItem, MemoryLedger
 
     monkeypatch.setattr(settings, "memory_enabled", True)
     monkeypatch.setattr(settings, "memory_use_llm", True)
@@ -287,6 +287,7 @@ def test_stopped_generation_writes_no_memory(plain_client: TestClient, monkeypat
         db.refresh(row)
         session_id = row.id
         before = db.query(MemoryItem).filter(MemoryItem.user_id == user_id).count()
+        ledger_before = db.query(MemoryLedger).filter(MemoryLedger.user_id == user_id).count()
     finally:
         db.close()
 
@@ -302,9 +303,11 @@ def test_stopped_generation_writes_no_memory(plain_client: TestClient, monkeypat
     db = SessionLocal()
     try:
         after = db.query(MemoryItem).filter(MemoryItem.user_id == user_id).count()
+        ledger_after = db.query(MemoryLedger).filter(MemoryLedger.user_id == user_id).count()
     finally:
         db.close()
     assert after == before
+    assert ledger_after == ledger_before
 
 
 def test_loaded_session_denies_invoke_after_stop_commits(monkeypatch):

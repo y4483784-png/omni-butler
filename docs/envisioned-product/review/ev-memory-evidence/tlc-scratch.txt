@@ -1,0 +1,5 @@
+scratch: decide_apply compared latest_applied_actor to "panel"
+python verification/memory-ledger/check.py
+modeling error: a turn can replace a person's value
+exit 2
+the comparison was put back to "person"

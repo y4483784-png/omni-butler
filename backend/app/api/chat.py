@@ -306,7 +306,13 @@ async def _run_workflow_with_heartbeat(**kwargs) -> dict:
     return await asyncio.to_thread(_run_workflow_sync, **kwargs)
 
 
-def _remember_turn_isolated(user_id: int, user_message: str, assistant_content: str) -> None:
+def _remember_turn_isolated(
+    user_id: int,
+    user_message: str,
+    assistant_content: str,
+    generation: int | None = None,
+    status: str | None = None,
+) -> None:
     """Extract memories on a worker thread with a dedicated DB session."""
     db = SessionLocal()
     try:
@@ -316,6 +322,8 @@ def _remember_turn_isolated(user_id: int, user_message: str, assistant_content: 
             user_id=user_id,
             user_message=user_message,
             assistant_message=assistant_content,
+            generation=generation,
+            status=status,
         )
     except Exception:
         logger.exception("memory extract failed")
@@ -740,7 +748,7 @@ async def chat(
                     _commit_user_turn(db, session, user_message)
                 if persisted and not is_stopped():
                     try:
-                        task_run.finish(user_id=uid, generation=turn.generation)
+                        finished = task_run.finish(user_id=uid, generation=turn.generation)
                     except task_run.LateResult as exc:
                         logger.warning(
                             "late task finish user_id=%s generation=%s status=%s",
@@ -748,15 +756,19 @@ async def chat(
                             turn.generation,
                             exc.turn.status,
                         )
-                    try:
-                        await asyncio.to_thread(
-                            _remember_turn_isolated,
-                            uid,
-                            user_message,
-                            assistant_content,
-                        )
-                    except Exception:
-                        logger.exception("memory extract thread failed")
+                        finished = exc.turn
+                    if finished.status == "completed":
+                        try:
+                            await asyncio.to_thread(
+                                _remember_turn_isolated,
+                                uid,
+                                user_message,
+                                assistant_content,
+                                finished.generation,
+                                finished.status,
+                            )
+                        except Exception:
+                            logger.exception("memory extract thread failed")
                     try:
                         await asyncio.to_thread(
                             _refresh_context_isolated,

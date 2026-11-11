@@ -1,0 +1,28 @@
+machine: 4 cores, load average 0.07 0.05 0.04 at 2026-11-11T00:17:58Z
+sequence: one pass, trunk then head then trunk, then the ledger file on the head
+env: DATABASE_URL=sqlite+pysqlite:///./ci-eval.db REDIS_ENABLED=false CELERY_TASK_ALWAYS_EAGER=true SANDBOX_RUNNER_URL= SECRET_KEY=test-secret-key ADMIN_PASSWORD=test-admin-pass
+interpreter: /tmp/omni-venv/bin/python
+trunk worktree: /tmp/omni-trunk at 9d755c0db93e3b47803780b3f5706713d38791d7
+
+=== trunk1 tests/test_memory.py ===
+............
+ELAPSED 2.140
+exit 0
+
+=== head tests/test_memory.py ===
+............
+ELAPSED 2.032
+exit 0
+
+=== trunk2 tests/test_memory.py ===
+............
+ELAPSED 2.196
+exit 0
+
+=== head tests/test_memory_ledger.py ===
+..........
+ELAPSED 3.515
+exit 0
+
+gate: head tests/test_memory.py under 60 seconds, head tests/test_memory_ledger.py under 30 seconds
+first trunk seconds for tests/test_memory.py: 2.140

@@ -1,0 +1,47 @@
+---
+title: "记忆账本和脉搏"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 进行
+    lg1: 账本
+    lg2: 待确认
+    lg3: 停止
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 yellow
+  class lg3 tan
+  s0: 这一代还在进行
+  s1: 这一代已经完成
+  s2: 这一代已经停止
+  s3: 这一代正在等人
+  s4: 人写下了活档案
+  s5: 聊天里有一张确认卡
+  s6: 新事实写进了活档案
+  s7: 只记了待确认账本
+  s8: 第二次提醒仍是一张卡
+  s9: 两边都留着
+  [*] --> s0
+  s0 --> s1: 这一代做完了
+  s0 --> s2: 这一代被停掉
+  s0 --> s3: 这一代还在等人
+  s0 --> s4: 人写下一条记忆
+  s1 --> s4: 人写下一条记忆
+  s1 --> s6: 把这条写进活档案
+  s1 --> s7: 把握不够只记账本
+  s2 --> s4: 人写下一条记忆
+  s3 --> s4: 人写下一条记忆
+  s4 --> s5: 到点推一张确认卡
+  s4 --> s9: 两边都留下或把握不够只记账本
+  s5 --> s8: 同一指纹不再开卡
+  s6 --> s4: 人写下一条记忆
+  s7 --> s9: 人写下一条记忆
+  s5 --> s9: 两边都留下或把握不够只记账本
+  s8 --> s9: 两边都留下或把握不够只记账本
+  class s0 blue
+  class s1 blue
+  class s2 tan
+  class s3 tan
+  class s6 teal
+  class s7 yellow
