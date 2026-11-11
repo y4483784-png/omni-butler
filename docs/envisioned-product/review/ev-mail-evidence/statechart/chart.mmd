@@ -1,0 +1,43 @@
+---
+title: "邮件入口"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 收下
+    lg1: 确认
+    lg2: 成功
+    lg3: 拒绝
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 tan
+  class lg3 orange
+  s0: 还没有这封信
+  s1: 已收下
+  s2: 打开链接不算发出
+  s3: 确认卡已出示
+  s4: 同一编号仍是一封
+  s5: 凭据已取出还没接受
+  s6: 没有凭据所以拒绝
+  s7: 对方已接受
+  s8: 停止后仍然接受
+  [*] --> s0
+  s0 --> s1: 收下新邮件
+  s1 --> s2: 打开写信链接
+  s1 --> s3: 按下发送
+  s1 --> s4: 同一编号再来
+  s3 --> s5: 取出凭据
+  s3 --> s2: 打开写信链接
+  s3 --> s6: 没有凭据就提交
+  s4 --> s3: 按下发送
+  s5 --> s7: 对方接受
+  s7 --> s8: 停止
+  class s0 blue
+  class s1 blue
+  class s2 orange
+  class s3 teal
+  class s4 blue
+  class s5 teal
+  class s6 orange
+  class s7 tan
+  class s8 tan
