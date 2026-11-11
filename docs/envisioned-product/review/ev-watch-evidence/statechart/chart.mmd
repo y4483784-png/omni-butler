@@ -1,0 +1,41 @@
+---
+title: "只读看门狗"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 进行
+    lg1: 静默
+    lg2: 休眠
+    lg3: 等待
+    lg4: 完成
+    lg5: 停止
+  }
+  class lg0 blue
+  class lg1 yellow
+  class lg2 teal
+  class lg3 orange
+  class lg4 tan
+  class lg5 pink
+  s0: 正在跑
+  s1: 正在等人
+  s2: 静默已经够久
+  s3: 已经做完
+  s4: 休眠抵掉了静默
+  s5: 静默的一代已停止
+  [*] --> s0
+  s0 --> s1: 改成等人
+  s0 --> s2: 静默已经够久
+  s0 --> s3: 改成做完
+  s2 --> s1: 改成等人
+  s2 --> s4: 记下这一段休眠
+  s2 --> s3: 改成做完
+  s2 --> s5: 停止这一代
+  s0 --> s4: 静默已经够久
+  s4 --> s1: 改成等人
+  s4 --> s3: 改成做完
+  class s0 blue
+  class s1 orange
+  class s2 yellow
+  class s3 tan
+  class s4 teal
+  class s5 pink
