@@ -1,0 +1,30 @@
+%%{init: {"flowchart": {"wrappingWidth": 280, "htmlLabels": true, "nodeSpacing": 28, "rankSpacing": 36}}}%%
+flowchart TD
+  startNode[用户发来一句话]
+  allow{允许列表含网页吗}
+  denied[改用日常模型且不附带搜索]
+  proNode[回答请求改走专业模型并附带网页搜索]
+  onceNode[同一轮不再调用智谱搜索]
+  stopped{人已经按下停止吗}
+  haltNode[不再发送下一次请求并丢掉迟到输出]
+  chooseNode[模型自己决定要不要搜索]
+  linked{搜索结果带来链接了吗}
+  bareNode[不编造来源]
+  citeNode[有链接才展示引用]
+  calendar{这一步要写日历吗}
+  cardNode[只出示确认卡且不写入]
+  endNode[这一轮结束]
+
+  startNode --> allow
+  allow -->|否| denied
+  allow -->|是| proNode
+  proNode --> onceNode
+  onceNode --> stopped
+  stopped -->|是| haltNode
+  stopped -->|否| chooseNode
+  chooseNode --> linked
+  linked -->|否| bareNode
+  linked -->|是| citeNode
+  citeNode --> calendar
+  calendar -->|是| cardNode
+  calendar -->|否| endNode

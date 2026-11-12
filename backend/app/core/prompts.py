@@ -169,6 +169,16 @@ def no_evidence_block() -> str:
     return _NO_EVIDENCE
 
 
+def native_web_note() -> str:
+    """Tell the answer model how the attached server search may be used."""
+    return (
+        "本轮回答请求可以附带网页搜索。需要公开的新信息时由你决定是否搜索。"
+        "用户明确说不联网时不要搜索。"
+        "只引用搜索结果里实际出现的标题和链接。"
+        "搜索结束但没有链接时不要编造来源，也不要另起一路搜索。"
+    )
+
+
 def clip_text(text: str, n: int = _MAX_ITEM_CHARS) -> str:
     t = (text or "").strip()
     return t if len(t) <= n else t[:n] + "…（已截断）"

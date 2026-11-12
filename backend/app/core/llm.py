@@ -101,15 +101,6 @@ def _status_code(exc: BaseException) -> int | None:
         return None
 
 
-def _rejects_stream_options(exc: BaseException) -> bool:
-    """True when a gateway refused the usage option, not when the account is limited."""
-    if is_llm_infra_exception(exc):
-        return False
-    if _status_code(exc) not in (400, 422):
-        return False
-    return "stream_options" in str(exc).lower()
-
-
 def llm_infra_backoff_seconds(attempt: int) -> float:
     """Wait before retrying attempt ``attempt`` (1-based) after rate-limit/timeout.
 
@@ -183,7 +174,17 @@ class AnswerDelta:
     text: str
 
 
-StreamDelta = ReasoningDelta | AnswerDelta
+@dataclass(frozen=True)
+class SearchDelta:
+    text: str
+
+
+@dataclass(frozen=True)
+class CitationDelta:
+    citations: tuple[dict, ...]
+
+
+StreamDelta = ReasoningDelta | AnswerDelta | SearchDelta | CitationDelta
 
 
 @dataclass(frozen=True)
@@ -402,10 +403,18 @@ def _create_sync(client: Any, body: dict[str, Any]) -> Any:
     return client.chat.completions.create(**body)
 
 
-async def _create_async(client: Any, body: dict[str, Any]) -> Any:
+async def _create_responses(client: Any, body: dict[str, Any]) -> Any:
     if is_stopped():
         raise GenerationStopped()
-    return await client.chat.completions.create(**body)
+    return await client.responses.create(**body)
+
+
+def _yield_for(kind: str, text: str) -> ReasoningDelta | AnswerDelta | SearchDelta:
+    if kind == "reasoning":
+        return ReasoningDelta(text)
+    if kind == "search":
+        return SearchDelta(text)
+    return AnswerDelta(text)
 
 
 async def stream_chat(
@@ -414,14 +423,27 @@ async def stream_chat(
     role: Role,
     usage_out: dict[str, Any] | None = None,
     tools: Any = None,
+    offer_web: bool | None = None,
+    tool_executor: Any = None,
 ):
-    """Yield reasoning and answer deltas for one role.
+    """Stream one user-facing answer through the Responses API.
 
-    ``usage_out`` receives ``prompt_tokens`` when the stream includes usage.
-    A 400 or 422 that names ``stream_options`` is retried once without it.
-    Rate limits and timeouts raise ``LLMInfraError`` and are not retried here.
+    Chat completions stay on ``complete_text`` and ``complete_json``.
+    ``offer_web`` defaults to on for the chat role. Pass False when this
+    turn's allow list omits ``web``. A function tool result is replayed
+    into the next request because the API does not store ``previous_response_id``.
     """
-    _refuse_outbound(messages, tools)
+    from app.core.responses_api import (
+        MAX_FUNCTION_ROUNDS,
+        RoundState,
+        build_responses_body,
+        message_input,
+        observe,
+        replay_input,
+        web_offered,
+    )
+
+    _refuse_outbound(messages, None)
     if is_stopped():
         raise GenerationStopped()
     if not settings.llm_api_key:
@@ -434,71 +456,75 @@ async def stream_chat(
         return
 
     call = resolve(role)
-    body = _build_request(call, messages, kind="text", stream=True, tools=tools)
-    if usage_out is not None:
-        body["stream_options"] = {"include_usage": True}
+    offered = role is Role.CHAT and (web_offered(None) if offer_web is None else bool(offer_web))
+    offered_names = set()
+    for spec in tools or []:
+        name = None
+        if isinstance(spec, dict):
+            name = spec.get("name")
+            if not isinstance(name, str) and isinstance(spec.get("function"), dict):
+                name = spec["function"].get("name")
+        if isinstance(name, str) and name and name != "web":
+            offered_names.add(name)
+    items = message_input(messages)
     client = _get_async_client()
-    async with async_model_slot(call.model):
-        try:
-            resp = await _create_async(client, body)
-        except Exception as exc:
-            if _rejects_stream_options(exc) and "stream_options" in body:
-                logger.debug("stream_chat retry without stream_options")
-                body.pop("stream_options", None)
-                try:
-                    resp = await _create_async(client, body)
-                except Exception as retry_exc:
-                    if is_llm_infra_exception(retry_exc):
-                        _raise_infra(retry_exc)
-                    raise
-            elif is_llm_infra_exception(exc):
-                _raise_infra(exc)
-            else:
+    model = call.model
+    for round_index in range(MAX_FUNCTION_ROUNDS):
+        if is_stopped():
+            return
+        body = build_responses_body(
+            model=model,
+            thinking=call.thinking,
+            items=items,
+            stream=True,
+            offer_web=offered,
+            function_tools=tools,
+        )
+        model = body["model"]
+        async with async_model_slot(model):
+            try:
+                resp = await _create_responses(client, body)
+            except Exception as exc:
+                if is_llm_infra_exception(exc):
+                    _raise_infra(exc)
                 raise
-        try:
-            async for chunk in resp:
-                if usage_out is not None:
-                    usage = getattr(chunk, "usage", None)
-                    pt = _usage_prompt_tokens(usage)
-                    if pt is not None:
-                        usage_out["prompt_tokens"] = pt
-                    ct = None
-                    if usage is not None:
-                        ct = getattr(usage, "completion_tokens", None)
-                        if ct is None and isinstance(usage, dict):
-                            ct = usage.get("completion_tokens")
-                    if ct is not None:
-                        try:
-                            usage_out["completion_tokens"] = int(ct)
-                        except (TypeError, ValueError):
-                            pass
-                choices = getattr(chunk, "choices", None) or []
-                if not choices:
-                    continue
-                choice = choices[0]
-                finish = getattr(choice, "finish_reason", None)
-                if finish:
-                    kind = classify_finish(finish, thinking=call.thinking, role=role)
-                    if kind is FinishClass.INFRA:
-                        raise LLMInfraError(f"finish_reason={finish}")
-                    if kind is not FinishClass.STOP:
-                        raise LLMStructuredError(f"finish_reason={finish}")
-                delta = getattr(choice, "delta", None)
-                content, reasoning = message_parts(delta)
-                if reasoning:
+            state = RoundState()
+            try:
+                async for event in resp:
                     if is_stopped():
                         return
-                    yield ReasoningDelta(reasoning)
-                if content:
-                    if is_stopped():
-                        return
-                    yield AnswerDelta(content)
-        except (LLMInfraError, LLMStructuredError):
-            raise
-        except Exception as exc:
-            if is_llm_infra_exception(exc):
-                _raise_infra(exc)
-            raise
+                    if state.failed:
+                        break
+                    for kind, text in observe(event, state):
+                        if is_stopped():
+                            return
+                        yield _yield_for(kind, text)
+            except (LLMInfraError, LLMStructuredError):
+                raise
+            except Exception as exc:
+                if is_llm_infra_exception(exc):
+                    _raise_infra(exc)
+                raise
+        if state.failed:
+            _raise_infra(LLMInfraError(state.failed))
+        if usage_out is not None and state.usage:
+            usage_out.update(state.usage)
+        if state.citations:
+            yield CitationDelta(tuple(state.citations))
+        calls = state.ready_calls(offered_names)
+        if not calls or tool_executor is None or round_index + 1 >= MAX_FUNCTION_ROUNDS:
+            return
+        if is_stopped():
+            return
+        outputs: list[str] = []
+        for function_call in calls:
+            if is_stopped():
+                return
+            result = tool_executor(function_call.name, function_call.arguments)
+            outputs.append(result if isinstance(result, str) else str(result))
+        if is_stopped():
+            return
+        items = replay_input(items, calls, outputs, state.web_items)
 
 
 def complete_text(

@@ -1,0 +1,54 @@
+---
+title: "这一轮的上网"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 请求
+    lg1: 搜索
+    lg2: 确认卡
+    lg3: 结束
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 tan
+  s0: 这一轮开始
+  s1: 路由已记下
+  s2: 请求没有附带搜索
+  s3: 请求附带网页搜索
+  s4: 已经停止
+  s5: 没有另发搜索
+  s6: 搜索结束但没有链接
+  s7: 有链接才展示引用
+  s8: 确认卡已出示
+  s9: 这一轮结束
+  s10: 停止后没有再发送
+  [*] --> s0
+  s0 --> s1: 记下这一轮要哪些工具
+  s1 --> s2: 组装回答请求
+  s1 --> s3: 组装回答请求
+  s2 --> s4: 人按下停止
+  s2 --> s5: 客户端搜索不再发出
+  s3 --> s4: 人按下停止
+  s3 --> s5: 客户端搜索不再发出
+  s5 --> s6: 记下搜索是否带来链接
+  s5 --> s4: 人按下停止
+  s5 --> s7: 记下搜索是否带来链接
+  s6 --> s4: 人按下停止
+  s6 --> s8: 出示确认卡
+  s7 --> s4: 人按下停止
+  s7 --> s8: 出示确认卡
+  s8 --> s4: 人按下停止
+  s8 --> s9: 准备下一次发送
+  s4 --> s10: 准备下一次发送
+  class s0 blue
+  class s1 blue
+  class s2 blue
+  class s3 blue
+  class s4 tan
+  class s5 teal
+  class s6 teal
+  class s7 teal
+  class s8 orange
+  class s9 tan
+  class s10 tan
