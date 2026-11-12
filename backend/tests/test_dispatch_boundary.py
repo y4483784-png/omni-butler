@@ -101,7 +101,7 @@ def test_work_graph_runs_web_once_without_planning():
     db = SessionLocal()
     try:
         with (
-            patch("app.agents.tools.web.search_planned", return_value=fake) as search,
+            patch("app.services.web_search.httpx.Client") as search,
             patch("app.agents.dispatch.plan_tools", side_effect=boom),
             patch("app.agents.router.plan_tools", side_effect=boom),
             patch("app.agents.workflow.complete_text", return_value="根据证据的简要说明。[1]"),
@@ -117,8 +117,10 @@ def test_work_graph_runs_web_once_without_planning():
             )
     finally:
         db.close()
-    assert search.call_count == 1
+    assert search.call_count == 0
     assert result["intent"] == "web_search"
+    assert result["llm_messages"]
+    assert result["citations"] == []
 
 
 def test_stopped_turn_returns_halted_result_without_a_tool():

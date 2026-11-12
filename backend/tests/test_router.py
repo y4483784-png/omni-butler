@@ -271,4 +271,5 @@ def test_queue_order(monkeypatch):
         forced_kb=False,
         has_tabular_docs=True,
     )
-    assert p["pending_tools"] == ["kb", "web", "calendar", "sandbox"]
+    assert p["pending_tools"] == ["kb", "calendar", "sandbox"]
+    assert p["needs_web"] is True

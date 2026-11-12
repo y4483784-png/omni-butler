@@ -255,6 +255,17 @@ def build_pool_prompt(
     return "\n".join(lines).strip(), included
 
 
+def _with_native_web_note(messages: list[dict]) -> list[dict]:
+    from app.core.prompts import native_web_note
+
+    note = native_web_note()
+    if messages and messages[0].get("role") == "system":
+        first = dict(messages[0])
+        first["content"] = f"{first.get('content') or ''}\n\n{note}"
+        return [first, *messages[1:]]
+    return [{"role": "system", "content": note}, *messages]
+
+
 def _pool_prompt(evidence: list[dict]) -> str:
     text, _ = build_pool_prompt(evidence)
     return text
@@ -616,6 +627,7 @@ def run_agent_workflow(
         has_kb = any(e.get("source_type") == "kb" for e in evidence)
         has_web = any(e.get("source_type") == "web" for e in evidence)
         has_sandbox = any(e.get("source_type") == "sandbox" for e in evidence)
+        native_web = bool(state.get("needs_web"))
         direct = state.get("direct_answer")
         if (
             asked_kb
@@ -641,6 +653,29 @@ def run_agent_workflow(
         compose_stats: dict = dict(ctx.get("stats") or {})
         if direct:
             llm_messages = []
+        elif native_web and not evidence:
+            memory_block = str(ctx.get("memory_block") or "") or load_memory_prompt(
+                db, state.get("user_id") or 1
+            )
+            bundle = ContextBundle(
+                answer_history=hist,
+                summary_block=str(ctx.get("summary_block") or ""),
+                working_block=str(ctx.get("working_block") or ""),
+                memory_block=memory_block,
+                stats=dict(ctx.get("stats") or {}),
+            )
+            llm_messages, _, _ = compose_answer_messages(
+                bundle=bundle,
+                hist=hist,
+                message=msg,
+                pool_text="",
+                memory_block=memory_block,
+                rebuild_pool=None,
+                sandbox_note="",
+                has_evidence_system=False,
+            )
+            llm_messages = _with_native_web_note(llm_messages)
+            compose_stats = dict(bundle.stats or {})
         elif evidence or intent != "chat":
             if state.get("analysis_uncomputable") and any(
                 e.get("source_type") == "sandbox" for e in evidence
@@ -729,6 +764,8 @@ def run_agent_workflow(
                 has_evidence_system=False,
             )
             compose_stats = dict(bundle.stats or {})
+        if native_web and evidence and llm_messages:
+            llm_messages = _with_native_web_note(llm_messages)
 
         citations = [
             {
@@ -747,6 +784,7 @@ def run_agent_workflow(
         if (
             not direct
             and llm_messages
+            and not native_web
             and should_ground_answer(evidence=evidence, direct_answer=direct)
         ):
             thinking.append("正在根据证据核对结论")

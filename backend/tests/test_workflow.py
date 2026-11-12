@@ -103,7 +103,8 @@ def test_plan_tools_queue_order(monkeypatch):
         forced_kb=False,
         has_tabular_docs=True,
     )
-    assert p["pending_tools"] == ["kb", "web", "calendar", "sandbox"]
+    assert p["pending_tools"] == ["kb", "calendar", "sandbox"]
+    assert p["needs_web"] is True
     n = plan_needs(
         "结合方案看最近政策并安排会议",
         [],
@@ -334,14 +335,7 @@ def test_search_api_falls_back_when_std_has_no_links():
     assert client_cls.return_value.__enter__.return_value.post.call_count == 2
 
 
-def test_web_only_one_tool_round():
-    fake = SearchOutcome(
-        results=[SearchHit(title="新闻", url="https://n.example/1", snippet="摘要", media="站")],
-        query_used="q",
-        count=8,
-        recency_filter="oneDay",
-        query_rewritten=True,
-    )
+def test_web_only_leaves_search_to_the_answer_request():
     web_plan = {
         "pending_tools": ["web"],
         "needs_freshness": True,
@@ -351,10 +345,7 @@ def test_web_only_one_tool_round():
     init_db()
     db = SessionLocal()
     try:
-        with (
-            patch("app.agents.tools.web.search_planned", return_value=fake),
-            _grounding_pass(),
-        ):
+        with patch("app.services.web_search.httpx.Client") as client:
             r = run_agent_workflow(
                 db,
                 message="今天有什么 AI 新闻",
@@ -364,33 +355,15 @@ def test_web_only_one_tool_round():
             )
     finally:
         db.close()
+    client.assert_not_called()
     assert r["intent"] == "web_search"
-    assert r["citations"][0]["url"] == "https://n.example/1"
-    assert any("正在搜索" in s for s in r["thinking_steps"])
-    assert r["llm_messages"] == []
-    assert r["direct_answer"]
-    assert "依据核验说明" not in r["direct_answer"]
-    assert any("正在根据证据核对结论" in s for s in r["thinking_steps"])
-    assert any("依据核验通过" in s for s in r["thinking_steps"])
-    assert not any("改写后重试" in s for s in r["thinking_steps"])
+    assert r["citations"] == []
+    assert r["direct_answer"] in (None, "")
+    assert r["llm_messages"]
+    assert any("不再另发" in s for s in r["thinking_steps"])
 
 
 def test_kb_then_web_separate_rounds():
-    fake = SearchOutcome(
-        results=[
-            SearchHit(
-                title="政策",
-                url="https://gov.example/p",
-                snippet="最近政策",
-                media="官网",
-                publish_date=today_str(),
-            )
-        ],
-        query_used="q",
-        count=8,
-        recency_filter="oneDay",
-    )
-
     class C:
         filename = "方案.md"
         snippet = "流程"
@@ -400,8 +373,7 @@ def test_kb_then_web_separate_rounds():
 
     with (
         patch("app.agents.tools.kb.retrieve", return_value=[C()]),
-        patch("app.agents.tools.web.search_planned", return_value=fake) as web_mock,
-        _grounding_pass(),
+        patch("app.services.web_search.httpx.Client") as client,
     ):
         r = run_agent_workflow(
             object(),  # type: ignore[arg-type]
@@ -417,14 +389,13 @@ def test_kb_then_web_separate_rounds():
                 }
             ),
         )
-    assert {c["source_type"] for c in r["citations"]} == {"kb", "web"}
-    assert r["llm_messages"] == []
-    assert r["direct_answer"]
+    client.assert_not_called()
+    assert {c["source_type"] for c in r["citations"]} == {"kb"}
+    assert r["llm_messages"]
+    assert r["direct_answer"] in (None, "")
     assert any("知识库" in s for s in r["thinking_steps"])
-    assert any("正在搜索" in s for s in r["thinking_steps"])
+    assert any("不再另发" in s for s in r["thinking_steps"])
     assert any("继续下一工具" in s for s in r["thinking_steps"])
-    assert web_mock.call_count == 1
-    assert not any("改写后重试" in s for s in r["thinking_steps"])
 
 
 def test_mock_stream_evidence_pool():
@@ -626,12 +597,12 @@ def test_sandbox_tool_produces_artifact():
 def test_grounded_answer_raises_llm_infra_instead_of_empty_draft():
     from app.core.llm import LLMInfraError
 
-    fake = SearchOutcome(
-        results=[SearchHit(title="新闻", url="https://n.example/1", snippet="摘要", media="站")],
-        query_used="q",
-        count=8,
-        recency_filter="oneDay",
-    )
+    class C:
+        filename = "方案.md"
+        snippet = "流程"
+        content = "流程"
+        heading = ""
+        page = None
 
     def boom(*_a, **kwargs):
         assert kwargs.get("raise_on_error") is True
@@ -641,21 +612,21 @@ def test_grounded_answer_raises_llm_infra_instead_of_empty_draft():
     db = SessionLocal()
     try:
         with (
-            patch("app.agents.tools.web.search_planned", return_value=fake),
+            patch("app.agents.tools.kb.retrieve", return_value=[C()]),
             patch("app.agents.workflow.complete_text", side_effect=boom),
         ):
             try:
                 run_agent_workflow(
                     db,
-                    message="今天有什么 AI 新闻",
+                    message="制度里的流程是什么",
                     history=[],
-                    has_kb_docs=False,
+                    has_kb_docs=True,
                     assignment=_assigned(
                         {
-                            "pending_tools": ["web"],
-                            "needs_freshness": True,
-                            "needs_kb": False,
-                            "needs_web": True,
+                            "pending_tools": ["kb"],
+                            "needs_freshness": False,
+                            "needs_kb": True,
+                            "needs_web": False,
                             "needs_calendar": False,
                             "needs_sandbox": False,
                         }

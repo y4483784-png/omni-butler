@@ -1,72 +1,86 @@
 ---- MODULE OneWebPath ----
-\* One chat turn.
-\* The router may queue web. The chat body does not gain a networking field.
-\* A calendar step shows a card and does not write the event.
+\* One chat turn after native web search moved onto the Responses request.
+\* webAllowed is the existing allow-list name "web".
+\* The answer request carries the server tool when that name is present.
+\* The client search does not run. needsWeb does not start it.
+\* A completed server search is not itself a citation.
 \* Stop blocks the next model send.
+\* A calendar card does not write the event.
 
-CONSTANT breakBoth, breakField, breakStop, breakCalendar
+CONSTANT
+  breakBoth, breakOmit, breakZhipu, breakStop, breakCalendar, breakCite
 
 VARIABLES
-  phase, token, needsWeb,
+  phase, webAllowed, needsWeb, hasUrl,
   netField, zhipu,
   stopped, sendsAfterStop,
-  card, calendarWritten
+  card, calendarWritten,
+  searchCompleted, citation
 
-vars == <<phase, token, needsWeb, netField, zhipu, stopped, sendsAfterStop, card, calendarWritten>>
+vars == <<
+  phase, webAllowed, needsWeb, hasUrl,
+  netField, zhipu,
+  stopped, sendsAfterStop,
+  card, calendarWritten,
+  searchCompleted, citation
+>>
 
 Init ==
   /\ phase = "start"
-  /\ token \in BOOLEAN
+  /\ webAllowed \in BOOLEAN
   /\ needsWeb \in BOOLEAN
+  /\ hasUrl \in BOOLEAN
   /\ netField = FALSE
   /\ zhipu = FALSE
   /\ stopped = FALSE
   /\ sendsAfterStop = FALSE
   /\ card = FALSE
   /\ calendarWritten = FALSE
+  /\ searchCompleted = FALSE
+  /\ citation = FALSE
 
 Queue ==
   /\ phase = "start"
   /\ phase' = "queued"
-  /\ UNCHANGED <<token, needsWeb, netField, zhipu, stopped, sendsAfterStop, card, calendarWritten>>
+  /\ UNCHANGED <<webAllowed, needsWeb, hasUrl, netField, zhipu, stopped, sendsAfterStop, card, calendarWritten, searchCompleted, citation>>
 
 Build ==
   /\ phase = "queued"
   /\ phase' = "built"
-  /\ netField' = (breakField \/ breakBoth)
-  /\ UNCHANGED <<token, needsWeb, zhipu, stopped, sendsAfterStop, card, calendarWritten>>
+  /\ netField' = (IF breakBoth THEN TRUE ELSE IF breakOmit THEN FALSE ELSE webAllowed)
+  /\ UNCHANGED <<webAllowed, needsWeb, hasUrl, zhipu, stopped, sendsAfterStop, card, calendarWritten, searchCompleted, citation>>
 
-Search ==
+ClientSearch ==
   /\ phase = "built"
-  /\ needsWeb
   /\ phase' = "searched"
-  /\ zhipu' = TRUE
-  /\ UNCHANGED <<token, needsWeb, netField, stopped, sendsAfterStop, card, calendarWritten>>
+  /\ zhipu' = (breakZhipu \/ breakBoth)
+  /\ UNCHANGED <<webAllowed, needsWeb, hasUrl, netField, stopped, sendsAfterStop, card, calendarWritten, searchCompleted, citation>>
 
-SkipSearch ==
-  /\ phase = "built"
-  /\ ~needsWeb
-  /\ phase' = "searched"
-  /\ UNCHANGED <<token, needsWeb, netField, zhipu, stopped, sendsAfterStop, card, calendarWritten>>
+NoteResult ==
+  /\ phase = "searched"
+  /\ phase' = "noted"
+  /\ searchCompleted' = TRUE
+  /\ citation' = (IF breakCite THEN TRUE ELSE hasUrl)
+  /\ UNCHANGED <<webAllowed, needsWeb, hasUrl, netField, zhipu, stopped, sendsAfterStop, card, calendarWritten>>
 
 ShowCard ==
-  /\ phase = "searched"
+  /\ phase = "noted"
   /\ phase' = "card"
   /\ card' = TRUE
   /\ calendarWritten' = breakCalendar
-  /\ UNCHANGED <<token, needsWeb, netField, zhipu, stopped, sendsAfterStop>>
+  /\ UNCHANGED <<webAllowed, needsWeb, hasUrl, netField, zhipu, stopped, sendsAfterStop, searchCompleted, citation>>
 
 Stop ==
   /\ ~stopped
-  /\ phase \in {"built", "searched", "card"}
+  /\ phase \in {"built", "searched", "noted", "card"}
   /\ stopped' = TRUE
-  /\ UNCHANGED <<phase, token, needsWeb, netField, zhipu, sendsAfterStop, card, calendarWritten>>
+  /\ UNCHANGED <<phase, webAllowed, needsWeb, hasUrl, netField, zhipu, sendsAfterStop, card, calendarWritten, searchCompleted, citation>>
 
 LaterSend ==
   /\ phase = "card"
   /\ phase' = "done"
   /\ sendsAfterStop' = (stopped /\ breakStop)
-  /\ UNCHANGED <<token, needsWeb, netField, zhipu, stopped, card, calendarWritten>>
+  /\ UNCHANGED <<webAllowed, needsWeb, hasUrl, netField, zhipu, stopped, card, calendarWritten, searchCompleted, citation>>
 
 Done ==
   /\ phase = "done"
@@ -75,8 +89,8 @@ Done ==
 Next ==
   \/ Queue
   \/ Build
-  \/ Search
-  \/ SkipSearch
+  \/ ClientSearch
+  \/ NoteResult
   \/ ShowCard
   \/ Stop
   \/ LaterSend
@@ -85,27 +99,33 @@ Next ==
 Spec == Init /\ [][Next]_vars
 
 TypeOK ==
-  /\ phase \in {"start", "queued", "built", "searched", "card", "done"}
-  /\ token \in BOOLEAN
+  /\ phase \in {"start", "queued", "built", "searched", "noted", "card", "done"}
+  /\ webAllowed \in BOOLEAN
   /\ needsWeb \in BOOLEAN
+  /\ hasUrl \in BOOLEAN
   /\ netField \in BOOLEAN
   /\ zhipu \in BOOLEAN
   /\ stopped \in BOOLEAN
   /\ sendsAfterStop \in BOOLEAN
   /\ card \in BOOLEAN
   /\ calendarWritten \in BOOLEAN
+  /\ searchCompleted \in BOOLEAN
+  /\ citation \in BOOLEAN
+
+NoZhipu == ~zhipu
 
 NoBoth == ~(netField /\ zhipu)
 
-NoGuessedField == ~netField
+DefaultOffers ==
+  ~webAllowed \/ netField \/ phase \in {"start", "queued"}
+
+ExplicitOmits ==
+  webAllowed \/ (~netField /\ ~zhipu)
 
 StopBlocksLaterSend == ~sendsAfterStop
 
 CalendarStaysUnwritten == ~calendarWritten
 
-FieldWhenAllowed ==
-  ~token \/ netField \/ phase \in {"start", "queued"}
-
-AbsentSkipsZhipu == token \/ ~zhipu
+CitationNeedsSource == citation => hasUrl
 
 ====

@@ -149,7 +149,6 @@ def verify_state(state: dict[str, Any]) -> VerifyDecision:
     it = int(state.get("iteration") or 1)
     max_iter = int(state.get("max_iterations") or 4)
     kb_retried = bool(state.get("kb_retried"))
-    web_retried = bool(state.get("web_retried"))
     pending = list(state.get("pending_tools") or [])
 
     if state.get("direct_answer"):
@@ -197,15 +196,6 @@ def verify_state(state: dict[str, Any]) -> VerifyDecision:
 
     if pending and it < max_iter:
         return VerifyDecision(ok=False, reason="queue_remaining", next_tool=pending[0])
-
-    if last == "web" and it < max_iter and not web_retried:
-        if not web or (state.get("needs_freshness") and web_is_stale(web)):
-            return VerifyDecision(
-                ok=False,
-                reason="联网结果不足或过旧，重试 web",
-                next_tool="web",
-                mark_web_retried=True,
-            )
 
     if last == "kb" and it < max_iter and not web and not kb_retried and not kb:
         return VerifyDecision(
