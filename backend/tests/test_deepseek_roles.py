@@ -30,6 +30,10 @@ from app.core.llm import (
 _WORKSPACE = Path(__file__).resolve().parents[2]
 _APP_ROOTS = (_WORKSPACE / "backend" / "app", _WORKSPACE / "frontend" / "src")
 _REQUEST_FIELDS = ("extra_body", "reasoning_effort", "reasoning_content")
+_STORED_REASONING = {
+    "backend/app/models/models.py",
+    "backend/app/services/loop_round.py",
+}
 _ROLE_ENV_NAMES = [spec.model_env for spec in ROLE_SPECS.values()] + [
     spec.thinking_env for spec in ROLE_SPECS.values()
 ]
@@ -554,9 +558,12 @@ def test_request_fields_stay_inside_the_llm_module():
             if path.as_posix().endswith("backend/app/core/llm.py"):
                 continue
             text = path.read_text(encoding="utf-8")
+            relative = path.relative_to(_WORKSPACE).as_posix()
             for field in _REQUEST_FIELDS:
+                if field == "reasoning_content" and relative in _STORED_REASONING:
+                    continue
                 if field in text:
-                    hits.append(f"{path.relative_to(_WORKSPACE)}: {field}")
+                    hits.append(f"{relative}: {field}")
     assert hits == []
 
 

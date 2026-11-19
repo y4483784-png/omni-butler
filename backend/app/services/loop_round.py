@@ -10,6 +10,7 @@ from sqlalchemy import and_, exists, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.llm import ModelTurn, ToolCallSpec
 from app.models.models import (
     Message,
     ScheduleConfirmClaim,
@@ -117,22 +118,6 @@ _EDGES: dict[tuple[CallState, LoopEvent], CallState] = {
     (CallState.RUNNING, LoopEvent.CANCEL_CALL): CallState.CANCELLED,
     (CallState.AWAITING_CONFIRM, LoopEvent.CANCEL_CALL): CallState.CANCELLED,
 }
-
-
-@dataclass(frozen=True)
-class ToolCallSpec:
-    id: str
-    name: str
-    arguments: str
-
-
-@dataclass(frozen=True)
-class ModelTurn:
-    content: str
-    reasoning: str
-    tool_calls: tuple[ToolCallSpec, ...]
-    finish: str
-    prompt_tokens: int | None = None
 
 
 @dataclass(frozen=True)

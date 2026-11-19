@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 import weakref
@@ -27,9 +28,11 @@ from app.chat_images import (
     BODY_CAP_BYTES,
     ChatImage,
     RequestBodyTooLarge,
+    UnsupportedContent,
     attach_user_images,
     text_of,
     wire_messages,
+    wire_user_blocks,
 )
 from app.core.config import settings
 from app.core.generation_stop import GenerationStopped, is_stopped
@@ -201,6 +204,35 @@ class Spoken:
     prompt_tokens: int | None = None
 
 
+@dataclass(frozen=True)
+class ToolCallSpec:
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True)
+class ModelTurn:
+    content: str
+    reasoning: str
+    tool_calls: tuple[ToolCallSpec, ...]
+    finish: str
+    prompt_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class ToolCallDelta:
+    index: int
+    id: str | None
+    name: str | None
+    arguments: str
+
+
+@dataclass(frozen=True)
+class ToolRoundEnd:
+    finish: str
+
+
 def _parse_role(role: Role, source: Any) -> RoleCall:
     spec = ROLE_SPECS[role]
     model = str(getattr(source, spec.model_attr) or "").strip()
@@ -220,6 +252,20 @@ def assert_role_config(source: Any | None = None) -> None:
 
 def resolve(role: Role) -> RoleCall:
     return _parse_role(role, settings)
+
+
+def resolve_executor() -> RoleCall:
+    model = os.environ.get("EXECUTOR_MODEL", "").strip()
+    thinking = os.environ.get("EXECUTOR_THINKING", "").strip()
+    if not model:
+        model = str(settings.chat_model or "").strip()
+    if not thinking:
+        thinking = str(settings.chat_thinking or "").strip()
+    if not model:
+        raise RoleConfigError("EXECUTOR_MODEL is empty")
+    if thinking not in ("on", "off"):
+        raise RoleConfigError("EXECUTOR_THINKING must be on or off")
+    return RoleCall(role=Role.CHAT, model=model, thinking=thinking == "on")
 
 
 def cache_identity(role: Role) -> CacheIdentity:
@@ -288,6 +334,95 @@ def _build_request(
         body["response_format"] = {"type": "json_object"}
         if not call.thinking:
             body["temperature"] = 0
+    if timeout is not None:
+        body["timeout"] = timeout
+    return body
+
+
+def _wire_tool_calls(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        raise UnsupportedContent("tool_calls")
+    cleaned: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise UnsupportedContent("tool_calls")
+        function = item.get("function") if isinstance(item.get("function"), dict) else {}
+        name = function.get("name")
+        arguments = function.get("arguments")
+        if isinstance(arguments, (dict, list)):
+            arguments = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
+        call_id = item.get("id")
+        cleaned.append(
+            {
+                "id": call_id if isinstance(call_id, str) else "",
+                "type": "function",
+                "function": {
+                    "name": name if isinstance(name, str) else "",
+                    "arguments": arguments if isinstance(arguments, str) else "",
+                },
+            }
+        )
+    return cleaned
+
+
+def wire_job_messages(messages: list[dict] | None) -> list[dict[str, Any]]:
+    wired: list[dict[str, Any]] = []
+    for message in messages or []:
+        if not isinstance(message, dict):
+            wired.append({"role": "", "content": ""})
+            continue
+        role = message.get("role")
+        role_text = role if isinstance(role, str) else ""
+        content = message.get("content")
+        if role_text == "tool":
+            tool_call_id = message.get("tool_call_id")
+            wired.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id if isinstance(tool_call_id, str) else "",
+                    "content": content if isinstance(content, str) else "",
+                }
+            )
+            continue
+        if role_text == "assistant":
+            if content is not None and not isinstance(content, str):
+                raise UnsupportedContent("content")
+            item: dict[str, Any] = {"role": "assistant", "content": content or ""}
+            if "reasoning_content" in message:
+                reasoning = message.get("reasoning_content")
+                item["reasoning_content"] = reasoning if isinstance(reasoning, str) else ""
+            if "tool_calls" in message:
+                item["tool_calls"] = _wire_tool_calls(message.get("tool_calls"))
+            wired.append(item)
+            continue
+        if content is None or isinstance(content, str):
+            wired.append({"role": role_text, "content": content or ""})
+            continue
+        if isinstance(content, list):
+            if role_text != "user":
+                raise UnsupportedContent("content_list")
+            wired.append({"role": role_text, "content": wire_user_blocks(content)})
+            continue
+        raise UnsupportedContent("content")
+    return wired
+
+
+def _build_job_request(
+    call: RoleCall,
+    messages: list[dict],
+    *,
+    stream: bool,
+    tools: Any = None,
+    timeout: float | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "model": call.model,
+        "messages": wire_job_messages(messages),
+        "stream": stream,
+        "tools": list(tools or []),
+        "extra_body": {"thinking": {"type": "enabled" if call.thinking else "disabled"}},
+        "reasoning_effort": "high" if call.thinking else "none",
+    }
     if timeout is not None:
         body["timeout"] = timeout
     return body
@@ -407,6 +542,8 @@ def provider_payload(body: Mapping[str, Any]) -> dict[str, Any]:
     for key in ("reasoning_effort", "response_format", "temperature", "stream_options"):
         if key in body:
             payload[key] = body[key]
+    if "tools" in body:
+        payload["tools"] = body["tools"]
     return payload
 
 
@@ -443,6 +580,76 @@ async def _create_async(client: Any, body: dict[str, Any]) -> Any:
     return await client.chat.completions.create(**body)
 
 
+def _function_fields(function: Any) -> tuple[str | None, str]:
+    if isinstance(function, dict):
+        name = function.get("name")
+        arguments = function.get("arguments")
+    else:
+        name = getattr(function, "name", None)
+        arguments = getattr(function, "arguments", None)
+    return (name if isinstance(name, str) else None, arguments if isinstance(arguments, str) else "")
+
+
+def _tool_deltas(delta: Any):
+    raw = getattr(delta, "tool_calls", None)
+    if not raw:
+        extra = getattr(delta, "model_extra", None)
+        raw = extra.get("tool_calls") if isinstance(extra, dict) else None
+    if not raw:
+        return
+    for item in raw:
+        if isinstance(item, dict):
+            index = item.get("index")
+            call_id = item.get("id")
+            name, arguments = _function_fields(item.get("function"))
+        else:
+            index = getattr(item, "index", None)
+            call_id = getattr(item, "id", None)
+            name, arguments = _function_fields(getattr(item, "function", None))
+        try:
+            position = int(index or 0)
+        except (TypeError, ValueError):
+            position = 0
+        yield ToolCallDelta(
+            index=position,
+            id=call_id if isinstance(call_id, str) else None,
+            name=name,
+            arguments=arguments,
+        )
+
+
+def _tool_specs(message: Any) -> tuple[ToolCallSpec, ...]:
+    raw = getattr(message, "tool_calls", None)
+    if not raw:
+        extra = getattr(message, "model_extra", None)
+        raw = extra.get("tool_calls") if isinstance(extra, dict) else None
+    if not raw:
+        return ()
+    specs: list[ToolCallSpec] = []
+    for item in raw:
+        if isinstance(item, dict):
+            call_id = item.get("id")
+            name, arguments = _function_fields(item.get("function"))
+        else:
+            call_id = getattr(item, "id", None)
+            name, arguments = _function_fields(getattr(item, "function", None))
+        specs.append(
+            ToolCallSpec(
+                id=call_id if isinstance(call_id, str) else "",
+                name=name or "",
+                arguments=arguments,
+            )
+        )
+    return tuple(specs)
+
+
+def _raise_unfinished(reason: str | None, *, thinking: bool, role: Role) -> None:
+    kind = classify_finish(reason, thinking=thinking, role=role)
+    if kind is FinishClass.INFRA:
+        raise LLMInfraError(f"finish_reason={reason}")
+    raise LLMStructuredError(f"finish_reason={reason}")
+
+
 async def stream_chat(
     messages: list[dict],
     *,
@@ -450,18 +657,23 @@ async def stream_chat(
     usage_out: dict[str, Any] | None = None,
     tools: Any = None,
     images: Sequence[ChatImage] | None = None,
+    job: bool = False,
 ):
     """Yield reasoning and answer deltas for one role.
 
     ``usage_out`` receives ``prompt_tokens`` when the stream includes usage.
     A 400 or 422 that names ``stream_options`` is retried once without it.
     Rate limits and timeouts raise ``LLMInfraError`` and are not retried here.
+    ``job`` sends a tool round and yields one end marker after the deltas.
     """
-    _refuse_outbound(messages, tools)
+    if not job:
+        _refuse_outbound(messages, tools)
     prepared = attach_user_images(messages, tuple(images or ()))
     if is_stopped():
         raise GenerationStopped()
     if not settings.llm_api_key:
+        if job:
+            raise LLMInfraError("LLM_API_KEY is empty")
         async for ch in _mock_stream(prepared):
             if not ch:
                 continue
@@ -470,8 +682,11 @@ async def stream_chat(
             yield AnswerDelta(ch)
         return
 
-    call = resolve(role)
-    body = _build_request(call, prepared, kind="text", stream=True, tools=tools)
+    call = resolve_executor() if job else resolve(role)
+    if job:
+        body = _build_job_request(call, prepared, stream=True, tools=tools)
+    else:
+        body = _build_request(call, prepared, kind="text", stream=True, tools=tools)
     if usage_out is not None:
         body["stream_options"] = {"include_usage": True}
     client = _get_async_client()
@@ -498,6 +713,7 @@ async def stream_chat(
                 raise
         seen_usage: Any = None
         recorded = False
+        finish_seen: str | None = None
 
         def _store_usage() -> None:
             nonlocal recorded
@@ -533,11 +749,14 @@ async def stream_chat(
                 choice = choices[0]
                 finish = getattr(choice, "finish_reason", None)
                 if finish:
-                    kind = classify_finish(finish, thinking=call.thinking, role=role)
-                    if kind is FinishClass.INFRA:
-                        raise LLMInfraError(f"finish_reason={finish}")
-                    if kind is not FinishClass.STOP:
-                        raise LLMStructuredError(f"finish_reason={finish}")
+                    if job and finish in ("stop", "tool_calls"):
+                        finish_seen = finish
+                    else:
+                        kind = classify_finish(finish, thinking=call.thinking, role=role)
+                        if kind is FinishClass.INFRA:
+                            raise LLMInfraError(f"finish_reason={finish}")
+                        if kind is not FinishClass.STOP:
+                            raise LLMStructuredError(f"finish_reason={finish}")
                 delta = getattr(choice, "delta", None)
                 content, reasoning = message_parts(delta)
                 if reasoning:
@@ -550,6 +769,12 @@ async def stream_chat(
                         _store_usage()
                         return
                     yield AnswerDelta(content)
+                if job and delta is not None:
+                    for item in _tool_deltas(delta):
+                        if is_stopped():
+                            _store_usage()
+                            return
+                        yield item
         except (GeneratorExit, asyncio.CancelledError):
             _store_usage()
             raise
@@ -563,6 +788,10 @@ async def stream_chat(
             raise
         else:
             _store_usage()
+        if job:
+            if finish_seen not in ("stop", "tool_calls"):
+                raise LLMStructuredError(f"finish_reason={finish_seen}")
+            yield ToolRoundEnd(finish=finish_seen)
 
 
 def complete_text(
@@ -575,17 +804,24 @@ def complete_text(
     tools: Any = None,
     kind: Literal["text", "json"] = "text",
     images: Sequence[ChatImage] | None = None,
-) -> Spoken:
-    _refuse_outbound(messages, tools)
+    job: bool = False,
+) -> Spoken | ModelTurn:
+    if not job:
+        _refuse_outbound(messages, tools)
     prepared = attach_user_images(messages, tuple(images or ()))
     if is_stopped():
         raise GenerationStopped()
     if not settings.llm_api_key:
+        if job:
+            raise LLMInfraError("LLM_API_KEY is empty")
         return Spoken(_mock_text(prepared), "", None)
 
-    call = resolve(role)
+    call = resolve_executor() if job else resolve(role)
     req_timeout = float(timeout if timeout is not None else settings.llm_timeout)
-    body = _build_request(call, prepared, kind=kind, stream=False, tools=tools, timeout=req_timeout)
+    if job:
+        body = _build_job_request(call, prepared, stream=False, tools=tools, timeout=req_timeout)
+    else:
+        body = _build_request(call, prepared, kind=kind, stream=False, tools=tools, timeout=req_timeout)
     client = _get_sync_client()
     attempts = 1 + max(0, int(retries))
     for attempt in range(1, attempts + 1):
@@ -612,7 +848,7 @@ def complete_text(
                 )
                 time.sleep(delay)
                 continue
-            if raise_on_error:
+            if job or raise_on_error:
                 _raise_infra(exc)
             _STATS["infra_errors"] += 1
             logger.warning("complete_text %s: %s", type(exc).__name__, exc)
@@ -625,13 +861,21 @@ def complete_text(
             usage=getattr(resp, "usage", None),
         )
         choice = resp.choices[0]
-        finish = classify_finish(
-            getattr(choice, "finish_reason", None),
-            thinking=call.thinking,
-            role=role,
-        )
+        reason = getattr(choice, "finish_reason", None)
         content, reasoning = message_parts(getattr(choice, "message", None))
         prompt_tokens = _usage_prompt_tokens(getattr(resp, "usage", None))
+        if job:
+            if reason in ("stop", "tool_calls"):
+                _record_call(prompt_tokens, started)
+                return ModelTurn(
+                    content.strip(),
+                    reasoning,
+                    _tool_specs(getattr(choice, "message", None)),
+                    reason,
+                    prompt_tokens,
+                )
+            _raise_unfinished(reason, thinking=call.thinking, role=call.role)
+        finish = classify_finish(reason, thinking=call.thinking, role=role)
         if finish is FinishClass.STOP:
             _record_call(prompt_tokens, started)
             return Spoken(content.strip(), reasoning, prompt_tokens)
