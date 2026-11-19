@@ -663,6 +663,16 @@ export async function commitErrand(draft: ErrandDraft & { confirm_token: string 
   return r.json();
 }
 
+export class MailSendError extends Error {
+  readonly state: string;
+
+  constructor(message: string, state = "") {
+    super(message);
+    this.name = "MailSendError";
+    this.state = state;
+  }
+}
+
 export async function commitMailSend(draft: {
   to: string[];
   subject: string;
@@ -674,7 +684,18 @@ export async function commitMailSend(draft: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(draft),
   });
-  if (!r.ok) throw new Error(await parseError(r, "发送失败"));
+  if (!r.ok) {
+    let detail = "发送失败";
+    let state = "";
+    try {
+      const data = await r.json();
+      if (typeof data?.detail === "string") detail = data.detail;
+      if (typeof data?.state === "string") state = data.state;
+    } catch {
+      detail = "发送失败";
+    }
+    throw new MailSendError(detail, state);
+  }
   return r.json();
 }
 

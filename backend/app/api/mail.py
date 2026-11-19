@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -62,5 +63,12 @@ def send(
     try:
         view = commit_send(db, user_id=current_user.id, token=body.confirm_token, draft=draft)
     except MailClosed as exc:
+        if exc.state:
+            return JSONResponse(
+                status_code=exc.status,
+                content={"detail": exc.detail, "state": exc.state},
+            )
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
-    return view.as_dict()
+    payload = view.as_dict()
+    payload["state"] = "sent"
+    return payload
