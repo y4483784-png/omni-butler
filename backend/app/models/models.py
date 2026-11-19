@@ -142,6 +142,65 @@ class TaskRun(Base):
     continuation_due = Column(Boolean, nullable=False, default=False, server_default=false())
 
 
+TASK_STEP_PHASES = (
+    "calls_saved",
+    "awaiting_results",
+    "results_ready",
+    "final_answer",
+)
+
+TOOL_CALL_STATES = (
+    "pending",
+    "running",
+    "awaiting_confirm",
+    "result",
+    "rejected",
+    "expired",
+    "cancelled",
+    "unknown",
+)
+
+
+class TaskStep(Base):
+    __tablename__ = "task_steps"
+    __table_args__ = (
+        CheckConstraint(
+            "phase IN ({})".format(", ".join(repr(item) for item in TASK_STEP_PHASES)),
+            name="ck_task_steps_phase",
+        ),
+        UniqueConstraint("task_run_id", "seq", name="uq_task_steps_run_seq"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    task_run_id = Column(Integer, ForeignKey("task_runs.id"), nullable=False, index=True)
+    seq = Column(Integer, nullable=False)
+    phase = Column(String, nullable=False)
+    content = Column(Text, nullable=False, default="", server_default=text("''"))
+    reasoning_content = Column(Text, nullable=False, default="", server_default=text("''"))
+
+
+class ToolCall(Base):
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ({})".format(", ".join(repr(item) for item in TOOL_CALL_STATES)),
+            name="ck_tool_calls_state",
+        ),
+        UniqueConstraint("task_step_id", "tool_call_id", name="uq_tool_calls_step_call"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    task_step_id = Column(Integer, ForeignKey("task_steps.id"), nullable=False, index=True)
+    tool_call_id = Column(String, nullable=False)
+    position = Column(Integer, nullable=False)
+    name = Column(String, nullable=False)
+    arguments = Column(Text, nullable=False, default="", server_default=text("''"))
+    state = Column(String, nullable=False)
+    claim_token = Column(String, nullable=True)
+    intent_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    result = Column(Text, nullable=True)
+
+
 class Document(Base):
     """Knowledge-base file metadata (Phase 2 min slice)."""
 
