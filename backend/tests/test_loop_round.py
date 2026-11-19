@@ -235,21 +235,25 @@ def test_final_answer_completes_and_a_second_save_does_not_insert():
     )
     db.add(image)
     db.commit()
-    saved = save_turn(db, hold=hold, turn=_model(content="done", reasoning=""))
-    assert saved is not None
-    assert saved.phase is Phase.FINAL_ANSWER
-    job = _job(db, turn.id)
-    assert job.status == "completed"
-    assert job.exec_token is None
-    assert job.continuation_due is False
-    db.refresh(image)
-    assert image.purge_state == "pending_delete"
-    notes = db.query(Message).filter(Message.session_id == turn.session_id, Message.role == "assistant").all()
-    assert [row.content for row in notes] == ["done"]
-    again = save_turn(db, hold=hold, turn=_model(content="other"))
-    assert again is not None
-    assert again.seq == saved.seq
-    assert len(_steps(db, turn.id)) == 1
+    try:
+        saved = save_turn(db, hold=hold, turn=_model(content="done", reasoning=""))
+        assert saved is not None
+        assert saved.phase is Phase.FINAL_ANSWER
+        job = _job(db, turn.id)
+        assert job.status == "completed"
+        assert job.exec_token is None
+        assert job.continuation_due is False
+        db.refresh(image)
+        assert image.purge_state == "pending_delete"
+        notes = db.query(Message).filter(Message.session_id == turn.session_id, Message.role == "assistant").all()
+        assert [row.content for row in notes] == ["done"]
+        again = save_turn(db, hold=hold, turn=_model(content="other"))
+        assert again is not None
+        assert again.seq == saved.seq
+        assert len(_steps(db, turn.id)) == 1
+    finally:
+        db.delete(image)
+        db.commit()
 
 
 def test_forbid_stores_a_terminal_denial_for_web_and_web_fetch():
@@ -511,17 +515,21 @@ def test_cancel_open_calls_stops_the_job_and_marks_images():
     )
     db.add(image)
     db.commit()
-    assert cancel_open_calls(db, user_id=hold.user_id, generation=hold.generation) == 1
-    db.commit()
-    rows = _call_rows(db, _steps(db, turn.id)[0].id)
-    assert [(row.tool_call_id, row.state) for row in rows] == [("call-a", "result"), ("call-b", "cancelled")]
-    job = _job(db, turn.id)
-    assert job.status == "stopped"
-    assert job.exec_token is None
-    assert job.continuation_due is False
-    assert job.exec_epoch == 2
-    db.refresh(image)
-    assert image.purge_state == "tombstone"
+    try:
+        assert cancel_open_calls(db, user_id=hold.user_id, generation=hold.generation) == 1
+        db.commit()
+        rows = _call_rows(db, _steps(db, turn.id)[0].id)
+        assert [(row.tool_call_id, row.state) for row in rows] == [("call-a", "result"), ("call-b", "cancelled")]
+        job = _job(db, turn.id)
+        assert job.status == "stopped"
+        assert job.exec_token is None
+        assert job.continuation_due is False
+        assert job.exec_epoch == 2
+        db.refresh(image)
+        assert image.purge_state == "tombstone"
+    finally:
+        db.delete(image)
+        db.commit()
 
 
 def test_take_created_hold_sets_the_token_and_leaves_dispatch_empty():
