@@ -1,0 +1,255 @@
+<cursor_untrusted_data_1337 source="ReadCanvas">
+
+Canvas "Omni-Butler 改进方案｜逐项源码对照" (https://cursor.com/canvas/store-b8726c51-9083-448f-9e83-313e31fa717d/8087609c-aed6-438b-962c-e537e2c44ff4):
+
+import {Page, Section, Text, Image, Callout, TableOfContents, Properties, Table, Status, Segmented, Metrics, LinkCards, Rows, Floating, BackToTop, useState} from 'grok/canvas';
+
+type Group = 'model' | 'chat' | 'exec';
+type Source = {title: string; href: string};
+type Issue = {id: string; old: string; group: Group; title: string; problem: string; mechanism: string; python: string; coverage: string; missing: string; acceptance: string; decision: string; sources: Source[]; noMatch?: boolean; concrete?: boolean};
+const gh = (repo: string, sha: string, path: string) => 'https://github.com/' + repo + '/blob/' + sha + '/' + path;
+const H = '0e8e42164063bf426af328ef94e2001dcaf9db1f';
+const O = '79bd2c6f11fd5ad011dbe5a1c31343c46e1e5294';
+const A = '2b0b3a416d80638379dc575798a4174ab4d3e1d9';
+const R = 'd7710d687d147aeeda502d412454ab8a3829af66';
+const hermes = (path: string) => gh('NousResearch/hermes-agent', H, path);
+const release = 'https://github.com/y4483784-png/omni-butler/commit/' + R;
+const queue = gh('anomalyco/opencode', O, 'packages/app/src/session/composer/queue.ts');
+const attach = hermes('gateway/session_authority.py#L373');
+const MAIN: Issue[] = [
+ {id:'M1',old:'A1',group:'model',title:'已确认：Flash 回答 + DeepSeek 独立 Search / Fetch',
+ problem:'release d7710d68 仍是 Flash 聊天补全，网页搜索由服务器另调智谱；请求不带搜索工具。未合并的 PR 93 才把带 web 的回答改到 Pro Responses。官方规定 Responses 内置 web_search 只在 Pro 执行，Flash 忽略；独立 Search / Fetch 不受这个档位限制。不能把 PR 分支当作当前发布版。',
+ mechanism:'优先参考官方 DeepSeek Harness 的 DeepSeekSearchApiProvider.search / dispatchDeepSeekWeb：单独 POST /v1/tools/search，取回链接、摘要或正文，不替换对话模型。Hermes 也把 web_search_tool 与聊天模型分开。',
+ python:'按本轮确认接入 M2 的正式工具循环：Flash 自主判断需要搜索时，调用独立 Search / Fetch；应用执行、保存并回填来源与正文，Flash 看结果继续回答。搜索提供方替换现有智谱网页搜索，但不替换聊天模型。默认有搜索能力，无联网开关；重要写入另过执行层确认。',
+ coverage:'已有独立搜索调用链与 HTTP 传输参考；本轮用户已确认用 Flash 回答，不再保留为待选架构。',
+ missing:'方向已确认；剩 Search/Fetch 参数、来源格式、错误处理及 M2 生产接线，不再把搜索挂法列为产品待决定。',
+ acceptance:'寒暄走 Flash；新闻查询返回可点击来源且回答仍为 Flash；同轮不调用智谱网页搜索；无搜索轮次不算成 Pro。',decision:'2026-11-19 用户已确认；替代 PR 93 的 Pro 耦合旧方案，旧版仍不合。仅计划确认，未实施。',
+ sources:[{title:'主参考 · Harness ca33fd68 · search.ts · DeepSeekSearchApiProvider.search',href:gh('deepseek-ai/deepseek-harness','ca33fd6843b205e279c7ccb6cb73a472c78f5760','packages/web/web-deepseek-api/src/search.ts#L98')},{title:'同一调用链 · transport.ts · dispatchDeepSeekWeb',href:gh('deepseek-ai/deepseek-harness','ca33fd6843b205e279c7ccb6cb73a472c78f5760','packages/web/web-deepseek-api/src/transport.ts#L116')},{title:'补充 · Hermes · web_search_tool',href:hermes('tools/web_tools.py#L302')}]},
+ {id:'M2',old:'A2；A4 的工具轮',group:'model',title:'工具执行后让模型继续回答，并保留必要的思考字段',
+ problem:'本轮查到 release 的 _refuse_outbound 拒绝带工具或思考内容的出站请求，生产聊天不把 tools 和工具结果送回模型；现在主要是服务器先执行，再请模型写回答。旧 PR 93 审计也发现 stream_chat 回放路径未接入生产调用。普通多轮不回放思考是合理现状；真正进入工具续写时才有相应回传要求。',
+ mechanism:'优先 Hermes 的 Python 循环：_run_conversation_turn 调 run_tool_round，先校验并保存带 tool_calls 的助手消息，保存失败就不执行工具；工具结果回到下一次请求。build_assistant_message 保存 reasoning_content。其 DeepSeek 兼容处理会对缺失文本补空格，但这只是实现参考，不能不核对供应商规则就照抄。',
+ python:'正式聊天接模型工具循环：自主选择工具→应用校验和执行→保存结果→模型看结果继续。该循环用于 SuperAgent 总体模式下的独立后台执行者，不把交互派活与后台干活合成单个循环。Hermes 只作 Python 工具循环零件，不替代 SuperAgent。默认可搜索，遵守明确不搜要求，无联网开关；重要写操作在执行层先确认。工具续轮按接口保留完整思考字段；普通轮不回放，reasoning_content 与 thinking 块/签名不混用。',
+ coverage:'本轮新增了真实 Python 工具循环、先存后执行和思考回传源码；不再是“未查 Python 实现”。尚不是本产品确认卡与流式输出的完整接线。',
+ missing:'M1/M2 方向已确认；工具注册、跨轮续流、确认等待/恢复、失败与重启接线仍需实现。required/指定工具与思考模式按官方规则适配，不能照抄兼容补空格即宣称完成。',
+ acceptance:'能观察到提出工具、应用执行、结果回填和继续成文；卡片确认前无写入；带工具多步不因遗漏思考回传而 400。',decision:'2026-11-19 用户已确认接正式工具循环；保留 SuperAgent 总体分工，未授权本轮改代码。',
+ sources:[{title:'主参考 · Hermes · conversation_loop.py · _run_conversation_turn',href:hermes('agent/conversation_loop.py#L1617')},{title:'先保存再执行 · turn_tool_round.py · run_tool_round',href:hermes('agent/turn_tool_round.py#L50')},{title:'思考回传 · chat_completion_helpers.py · build_assistant_message',href:hermes('agent/chat_completion_helpers.py#L1617')}]},
+ {id:'M3',old:'A3、A5',group:'model',title:'已确认：分任务配置模型，聊天原图直接交 Flash',
+ problem:'这是策略缺口，不是已证明的故障。回答常省略温度、top_p、输出上限，实际使用供应商默认。32000 与最近十轮是应用裁剪，不是模型总窗口，也不直接算缺陷。图片目前在入库时识别；应用并发与供应商额度不是同一口径。不能把 PR 93 中的角色设想写成发布版已全面落实。',
+ mechanism:'优先 Hermes：call_llm(task=...) 为辅助任务单独解析模型、提供方、温度、输出预算和思考；主回合仍保留 agent.model。record_response_usage 读取响应用量，没有 usage 时只计调用次数，不编造 token。vision_message_prep 区分直接传图和先转文字。',
+ python:'不同任务分别配置模型、参数与用量；具体模型角色数值尚未逐项确定，不编造默认。聊天原图直接传 Flash，不先用智谱转文字再问 Flash；资料入库图片摘要是另一条路线，按 M4 保留。官方当前模型表已核对 deepseek-flash 支持 Vision、deepseek-v4-pro 不支持，旧 deepseek-v4-flash 别名路由当前 Flash；支持能力不等于本项目已传原图或实测通过。缺失用量标未知，费用如何展示仍属实现细节。',
+ coverage:'已有角色分离、用量记录与图片准备的源码参考；不能由参考推导本产品默认值或实际费用。',
+ missing:'分任务配置与原图路线已定；具体角色参数值、图像请求封装、用量呈现及裁剪重核仍待实现，不再重复询问是否传图。',
+ acceptance:'配置能对应实际请求与用量；聊天原图实际送达 Flash、非先转文字；入库摘要路线不受影响；32000/十轮标为应用裁剪，缺失用量不写零。',decision:'2026-11-19 用户已确认分任务配置、用量管理及聊天原图路线；尚未实现/实测。',
+ sources:[{title:'主参考 · Hermes · auxiliary_client.py · call_llm',href:hermes('agent/auxiliary_client.py#L7856')},{title:'用量 · turn_usage.py · record_response_usage',href:hermes('agent/turn_usage.py#L143')},{title:'图片 · vision_message_prep.py',href:hermes('agent/vision_message_prep.py#L188')}]},
+ {id:'M4',old:'A7',group:'model',title:'已确认：只换网页搜索，其余智谱资料链保留',
+ problem:'已定同一轮不走智谱网页搜索；但 2026-10-20 的决定仍保留智谱嵌入、重排与识图，直到另选替代。保留智谱本身不是缺陷，也不意味着已获准删除全部依赖。',
+ mechanism:'以下只作未来迁移资料，当前不启动：Agent Zero 的独立 embedding_model 配置槽与聊天模型分离，配置变化发 embedding_model_changed 并触发 memory_reload。这仅证明配置分离与重载，不证明向量兼容或本仓库索引迁移已完成；当前网页搜索参考 M1 即可。',
+ python:'本轮只替换智谱网页搜索并清理其调用/死引用；嵌入、重排、资料入库识图继续保留，不在当前范围迁移。聊天原图直传 Flash 按 M3 单独接入，不能误删资料入库路线。未来若另评估迁移嵌入，才再核模型版本、重建向量与切换/回退，维度相同也不直接混用。',
+ coverage:'新增嵌入配置切换/重载的部分参考；在本轮读过的 Hermes、Agent Zero、Rowboat 相关范围，未读到重排提供方切换。不是全网没有。',
+ missing:'当前仅需完成搜索替换并验证现有知识/记忆链不回归。其余供应方未来另评估；重排切换未找到参考不再占当前待决策问题。',
+ acceptance:'聊天无智谱网页搜索调用及死引用；原检索/识图保持可用，或在批准后完成迁移与索引重建。',decision:'2026-11-19 用户已确认范围：只换网页搜索，智谱嵌入/重排/入库识图保留。',
+ sources:[{title:'主参考 · Agent Zero 2b0b3a41 · get_embedding_model_config',href:gh('agent0ai/agent-zero',A,'plugins/_model_config/helpers/model_config.py#L825')},{title:'同文件 · 配置变化与 memory_reload',href:gh('agent0ai/agent-zero',A,'plugins/_model_config/helpers/model_config.py#L200')}]},
+ {id:'M5',old:'A6',group:'model',title:'顺手维护：环境变量模板与默认说明',
+ problem:'此前源码对照发现 .env.example 模板与 config.py 默认名字不同：embedding-3-pro / glm-4v-flash 对 embedding-3 / glm-4.6v。这只是模板和代码默认的差异，不证明生产实际模型配置错误；本轮没有核实生产环境变量或运行时配置。',
+ mechanism:'这是本仓库的具体配置不一致，不需要为了覆盖率找开源项目。',
+ python:'随相关配置改动顺手对齐模板说明，写清环境变量覆盖和未填写时的默认。不据此升级模型或迁索引，不单独占用主要功能决策。',
+ coverage:'源码模板差异有证据，但不是生产运行配置核验；无需开源参考。',missing:'维护时核对实际配置加载说明即可，不再列为用户待决策项。',
+ acceptance:'模板准确说明默认及覆盖规则；不冒称生产实际配置已核实。',decision:'2026-11-19 已降为顺手维护，不占主要功能问题和用户决策。',concrete:true,
+ sources:[{title:'本仓库 · release · .env.example',href:gh('y4483784-png/omni-butler',R,'.env.example#L25')},{title:'本仓库 · release · core/config.py',href:gh('y4483784-png/omni-butler',R,'backend/app/core/config.py#L36')}]},
+ {id:'M6',old:'A8',group:'model',title:'正常工具规则：遵守明确不搜索要求，不另设开关',
+ problem:'用户已明确：遵守“不搜索”等要求属于正常工具调用常识，不应拆成一项项产品问答。默认有搜索能力、由模型结合任务判断，不做联网开关。不能靠特定短语把全部意图路由成固定分支。',
+ mechanism:'沿 M2 的工具选择和统一权限约束遵守本次明确要求，不为凑参考另造短语开关。此前没有找到单句工具集开关的记录保留为研究边界，不再把它当成阻塞产品决定。',
+ python:'交互派活层理解任务和明确约束，将作用范围传给后台；执行层按同一约束核对工具调用。正常遵守不搜索要求，具体约束表示/测试还需实现；不把关键词匹配器当整体意图路由，不新增常驻联网开关。',
+ coverage:'作为普通工具调用规则纳入 M2/T2；不是单独缺参考的产品议题。',missing:'约束如何随任务传递、限定范围和回归测试仍需实现，无需再问用户做不做禁网。',
+ acceptance:'明确要求不搜的任务不发搜索请求；普通任务仍默认可用搜索，无常驻开关，不以关键词硬路由全部消息。',decision:'2026-11-19 已作为正常规则确认，不再是待产品决策。',sources:[],noMatch:false},
+ {id:'T1',old:'B1',group:'chat',title:'进行中可以继续聊，新话不自动杀旧工作',
+ problem:'release 页面忙时拒绝再发，begin_turn 会停止同会话未结束的普通回合。本轮报告同时指出部分“确认单标记”回合有豁免；豁免的准确范围见 T2，不把“所有等人状态都被停”当成已证实事实。已定目标是去掉常驻停止按钮、仍能补充聊天，不是只藏按钮。',
+ mechanism:'总体继续沿用 DeepSeek dsh-superagent-prototype 的“交互派活与后台干活分开”，不是本轮自创聊天架构。OpenCode queue 只借鉴局部收件/排队、显式改向和停止分离；其默认 steer 不照搬。Hermes loop 只给后台执行者提供循环零件。',
+ python:'保留持续交互/派活层接收并回答消息；它判断消息是补充旧任务、修改、新任务还是取消，再交给对应后台执行者。不同任务独立推进，不让所有消息进入同一串行队列，也不是一律 steer。去掉常驻停止按钮；明确文字取消仍有效，不因取消按钮消失扩大授权。',
+ coverage:'总体模式已由用户重申；已有局部队列/改向源码仅作辅助，不能以零件替代总体分工。',missing:'对应任务识别、持续交互与后台事件接线、服务端持久化、前端呈现仍需实现；不是再次选择整体架构。',
+ acceptance:'长任务中能补一句，原工作不自动标停止；无常驻停止按钮，但明确取消与停滞保护仍可用。',decision:'2026-11-19 用户已确认保留 SuperAgent 分工；撤回“所有新消息默认排同队”的主架构建议。',
+ sources:[{title:'主参考 · OpenCode 79bd2c6f · createSessionQueue',href:queue},{title:'必须注意的默认值 · settings/model.tsx',href:gh('anomalyco/opencode',O,'packages/app/src/settings/model.tsx')},{title:'Python 补充 · Hermes · 队列提交',href:hermes('gateway/session_authority.py#L746')}]},
+ {id:'T2',old:'B2',group:'chat',title:'分清补充、改向、独立话题与取消',
+ problem:'普通回合受 begin_turn 停旧轮机制影响，无法自然支持边做边聊。旧记录称等确认后新话也可能停代际，但本轮 T1 读到确认单标记豁免；哪些 waiting_person 受豁免尚未逐路径统一，保留为接线复核点，不扩大结论。',
+ mechanism:'四类消息由持续交互派活层理解并关联任务，沿 SuperAgent 总体模式。OpenCode 队列/显式改向/移除，以及 Hermes steer/redirect 的差异只作局部机制参考；它们不是整套交互判定器，不能把新话全部当 steer。',
+ python:'识别补充、修改、新任务、取消，关联到正确任务；只有歧义真正影响动作才追问，不每句补充/改向都再要一张确认卡。文字明确取消仍生效，取消范围不能误伤其他任务。重要执行确认在后台干活层，不挪到派活层，也不因持续聊天自动扩大授权。',
+ coverage:'用户已确认分工与消息语义；既有动作原语可借，不声称一个库已解决全部自然语言任务归属。',missing:'同句多意图、任务指代、歧义追问样例、多窗口并发与确认单边界仍需具体接线/测试；产品方向不再悬而未决。',
+ acceptance:'四类消息测试表现不同；取消不误伤未点名任务或卡；普通补充不自动中止执行。',decision:'2026-11-19 用户已确认四类交互由派活层处理，歧义影响动作才问；不是重设计聊天主架构。',
+ sources:[{title:'主参考 · OpenCode · queue / steer / remove',href:queue},{title:'Python 补充 · Hermes · AIAgent.steer',href:hermes('agent/interrupt_control.py#L310')}]},
+ {id:'T3',old:'B3 的已知机制',group:'chat',title:'已确认：服务端持久任务，断线继续、重连读状态',
+ problem:'输入“停止”尚不是明确取消入口；停止按钮或断开 SSE 影响本轮状态/连接，release 没有独立供应商取消调用。已发出的请求未必能撤回。历史上偶发 artifact/done 或缓冲片段冲出，本轮仍未重读缓冲路径，留 R-B3。',
+ mechanism:'优先 Hermes 会话订阅：attach 增加订阅者，detach 去掉一路；还有订阅者则继续，最后离开时延后到空闲再关闭，重连可撤回关闭。真正 interrupt 单独带当前代际，避免旧取消伤下一轮。其“最后订阅者离开后关闭”策略不照搬；本轮已确认网页断线不取消后台。',
+ python:'任务、步骤、工具结果、确认和状态持久保存在服务端数据库，沿现仓记录系统承接，不指定新数据库产品。网页断线不取消后台，重连读取状态；服务重启恢复仍需实现。旧代次/迟到结果不得覆盖新状态；未知写入只查询、不重新执行；缺失用量标未知，不填零。明确取消按 T2 作用到目标任务。',
+ coverage:'有连接与执行分离、代际隔离的部分参考；未读到完整“取消后清空缓冲 token”和中止后补记部分费用机制。供应商取消接口本轮未查。',missing:'服务端持久记录的具体接线、重连补状态、服务重启恢复、未知操作查证、代次防护与缺失用量处理。供应商取消能力仍未核实，不承诺撤销已接受请求或停止计费。',
+ acceptance:'断线不暗中标已取消；取消后迟到内容不再展示为继续回答；用量来自响应或明确未知。',decision:'2026-11-19 用户已确认服务端持久化、断线继续与重连读状态；恢复与对账未实现。',
+ sources:[{title:'主参考 · Hermes · attach / detach 与代际',href:attach},{title:'用量参考 · record_response_usage',href:hermes('agent/turn_usage.py#L143')}]},
+ {id:'T4',old:'B5；D4 时钟部分',group:'chat',title:'看门狗按最近进展计时，而非只看创建时间',
+ problem:'本轮复核 release：watchdog._silence 按 now-created_at-扫表空档计算，20 分钟且 running 即停止，并非距最后一次输出。仍在输出的长任务可能被停；waiting_person 不在停止集合。load_runs 扫全部 TaskRun 是另一问题，见 R4。',
+ mechanism:'优先 Hermes：session_activity 写 last_activity_at（最多每 60 秒落一次），session_stall 从最近活动快照计算空闲，明确不使用回合开始或入站时间。其默认 300 秒只通知、不杀进程；这不是本产品已选的超时值或安全停止实现。',
+ python:'按最近真实活动/进展记录观察，不按创建满 20 分钟强停。无进展先检查并报告，不沉默认定失败；避免刷重复提醒。等人确认、外部等待分开记录，不伪造心跳。明确失败或用户取消再结束，不照搬固定时长自动杀任务的策略。',
+ coverage:'本轮新增 Python 最近活动看门狗参考，替代旧“未查”；只覆盖活动时间与检测，未覆盖本产品完整硬停止/恢复。',missing:'最近进展字段、检查触发与去重提醒、外部等待分类需实现；具体检查间隔尚无数值，不编造。扫全表和重启恢复另处理，不再把“只通知还是强停”列为产品待决定。',
+ acceptance:'有真实进展的长任务不停；无进展先有检查/报告且不刷屏；等人不误判；明确失败或取消才结束。',decision:'2026-11-19 用户已确认按进展检查报告，不以创建时间或沉默直接判失败。',
+ sources:[{title:'主参考 · Hermes · session_stall.py（最近活动检测）',href:hermes('gateway/session_stall.py')}]},
+ {id:'T5',old:'B4',group:'chat',title:'同会话两个窗口共享任务状态，不互相打断',
+ problem:'忙碌状态目前在浏览器内存，两个窗口不共享；后到的普通 begin_turn 会停先发回合。切去另一会话不会中止当前工作。本轮没有新做多窗口活体。',
+ mechanism:'借 Hermes 同会话多订阅者（T3），复用服务端任务记录与消息归属。第二客户端 attach 不另造执行，一边断开不取消后台。OpenCode queue 只在确需排队的局部使用，不能把多窗口所有新话默认排成单队。',
+ python:'服务端为任务/步骤/确认的权威状态，多窗口读同一记录与进度，第二窗口消息经持续交互派活层关联任务，不一律排同队。过期确认拒绝，同一操作只能执行一次；单窗断线不取消后台。不能只同步前端忙碌布尔值。',
+ coverage:'已有共享会话订阅和非中断队列两段参考，不是整套多窗口产品已搬入本仓库。',missing:'状态广播、重连补状态、并发竞争下的一次执行/过期拒绝及 T2 共用入口需实现与测试，方向已定。',
+ acceptance:'两窗口看见同一任务运行；第二窗口补充不自动取消第一窗口工作；单窗断开不影响另窗。',decision:'2026-11-19 用户已确认服务端权威状态、多窗口一致、过期确认拒绝、同操作不重复。',
+ sources:[{title:'主参考 · Hermes · 会话 attach / detach',href:attach},{title:'队列补充 · OpenCode',href:queue}]},
+ {id:'X1',old:'C2',group:'exec',title:'真实邮箱接受后才显示已发送',
+ problem:'本轮复核 release：commit_send 本地生成 uuid4、写 MailAcceptance 并调 note_external_success，没有交给 Gmail 或 SMTP。本地记录不是发送凭据，mailto 也不算发出。',
+ mechanism:'本轮新读清 DS-Bot：mail_send 先 pending，选 Send 后 session.send；transport.js 的 send 等 smtp.sendMail 或 Gmail users.me.messages.send 返回，再给 messageId，异常置 failed。因此旧“完全没找到真实发送”应更正。但它未核 accepted/rejected、可能按允许名单跳确认，不能当完整邮件闭环样例。',
+ python:'沿用本仓库确认单，确认后一次性消耗再调提供方；按所选 API 的接受语义记录回执，再记外部成功。本地 UUID 或客户端生成的 Message-ID 都不能冒充提供方接受证明。SMTP 并不保证返回远程消息 ID；若选 SMTP 必须另定义接受证据。超时/断线标未知、先查不重发；若响应丢失且无远程 ID，如何查询仍未解决，不能假设“总有 id 可查”。',
+ coverage:'已有真实 SMTP/Gmail 调用返回后再报成功的部分参考。未找到同时覆盖强制确认、接受证据、重复确认去重和未知先查询的完整对口模块；接受也不等于最终投递到收件箱。',
+ missing:'邮箱提供方、凭证接法、接受证据定义、响应丢失后的查询键/接口、重复确认与崩溃恢复。',
+ acceptance:'服务接受后才报已发送；失败/未知不冒充成功；重复确认不多发；响应丢失不自动重发。',decision:'2026-11-19 用户已确认：真实邮箱接受才已发送、强制确认、超时先查不重发；不等于对方已收到。未知对账接线仍缺。',
+ sources:[{title:'主参考 · DS-Bot 5e9b7da8 · mail_send / transport.js 的 send（本轮按提交核对）',href:'https://github.com/Fei2411/DS-Bot/commit/5e9b7da8882da3b68d8a0624342708c2150a9156'},{title:'本仓库 · release · 本地接受记录的复核基线',href:release}]},
+ {id:'X2',old:'C1',group:'exec',title:'日历写入成功后记回执，同一确认不重复建事件',
+ problem:'本轮复核：event_inbox 的 note_external_success 已有，但查到的业务调用是 mail_entry._seal，日历确认 HTTP 路径仍未接上。既有方向是在真实日历写入成功后记 external_success，不是生成文字就算成功。',
+ mechanism:'优先 Hermes 的 calendar_create：events.insert 返回 result[id] 后才打印 created，删除用 eventId。这仅是“远程返回 ID 后报成功”；重复 create 仍可能插入，不能当幂等实现。',
+ python:'沿现有确认单执行一次，保存返回 event ID，再记录对应 external_success；已有 ID 的重入按 ID 查询，不用标题模糊匹配，不擅自把重复确认变成更新。若插入成功但响应丢失、ID 没落库，靠返回 ID 仍无法去重，必须另外确定提供方支持的稳定请求/事件标识或查询办法，未定前保持未知不重插。',
+ coverage:'新增日历真实插入与返回 ID 的部分参考；没有完整确认单幂等、丢响应对账模块。',missing:'确认 HTTP 的具体接入点、重复回执去重、响应丢失前后的稳定查询键和恢复流程。',
+ acceptance:'真实写入成功后收件箱只有一条对应 external_success；失败不记；重复确认/丢响应不多建事件。',decision:'2026-11-19 用户已确认事件 ID → 任务/事件收件箱成功回执；幂等、丢响应对账仍需具体接线。活体统一放在整体实现后。',
+ sources:[{title:'主参考 · Hermes · google_api.py · calendar_create',href:hermes('skills/productivity/google-workspace/scripts/google_api.py#L579')}]},
+ {id:'X3',old:'C3',group:'exec',title:'订单回包保留对账关联，只查询、不再下单',
+ problem:'本轮复核 release：下单前 arm_remote_claim，头带 Idempotency-Key；_public 只返回 outcome/order_id/told/clicks_after_wall，未带武装号。正文“已下单”缺回声会对不上；同时 outcome=placed 且回声为空的分支仍可能记 placed，不能概括为“没有号就绝不会成功”。未知走 _reconcile，本轮没有发现它因此重新下单。',
+ mechanism:'在本轮读过的开源范围内，仍未找到“公开回包保留关联句柄、原操作对账、不重新下单”的完整对口实现。其他项目的本地出站去重、WebSocket correlation_id 不等于订单对账，不拿来凑参考。',
+ python:'操作关联号完整穿过请求与回包，服务返回商家订单号，结果关联原操作；敏感支付/登录材料继续过滤。未知只查原单，不重新下单。优先连接器，没有合适接口才用网页；浏览器后端优先核对 Hermes 已接 Browser Use 的集成，不从头造，也不替代 SuperAgent。Flash 适配、执行前确认能否拦住网页写入、结构化结果/证据回传待源码核对与实测；候选依赖尚未选定。',
+ coverage:'订单对账仍没有完整对口模块。新增的是用户认可的浏览器研究方向：Poke 案例体现后台云浏览器的产品分工，不能证明用了 Stagehand；Vesta 展示 API+浏览器、结构化结果和 PDF 证据；Hermes+Browser Use 是开源集成线索，不是市场付费证明。',missing:'关联字段协议与商家查单接口、未知判定/恢复；候选浏览器的 Flash 兼容、确认闸和结果回填需核源码/测试，不把案例当安装或验收。',
+ acceptance:'浏览器通道结果能对应原操作；不符/缺证据明确未知；不自动重下单，不泄露支付或登录材料。',decision:'2026-11-19 用户确认关联号贯穿回包、返回商家订单号、未知只查不重下；认可优先核对 Hermes + Browser Use 的研究方向，未选依赖、未授权实施。',sources:[{title:'本仓库 · release · errands / errand-compose 的复核基线',href:release},{title:'Poke 产品案例 · 后台云浏览器（不能推断 Stagehand）',href:'https://www.browserbase.com/blog/case-study-interaction'},{title:'Vesta · API + 浏览器、结构化结果和 PDF 证据',href:'https://browser-use.com/posts/vesta'},{title:'Hermes + Browser Use · 开源接法候选',href:'https://browser-use.com/case-studies/hermes'}],noMatch:true},
+ {id:'X4',old:'C4',group:'exec',title:'每个真实本机步骤出卡，确认一次执行一次再继续',
+ problem:'本轮已复核 release：已有确认后 perform，但安装包主要是两个固定探测按钮（打开 /tmp/ev-desktop-probe.txt、运行 /usr/bin/true）；网页聊天不渲染 desktop 卡。与按实际任务步骤生成动作卡仍有差距，不再标为“本次未重审”。',
+ mechanism:'优先 OpenClaw 的 ExecApprovalLifecycle：卡显示 request.command，一次决定结算后再结算返回 false，消费 allow-once 后继续同一路执行。补充 FullDots approvalGate 以动作参数指纹关联确认，approved→consumed 后不能二次消费，同 threadId 恢复；但门本身不执行本机命令。',
+ python:'把计划中即将执行的具体动作形成卡，绑定动作和参数，沿现有 ScheduleConfirmClaim 确认、消费一次、perform，再回同任务下一步。不能让模型续写时换参数；续跑仍需重新核对。保留探测按钮作诊断不等于完成产品路径。OpenClaw 的自动复核/allow-always、FullDots/OpenSuperBot 的规则跳过、Rowboat 的自动允许均不抄。',
+ coverage:'已有动作可见、单次消费和确认后续跑的部分源码；不是可直接插入的完整桌面产品，也不代表一步一张的切分规则已定。',missing:'如何从计划产生精确动作、参数绑定与变化失效、一步切分、拒绝/过期/异常后的界面和续跑。',
+ acceptance:'卡片与真实动作一致；未确认不执行；同令牌不二次执行；确认后继续下一步，参数变了重新确认。',decision:'2026-11-19 用户已确认：后台规划本机动作 → 具体设备/文件/操作卡 → 确认执行 → 回原任务。只面向安装包设备，服务器网页端不开放本地工具；不抄自动允许。',
+ sources:[{title:'主参考 · OpenClaw 069c3e2b · ExecApprovalLifecycle',href:gh('openclaw/openclaw','069c3e2b02bcdac1f9030e4a4eb6d021e2607176','src/gateway/exec-approval-lifecycle.ts#L418')},{title:'补充 · FullDots e625654e · approvalGate',href:gh('asasemahmed/FullDots','e625654e779149738847ea286fa21a3d5d43b803','src/server/approval-gate.ts#L609')},{title:'补充 · Rowboat Harbor · 批准记录后恢复调用（不抄自动允许）',href:gh('rowboatlabs/rowboat','c37ffda3b002499da5b0d76785cc7c3275be1a7f','apps/harbor/packages/server/src/core/invocations.ts#L419')}]},
+ {id:'X5',old:'C5',group:'exec',title:'每台桌面设备独立登记和作废',
+ problem:'release 仍用共享 DESKTOP_PACKAGE_TOKEN。ChatRequest 自报 desktop 继续被拒；网页登录不等于本机许可。已定要设备独立凭证，不是一枚共享令牌。',
+ mechanism:'优先 OpenMausBot DeviceRegistry：authenticate 对令牌作 SHA-256、恒定时间比较；仅存 tokenHash，list 不返回哈希；revoke(id) 单独作废，保存失败回滚。本轮确认旧钉 083fd7b 的机制在 HEAD 35d04429 仍在。',
+ python:'设备表只存哈希，认证用 hmac.compare_digest，设置页按设备 ID 作废，不影响其他设备。凭证只证明登记过的桌面，不代替每次动作确认。网页自报 desktop 仍拒绝。不搬手机配对、中继或端到端协议；也不照抄其他项目按设备字符串批删旧行的行为。',
+ coverage:'哈希登记、认证和单设备作废的机制参考较完整；配对颁发、存储和本产品设置界面不在其直接覆盖内。',missing:'谁有权配对/发令牌、数据库结构、令牌展示一次后的保管、作废传播、设置入口。',
+ acceptance:'登记后才可做本机动作；作废一台不影响其他台；网页冒充被拒；设备凭证不绕过动作卡。',decision:'2026-11-19 用户已确认每台设备独立登记、哈希凭证、单独撤销；参考 OpenMausBot。配对/存储接线待实现，不代替动作确认。',
+ sources:[{title:'主参考 · OpenMausBot 083fd7b · DeviceRegistry（HEAD 35d04429 复核仍在）',href:gh('milind-soni/OpenMausBot','083fd7b51405e6d0c01e189b2f65ab0322509b5a','companion/src/devices.ts')},{title:'Python 补充 · Open Super Agent · check / revoke',href:gh('kadaliao/open-super-agent','3a0303559c7dc3d3b83142e59da636c872df6e65','osa/computer/link.py#L42')}]}
+];
+const HISTORY = [
+ {id:'R-B3', old:'B3 中偶发 SSE', title:'停止后 artifact/done、缓冲片段冲出',status:'未重证',detail:'本轮未重读 stream_chat 缓冲与偶发发送路径。已知断线/取消机制在 T3；这些历史细节不冒充新发现，也不当已关闭。'},
+ {id:'R1',old:'D1',title:'形式模型、Actions、回归和证据文件',status:'未重证',detail:'旧合入记录称模型覆盖偏窄、检查器未进 Actions，单元回归与证据文件有缺口。本轮未重读；保持历史待复核，不当当前合并阻断。'},
+ {id:'R2',old:'D2',title:'已完成代际收到事件时可能再开 running',status:'本轮局部复核',detail:'event_inbox._route_act 对点名 completed 的非邮件事件会 _open_task→open_alongside，再开一个 running；邮件来源在 _open_task 记 received，不另开回合。旧记录符合本轮所读路径；是否改变是产品取舍，和 T1 一起看，不升级成已决定修复的缺陷。'},
+ {id:'R3',old:'D3',title:'记忆的默认用户号、放弃与代际',status:'部分复核',detail:'list_memories（memory.py 第 587 行）仍把空用户号归到 1，settle_pending 仍在。放弃是否改原行、省略 generation 是否仍抽取，本轮未逐行重读；后两项保持待复核。'},
+ {id:'R4',old:'D4 其余',title:'看板扫全部历史与重启恢复',status:'部分复核',detail:'创建时间时钟已并 T4；load_runs 仍 query(TaskRun).all() 后过滤。旧“进程内账本重启即丢”本轮没追完对象生命周期，不能和扫全表一起写成均已重证。持久化/恢复仍待查。'},
+ {id:'R5',old:'D5',title:'执行面边界与 ToolContext 构造',status:'部分线索，仍待复核',detail:'服务端执行面仍是 WEB；本轮未重读全部直接构造和边界测试。route_intent 只找到 workflow.py 第 877 行定义，未找到调用方；不能据此断言所有路由已失效。与 X4/X5 共查。'},
+ {id:'R6',old:'D6',title:'流程图分支回到结束、字体和导出一致',status:'图表达待复核',detail:'这是图的表达问题，不等于程序不能结束。原桌面“Omni-Butler 已审查流程图”01 至 14 不覆盖；11/19 新图只是预期目标讨论图，不放入已审查实现文件夹，也不因此关闭本项。'},
+ {id:'R7',old:'D7',title:'未知写入与确认句泄露',status:'未逐条重证',detail:'旧记录：空 403 当明确拒绝；arm 后请求前崩溃保持未知不能重发；生产工具未填 unknown_write；凭证发布失败可能流出确认句。本轮只确认 UnknownWrite 类型及测试构造仍在，不能声称生产路径已会填它。做 X1/X2 时再逐项复核。'}
+];
+const MAP: string[][] = [
+ ['A1','M1','已确认 Flash + 独立 Search / Fetch；旧 PR 93 不合'],['A2','M2','生产工具循环'],['A3','M3','已确认分任务模型/参数/用量；具体数值不编造'],['A4','M2；合理现状','工具轮回传；普通轮不回放不是缺陷'],['A5','M3；合理现状','32000/十轮是裁剪；聊天原图直传 Flash 已定，入库摘要另算'],['A6','M5','模板差异降为顺手维护；未核实生产配置'],['A7','M4','只换搜索，其余智谱嵌入/重排/入库识图保留'],['A8','M6','正常遵守明确要求，无联网开关，不再单列产品决定'],
+ ['B1','T1','保留 SuperAgent 交互派活/后台干活分工'],['B2','T2','补充/修改/新任务/取消已定，具体接线待实现'],['B3','T3；R-B3','持久任务、断线继续已定；缓冲历史仍待复核'],['B4','T5','同会话多窗口'],['B5','T4','按最近进展计时'],
+ ['C1','X2','日历真实回执与幂等'],['C2','X1','邮件真实接受'],['C3','X3','订单关联只对账'],['C4','X4','实际步骤动作卡'],['C5','X5','设备独立凭证'],
+ ['D1','R1','历史待复核'],['D2','R2','本轮局部复核，不直接判缺陷'],['D3','R3','部分复核'],['D4','T4；R4','时钟与扫表已复核，重启丢失未核完'],['D5','R5','边界测试未全读'],['D6','R6','图表达，不等于代码故障'],['D7','R7','逐条待复核'],['E1','工作约定','一次一块、独立审查、由用户决定合并、不部署'],['E2','验证范围','每刀单测/形式/审查；活体端到端整体实现后统一']
+];
+const LABEL: Record<Group,string> = {model:'模型接入',chat:'边做边聊',exec:'实际执行闭环'};
+function issueSection(i: Issue) {return <Section key={i.id} id={i.id.toLowerCase()} heading={i.id+' · '+i.title} caption={'原编号 '+i.old} collapsible={i.id==='M5'||i.id==='M6'} defaultOpen={i.id!=='M5'&&i.id!=='M6'}>
+ <Status tone={i.id==='M5'?'neutral':'accent'}>{i.decision}</Status>
+ <Properties items={[
+  {label:'当前问题与证据',value:i.problem},
+  {label:'优先借鉴的已有机制',value:i.mechanism},
+  {label:'如何接入现有 Python',value:i.python},
+  {label:'参考覆盖 / 仍缺',value:i.coverage+' 仍缺：'+i.missing},
+  {label:'验收',value:i.acceptance},
+  {label:'决策状态',value:i.decision+' 本页更新不表示已实现或验收通过。'}
+ ]}/>
+ {i.sources.length > 0 ? <Section heading='源码证据' collapsible defaultOpen={false}><LinkCards links={i.sources}/></Section> : null}
+ </Section>;}
+export default function App(){
+ const [group,setGroup] = useState<'all'|Group>('all');
+ const visible = MAIN.filter((i: Issue)=>group==='all'||i.group===group);
+ const noMatch = MAIN.filter((i: Issue)=>i.noMatch);
+ const partial = MAIN.filter((i: Issue)=>!i.noMatch&&!i.concrete&&i.id!=='X5'&&i.id!=='M6');
+ return <Page title='Omni-Butler 改进方案｜逐项源码对照' lang='zh-Hans' width='column' summary='2026-11-19 更新（新加坡时间）。已同步本轮确认：保留 SuperAgent 总体分工，Flash 多模态与独立搜索，后台工具执行和服务端持久状态。下列是预期计划，不是实现完成；PR 93 旧版仍不合。' sources={['https://my-tierroom.party/explore?view=list','https://my-tierroom.party/catalog.json','https://my-tierroom.party/api.md',release,'https://github.com/y4483784-png/omni-butler/pull/93']}>
+ <TableOfContents title='阅读顺序' items={[{label:'本轮改了什么、没做什么',id:'overview'},{label:'结构与语言方向',id:'architecture'},{label:'全项目预期结构图',id:'target-diagram'},{label:'逐项方案与源码',id:'main'},{label:'仍需接线与核对',id:'gaps'},{label:'历史项逐条复核情况',id:'history'},{label:'原 27 项去向',id:'map27'},{label:'来源、许可和验证边界',id:'sources'}]}/>
+ <Section heading='本轮改了什么、没做什么' id='overview'>
+ <Callout lead='本轮确认已写入，不再重复列为待决定' tone='info'>继续采用 SuperAgent 的持续交互派活 + 独立后台干活。Flash 回答并直接接收聊天原图；需要时由模型调用独立 Search / Fetch。Hermes 工具循环、OpenCode 队列只是局部零件，不替代总体架构。重要写操作在执行层确认。蓝图和本页都是目标，不表示已实施。</Callout>
+ <Text>本轮仅更新计划和预期项目结构图，不改代码、不合 PR、不部署。源码现状证据继承 11/18 查阅的 release d7710d68 与 PR 93 头 b41e74dc，不冒充 11/19 再次审仓或生产核验；按既有记录 PR 93 未合并，旧方案仍不合。“暂停”是工作约定，不是平台状态字段。下文“源码已复核”只指当时读过的路径，不代表跑过测试。</Text>
+ <Metrics metrics={[{value:String(MAIN.length),label:'原主线全部保留',detail:'含维护/正常规则，不是16项待决定'},{value:String(MAP.length),label:'原项均有去向'},{value:String(HISTORY.length),label:'历史项仍按证据分级'}]}/>
+ <Text>目录拉取到 95 份档案，其中 54 份带仓库链接、41 份不带。54 不等于 54 个已深入审查的项目；目录 yes 多来自 README，不能证明功能接通。Tucano 等本轮仅作目录候选，不冒充已读源码。</Text>
+ <Section heading='工作约定与已有目标（E1）' collapsible defaultOpen={false}>
+ <Text>已定：Flash 回答和聊天原图、独立搜索、分任务配置模型/参数/用量；只替换智谱网页搜索，其余保留；遵守明确不搜要求，无联网开关。持续交互派活与后台执行分开，新消息不自动杀旧工作，文字取消有效，无常驻停止按钮。服务端持久任务/步骤/工具结果/确认/状态，多窗口一致，旧代次不能覆盖新状态。无进展先检查报告，不按创建20分钟或沉默直接判失败。邮件真实接受、日历事件ID回执、订单关联号贯穿回包且未知只查不重下；安装包本机步骤逐张确认、设备独立凭证和撤销。每刀单测、形式检查和独立审查保留；活体端到端留整体实现后统一，不部署。确认计划不等于授权本轮实施。</Text>
+ </Section>
+ </Section>
+ <Section heading='结构与语言方向' id='architecture'>
+ <Status tone='accent'>架构方向保留；本轮确认总体分工，不是已完成的重构</Status>
+ <Text>先调整架构，不预设全换语言。后端优先借鉴机制后用 Python 接入；网页和 Electron 仍用 TypeScript。不能因为参考项目使用 TypeScript 就排除它，也不能认为整套换成 TypeScript 会自动更快、功能更全。</Text>
+ <Text>保留 11/15“先架构、不预设全换语言”的方向。本轮重申沿 DeepSeek dsh-superagent-prototype 总体模式：持续交互/派活接收消息，独立后台执行者干活，确认闸属于执行层。Hermes Python loop、OpenCode queue 只借零件，不整仓换 Hermes，不 fork 完整框架。按实际依赖、维护和性能证据评估，不因 TypeScript 排除参考，也不自动新增服务或换数据库。</Text>
+ <Text>M1 搜索挂法、M2 工具循环和 T1/T2 总体交互分工本轮均已确认，不再把“先选架构”当作前置问题。下一步是按已定分工写具体接线、故障恢复和每刀验收；Browser Use 仍仅为优先核对候选。此处不批准任何代码修改、PR、合并或部署，PR 93 旧版仍不合。</Text>
+ </Section>
+ <Section heading='全项目预期结构图' id='target-diagram'>
+ <Text>预期目标｜未全部实现｜2026-11-19 SGT。不是当前结构图、不是修复列表，图中模块是逻辑职责而非新文件路径。蓝色表示本轮确认目标，灰色由现有系统承接并补接线，橙色表示 Browser Use 候选待核对。</Text>
+ <Image src='asset:omni-target-20261119.png' alt='Omni-Butler 全项目预期结构图：网页和安装包入口、SuperAgent持续交互派活、独立后台工具循环与执行层确认闸；侧面为Flash多模态、智谱资料记忆索引、服务端持久数据库和进展看护；工具后端包含独立搜索、真实连接器、候选Hermes加Browser Use，以及安装包设备本地执行。' fit='contain' caption='主交付另附 6720×6740 高清 PNG，可放大查看；SVG 仅作备用。确认闸属于后台执行层，浏览器后端尚未选定或安装。'/>
+ <Text>顺主线读：用户入口 → 持续交互派活 → 独立后台任务执行者 → 工具通道 → 结果回聊天。外侧回流线同时承载进展与确认请求/决定，确认后回原任务步骤。服务端持久化支持断线继续和多窗口；重启恢复及未知对账还需实现。图已做中文字号、边界与线路检查，不放入桌面正式“每刀已审查”图文件夹。</Text>
+ </Section>
+ <Section heading='逐项方案与源码' id='main'>
+ <Text>每条固定六个字段：现状证据、借鉴机制、接入办法、覆盖/仍缺、验收、决策状态。已确认的方向不再以“待决定”出现；剩下是接线/核对细节，不能混称尚无方案。M5 顺手维护与 M6 正常规则默认折叠。点开源码证据可追溯既有提交；筛选不改变状态。</Text>
+ <Segmented options={[{value:'all',label:'全部',count:MAIN.length},{value:'model',label:'模型接入',count:MAIN.filter((i:Issue)=>i.group==='model').length},{value:'chat',label:'边做边聊',count:MAIN.filter((i:Issue)=>i.group==='chat').length},{value:'exec',label:'执行闭环',count:MAIN.filter((i:Issue)=>i.group==='exec').length}]} value={group} onChange={setGroup}/>
+ <Text>{group==='all'?'按 M → T → X 追溯原清单；配置维护、普通规则和合理现状不冒充主要缺陷。':LABEL[group]}</Text>
+ </Section>
+ {visible.map((i: Issue)=>issueSection(i))}
+ <Section heading='仍需接线与核对（不重问已确认方向）' id='gaps'>
+ <Text>本轮已确认的产品方向不再算作缺决定。仍区分已有机制、具体接线、故障恢复与候选核对；有源码不等于本仓库已实现。此前“只有三项缺参考”的说法继续作废，但也不再为凑覆盖率制造产品问题。</Text>
+ <Table columns={['参考状态','条目','准确含义']} rows={[
+ ['订单对账仍缺完整对口',noMatch.map((i:Issue)=>i.id).join('、'),'操作关联号和商家订单号贯通、未知只查不重下已定；完整商家对账接线仍缺，不等于全网没有。'],
+ ['已有机制，需接线',partial.map((i:Issue)=>i.id).join('、'),'工具循环、持久记录、多窗口、最近活动、发送/插入回执和动作卡均按已定方向接入；M4 未来迁移不在当前范围。'],
+ ['机制参考较完整','X5','独立登记、哈希和单设备撤销已确认；配对/存储/界面待具体实现。'],
+ ['维护 / 普通规则','M5、M6','模板说明顺手维护，生产配置未核实；明确不搜按正常约束遵守，不另列开关决策。']
+ ]}/>
+ <Section heading='实际剩余工作' collapsible defaultOpen={true}>
+ <Rows rows={[
+ {title:'按已定分工落实，不重开架构选择',detail:'M1/M2 独立搜索和工具循环；M3 分任务配置与原图封装；T1/T2 SuperAgent 交互派活/后台执行及任务归属；T3–T5 持久状态、重连、多窗口、最近进展检查与去重提醒。角色具体参数没有数值则不编造。'},
+ {title:'候选浏览器需核对，不是假定已安装',detail:'优先核对 Hermes + Browser Use 的开源接法，连接器优先；Flash 适配、写入确认可拦截、结果/证据回填待源码核对与实测。Poke 说明产品分工，不能推断 Stagehand；Vesta 为 API+浏览器结果证据案例。候选未选定依赖，也未获本轮实施授权。'},
+ {title:'丢响应、崩溃、重复确认时的恢复',detail:'X1 邮件接受不等于已投递，丢响应未必有远程 ID；X2 日历返回 ID 本身不保证首次插入丢响应时幂等；X3 商家查单接口与关联规则仍缺。三项都不能靠盲目重试补救。'},
+ {title:'确认与设备、历史和恢复',detail:'X4 精确设备/文件/操作绑定、一次确认一次执行并回原任务；X5 设备登记/哈希/撤销；服务重启恢复、旧代次保护、供应商取消与缺失用量仍需实现/核对。R-B3、R1–R7 按证据分级保留，不因计划确认关闭。M4 保留项的替代研究暂不占当前工作。'}
+ ]}/>
+ </Section>
+ <Section heading='验证范围（E2）' collapsible defaultOpen={false}>
+ <Text>11/18 只读过源码和部分测试，未运行；11/19 本轮只更新计划与目标图。每刀保留单元测试、形式检查与独立审查；所有活体端到端按既有安排留到整体实现完成后统一，不能把它写成每刀都要活体。统一验证覆盖搜索/思考/工具、邮件/日历/订单回执与未知重复、桌面动作与设备撤销、聊天/多窗口/重连/取消/重启恢复；未测不等于坏了，也不表示可上线。</Text>
+ <Text>M5 仅有源码模板差异，未核实生产配置，已降级顺手维护；X4 固定探测按钮差距继承 11/18 源码证据，未完成产品接线。Flash 支持 Vision 来自 11/19 核对的官方模型表，不能写成已经端到端传图。Anthropic 格式的 web_search 限制仍未实测，不把 Responses 限制直接套给另一接口；当前目标不依赖该内置搜索路线。</Text>
+ </Section>
+ </Section>
+ <Section heading='历史项逐条复核情况' id='history'>
+ <Text>保留全部旧项，下面“复核/本轮”沿用 11/18 源码查阅记录；11/19 没有重读这些路径。部分复核不等于整项已确认，更不等于已修复；服务端持久化和目标图不会自动关闭历史问题。</Text>
+ <Rows rows={HISTORY.map((h:{id:string;old:string;title:string;status:string;detail:string})=>({title:h.id+' · '+h.title,meta:'原编号 '+h.old+'｜'+h.status,detail:h.detail,status:{label:h.status,tone:'warning' as const}}))}/>
+ <LinkCards links={[{title:'历史项本轮复核基线 · release d7710d68',href:release}]}/>
+ </Section>
+ <Section heading='原 27 项去向' id='map27' collapsible defaultOpen={false}>
+ <Text>合并重复项，不强行把所有旧条目维持为独立缺陷。合理策略、历史线索和验证约定都有去向。</Text>
+ <Table columns={['原编号','去向','说明']} rows={MAP}/>
+ </Section>
+ <Section heading='来源、许可和验证边界' id='sources'>
+ <Text>来源证据优先使用提交固定的文件链接；函数名和所在文件在各条折叠区。本轮读的是与条目有关的调用链，不是整仓通审。DS-Bot 邮件材料提供了提交、函数名和 transport.js，但未给出可确认的完整文件 permalink，因此该条诚实链接到提交，不编造源码路径；完整闭环仍列为缺口。</Text>
+ <Text>更正：不再保留“M2 没查 Python 工具循环”“T4 没查进展看门狗”“X1 没有真实邮件调用”“X2 没有任何日历参考”的旧结论。DS-Bot 有实际 SMTP/Gmail 发送，但不能当强制确认与未知对账的完整样例。T1 的默认 steer、Hermes 某些入口默认 interrupt，以及各批准系统的自动允许规则都明确不照搬。</Text>
+ <Text>许可：优先参考 MIT / Apache-2.0 机制；若复制或分发代码，仍需核对许可证、版权声明、NOTICE 和依赖要求。Agent Zero 相关文件写 MIT，GitHub API 的 NOASSERTION 不是独立授权。GPL-3.0 不等于“不可用”，但复制/组合/分发义务需按具体方式评估；本轮 nanoMuse 仅作行为对照，不复制。无 LICENSE 的 Grokked Bot 不复制源码。目录另有 AGPL、非商业、FSL 或改写许可，不能统一当宽松授权。</Text>
+ <Section heading='研究范围与主要基线' collapsible defaultOpen={false}>
+ <Text>本轮围绕清单读过 Hermes、Harness、OpenCode、Agent Zero、DS-Bot、OpenClaw、FullDots、OpenMausBot、Open Super Agent、OpenSuperBot、Rowboat、SuperBot、Grokked Bot、nanoMuse 的有关范围；读过不代表每个项目所有功能都验证。SuperBot 只找到绕过沙箱参数等，没能覆盖这些具体缺口；Tucano 和大多未点名目录仓库未深读。未读不等于没有实现。</Text>
+ <Text>Hermes 0e8e4216；Harness ca33fd68；OpenCode 79bd2c6f（默认分支 dev，排队文件与旧 3d308eae 为同一 blob）；DS-Bot 5e9b7da8；Agent Zero 2b0b3a41；OpenClaw 069c3e2b（相关生命周期文件与旧 c4251564 文本一致）；OpenMausBot HEAD 35d04429（旧 083fd7b 机制仍在）。完整提交号体现在各源码链接中。</Text>
+ <LinkCards links={[
+ {title:'用户提供的合集入口',href:'https://my-tierroom.party/explore?view=list'},
+ {title:'目录数据 · 仅发现候选，不作源码证明',href:'https://my-tierroom.party/catalog.json'},
+ {title:'目录接口说明',href:'https://my-tierroom.party/api.md'},
+ {title:'本仓库当前 release 基线',href:release},
+ {title:'PR 93 · 未合并，工作约定暂停',href:'https://github.com/y4483784-png/omni-butler/pull/93'},
+ {title:'DeepSeek Responses · 内置搜索限制',href:'https://api-docs.deepseek.com/zh-cn/guides/responses_api.md'},
+ {title:'DeepSeek 独立 Search / Fetch',href:'https://api-docs.deepseek.com/guides/search.md'},
+ {title:'DeepSeek 思考回传规则',href:'https://api-docs.deepseek.com/guides/thinking_mode.md'},
+ {title:'DeepSeek Chat Completions · function 工具',href:'https://api-docs.deepseek.com/api/create-chat-completion.md'},
+ {title:'DeepSeek 官方模型表 · 本轮核对 Flash Vision 与模型别名',href:'https://api-docs.deepseek.com/quick_start/pricing/'}
+ ]}/>
+ </Section>
+ <Text>本次交付为原页修订及一张预期项目结构大图（高清 PNG 为主，SVG 备用），不另建第二报告页，不覆盖正式已审查流程图文件夹。已确认方向不再写为待决定；Browser Use 仍仅候选。此次不改仓库、不发 PR、不合并、不部署，计划/图完成不等于代码实施批准。</Text>
+ </Section>
+ <Floating edge='bottom' align='end'><BackToTop label='回到目录'/></Floating>
+ </Page>;
+}
+
+
+</cursor_untrusted_data_1337>
