@@ -46,6 +46,33 @@ class Session(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+SESSION_EVENT_KINDS = ("message", "step", "status", "confirm", "notice")
+
+
+class SessionCursor(Base):
+    __tablename__ = "session_cursors"
+    session_id = Column(Integer, ForeignKey("sessions.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    published_seq = Column(Integer, nullable=False, default=0, server_default=text("0"))
+
+
+class SessionEvent(Base):
+    __tablename__ = "session_events"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ({})".format(", ".join(repr(kind) for kind in SESSION_EVENT_KINDS)),
+            name="ck_session_events_kind",
+        ),
+        UniqueConstraint("session_id", "seq", name="uq_session_events_session_seq"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    seq = Column(Integer, nullable=False)
+    kind = Column(String, nullable=False)
+    body = Column(Text, nullable=False, default="", server_default=text("''"))
+
+
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True)
