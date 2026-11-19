@@ -213,6 +213,9 @@ def build_pool_prompt(
             parts = []
             if e.get("url"):
                 parts.append(f"链接：{e['url']}")
+            summary = e.get("summary")
+            if isinstance(summary, str) and summary:
+                parts.append(summary)
             parts.append(clip_text(str(e.get("content") or e.get("snippet") or "")))
             body = "\n".join(parts)
         else:
@@ -433,6 +436,8 @@ def run_agent_workflow(
                 tool_args["feedback"] = state.get("sandbox_feedback")
             if state.get("analysis_ir"):
                 tool_args["prior_ir"] = state.get("analysis_ir")
+        elif tool == "web":
+            tool_args = {"query": msg}
 
         step = LoopStep(
             tool=tool,
