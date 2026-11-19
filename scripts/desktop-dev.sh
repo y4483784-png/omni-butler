@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ -z "${DESKTOP_PACKAGE_TOKEN:-}" ]]; then
-  echo "The API must have the same DESKTOP_PACKAGE_TOKEN." >&2
-  exit 1
-fi
 port_open() {
   python3 -c 'import socket; s=socket.create_connection(("127.0.0.1", 5173), 0.5); s.close()' >/dev/null 2>&1
 }

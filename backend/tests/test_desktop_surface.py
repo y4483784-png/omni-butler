@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
-import os
 import re
-import subprocess
+import secrets
 import sys
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -19,9 +20,15 @@ from app.agents.tools.registry import _REGISTRY, ToolSpec, ensure_builtin_tools,
 from app.core.auth import hash_password
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.models.models import Message, ScheduleConfirmClaim, TaskRun, User
+from app.models.models import DesktopDevice, Message, ScheduleConfirmClaim, TaskRun, User
 from app.services import task_run
-from app.services.local_action import LOCAL_ACTIONS, LocalAction, LocalClosed, propose_local
+from app.services.local_action import (
+    LOCAL_ACTIONS,
+    LocalAction,
+    LocalClosed,
+    commit_local,
+    propose_local,
+)
 from app.services.schedule_confirm import canonical_action, write_parts, write_scope
 from app.tasks.celery_app import celery_app
 from tests.test_schedule_confirm_claims import _admin_id, _session
@@ -39,8 +46,53 @@ PROBE = "/tmp/ev-desktop-probe.txt"
 BACKEND = REPO / "backend"
 
 
-def _headers(token: str = TOKEN) -> dict[str, str]:
+def _headers(token: str) -> dict[str, str]:
     return {"X-Omni-Package": token}
+
+
+def _enroll(client: TestClient, label: str = "package") -> str:
+    saved = client.post("/api/desktop/devices", json={"label": label})
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert set(body) == {"id", "token", "label"}
+    assert body["label"] == label
+    assert body["token"]
+    return body["token"]
+
+
+def _devices() -> list[dict]:
+    db = SessionLocal()
+    try:
+        rows = db.query(DesktopDevice).order_by(DesktopDevice.id.asc()).all()
+        return [
+            {
+                "id": row.id,
+                "user_id": row.user_id,
+                "token_hash": row.token_hash,
+                "label": row.label,
+                "created_at": row.created_at,
+                "revoked_at": row.revoked_at,
+            }
+            for row in rows
+        ]
+    finally:
+        db.close()
+
+
+def _device(device_id: int) -> dict:
+    return next(row for row in _devices() if row["id"] == device_id)
+
+
+def _armed_count() -> int:
+    db = SessionLocal()
+    try:
+        return (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.remote_request_id != "")
+            .count()
+        )
+    finally:
+        db.close()
 
 
 def _propose(
@@ -51,7 +103,7 @@ def _propose(
     local_target: str = PROBE,
     local_args: list[str] | None = None,
     extra: dict | None = None,
-    token: str = TOKEN,
+    token: str,
 ) -> dict:
     payload = {
         "session_id": session_id,
@@ -69,7 +121,7 @@ def _propose(
 
 
 class _Transport:
-    def __init__(self, client: TestClient, token: str = TOKEN) -> None:
+    def __init__(self, client: TestClient, token: str) -> None:
         self.client = client
         self.token = token
 
@@ -172,21 +224,27 @@ def _open_spy():
     return calls, open_file, run_program
 
 
-def test_package_word_is_not_a_proof(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_package_word_is_not_a_proof(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(TypeError):
         PackageProof("desktop")
-    monkeypatch.setattr(settings, "desktop_package_token", "")
-    assert recognize_package(TOKEN) is None
     monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
     assert recognize_package(None) is None
+    assert recognize_package("") is None
+    assert recognize_package("   ") is None
     assert recognize_package("desktop") is None
     assert recognize_package(" web ") is None
+    assert recognize_package(TOKEN) is None
     assert recognize_package("other-secret") is None
-    proof = recognize_package("  " + TOKEN + "  ")
+    enrolled = _enroll(plain_client)
+    proof = recognize_package("  " + enrolled + "  ")
     assert isinstance(proof, PackageProof)
     assert proof.audit_word() == "desktop"
+    assert proof.user_id == plain_client.get("/api/auth/me").json()["id"]
     monkeypatch.setattr(settings, "desktop_package_token", "desktop")
     assert recognize_package("desktop") is None
+    fresh = "not-enrolled-" + uuid4().hex
+    monkeypatch.setattr(settings, "desktop_package_token", fresh)
+    assert recognize_package(fresh) is None
 
 
 def test_web_session_denies_local_probe(plain_client: TestClient) -> None:
@@ -226,9 +284,8 @@ def test_unregistered_desktop_open_stays_on_the_whitelist(plain_client: TestClie
     assert not target.exists()
 
 
-def test_string_proof_writes_no_claim(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_string_proof_writes_no_claim(plain_client: TestClient) -> None:
     assert plain_client is not None
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
     session_id = _session()
     before = _claim_count()
     db = SessionLocal()
@@ -249,8 +306,8 @@ def test_string_proof_writes_no_claim(plain_client: TestClient, monkeypatch: pyt
     assert _claim_count() == before
 
 
-def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".spoof"
     before = _claim_count()
@@ -261,7 +318,7 @@ def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient, monkeypat
     assert missing.status_code == 403
     assert missing.json()["detail"] == DENIAL
     assert _claim_count() == before
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     token = offered["confirm_token"]
     status, remote, scope = _claim(token)
     assert status == "open"
@@ -295,17 +352,17 @@ def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient, monkeypat
     assert remote == ""
 
 
-def test_recognized_package_opens_once(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_recognized_package_opens_once(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
-    offered = _propose(plain_client, session_id)
+    offered = _propose(plain_client, session_id, token=token)
     content, card = _desktop_message(session_id)
     assert content == "请确认后才会打开。"
     assert card["mode"] == "desktop"
     assert card["surface"] == "desktop"
     assert card["local_target"] == PROBE
     calls, open_file, run_program = _open_spy()
-    transport = _Transport(plain_client)
+    transport = _Transport(plain_client, token)
     assert confirm_local(transport, offered, open_file=open_file, run_program=run_program) is True
     assert calls == [PROBE]
     audit = (BACKEND / "data" / "harness" / "harness-audit.jsonl").read_text(encoding="utf-8")
@@ -321,14 +378,13 @@ def test_recognized_package_opens_once(plain_client: TestClient, monkeypatch: py
     assert remote_again == remote
 
 
-def test_other_user_cannot_open_and_owner_still_can(
-    plain_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_other_user_cannot_open_and_owner_still_can(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".owner"
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     other = _other_client()
+    other_token = _enroll(other)
     saved = other.post(
         "/api/desktop/commit",
         json={
@@ -337,21 +393,21 @@ def test_other_user_cannot_open_and_owner_still_can(
             "local_target": target,
             "local_args": [],
         },
-        headers=_headers(),
+        headers=_headers(other_token),
     )
     assert saved.status_code == 409
     assert saved.json()["detail"] == "这张确认已经失效，未写入。"
     calls, open_file, run_program = _open_spy()
     assert calls == []
-    assert confirm_local(_Transport(plain_client), offered, open_file=open_file, run_program=run_program) is True
+    assert confirm_local(_Transport(plain_client, token), offered, open_file=open_file, run_program=run_program) is True
     assert calls == [target]
 
 
-def test_stopped_generation_does_not_open(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_stopped_generation_does_not_open(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".stopped"
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     assert _stop_live(session_id)
     saved = plain_client.post(
         "/api/desktop/commit",
@@ -361,7 +417,7 @@ def test_stopped_generation_does_not_open(plain_client: TestClient, monkeypatch:
             "local_target": target,
             "local_args": [],
         },
-        headers=_headers(),
+        headers=_headers(token),
     )
     assert saved.status_code == 409, saved.text
     assert saved.json()["detail"] == "这张确认已经失效，未写入。"
@@ -374,11 +430,11 @@ def test_stopped_generation_does_not_open(plain_client: TestClient, monkeypatch:
     assert status != "unknown"
 
 
-def test_stop_after_open_does_not_close(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_stop_after_open_does_not_close(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".finished"
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     calls, open_file, run_program = _open_spy()
     closes: list[str] = []
 
@@ -387,7 +443,7 @@ def test_stop_after_open_does_not_close(plain_client: TestClient, monkeypatch: p
         run_program(program, args)
 
     assert confirm_local(
-        _Transport(plain_client),
+        _Transport(plain_client, token),
         offered,
         open_file=open_file,
         run_program=run_program_unused,
@@ -401,8 +457,8 @@ def test_stop_after_open_does_not_close(plain_client: TestClient, monkeypatch: p
     assert status == "written"
 
 
-def test_run_starts_the_program_once(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_run_starts_the_program_once(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     offered = _propose(
         plain_client,
@@ -410,13 +466,14 @@ def test_run_starts_the_program_once(plain_client: TestClient, monkeypatch: pyte
         action="desktop.run",
         local_target="/usr/bin/true",
         local_args=[],
+        token=token,
     )
     content, _card = _desktop_message(session_id)
     assert content == "请确认后才会运行。"
     opens: list[str] = []
     runs: list[tuple[str, tuple[str, ...]]] = []
     assert confirm_local(
-        _Transport(plain_client),
+        _Transport(plain_client, token),
         offered,
         open_file=lambda path: opens.append(path),
         run_program=lambda program, args: runs.append((program, tuple(args))),
@@ -424,12 +481,182 @@ def test_run_starts_the_program_once(plain_client: TestClient, monkeypatch: pyte
     assert opens == []
     assert runs == [("/usr/bin/true", ())]
     assert confirm_local(
-        _Transport(plain_client),
+        _Transport(plain_client, token),
         offered,
         open_file=lambda path: opens.append(path),
         run_program=lambda program, args: runs.append((program, tuple(args))),
     ) is False
     assert runs == [("/usr/bin/true", ())]
+
+
+def test_two_devices_revoke_independently(
+    plain_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = len(_devices())
+    first = plain_client.post("/api/desktop/devices", json={"label": "left"})
+    second = plain_client.post("/api/desktop/devices", json={"label": "right"})
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    left = first.json()
+    right = second.json()
+    assert set(left) == {"id", "token", "label"}
+    assert set(right) == {"id", "token", "label"}
+    assert left["token"] != right["token"]
+    assert len(_devices()) == before + 2
+    stored = {row["id"]: row for row in _devices()}
+    for body in (left, right):
+        row = stored[body["id"]]
+        digest = hashlib.sha256(body["token"].encode("utf-8")).hexdigest()
+        assert row["token_hash"] == digest
+        assert all(body["token"] not in str(value) for value in row.values() if value is not None)
+    listed = plain_client.get("/api/desktop/devices")
+    assert listed.status_code == 200, listed.text
+    assert "token" not in listed.text
+    payload = listed.json()
+    for body in (left, right):
+        digest = hashlib.sha256(body["token"].encode("utf-8")).hexdigest()
+        assert digest not in listed.text
+        match = next(item for item in payload if item["id"] == body["id"])
+        assert set(match) == {"id", "label", "created_at"}
+        assert match["label"] == body["label"]
+        datetime.fromisoformat(match["created_at"])
+    proof_left = recognize_package(left["token"])
+    proof_right = recognize_package(right["token"])
+    assert isinstance(proof_left, PackageProof)
+    assert isinstance(proof_right, PackageProof)
+    assert proof_left != proof_right
+    assert recognize_package(left["token"]) == proof_left
+    assert recognize_package(right["token"]) == proof_right
+    assert proof_left.device_id == left["id"]
+    assert proof_right.device_id == right["id"]
+    with pytest.raises(AttributeError):
+        proof_right.device_id = left["id"]
+    with pytest.raises(TypeError):
+        PackageProof("desktop")
+
+    revoked = plain_client.post(f"/api/desktop/devices/{left['id']}/revoke")
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json() == {"id": left["id"]}
+    stamp = _device(left["id"])["revoked_at"]
+    assert stamp is not None
+    again = plain_client.post(f"/api/desktop/devices/{left['id']}/revoke")
+    assert again.status_code == 200, again.text
+    assert again.json() == {"id": left["id"]}
+    assert _device(left["id"])["revoked_at"] == stamp
+    assert _device(right["id"])["revoked_at"] is None
+    remaining = plain_client.get("/api/desktop/devices").json()
+    remaining_ids = {item["id"] for item in remaining}
+    assert left["id"] not in remaining_ids
+    assert right["id"] in remaining_ids
+    assert recognize_package(left["token"]) is None
+    live = recognize_package(right["token"])
+    assert isinstance(live, PackageProof)
+    assert live.device_id == right["id"]
+    session_id = _session()
+    offered = _propose(plain_client, session_id, local_target=PROBE + ".devices", token=right["token"])
+    assert offered["confirm_token"]
+    denied = plain_client.post(
+        "/api/desktop/propose",
+        json={
+            "session_id": session_id,
+            "action": "desktop.open",
+            "local_target": PROBE + ".revoked",
+            "local_args": [],
+        },
+        headers=_headers(left["token"]),
+    )
+    assert denied.status_code == 403
+
+    monkeypatch.setattr(settings, "desktop_package_token", "desktop")
+    assert recognize_package("desktop") is None
+    assert recognize_package("web") is None
+    for word in ("desktop", "web"):
+        saved = plain_client.post(
+            "/api/desktop/propose",
+            json={
+                "session_id": session_id,
+                "action": "desktop.open",
+                "local_target": PROBE + ".word",
+                "local_args": [],
+            },
+            headers=_headers(word),
+        )
+        assert saved.status_code == 403
+        assert recognize_package(word) is None
+    unenrolled = secrets.token_urlsafe(32)
+    monkeypatch.setattr(settings, "desktop_package_token", unenrolled)
+    assert recognize_package(unenrolled) is None
+    assert recognize_package("desktop") is None
+    assert recognize_package("web") is None
+
+    armed_before = _armed_count()
+    db = SessionLocal()
+    try:
+        with pytest.raises(LocalClosed) as caught:
+            commit_local(
+                db,
+                user_id=_admin_id(),
+                token="",
+                action=LocalAction("desktop.open", PROBE + ".blank", ()),
+                proof=live,
+            )
+        assert caught.value.status == 409
+        db.rollback()
+    finally:
+        db.close()
+    assert _armed_count() == armed_before
+    assert _device(right["id"])["revoked_at"] is None
+
+    assert _stop_live(session_id)
+    assert _device(right["id"])["revoked_at"] is None
+    assert isinstance(recognize_package(right["token"]), PackageProof)
+
+    count_before = len(_devices())
+    monkeypatch.setattr("app.services.desktop_devices.secrets.token_urlsafe", lambda _n: right["token"])
+    conflict = plain_client.post("/api/desktop/devices", json={"label": "same"})
+    assert conflict.status_code == 409, conflict.text
+    assert len(_devices()) == count_before
+    digest = hashlib.sha256(right["token"].encode("utf-8")).hexdigest()
+    assert sum(1 for row in _devices() if row["token_hash"] == digest) == 1
+
+    other = _other_client()
+    stolen = other.post(
+        "/api/desktop/propose",
+        json={
+            "session_id": session_id,
+            "action": "desktop.open",
+            "local_target": PROBE + ".stolen",
+            "local_args": [],
+        },
+        headers=_headers(right["token"]),
+    )
+    assert stolen.status_code == 403
+    assert isinstance(recognize_package(right["token"]), PackageProof)
+    missing = other.post(f"/api/desktop/devices/{right['id']}/revoke")
+    assert missing.status_code == 404
+    assert plain_client.post("/api/desktop/devices/999999999/revoke").status_code == 404
+    assert _device(right["id"])["revoked_at"] is None
+
+    from sqlalchemy.orm import Session as OrmSession
+
+    original = OrmSession.commit
+
+    def fail_revoke(self):
+        pending = [
+            obj
+            for obj in list(self.dirty) + list(self.new)
+            if isinstance(obj, DesktopDevice) and obj.revoked_at is not None
+        ]
+        if pending:
+            raise RuntimeError("revoke commit failed")
+        return original(self)
+
+    monkeypatch.setattr(OrmSession, "commit", fail_revoke)
+    with pytest.raises(RuntimeError, match="revoke commit failed"):
+        plain_client.post(f"/api/desktop/devices/{right['id']}/revoke")
+    monkeypatch.setattr(OrmSession, "commit", original)
+    assert _device(right["id"])["revoked_at"] is None
+    assert isinstance(recognize_package(right["token"]), PackageProof)
 
 
 def test_a_shell_string_is_not_an_argument_list() -> None:
@@ -457,6 +684,7 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
         if path.suffix not in {".ts", ".tsx", ".js", ".css"}:
             continue
         text = path.read_text(encoding="utf-8")
+        assert "package-token" not in text, path
         for needle in banned:
             assert needle not in text, path
     window = (REPO / "frontend" / "src" / "components" / "ChatWindow.tsx").read_text(encoding="utf-8")
@@ -479,7 +707,10 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
     assert "http://127.0.0.1:5173" in main
     assert "nodeIntegration: false" in main
     assert "contextIsolation: true" in main
-    assert "DESKTOP_PACKAGE_TOKEN" in main
+    assert "process.env.DESKTOP_PACKAGE_TOKEN" not in main
+    assert "DESKTOP_PACKAGE_TOKEN:" in main
+    assert "package-token" in main
+    assert "0o600" in main
     assert "shell: false" in main
     assert "desktop-propose" in main
     assert "desktop-confirm" in main
@@ -489,6 +720,11 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
     assert "desktop-propose" in preload
     assert "desktop-confirm" in preload
     assert "DESKTOP_PACKAGE_TOKEN" not in preload
+    panel = (REPO / "frontend" / "src" / "components" / "DevicesPanel.tsx").read_text(encoding="utf-8")
+    client = (REPO / "frontend" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    assert "revokeDevice" in panel
+    assert "/api/desktop/devices/${id}/revoke" in client
+    assert "enrollDevice" not in client
 
 
 def test_compose_and_beat_stay_put() -> None:
@@ -516,17 +752,14 @@ def test_compose_and_beat_stay_put() -> None:
     }
 
 
-def test_desktop_dev_refuses_an_empty_token() -> None:
+def test_desktop_dev_starts_without_a_shared_token() -> None:
     script = REPO / "scripts" / "desktop-dev.sh"
     text = script.read_text(encoding="utf-8")
     assert "npm run dev" in text
     assert "electron" in text
     assert "docker" not in text.lower()
-    env = os.environ.copy()
-    env["DESKTOP_PACKAGE_TOKEN"] = ""
-    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=5)
-    assert result.returncode != 0
-    assert "DESKTOP_PACKAGE_TOKEN" in result.stderr
+    assert "DESKTOP_PACKAGE_TOKEN" not in text
+    assert "The API must have the same" not in text
 
 
 def inspect_source(fn: object) -> str:

@@ -280,6 +280,24 @@ export async function changePassword(password: string, newPassword: string): Pro
   if (!r.ok) throw new Error(await parseError(r, "修改密码失败"));
 }
 
+export interface DesktopDevice {
+  id: number;
+  label: string;
+  created_at: string;
+}
+
+export async function listDevices(): Promise<DesktopDevice[]> {
+  const r = await apiFetch("/api/desktop/devices");
+  if (!r.ok) throw new Error(await parseError(r, "加载设备失败"));
+  return r.json();
+}
+
+export async function revokeDevice(id: number): Promise<{ id: number }> {
+  const r = await apiFetch(`/api/desktop/devices/${id}/revoke`, { method: "POST" });
+  if (!r.ok) throw new Error(await parseError(r, "撤销失败"));
+  return r.json();
+}
+
 export interface ToolAuditRow {
   id: number;
   request_id: string;
