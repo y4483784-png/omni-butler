@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -12,8 +13,9 @@ from app.models.models import TASK_RUN_STATUSES, Session as ChatSession, TaskRun
 
 logger = logging.getLogger(__name__)
 
-_EVENTS = ("finish", "wait_person", "wait_resource", "stop")
+_EVENTS = ("finish", "wait_person", "wait_resource", "stop", "continue_job")
 _OPEN = tuple(status for status in TASK_RUN_STATUSES if status not in {"completed", "stopped"})
+_CONTINUE_FROM = frozenset({"waiting_person", "waiting_resource"})
 
 _MOVES: dict[str, dict[str, tuple[str, str | None]]] = {
     "running": {
@@ -21,30 +23,35 @@ _MOVES: dict[str, dict[str, tuple[str, str | None]]] = {
         "wait_person": ("write", "waiting_person"),
         "wait_resource": ("write", "waiting_resource"),
         "stop": ("write", "stopped"),
+        "continue_job": ("reject", None),
     },
     "waiting_person": {
         "finish": ("keep", None),
         "wait_person": ("keep", None),
         "wait_resource": ("reject", None),
         "stop": ("write", "stopped"),
+        "continue_job": ("write", "running"),
     },
     "waiting_resource": {
         "finish": ("keep", None),
         "wait_person": ("reject", None),
         "wait_resource": ("keep", None),
         "stop": ("write", "stopped"),
+        "continue_job": ("write", "running"),
     },
     "completed": {
         "finish": ("keep", None),
         "wait_person": ("reject", None),
         "wait_resource": ("reject", None),
         "stop": ("keep", None),
+        "continue_job": ("reject", None),
     },
     "stopped": {
         "finish": ("reject", None),
         "wait_person": ("reject", None),
         "wait_resource": ("reject", None),
         "stop": ("keep", None),
+        "continue_job": ("reject", None),
     },
 }
 
@@ -55,8 +62,10 @@ def _validate_moves() -> None:
     for status, edges in _MOVES.items():
         if set(edges) != set(_EVENTS):
             raise RuntimeError(f"task run events drifted for {status}")
-        for effect, target in edges.values():
-            if target == "running":
+        for event, (effect, target) in edges.items():
+            if target == "running" and not (
+                event == "continue_job" and status in _CONTINUE_FROM and effect == "write"
+            ):
                 raise RuntimeError("task run edge targets running")
             if effect not in {"write", "keep", "reject"}:
                 raise RuntimeError("task run effect is unknown")
@@ -84,6 +93,18 @@ class Turn:
     generation: int
     status: str
     allowed_tools: tuple[str, ...]
+    kind: str
+    goal: str
+    web_constraint: str
+    web_constraint_message_id: int | None
+    intent_version: int
+    exec_token: str | None
+    exec_epoch: int
+    hold_until: datetime | None
+    dispatch_token: str | None
+    dispatch_until: datetime | None
+    continuation_due: bool
+    last_progress_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -107,15 +128,29 @@ class UnownedSession(Exception):
     pass
 
 
-def _to_turn(row: TaskRun) -> Turn:
-    tools = json.loads(row.allowed_tools)
+def _to_turn(row: TaskRun, *, tools: tuple | None = None) -> Turn:
+    if tools is None:
+        parsed = json.loads(row.allowed_tools)
+        tools = tuple(parsed)
     return Turn(
         id=row.id,
         user_id=row.user_id,
         session_id=row.session_id,
         generation=row.generation,
         status=row.status,
-        allowed_tools=tuple(tools),
+        allowed_tools=tools,
+        kind=row.kind or "turn",
+        goal=row.goal or "",
+        web_constraint=row.web_constraint or "allow",
+        web_constraint_message_id=row.web_constraint_message_id,
+        intent_version=int(row.intent_version or 1),
+        exec_token=row.exec_token,
+        exec_epoch=int(row.exec_epoch or 0),
+        hold_until=row.hold_until,
+        dispatch_token=row.dispatch_token,
+        dispatch_until=row.dispatch_until,
+        continuation_due=bool(row.continuation_due),
+        last_progress_at=row.last_progress_at,
     )
 
 
@@ -200,7 +235,25 @@ def _turn_key_conflict(exc: IntegrityError) -> bool:
     return "task_runs.user_id" in message and "generation" in message
 
 
-def _insert_running(db, *, user_id: int, session_id: int, stop_others: bool = True) -> Turn:
+def _stored_kind(kind: str) -> str:
+    return "job" if kind == "job" else "turn"
+
+
+def _stored_web(web: str) -> str:
+    return "forbid" if web == "forbid" else "allow"
+
+
+def _insert_running(
+    db,
+    *,
+    user_id: int,
+    session_id: int,
+    stop_others: bool = True,
+    kind: str = "turn",
+    goal: str = "",
+    web_constraint: str = "allow",
+    web_constraint_message_id: int | None = None,
+) -> Turn:
     owned = (
         db.query(ChatSession.id)
         .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
@@ -216,7 +269,12 @@ def _insert_running(db, *, user_id: int, session_id: int, stop_others: bool = Tr
     )
     if stop_others:
         for row in rows:
-            if row.session_id != session_id or row.status not in _OPEN or is_card_action(row.allowed_tools):
+            if (
+                row.session_id != session_id
+                or row.status not in _OPEN
+                or is_card_action(row.allowed_tools)
+                or row.kind == "job"
+            ):
                 continue
             _apply_event(db, row, "stop")
     generation = max((row.generation for row in rows), default=0) + 1
@@ -229,6 +287,14 @@ def _insert_running(db, *, user_id: int, session_id: int, stop_others: bool = Tr
         generation=generation,
         status="running",
         allowed_tools=allowed_tools,
+        kind=_stored_kind(kind),
+        goal=goal or "",
+        web_constraint=_stored_web(web_constraint),
+        web_constraint_message_id=web_constraint_message_id,
+        intent_version=1,
+        dispatch_epoch=0,
+        exec_epoch=0,
+        continuation_due=False,
     )
     db.add(created)
     db.flush()
@@ -266,13 +332,31 @@ def insert_card_action(db, *, user_id: int, session_id: int, message_id: int) ->
     return _apply_event(db, created, "wait_person")
 
 
-def open_alongside(db, *, user_id: int, session_id: int) -> Turn:
+def open_alongside(
+    db,
+    *,
+    user_id: int,
+    session_id: int,
+    kind: str = "turn",
+    goal: str = "",
+    web_constraint: str = "allow",
+    web_constraint_message_id: int | None = None,
+) -> Turn:
     """Open one generation without stopping another open generation.
 
     The caller commits. An event inbox uses this so a new task does not cancel
-    work that is already running in the same session.
+    work that is already running in the same session. A job passes kind=job.
     """
-    return _insert_running(db, user_id=user_id, session_id=session_id, stop_others=False)
+    return _insert_running(
+        db,
+        user_id=user_id,
+        session_id=session_id,
+        stop_others=False,
+        kind=kind,
+        goal=goal,
+        web_constraint=web_constraint,
+        web_constraint_message_id=web_constraint_message_id,
+    )
 
 
 def begin_turn(*, user_id: int, session_id: int) -> Turn:
@@ -331,6 +415,10 @@ def stop(*, user_id: int, generation: int) -> Turn:
     return _mutate(user_id=user_id, generation=generation, event="stop")
 
 
+def continue_job(*, user_id: int, generation: int) -> Turn:
+    return _mutate(user_id=user_id, generation=generation, event="continue_job")
+
+
 def load_turn(*, user_id: int, task_id: int) -> Turn | None:
     db = SessionLocal()
     try:
@@ -344,14 +432,7 @@ def load_turn(*, user_id: int, task_id: int) -> Turn | None:
             raise BadAllowList(int(row.generation)) from exc
         if not isinstance(parsed, list):
             parsed = []
-        return Turn(
-            id=row.id,
-            user_id=row.user_id,
-            session_id=row.session_id,
-            generation=row.generation,
-            status=row.status,
-            allowed_tools=tuple(parsed),
-        )
+        return _to_turn(row, tools=tuple(parsed))
     finally:
         db.close()
 
