@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -417,6 +417,181 @@ def stop(*, user_id: int, generation: int) -> Turn:
 
 def continue_job(*, user_id: int, generation: int) -> Turn:
     return _mutate(user_id=user_id, generation=generation, event="continue_job")
+
+
+@dataclass(frozen=True)
+class IntentApply:
+    applied: bool
+    task_run_id: int | None = None
+
+
+def _clock() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+
+
+def _hold_until() -> datetime:
+    from app.core.config import settings
+
+    return _clock() + timedelta(seconds=float(settings.llm_timeout))
+
+
+def _claim_ids(raw: str | None) -> list[int]:
+    try:
+        parsed = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    found: list[int] = []
+    for item in parsed:
+        try:
+            found.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return found
+
+
+def apply_intent(
+    db,
+    *,
+    user_id: int,
+    generation: int,
+    text: str,
+    web: str,
+    web_constraint_message_id: int | None,
+) -> IntentApply:
+    """One commit. An open job stores the new text and web value. Anything else asks."""
+    from app.models.models import ScheduleConfirmClaim
+
+    row = (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == user_id, TaskRun.generation == generation)
+        .with_for_update()
+        .one_or_none()
+    )
+    if row is None or row.kind != "job" or row.status not in _OPEN:
+        db.rollback()
+        return IntentApply(applied=False)
+    if row.status == "waiting_resource":
+        _apply_event(db, row, "continue_job")
+    row.intent_version = int(row.intent_version or 1) + 1
+    row.web_constraint = _stored_web(web)
+    row.web_constraint_message_id = web_constraint_message_id
+    row.exec_token = None
+    row.hold_until = None
+    row.dispatch_token = None
+    row.dispatch_until = None
+    row.exec_epoch = int(row.exec_epoch or 0) + 1
+    row.goal = f"{row.goal or ''}{text or ''}"
+    row.continuation_due = True
+    claims = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.user_id == user_id)
+        .with_for_update()
+        .all()
+    )
+    for claim in claims:
+        if row.id not in _claim_ids(claim.generation_ids):
+            continue
+        if (claim.remote_request_id or "").strip():
+            if claim.status not in {"unknown", "written"}:
+                claim.status = "unknown"
+            continue
+        if claim.status == "open":
+            claim.status = "cancelled"
+    task_run_id = row.id
+    db.commit()
+    return IntentApply(applied=True, task_run_id=task_run_id)
+
+
+def renew_hold(
+    db,
+    *,
+    user_id: int,
+    generation: int,
+    exec_token: str,
+    exec_epoch: int,
+    intent_version: int,
+) -> int:
+    result = db.execute(
+        update(TaskRun)
+        .where(TaskRun.user_id == user_id)
+        .where(TaskRun.generation == generation)
+        .where(TaskRun.status == "running")
+        .where(TaskRun.exec_token == exec_token)
+        .where(TaskRun.exec_epoch == exec_epoch)
+        .where(TaskRun.intent_version == intent_version)
+        .values(hold_until=_hold_until())
+    )
+    db.commit()
+    return int(result.rowcount or 0)
+
+
+_LEAVE = frozenset({"waiting_person", "completed", "stopped"})
+
+
+def release_hold(
+    db,
+    *,
+    user_id: int,
+    generation: int,
+    exec_token: str,
+    exec_epoch: int,
+    intent_version: int,
+    status: str,
+) -> int:
+    if status not in _LEAVE:
+        return 0
+    result = db.execute(
+        update(TaskRun)
+        .where(TaskRun.user_id == user_id)
+        .where(TaskRun.generation == generation)
+        .where(TaskRun.status == "running")
+        .where(TaskRun.exec_token == exec_token)
+        .where(TaskRun.exec_epoch == exec_epoch)
+        .where(TaskRun.intent_version == intent_version)
+        .values(
+            status=status,
+            exec_token=None,
+            hold_until=None,
+            dispatch_token=None,
+            dispatch_until=None,
+            exec_epoch=TaskRun.exec_epoch + 1,
+        )
+    )
+    db.commit()
+    return int(result.rowcount or 0)
+
+
+_WEB_TOOLS = frozenset({"web", "web_fetch"})
+
+
+def claim_web_execution(
+    db,
+    *,
+    user_id: int,
+    generation: int,
+    exec_token: str,
+    exec_epoch: int,
+    intent_version: int,
+    tool: str,
+) -> int:
+    if tool not in _WEB_TOOLS:
+        return 0
+    result = db.execute(
+        update(TaskRun)
+        .where(TaskRun.user_id == user_id)
+        .where(TaskRun.generation == generation)
+        .where(TaskRun.kind == "job")
+        .where(TaskRun.status == "running")
+        .where(TaskRun.exec_token == exec_token)
+        .where(TaskRun.exec_epoch == exec_epoch)
+        .where(TaskRun.intent_version == intent_version)
+        .where(TaskRun.web_constraint == "allow")
+        .values(last_progress_at=_clock())
+    )
+    db.commit()
+    return int(result.rowcount or 0)
 
 
 def load_turn(*, user_id: int, task_id: int) -> Turn | None:

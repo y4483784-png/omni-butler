@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import exists, or_, update
+from sqlalchemy import and_, exists, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -401,6 +401,16 @@ def consume_schedule_claim(
                 TaskRun.status.in_(tuple(_LIVE)),
             )
         )
+        .where(
+            ~exists().where(
+                and_(
+                    TaskRun.user_id == user_id,
+                    TaskRun.id.in_(live_ids),
+                    TaskRun.kind == "job",
+                    TaskRun.intent_version > int(claim.intent_version or 1),
+                )
+            )
+        )
         .values(status="unknown")
     )
     if result.rowcount != 1:
@@ -410,16 +420,26 @@ def consume_schedule_claim(
     db.info["confirm_token"] = key
 
 
-def arm_remote_claim(db: Session, token: str, request_id: str) -> None:
+def arm_remote_claim(
+    db: Session,
+    token: str,
+    request_id: str,
+    *,
+    exec_token: str | None = None,
+    exec_epoch: int | None = None,
+    intent_version: int | None = None,
+) -> bool:
     """Remember the external key and commit it before the request is sent.
 
     A later rollback cannot reopen this claim. An empty key means the remote
     call has not been armed, so a failed refresh can still roll the claim back.
+    A claim linked to a job matches that job's current intent and the caller's
+    hold. Zero rows means the caller does not send.
     """
     key = str(token or "").strip()
     marker = str(request_id or "").strip()
     if not key or not marker:
-        return
+        return False
     claim = (
         db.query(ScheduleConfirmClaim)
         .filter(ScheduleConfirmClaim.token == key)
@@ -427,13 +447,48 @@ def arm_remote_claim(db: Session, token: str, request_id: str) -> None:
         .one_or_none()
     )
     if claim is None or claim.status not in {"unknown", "open"}:
-        return
+        return False
     if (claim.remote_request_id or "").strip():
-        return
+        return False
+    ids = _load_ids(claim.generation_ids)
+    job_linked = bool(ids) and (
+        db.query(TaskRun.id)
+        .filter(TaskRun.user_id == claim.user_id, TaskRun.id.in_(ids), TaskRun.kind == "job")
+        .first()
+        is not None
+    )
+    if job_linked:
+        result = db.execute(
+            update(ScheduleConfirmClaim)
+            .where(ScheduleConfirmClaim.token == key)
+            .where(ScheduleConfirmClaim.remote_request_id == "")
+            .where(ScheduleConfirmClaim.status.in_(("open", "unknown")))
+            .where(
+                exists().where(
+                    and_(
+                        TaskRun.user_id == claim.user_id,
+                        TaskRun.id.in_(ids),
+                        TaskRun.kind == "job",
+                        TaskRun.intent_version == intent_version,
+                        TaskRun.exec_token == exec_token,
+                        TaskRun.exec_epoch == exec_epoch,
+                    )
+                )
+            )
+            .values(status="unknown", remote_request_id=marker)
+        )
+        if int(result.rowcount or 0) != 1:
+            db.rollback()
+            return False
+        db.expire(claim)
+        _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
+        db.commit()
+        return True
     claim.status = "unknown"
     claim.remote_request_id = marker
     _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
     db.commit()
+    return True
 
 
 def reopen_unsent_claim(db: Session, token: str) -> None:
@@ -503,14 +558,42 @@ def release_schedule_claim(db: Session, user_id: int, token: str) -> None:
     db.commit()
 
 
-def cancel_open_schedule_claims(db: Session, session_id: int) -> int:
-    result = db.execute(
-        update(ScheduleConfirmClaim)
-        .where(ScheduleConfirmClaim.session_id == session_id)
-        .where(ScheduleConfirmClaim.status == "open")
-        .values(status="cancelled")
+def task_ids_for_tokens(db: Session, tokens: list[str]) -> set[int]:
+    if not tokens:
+        return set()
+    rows = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token.in_(tokens))
+        .all()
     )
-    return int(result.rowcount or 0)
+    found: set[int] = set()
+    for claim in rows:
+        found.update(_load_ids(claim.generation_ids))
+    return found
+
+
+def cancel_open_schedule_claims(
+    db: Session,
+    session_id: int,
+    *,
+    keep_task_run_ids: set[int] | None = None,
+) -> int:
+    keep = set(keep_task_run_ids or ())
+    rows = (
+        db.query(ScheduleConfirmClaim)
+        .filter(
+            ScheduleConfirmClaim.session_id == session_id,
+            ScheduleConfirmClaim.status == "open",
+        )
+        .all()
+    )
+    changed = 0
+    for claim in rows:
+        if keep and set(_load_ids(claim.generation_ids)).intersection(keep):
+            continue
+        claim.status = "cancelled"
+        changed += 1
+    return changed
 
 
 def phase_for_stored_card(db: Session, card: dict | None) -> dict | None:
@@ -744,10 +827,19 @@ def _bind_open_claim(
         fingerprint=key.fingerprint,
         scope=scope,
         generation_ids=_dump_ids(task_run_ids),
+        intent_version=_job_intent_version(db, key.user_id, task_run_ids),
     )
     db.add(row)
     db.flush()
     return token, expires_at
+
+
+def _job_intent_version(db: Session, user_id: int, task_run_ids: list[int]) -> int:
+    jobs = [row for row in _locked_runs(db, user_id, task_run_ids) if row.kind == "job"]
+    if not jobs:
+        return 1
+    jobs.sort(key=lambda row: row.id)
+    return int(jobs[0].intent_version or 1)
 
 
 def _still_authorized(db: Session, user_id: int, claim: ScheduleConfirmClaim) -> bool:

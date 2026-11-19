@@ -6,3 +6,4 @@ ts	phase	decision	why	evidence	result
 2026-11-19T15:38:52Z	frame	One owner implements the unit	The migration, the move table, chat, claims, and the worker all write the same row. Parallel editors would serialize on that row anyway.	playbooks/feature.md	single owner
 2026-11-19T15:41:24Z	start	Started implementation after the frame rows	This run did not write the rows from 2026-11-19T15:38:52Z through 2026-11-19T15:38:52Z	bc-3da2d570-133d-5e4f-a584-706eea40a53f	open
 2026-11-19T15:56:13Z	schema	Added kind, the hold columns, and continue_job. begin_turn leaves a job running.	A new turn was stopping every open row in the session. A job is not a turn.	backend/tests/test_talk.py	tests green
+2026-11-19T16:00:24Z	intent	One apply_intent commit bumps the version, clears the hold, and cancels only an unarmed open claim.	A supplement has to make the old worker match zero rows and leave an armed marker unknown.	backend/tests/test_talk.py	tests green

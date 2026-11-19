@@ -1359,10 +1359,47 @@ def free_slots_for(
     )
 
 
-def void_draft_schedule_cards(db: Session, session_id: int) -> int:
-    """Mark unconfirmed write cards cancelled. Suggest/info cards are left alone."""
-    from app.models.models import Message
-    from app.services.schedule_confirm import cancel_open_schedule_claims
+def void_draft_schedule_cards(
+    db: Session,
+    session_id: int,
+    *,
+    keep_task_run_id: int | None = None,
+) -> int:
+    """Mark unconfirmed write cards cancelled. Suggest/info cards are left alone.
+
+    A job that is waiting on the person keeps its card. A supplement also passes
+    that job id so a running job's open card stays.
+    """
+    from app.models.models import Message, TaskRun
+    from app.services.schedule_confirm import cancel_open_schedule_claims, task_ids_for_tokens
+
+    kept: set[int] = set()
+    if keep_task_run_id is not None:
+        kept.add(int(keep_task_run_id))
+    waiting = (
+        db.query(TaskRun.id)
+        .filter(
+            TaskRun.session_id == session_id,
+            TaskRun.kind == "job",
+            TaskRun.status == "waiting_person",
+        )
+        .all()
+    )
+    kept.update(int(row[0]) for row in waiting)
+
+    def held(card: dict) -> bool:
+        if not kept:
+            return False
+        tokens: list[str] = []
+        token = card.get("confirm_token")
+        if token:
+            tokens.append(str(token))
+        for item in card.get("actions") or []:
+            if isinstance(item, dict) and item.get("confirm_token"):
+                tokens.append(str(item["confirm_token"]))
+        if not tokens:
+            return False
+        return bool(kept.intersection(task_ids_for_tokens(db, tokens)))
 
     changed = 0
     rows = (
@@ -1380,11 +1417,11 @@ def void_draft_schedule_cards(db: Session, session_id: int) -> int:
             continue
         if not isinstance(card, dict):
             continue
-        if card.get("phase") == "draft" and card.get("mode") != "suggest":
+        if card.get("phase") == "draft" and card.get("mode") != "suggest" and not held(card):
             card["phase"] = "cancelled"
             row.schedule_card = json.dumps(card, ensure_ascii=False)
             changed += 1
-    claims = cancel_open_schedule_claims(db, session_id)
+    claims = cancel_open_schedule_claims(db, session_id, keep_task_run_ids=kept)
     if changed or claims:
         db.commit()
     else:
