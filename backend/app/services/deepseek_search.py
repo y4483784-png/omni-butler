@@ -109,13 +109,13 @@ def _payload(response: httpx.Response, kind: str) -> dict | ToolError:
     return payload
 
 
-def deepseek_search(query: str, *, ori_question: str | None = None) -> SearchPage | ToolError:
-    if not _bounded(query):
+def deepseek_search(query: object, *, ori_question: object = None) -> SearchPage | ToolError:
+    if not isinstance(query, str) or not _bounded(query):
         return ToolError(_QUERY_ERROR)
     if ori_question is not None and not _bounded(ori_question):
         return ToolError(_ORI_ERROR)
     body: dict[str, object] = {"query": query, "count": _count(), "need_content": True}
-    if ori_question is not None:
+    if isinstance(ori_question, str):
         body["ori_question"] = ori_question
     posted = _post("search", body, kind="检索")
     if isinstance(posted, ToolError):
@@ -142,8 +142,8 @@ def deepseek_search(query: str, *, ori_question: str | None = None) -> SearchPag
     return SearchPage(results=tuple(hits))
 
 
-def deepseek_fetch(url: str) -> FetchPage | ToolError:
-    if not _http_url(url):
+def deepseek_fetch(url: object) -> FetchPage | ToolError:
+    if not isinstance(url, str) or not _http_url(url):
         return ToolError(_URL_ERROR)
     posted = _post("fetch", {"url": url}, kind="读取")
     if isinstance(posted, ToolError):

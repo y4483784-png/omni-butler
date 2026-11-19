@@ -119,13 +119,17 @@ def test_search_posts_the_deepseek_body(monkeypatch):
 def test_invalid_query_does_not_construct_a_client(monkeypatch):
     capture = _Capture()
     _arm(monkeypatch, capture)
-    for query in ("a" * 129, "", "   ", "\n\t "):
+    for query in ("a" * 129, "", "   ", "\n\t ", None, 12):
         page = deepseek_search(query)
         result = execute_web(_ctx(), {"query": query})
         assert isinstance(page, ToolError)
         assert result.ok is False
         assert result.denied is False
         assert result.direct_answer == page.message
+    missing = execute_web(_ctx(), {})
+    assert missing.ok is False
+    assert missing.denied is False
+    assert missing.direct_answer
     page = deepseek_search("news", ori_question="   ")
     result = execute_web(_ctx(), {"query": "news", "ori_question": "   "})
     assert isinstance(page, ToolError)
@@ -286,6 +290,10 @@ def test_fetch_posts_only_the_url(monkeypatch):
         assert result.ok is False
         assert result.denied is False
         assert result.direct_answer
+    missing = execute_web_fetch(_ctx(), {})
+    assert missing.ok is False
+    assert missing.denied is False
+    assert missing.direct_answer
     assert capture.clients == 0
 
     url = "https://example.com/article"

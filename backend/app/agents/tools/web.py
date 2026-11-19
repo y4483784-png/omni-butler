@@ -35,9 +35,10 @@ def _filename(url: str, title: str) -> str:
     return "web"
 
 
-def execute_web(ctx: ToolContext, args: dict) -> ToolResult:
-    query = args["query"]
-    ori_question = args["ori_question"] if "ori_question" in args else None
+def execute_web(_ctx: ToolContext, args: dict) -> ToolResult:
+    payload = args if isinstance(args, dict) else {}
+    query = payload.get("query")
+    ori_question = payload["ori_question"] if "ori_question" in payload else None
     page = deepseek_search(query, ori_question=ori_question)
     shown = query if isinstance(query, str) else ""
     steps = [f'正在搜索:“{shown}”']
@@ -75,8 +76,9 @@ def _hit_evidence(hit) -> dict:
     }
 
 
-def execute_web_fetch(ctx: ToolContext, args: dict) -> ToolResult:
-    url = args["url"]
+def execute_web_fetch(_ctx: ToolContext, args: dict) -> ToolResult:
+    payload = args if isinstance(args, dict) else {}
+    url = payload.get("url")
     page = deepseek_fetch(url)
     if isinstance(page, ToolError):
         return ToolResult(ok=False, denied=False, evidence=[], direct_answer=page.message)

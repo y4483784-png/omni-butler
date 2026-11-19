@@ -721,6 +721,16 @@ def test_search_keeps_the_following_completion_on_the_chat_model(monkeypatch):
     link = "[News](https://news.example/a)"
     tool_messages = [item for item in calls[1]["messages"] if item.get("role") == "tool"]
     assert tool_messages and link in tool_messages[0]["content"]
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        stored = [
+            row.content or ""
+            for row in db.query(Message).filter(Message.session_id == session_id).all()
+        ]
+    finally:
+        db.close()
+    assert any(link in text for text in stored)
     assert _job(session_id).status == "completed"
 
 
