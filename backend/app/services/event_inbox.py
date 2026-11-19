@@ -168,6 +168,7 @@ def note_external_success(
     source: str,
     delivery_id: str,
     remote_request_id: str,
+    commit: bool = True,
 ) -> ReceiptView:
     """Mark success only when this receipt's claim was written and the remote id matches."""
     set_rls_context(db, user_id)
@@ -191,7 +192,8 @@ def note_external_success(
         receipt.external_request_id = marker
         db.flush()
         view = _view(db, receipt, created=False)
-        db.commit()
+        if commit:
+            db.commit()
         return view
     except EventRejected:
         db.rollback()

@@ -540,14 +540,15 @@ def reopen_known_rejection(db: Session, token: str) -> None:
     db.commit()
 
 
-def finish_confirm(db: Session, token: str | None) -> None:
+def finish_confirm(db: Session, token: str | None, *, commit: bool = True) -> None:
     """Mark a successful write. Repeating this leaves the claim written."""
     claim = _claim_for_update(db, token)
     if claim is None or claim.status not in {"unknown", "written"}:
         return
     claim.status = "written"
     _stamp_claim_phase(db, claim.session_id, claim.token, "confirmed")
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def _claim_for_update(db: Session, token: str | None) -> ScheduleConfirmClaim | None:

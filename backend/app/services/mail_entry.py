@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Protocol
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.db import set_rls_context
 from app.models.models import MailAcceptance, Message, ScheduleConfirmClaim
 from app.services.calendar import draft_expires_at
@@ -30,6 +32,7 @@ from app.services.schedule_confirm import (
     issue_schedule_claim,
     live_task_ids_for_session,
     parse_card_expiry,
+    reopen_known_rejection,
     write_fingerprint,
     write_parts,
     write_scope,
@@ -103,10 +106,59 @@ def receive(
 
 
 class MailClosed(Exception):
-    def __init__(self, status: int, detail: str) -> None:
+    def __init__(self, status: int, detail: str, *, state: str = "") -> None:
         self.status = status
         self.detail = detail
+        self.state = state
         super().__init__(detail)
+
+
+_NOT_CONNECTED = "邮箱还没有连接，未发送。"
+_REJECTED = "发送被拒绝，未发送。"
+_UNKNOWN = "结果未知，未再次发送。"
+_ATTEMPT_PREFIX = "attempt:"
+
+
+@dataclass(frozen=True)
+class SendAccepted:
+    provider_id: str
+
+
+@dataclass(frozen=True)
+class SendRejected:
+    pass
+
+
+@dataclass(frozen=True)
+class SendUnknown:
+    pass
+
+
+class MailTransport(Protocol):
+    def send(self, draft: OutboundMail) -> SendAccepted | SendRejected | SendUnknown: ...
+
+    def lookup(self, provider_id: str) -> str: ...
+
+
+_installed: MailTransport | None = None
+_bound_name = ""
+
+
+def bind_mail_transport(transport: MailTransport | None) -> None:
+    global _installed, _bound_name
+    if transport is None:
+        _installed = None
+        _bound_name = ""
+        return
+    _installed = transport
+    _bound_name = str(settings.mail_transport or "").strip()
+
+
+def _selected_transport() -> MailTransport | None:
+    chosen = str(settings.mail_transport or "").strip()
+    if not chosen or _installed is None or chosen != _bound_name:
+        return None
+    return _installed
 
 
 @dataclass(frozen=True)
@@ -192,7 +244,12 @@ def propose_send(
     else:
         token = claim.token
         stored_expiry = claim.expires_at
-    phase = "confirmed" if claim is not None and claim.status == "written" else "draft"
+    if claim is not None and claim.status == "written":
+        phase = "confirmed"
+    elif claim is not None and claim.status == "unknown":
+        phase = "unknown"
+    else:
+        phase = "draft"
     try:
         view = _file_unrouted(
             db,
@@ -254,23 +311,186 @@ def commit_send(
     if receipt is None or (receipt.claim_token or "").strip() != key:
         db.rollback()
         raise MailClosed(409, CONFIRM_DETAIL["missing"])
-    remote = (claim.remote_request_id or "").strip()
     if claim.status in {"unknown", "written"}:
-        if not remote:
-            db.rollback()
-            raise MailClosed(409, CONFIRM_DETAIL["unknown"])
-        _accept(db, user_id=user_id, delivery_id=delivery_id, remote_request_id=remote, parts=parts)
-        finish_confirm(db, key)
-        return _seal(db, user_id=user_id, delivery_id=delivery_id, remote_request_id=remote)
+        return _reconcile_send(
+            db,
+            user_id=user_id,
+            token=key,
+            delivery_id=delivery_id,
+            parts=parts,
+            remote=(claim.remote_request_id or "").strip(),
+        )
+    if claim.status != "open":
+        db.rollback()
+        raise MailClosed(409, CONFIRM_DETAIL["closed"])
+    transport = _selected_transport()
+    if transport is None:
+        db.rollback()
+        raise MailClosed(409, _NOT_CONNECTED, state="not_connected")
     try:
         consume_schedule_claim(db, user_id, key, action="mail.send", raw=parts)
     except ScheduleConfirmClosed as exc:
+        if exc.reason == "unknown":
+            raise MailClosed(409, _UNKNOWN, state="unknown") from exc
         raise MailClosed(409, CONFIRM_DETAIL.get(exc.reason, CONFIRM_DETAIL["closed"])) from exc
-    remote = str(uuid4())
-    arm_remote_claim(db, key, remote)
-    _accept(db, user_id=user_id, delivery_id=delivery_id, remote_request_id=remote, parts=parts)
-    finish_confirm(db, key)
-    return _seal(db, user_id=user_id, delivery_id=delivery_id, remote_request_id=remote)
+    attempt = f"{_ATTEMPT_PREFIX}{uuid4()}"
+    if not arm_remote_claim(db, key, attempt):
+        db.rollback()
+        raise MailClosed(409, CONFIRM_DETAIL["closed"])
+    outcome = _invoke_send(transport, draft)
+    if isinstance(outcome, SendRejected):
+        reopen_known_rejection(db, key)
+        raise MailClosed(409, _REJECTED, state="rejected")
+    provider = _usable_provider_id(outcome.provider_id, attempt) if isinstance(outcome, SendAccepted) else ""
+    if not provider:
+        raise MailClosed(409, _UNKNOWN, state="unknown")
+    return _write_acceptance(
+        db,
+        user_id=user_id,
+        token=key,
+        delivery_id=delivery_id,
+        provider_id=provider,
+        parts=parts,
+    )
+
+
+def _write_acceptance(
+    db: Session,
+    *,
+    user_id: int,
+    token: str,
+    delivery_id: str,
+    provider_id: str,
+    parts: dict,
+) -> ReceiptView:
+    set_rls_context(db, user_id)
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == token)
+        .with_for_update()
+        .one_or_none()
+    )
+    if claim is None or claim.user_id != user_id:
+        db.rollback()
+        raise MailClosed(409, CONFIRM_DETAIL["closed"])
+    claim.remote_request_id = provider_id
+    try:
+        _accept(
+            db,
+            user_id=user_id,
+            delivery_id=delivery_id,
+            remote_request_id=provider_id,
+            parts=parts,
+        )
+        finish_confirm(db, token, commit=False)
+        view = _seal(
+            db,
+            user_id=user_id,
+            delivery_id=delivery_id,
+            remote_request_id=provider_id,
+            commit=False,
+        )
+    except Exception:
+        db.rollback()
+        raise
+    db.commit()
+    return view
+
+
+def _reconcile_send(
+    db: Session,
+    *,
+    user_id: int,
+    token: str,
+    delivery_id: str,
+    parts: dict,
+    remote: str,
+) -> ReceiptView:
+    provider = remote if remote and not remote.startswith(_ATTEMPT_PREFIX) else ""
+    if not provider:
+        db.rollback()
+        raise MailClosed(409, _UNKNOWN, state="unknown")
+    if _delivery_acceptance(db, user_id, delivery_id) is not None:
+        receipt = _existing(db, user_id, "mail", delivery_id)
+        if receipt is not None and receipt.state == "external_success":
+            view = _seal(
+                db,
+                user_id=user_id,
+                delivery_id=delivery_id,
+                remote_request_id=provider,
+            )
+            db.rollback()
+            return view
+        return _write_acceptance(
+            db,
+            user_id=user_id,
+            token=token,
+            delivery_id=delivery_id,
+            provider_id=provider,
+            parts=parts,
+        )
+    transport = _selected_transport()
+    if transport is None:
+        return _write_acceptance(
+            db,
+            user_id=user_id,
+            token=token,
+            delivery_id=delivery_id,
+            provider_id=provider,
+            parts=parts,
+        )
+    db.rollback()
+    if _lookup_result(transport, provider) != "accepted":
+        raise MailClosed(409, _UNKNOWN, state="unknown")
+    return _write_acceptance(
+        db,
+        user_id=user_id,
+        token=token,
+        delivery_id=delivery_id,
+        provider_id=provider,
+        parts=parts,
+    )
+
+
+def _invoke_send(
+    transport: MailTransport,
+    draft: OutboundMail,
+) -> SendAccepted | SendRejected | SendUnknown:
+    try:
+        result = transport.send(draft)
+    except Exception:
+        return SendUnknown()
+    if isinstance(result, (SendAccepted, SendRejected, SendUnknown)):
+        return result
+    return SendUnknown()
+
+
+def _lookup_result(transport: MailTransport, provider_id: str) -> str:
+    try:
+        result = transport.lookup(provider_id)
+    except Exception:
+        return "unknown"
+    if result in {"accepted", "absent", "unknown"}:
+        return result
+    return "unknown"
+
+
+def _usable_provider_id(value: object, attempt: str) -> str:
+    provider = str(value or "").strip()
+    if not provider or provider.startswith(_ATTEMPT_PREFIX) or provider == attempt:
+        return ""
+    bare = attempt[len(_ATTEMPT_PREFIX) :] if attempt.startswith(_ATTEMPT_PREFIX) else ""
+    if bare and provider == bare:
+        return ""
+    return provider
+
+
+def _delivery_acceptance(db: Session, user_id: int, delivery_id: str) -> MailAcceptance | None:
+    return (
+        db.query(MailAcceptance)
+        .filter(MailAcceptance.user_id == user_id, MailAcceptance.delivery_id == delivery_id)
+        .one_or_none()
+    )
 
 
 def _active_mail_claim(db: Session, user_id: int, fingerprint: str) -> ScheduleConfirmClaim | None:
@@ -405,20 +625,20 @@ def _accept(
     set_rls_context(db, user_id)
     if _same_acceptance(db, user_id, remote_request_id, delivery_id) is not None:
         return
-    db.add(
-        MailAcceptance(
-            user_id=user_id,
-            remote_request_id=remote_request_id,
-            delivery_id=delivery_id,
-            recipients=json.dumps(list(parts["mail_to"]), ensure_ascii=False),
-            subject=str(parts["subject"]),
-            body=str(parts["body"]),
-        )
+    row = MailAcceptance(
+        user_id=user_id,
+        remote_request_id=remote_request_id,
+        delivery_id=delivery_id,
+        recipients=json.dumps(list(parts["mail_to"]), ensure_ascii=False),
+        subject=str(parts["subject"]),
+        body=str(parts["body"]),
     )
+    db.flush()
     try:
-        db.commit()
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
     except IntegrityError:
-        db.rollback()
         set_rls_context(db, user_id)
         if _same_acceptance(db, user_id, remote_request_id, delivery_id) is None:
             raise
@@ -448,7 +668,14 @@ def _same_acceptance(
     return by_delivery
 
 
-def _seal(db: Session, *, user_id: int, delivery_id: str, remote_request_id: str) -> ReceiptView:
+def _seal(
+    db: Session,
+    *,
+    user_id: int,
+    delivery_id: str,
+    remote_request_id: str,
+    commit: bool = True,
+) -> ReceiptView:
     try:
         return note_external_success(
             db,
@@ -456,6 +683,7 @@ def _seal(db: Session, *, user_id: int, delivery_id: str, remote_request_id: str
             source="mail",
             delivery_id=delivery_id,
             remote_request_id=remote_request_id,
+            commit=commit,
         )
     except EventRejected as exc:
         raise MailClosed(exc.status, exc.detail) from exc

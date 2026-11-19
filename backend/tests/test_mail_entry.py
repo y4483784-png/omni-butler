@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from app.core.auth import hash_password
+from app.core.config import settings
 from app.core.db import SessionLocal
 from app.models.models import EventReceipt, MailAcceptance, Message, ScheduleConfirmClaim, TaskRun, User
 from app.services import task_run
+from app.services.mail_entry import SendAccepted, SendRejected, SendUnknown, bind_mail_transport
+from app.services.schedule_confirm import CONFIRM_DETAIL, write_fingerprint, write_parts
 from fastapi.testclient import TestClient
 from tests.test_event_inbox import _calendar_count, _claim_status, _open_tokens
 from tests.test_schedule_confirm_claims import _admin_id, _body, _open, _session
@@ -377,15 +382,123 @@ def test_repeat_proposal_returns_the_same_card(plain_client: TestClient):
     assert _acceptance_rows(_admin_id(), first.json()["delivery_id"]) == []
 
 
-def test_commit_without_a_token_writes_nothing(plain_client: TestClient):
+class _FakeTransport:
+    def __init__(self, result=None, lookup_result: str = "accepted"):
+        self.result = SendAccepted("provider-1") if result is None else result
+        self.lookup_result = lookup_result
+        self.sends = 0
+        self.lookups = 0
+        self.looked: list[str] = []
+
+    def send(self, draft):
+        self.sends += 1
+        result = self.result
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    def lookup(self, provider_id: str) -> str:
+        self.lookups += 1
+        self.looked.append(provider_id)
+        return self.lookup_result
+
+
+class _EchoAttempt:
+    def __init__(self, bare: bool):
+        self.bare = bare
+        self.sends = 0
+        self.lookups = 0
+        self.attempt = ""
+
+    def send(self, draft):
+        self.sends += 1
+        parts = write_parts("mail.send", draft.as_claim())
+        fingerprint = write_fingerprint(parts)
+        db = SessionLocal()
+        try:
+            claim = (
+                db.query(ScheduleConfirmClaim)
+                .filter(
+                    ScheduleConfirmClaim.action == "mail.send",
+                    ScheduleConfirmClaim.fingerprint == fingerprint,
+                )
+                .one()
+            )
+            self.attempt = claim.remote_request_id or ""
+        finally:
+            db.close()
+        if self.bare:
+            return SendAccepted(self.attempt.removeprefix("attempt:"))
+        return SendAccepted(self.attempt)
+
+    def lookup(self, provider_id: str) -> str:
+        self.lookups += 1
+        return "accepted"
+
+
+def _clear_acceptances() -> None:
+    db = SessionLocal()
+    try:
+        db.query(MailAcceptance).filter(MailAcceptance.user_id == _admin_id()).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
+@contextmanager
+def _use_transport(monkeypatch, transport, name: str, *, selected: str | None = None):
+    _clear_acceptances()
+    monkeypatch.setattr(settings, "mail_transport", name)
+    bind_mail_transport(transport)
+    if selected is not None:
+        monkeypatch.setattr(settings, "mail_transport", selected)
+    try:
+        yield transport
+    finally:
+        bind_mail_transport(None)
+        monkeypatch.setattr(settings, "mail_transport", "")
+
+
+def _claim_remote(token: str) -> tuple[str, str]:
+    db = SessionLocal()
+    try:
+        row = db.get(ScheduleConfirmClaim, token)
+        assert row is not None
+        return row.status, row.remote_request_id or ""
+    finally:
+        db.close()
+
+
+def _set_remote(token: str, status: str, remote: str) -> None:
+    db = SessionLocal()
+    try:
+        row = db.get(ScheduleConfirmClaim, token)
+        assert row is not None
+        row.status = status
+        row.remote_request_id = remote
+        db.commit()
+    finally:
+        db.close()
+
+
+def _offer(client: TestClient):
     session_id = _session()
     subject = _subject()
-    offered = _propose(plain_client, session_id, subject=subject)
+    offered = _propose(client, session_id, subject=subject)
     assert offered.status_code == 200, offered.text
-    delivery_id = offered.json()["delivery_id"]
-    saved = _send(plain_client, "", subject=subject)
+    body = offered.json()
+    return session_id, subject, body["token"], body["delivery_id"]
+
+
+def test_commit_without_a_token_writes_nothing(plain_client: TestClient, monkeypatch):
+    _session_id, subject, _token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport()
+    with _use_transport(monkeypatch, fake, "memory"):
+        saved = _send(plain_client, "", subject=subject)
     assert saved.status_code == 409, saved.text
-    assert saved.json()["detail"] == "缺少确认，未写入。"
+    assert saved.json() == {"detail": "缺少确认，未写入。"}
+    assert fake.sends == 0
+    assert fake.lookups == 0
     assert _acceptance_rows(_admin_id(), delivery_id) == []
     assert _receipt_state(_admin_id(), delivery_id) == "received"
 
@@ -401,63 +514,275 @@ def test_mailto_body_stays_received(plain_client: TestClient):
     assert _acceptance_rows(_admin_id(), saved.json()["delivery_id"]) == []
 
 
-def test_commit_accepts_once(plain_client: TestClient):
-    session_id = _session()
-    subject = _subject()
-    offered = _propose(plain_client, session_id, subject=subject)
-    assert offered.status_code == 200, offered.text
-    token = offered.json()["token"]
-    delivery_id = offered.json()["delivery_id"]
-    sent = _send(plain_client, token, subject=subject)
-    assert sent.status_code == 200, sent.text
-    assert sent.json()["state"] == "external_success"
-    assert len(_acceptance_rows(_admin_id(), delivery_id)) == 1
-    again = _send(plain_client, token, subject=subject)
-    assert again.status_code == 200, again.text
-    assert again.json()["state"] == "external_success"
-    assert len(_acceptance_rows(_admin_id(), delivery_id)) == 1
-
-
-def test_armed_claim_without_a_row_accepts_once(plain_client: TestClient):
-    session_id = _session()
-    subject = _subject()
-    offered = _propose(plain_client, session_id, subject=subject)
-    assert offered.status_code == 200, offered.text
-    token = offered.json()["token"]
-    delivery_id = offered.json()["delivery_id"]
+def _send_phase(session_id: int) -> str:
     db = SessionLocal()
     try:
-        claim = db.get(ScheduleConfirmClaim, token)
-        claim.status = "unknown"
-        claim.remote_request_id = f"armed-{uuid4().hex}"
-        remote_id = claim.remote_request_id
-        db.commit()
+        rows = db.query(Message).filter(Message.session_id == session_id, Message.role == "assistant").all()
     finally:
         db.close()
-    sent = _send(plain_client, token, subject=subject)
-    assert sent.status_code == 200, sent.text
-    assert sent.json()["state"] == "external_success"
-    assert _acceptance_rows(_admin_id(), delivery_id) == [remote_id]
+    for row in rows:
+        try:
+            card = json.loads(row.schedule_card or "")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(card, dict) and card.get("mode") == "send":
+            return str(card.get("phase") or "")
+    return ""
+
+
+def test_empty_transport_leaves_the_claim_open(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport()
+
+    def fail_seal(*_args, **_kwargs):
+        raise AssertionError("note_external_success")
+
+    monkeypatch.setattr("app.services.mail_entry.note_external_success", fail_seal)
+    with _use_transport(monkeypatch, fake, "memory", selected=""):
+        saved = _send(plain_client, token, subject=subject)
+    assert saved.status_code == 409, saved.text
+    assert saved.json() == {"detail": "邮箱还没有连接，未发送。", "state": "not_connected"}
+    assert fake.sends == 0
+    assert fake.lookups == 0
+    assert _claim_remote(token) == ("open", "")
+    assert _acceptance_rows(_admin_id(), delivery_id) == []
+    assert _receipt_state(_admin_id(), delivery_id) == "received"
+
+
+def test_unregistered_transport_name_does_not_send(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport()
+    with _use_transport(monkeypatch, fake, "memory", selected="other"):
+        saved = _send(plain_client, token, subject=subject)
+    assert saved.status_code == 409, saved.text
+    assert saved.json()["state"] == "not_connected"
+    assert saved.json()["detail"] == "邮箱还没有连接，未发送。"
+    assert fake.sends == 0
+    assert _claim_remote(token) == ("open", "")
+    assert _acceptance_rows(_admin_id(), delivery_id) == []
+    assert _receipt_state(_admin_id(), delivery_id) == "received"
+
+
+def test_provider_acceptance_is_sent_once(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport()
+    with _use_transport(monkeypatch, fake, "memory"):
+        sent = _send(plain_client, token, subject=subject)
+        assert sent.status_code == 200, sent.text
+        assert sent.json()["state"] == "sent"
+        again = _send(plain_client, token, subject=subject)
+    assert again.status_code == 200, again.text
+    assert again.json()["state"] == "sent"
+    assert fake.sends == 1
+    assert fake.lookups == 0
+    assert _acceptance_rows(_admin_id(), delivery_id) == ["provider-1"]
     assert _receipt_state(_admin_id(), delivery_id) == "external_success"
+    assert _claim_remote(token) == ("written", "provider-1")
 
 
-def test_stop_leaves_the_accepted_send(plain_client: TestClient):
-    session_id = _session()
-    subject = _subject()
-    offered = _propose(plain_client, session_id, subject=subject)
-    token = offered.json()["token"]
-    delivery_id = offered.json()["delivery_id"]
-    sent = _send(plain_client, token, subject=subject)
+def test_transport_error_stays_unknown(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport(result=RuntimeError("down"))
+    with _use_transport(monkeypatch, fake, "memory"):
+        failed = _send(plain_client, token, subject=subject)
+        status, remote = _claim_remote(token)
+        assert failed.status_code == 409, failed.text
+        assert failed.json() == {"detail": "结果未知，未再次发送。", "state": "unknown"}
+        assert status == "unknown"
+        assert remote.startswith("attempt:")
+        assert _acceptance_rows(_admin_id(), delivery_id) == []
+        assert _receipt_state(_admin_id(), delivery_id) == "received"
+        again = _send(plain_client, token, subject=subject)
+    assert again.status_code == 409, again.text
+    assert again.json()["state"] == "unknown"
+    assert fake.sends == 1
+    assert fake.lookups == 0
+    assert _claim_remote(token) == (status, remote)
+    assert _acceptance_rows(_admin_id(), delivery_id) == []
+
+
+def test_existing_acceptance_seals_without_send(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    _set_remote(token, "unknown", "provider-1")
+    fake = _FakeTransport()
+    with _use_transport(monkeypatch, fake, "memory"):
+        db = SessionLocal()
+        try:
+            db.add(
+                MailAcceptance(
+                    user_id=_admin_id(),
+                    remote_request_id="provider-1",
+                    delivery_id=delivery_id,
+                    recipients='["a@example.com"]',
+                    subject=subject,
+                    body="请查收。",
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+        saved = _send(plain_client, token, subject=subject)
+        again = _send(plain_client, token, subject=subject)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["state"] == "sent"
+    assert again.status_code == 200, again.text
+    assert again.json()["state"] == "sent"
+    assert fake.sends == 0
+    assert fake.lookups == 0
+    assert _acceptance_rows(_admin_id(), delivery_id) == ["provider-1"]
+    assert _receipt_state(_admin_id(), delivery_id) == "external_success"
+    assert _claim_remote(token) == ("written", "provider-1")
+
+
+def test_lookup_accepted_repairs_without_send(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    _set_remote(token, "unknown", "provider-1")
+    fake = _FakeTransport(lookup_result="accepted")
+    with _use_transport(monkeypatch, fake, "memory"):
+        saved = _send(plain_client, token, subject=subject)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["state"] == "sent"
+    assert fake.sends == 0
+    assert fake.lookups == 1
+    assert fake.looked == ["provider-1"]
+    assert _acceptance_rows(_admin_id(), delivery_id) == ["provider-1"]
+    assert _receipt_state(_admin_id(), delivery_id) == "external_success"
+    assert _claim_remote(token) == ("written", "provider-1")
+
+
+@pytest.mark.parametrize("lookup_result", ["absent", "unknown"])
+def test_lookup_miss_stays_unknown(plain_client: TestClient, monkeypatch, lookup_result: str):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    _set_remote(token, "unknown", "provider-1")
+    fake = _FakeTransport(lookup_result=lookup_result)
+    with _use_transport(monkeypatch, fake, "memory"):
+        saved = _send(plain_client, token, subject=subject)
+    assert saved.status_code == 409, saved.text
+    assert saved.json() == {"detail": "结果未知，未再次发送。", "state": "unknown"}
+    assert fake.sends == 0
+    assert fake.lookups == 1
+    assert _claim_remote(token) == ("unknown", "provider-1")
+    assert _acceptance_rows(_admin_id(), delivery_id) == []
+    assert _receipt_state(_admin_id(), delivery_id) == "received"
+
+
+def test_stored_provider_repairs_without_a_transport(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    _set_remote(token, "unknown", "provider-1")
+    fake = _FakeTransport()
+    with _use_transport(monkeypatch, fake, "memory", selected=""):
+        saved = _send(plain_client, token, subject=subject)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["state"] == "sent"
+    assert fake.sends == 0
+    assert fake.lookups == 0
+    assert _acceptance_rows(_admin_id(), delivery_id) == ["provider-1"]
+    assert _receipt_state(_admin_id(), delivery_id) == "external_success"
+    assert _claim_remote(token) == ("written", "provider-1")
+
+
+@pytest.mark.parametrize("result", [SendUnknown(), SendAccepted("")])
+def test_lost_response_does_not_resend(plain_client: TestClient, monkeypatch, result):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport(result=result)
+    with _use_transport(monkeypatch, fake, "memory"):
+        lost = _send(plain_client, token, subject=subject)
+        status, remote = _claim_remote(token)
+        assert lost.status_code == 409, lost.text
+        assert lost.json() == {"detail": "结果未知，未再次发送。", "state": "unknown"}
+        assert status == "unknown"
+        assert remote.startswith("attempt:")
+        assert _acceptance_rows(_admin_id(), delivery_id) == []
+        again = _send(plain_client, token, subject=subject)
+    assert again.status_code == 409, again.text
+    assert again.json()["state"] == "unknown"
+    assert again.json()["detail"] == "结果未知，未再次发送。"
+    assert fake.sends == 1
+    assert fake.lookups == 0
+    assert _claim_remote(token) == (status, remote)
+    assert _acceptance_rows(_admin_id(), delivery_id) == []
+    assert _receipt_state(_admin_id(), delivery_id) == "received"
+
+
+@pytest.mark.parametrize("bare", [False, True])
+def test_armed_id_is_not_a_provider_id(plain_client: TestClient, monkeypatch, bare: bool):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _EchoAttempt(bare)
+    with _use_transport(monkeypatch, fake, "memory"):
+        saved = _send(plain_client, token, subject=subject)
+        status, remote = _claim_remote(token)
+        assert saved.status_code == 409, saved.text
+        assert saved.json()["state"] == "unknown"
+        assert saved.json()["detail"] == "结果未知，未再次发送。"
+        assert status == "unknown"
+        assert remote == fake.attempt
+        assert remote.startswith("attempt:")
+        assert _acceptance_rows(_admin_id(), delivery_id) == []
+        again = _send(plain_client, token, subject=subject)
+    assert again.status_code == 409, again.text
+    assert fake.sends == 1
+    assert fake.lookups == 0
+    assert _claim_remote(token) == (status, remote)
+    assert _acceptance_rows(_admin_id(), delivery_id) == []
+
+
+def test_repeat_proposal_keeps_the_unknown_card(plain_client: TestClient, monkeypatch):
+    session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport(result=SendUnknown())
+    with _use_transport(monkeypatch, fake, "memory"):
+        lost = _send(plain_client, token, subject=subject)
+        assert lost.status_code == 409, lost.text
+        assert _send_phase(session_id) == "unknown"
+        again = _propose(plain_client, session_id, subject=subject)
+        assert again.status_code == 200, again.text
+        assert again.json()["token"] == token
+        assert _send_phase(session_id) == "unknown"
+        assert fake.sends == 1
+        assert fake.lookups == 0
+        assert _acceptance_rows(_admin_id(), delivery_id) == []
+        assert _receipt_state(_admin_id(), delivery_id) == "received"
+
+
+def test_rejection_reopens_for_a_new_attempt(plain_client: TestClient, monkeypatch):
+    _session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport(result=SendRejected())
+    with _use_transport(monkeypatch, fake, "memory"):
+        rejected = _send(plain_client, token, subject=subject)
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json() == {"detail": "发送被拒绝，未发送。", "state": "rejected"}
+        assert rejected.json()["state"] != "sent"
+        assert _claim_remote(token) == ("open", "")
+        assert _acceptance_rows(_admin_id(), delivery_id) == []
+        assert _receipt_state(_admin_id(), delivery_id) == "received"
+        fake.result = SendAccepted("provider-1")
+        sent = _send(plain_client, token, subject=subject)
     assert sent.status_code == 200, sent.text
-    assert sent.json()["state"] == "external_success"
+    assert sent.json()["state"] == "sent"
+    assert fake.sends == 2
+    assert _acceptance_rows(_admin_id(), delivery_id) == ["provider-1"]
+    assert _claim_remote(token) == ("written", "provider-1")
+
+
+def test_stop_leaves_the_accepted_send(plain_client: TestClient, monkeypatch):
+    session_id, subject, token, delivery_id = _offer(plain_client)
+    fake = _FakeTransport()
+    with _use_transport(monkeypatch, fake, "memory"):
+        sent = _send(plain_client, token, subject=subject)
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["state"] == "sent"
     stopped = False
     for generation, status in _generations(session_id):
         if status not in {"completed", "stopped"}:
             task_run.stop(user_id=_admin_id(), generation=generation)
             stopped = True
     assert stopped
-    assert len(_acceptance_rows(_admin_id(), delivery_id)) == 1
+    assert _acceptance_rows(_admin_id(), delivery_id) == ["provider-1"]
     assert _receipt_state(_admin_id(), delivery_id) == "external_success"
+    assert fake.sends == 1
+
+
+def test_calendar_unknown_sentence_stays():
+    assert CONFIRM_DETAIL["unknown"] == "结果未知，未再次写入。请先核对日历。"
 
 
 def test_mail_entry_does_not_name_google():

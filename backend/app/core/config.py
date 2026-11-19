@@ -184,6 +184,7 @@ class Settings(BaseSettings):
     errand_compose_token: str = ""
     errand_http_timeout: float = 10.0
     desktop_package_token: str = Field(default="", validation_alias="DESKTOP_PACKAGE_TOKEN")
+    mail_transport: str = ""
 
     # CORS
     cors_origins: str = "http://localhost:5173"
