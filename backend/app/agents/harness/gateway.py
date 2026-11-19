@@ -276,6 +276,7 @@ def invoke(tool_name: str | None, ctx: ToolContext, args: dict[str, Any] | None 
         user_id=getattr(ctx, "user_id", None) or 0,
         task_id=getattr(ctx, "task_id", None),
         tool=tool,
+        require_task=bool(getattr(ctx, "require_task", False)),
     )
     if stop_reason:
         result = _deny(tool, stop_reason, risk=risk)

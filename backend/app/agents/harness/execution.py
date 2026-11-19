@@ -14,7 +14,14 @@ def effect_denial(spec_effect: str, declared: str | None) -> str | None:
     return None
 
 
-def execution_denial(db, *, user_id: int, task_id: int | None, tool: str) -> str | None:
+def execution_denial(
+    db,
+    *,
+    user_id: int,
+    task_id: int | None,
+    tool: str,
+    require_task: bool = False,
+) -> str | None:
     """Deny a stopped generation, or a name absent from that generation's list.
 
     A missing task id keeps today's callers working. This function does not
@@ -23,6 +30,8 @@ def execution_denial(db, *, user_id: int, task_id: int | None, tool: str) -> str
     after stop commits.
     """
     if task_id is None:
+        if require_task:
+            return "缺少任务，未执行。"
         return None
     if db is None:
         return "缺少任务，未执行。"
@@ -37,6 +46,12 @@ def execution_denial(db, *, user_id: int, task_id: int | None, tool: str) -> str
         return f"这一代已经停止，未执行。generation={generation}"
     if task_run.is_card_action(turn.allowed_tools):
         return f"这一代是卡片确认，不是工具名单，未执行。generation={generation}"
+    if (
+        turn.kind == "job"
+        and turn.web_constraint == "forbid"
+        and tool in {"web", "web_fetch"}
+    ):
+        return "这一代禁止检索，未执行。"
     if tool not in {str(item) for item in turn.allowed_tools}:
         return f"名称不在本回合允许列表，未执行。generation={generation}"
     return None

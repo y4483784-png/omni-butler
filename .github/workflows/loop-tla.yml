@@ -1,0 +1,46 @@
+name: loop model
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  tlc:
+    name: loop TLC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Check the model, then require each break flag to exit 1
+        run: |
+          python3 verification/loop/check.py
+          set +e
+          python3 verification/loop/check.py --break-save
+          save_status=$?
+          python3 verification/loop/check.py --break-result
+          result_status=$?
+          python3 verification/loop/check.py --break-write
+          write_status=$?
+          python3 verification/loop/check.py --break-forbid
+          forbid_status=$?
+          python3 verification/loop/check.py --break-stop
+          stop_status=$?
+          python3 verification/loop/check.py --break-continuation
+          continuation_status=$?
+          set -e
+          test "$save_status" -eq 1
+          test "$result_status" -eq 1
+          test "$write_status" -eq 1
+          test "$forbid_status" -eq 1
+          test "$stop_status" -eq 1
+          test "$continuation_status" -eq 1

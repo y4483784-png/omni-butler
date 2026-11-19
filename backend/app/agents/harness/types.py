@@ -28,6 +28,7 @@ class ToolContext:
     working_state: dict | None = None
     task_id: int | None = None
     generation: int | None = None
+    require_task: bool = False
     surface: ServerSurface = ServerSurface.WEB
 
 

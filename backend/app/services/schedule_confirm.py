@@ -226,6 +226,34 @@ def issue_schedule_claim(
     raise ScheduleConfirmClosed("closed")
 
 
+def bind_claim(
+    db: Session,
+    *,
+    user_id: int,
+    session_id: int,
+    action: str,
+    raw: dict,
+    task_run_ids: list[int],
+    expires_at: datetime | None,
+) -> tuple[str, datetime | None]:
+    action_name = canonical_action(action)
+    parts = write_parts(action_name, raw)
+    fingerprint = write_fingerprint(parts)
+    scope = write_scope(user_id, parts)
+    ids = _owned_live_ids(db, user_id, task_run_ids)
+    if not ids:
+        raise ScheduleConfirmClosed("no-generation")
+    key = UnfinishedWriteKey(user_id=user_id, action=action_name, fingerprint=fingerprint)
+    return _bind_open_claim(
+        db,
+        key=key,
+        scope=scope,
+        session_id=session_id,
+        task_run_ids=ids,
+        expires_at=expires_at,
+    )
+
+
 def continue_from_card(
     db: Session,
     *,

@@ -496,8 +496,14 @@ def _consume_schedule_claim(
 
 
 def _seal_schedule_write(db: Session, token: str | None) -> None:
+    from app.models.models import ScheduleConfirmClaim
+    from app.services.loop_round import note_confirmed
     from app.services.schedule_confirm import finish_confirm
 
+    key = str(token or "").strip()
+    claim = db.get(ScheduleConfirmClaim, key) if key else None
+    if claim is not None:
+        note_confirmed(db, user_id=int(claim.user_id), token=key)
     finish_confirm(db, token)
 
 
