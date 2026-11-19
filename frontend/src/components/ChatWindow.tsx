@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store/useStore";
 import { hydrateSessionMessages, startChatStream, stopChatStream } from "../services/chatStream";
 import type { ChatMsg, MeetingBrief } from "../api/client";
+import { imageFromFile, type LocalImagePreview } from "../chatImage";
 import { Markdown } from "./Markdown";
 import { FollowupCard } from "./FollowupCard";
 import { ErrandCard } from "./ErrandCard";
@@ -15,8 +16,13 @@ import { foldThinking } from "../thinkingFold";
 
 const MAX_CHARS = 10000; // PRD 3.1.1
 
+type PendingImage = LocalImagePreview & { dataBase64: string };
+
 export function ChatWindow({ sessionId }: { sessionId: number }) {
   const [input, setInput] = useState("");
+  const [pending, setPending] = useState<PendingImage[]>([]);
+  const [imageError, setImageError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   const chat = useStore((s) => s.sessionChats[sessionId]);
@@ -46,12 +52,67 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
 
   function send() {
     const text = input.trim();
-    if (!text || busy) return;
+    if (busy || (!text && pending.length === 0)) return;
+    const images = pending.map((item) => ({
+      media_type: item.mediaType,
+      data_base64: item.dataBase64,
+    }));
+    const localImages = pending.map((item) => ({
+      mediaType: item.mediaType,
+      url: item.url,
+    }));
     setInput("");
+    setPending([]);
+    setImageError("");
     void startChatStream(sessionId, text, {
       useKb,
       kbFocusIds,
       onTitle: updateSessionTitle,
+      images,
+      localImages,
+    });
+  }
+
+  function addFiles(files: FileList | null) {
+    if (!files || busy) return;
+    const chosen = Array.from(files);
+    const slots: Array<PendingImage | undefined> = [];
+    let rejected = false;
+    const readers = chosen.map(
+      (file, index) =>
+        new Promise<void>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const buffer = reader.result;
+            if (!(buffer instanceof ArrayBuffer)) {
+              rejected = true;
+              resolve();
+              return;
+            }
+            const image = imageFromFile(file, new Uint8Array(buffer));
+            if (image === null) {
+              rejected = true;
+              resolve();
+              return;
+            }
+            slots[index] = {
+              mediaType: image.media_type,
+              dataBase64: image.data_base64,
+              url: URL.createObjectURL(file),
+            };
+            resolve();
+          };
+          reader.onerror = () => {
+            rejected = true;
+            resolve();
+          };
+          reader.readAsArrayBuffer(file);
+        })
+    );
+    void Promise.all(readers).then(() => {
+      setImageError(rejected ? "只接受 JPEG、PNG、GIF 或 WebP，且单张不超过 32MiB。" : "");
+      const accepted = slots.filter((item): item is PendingImage => item !== undefined);
+      if (accepted.length > 0) setPending((current) => [...current, ...accepted]);
     });
   }
 
@@ -118,34 +179,60 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
         ))}
         <div ref={endRef} />
       </div>
-      <div className="composer">
-        <textarea
-          value={input}
-          maxLength={MAX_CHARS}
-          placeholder={
-            busy
-              ? "生成中，可点击停止…"
-              : useKb
-                ? "强制知识库：基于已上传文档提问…"
-                : "输入消息，Enter 发送 / Shift+Enter 换行（可自动走知识库）"
-          }
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
+      <div className="composer-wrap">
+        {pending.length > 0 ? (
+          <div className="composer-images">
+            {pending.map((item, index) => (
+              <img key={`${item.url}-${index}`} src={item.url} alt="" />
+            ))}
+          </div>
+        ) : null}
+        {imageError ? <p className="composer-image-error">{imageError}</p> : null}
+        <div className="composer">
+          <textarea
+            value={input}
+            maxLength={MAX_CHARS}
+            placeholder={
+              busy
+                ? "生成中，可点击停止…"
+                : useKb
+                  ? "强制知识库：基于已上传文档提问…"
+                  : "输入消息，Enter 发送 / Shift+Enter 换行（可自动走知识库）"
             }
-          }}
-        />
-        {busy ? (
-          <button type="button" className="stop-btn" onClick={() => stopChatStream(sessionId)}>
-            停止生成
-          </button>
-        ) : (
-          <button disabled={!input.trim()} onClick={send}>
-            发送
-          </button>
-        )}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          {busy ? (
+            <button type="button" className="stop-btn" onClick={() => stopChatStream(sessionId)}>
+              停止生成
+            </button>
+          ) : (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                multiple
+                hidden
+                onChange={(event) => {
+                  addFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <button type="button" className="attach-btn" onClick={() => fileRef.current?.click()}>
+                图片
+              </button>
+              <button disabled={!input.trim() && pending.length === 0} onClick={send}>
+                发送
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -187,6 +274,13 @@ function MessageRow({
   return (
     <div className={`row ${m.role}`}>
       <div className="bubble">
+        {m.localImages && m.localImages.length > 0 ? (
+          <div className="bubble-images">
+            {m.localImages.map((item, index) => (
+              <img key={`${item.url}-${index}`} src={item.url} alt="" />
+            ))}
+          </div>
+        ) : null}
         {m.role === "assistant" ? (
           <>
             {isLast && thinkingSteps.length > 0 ? (

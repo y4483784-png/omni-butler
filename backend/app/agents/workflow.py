@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, Sequence, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy.orm import Session
@@ -30,6 +30,7 @@ from app.core.prompts import (
     max_pool_chars,
     no_evidence_block,
 )
+from app.chat_images import ChatImage, attach_user_images
 from app.core.generation_stop import GenerationStopped, is_stopped
 from app.core.llm import Role, Spoken, answer_pair, complete_text
 from app.services.calendar_factory import calendar_provider_for
@@ -401,6 +402,7 @@ def run_agent_workflow(
     task_id: int | None = None,
     generation: int | None = None,
     surface: ServerSurface | None = None,
+    images: Sequence[ChatImage] | None = None,
 ) -> WorkflowResult:
     if is_stopped():
         return _halted_result()
@@ -752,6 +754,7 @@ def run_agent_workflow(
             thinking.append("正在根据证据核对结论")
             # Infra failures must surface (eval: infra_error; SSE: the existing
             # error event). A silent "" was scored as an ordinary empty answer.
+            llm_messages = attach_user_images(llm_messages, tuple(images or ()))
             draft = complete_text(llm_messages, role=Role.CHAT, raise_on_error=True)
             if is_stopped():
                 return _cutoff()

@@ -1,0 +1,41 @@
+%%{init: {"flowchart": {"wrappingWidth": 900, "htmlLabels": false, "nodeSpacing": 48, "rankSpacing": 32}}}%%
+flowchart TB
+  subgraph mainPath [Chat request]
+    direction TB
+    attach[User attaches JPEG PNG GIF or WebP]
+    post[POST /api/chat]
+    decode[Decode base64 and match the signature]
+    turn[begin_turn then the existing chat workflow]
+    chatRole[Role CHAT receives image_url blocks]
+    measure[Count the serialized UTF-8 body]
+    answered[Provider responds]
+    usageRow[Store LlmCall and keep missing counts null]
+    text[Save Message.content as text and drop the bytes]
+    pad[" "]
+    attach --> post
+    post --> decode
+    decode --> turn
+    turn --> chatRole
+    chatRole --> measure
+    measure --> answered
+    answered --> usageRow
+    usageRow --> text
+    text --> pad
+  end
+  badImage[400 for type signature or size]
+  tooBig[Body over 48 MiB is not sent]
+  failed[A failed request stores no usage row]
+  seam[A later job may bind task_images]
+  pending[Terminal commit sets pending_delete]
+  purge[After commit delete the blob then the row]
+  retry[A failed blob delete stays pending_delete]
+  decode --> badImage
+  measure --> tooBig
+  answered --> failed
+  text --> seam
+  seam --> pending
+  pending --> purge
+  purge --> retry
+  classDef hide fill:#ffffde,stroke:#ffffde,color:#ffffde
+  class pad hide
+  linkStyle 8 stroke:#ffffde,fill:#ffffde

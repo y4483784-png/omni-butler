@@ -18,11 +18,19 @@ import time
 import weakref
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, AsyncIterator, Literal, TypeVar
+from typing import Any, AsyncIterator, Literal, Mapping, Sequence, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from app.chat_images import (
+    BODY_CAP_BYTES,
+    ChatImage,
+    RequestBodyTooLarge,
+    attach_user_images,
+    text_of,
+    wire_messages,
+)
 from app.core.config import settings
 from app.core.generation_stop import GenerationStopped, is_stopped
 from app.core.proxy import proxy_from_env
@@ -255,18 +263,8 @@ def _refuse_outbound(messages: list[dict], tools: Any) -> None:
             raise ToolsRefused("message carries tool or reasoning fields")
 
 
-def _wire_messages(messages: list[dict]) -> list[dict[str, str]]:
-    wire: list[dict[str, str]] = []
-    for message in messages or []:
-        content = message.get("content") if isinstance(message, dict) else ""
-        role = message.get("role") if isinstance(message, dict) else ""
-        wire.append(
-            {
-                "role": role if isinstance(role, str) else "",
-                "content": content if isinstance(content, str) else "",
-            }
-        )
-    return wire
+def _wire_messages(messages: list[dict]) -> list[dict[str, Any]]:
+    return wire_messages(messages)
 
 
 def _build_request(
@@ -377,8 +375,8 @@ def _record_call(prompt_tokens: int | None, started: float) -> None:
 
 
 def _mock_text(messages: list[dict]) -> str:
-    last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-    system = next((m["content"] for m in messages if m["role"] == "system"), "")
+    last_user = next((text_of(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
+    system = next((text_of(m.get("content")) for m in messages if m.get("role") == "system"), "")
     if system and "【证据池】" in system:
         return (
             f"（演示模式）根据证据，关于「{last_user}」的简要说明如下：[1]\n"
@@ -396,15 +394,52 @@ def _raise_infra(exc: BaseException) -> None:
     raise LLMInfraError(f"{type(exc).__name__}: {exc}") from exc
 
 
+def provider_payload(body: Mapping[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": body["model"],
+        "messages": body["messages"],
+        "stream": bool(body.get("stream")),
+    }
+    extra = body.get("extra_body")
+    if isinstance(extra, Mapping):
+        for key, value in extra.items():
+            payload[str(key)] = value
+    for key in ("reasoning_effort", "response_format", "temperature", "stream_options"):
+        if key in body:
+            payload[key] = body[key]
+    return payload
+
+
+def serialized_provider_body(body: Mapping[str, Any]) -> bytes:
+    """UTF-8 JSON of the chat-completion object, with extra_body merged in.
+
+    timeout stays a client option and is not part of this measurement.
+    The compact separators match the OpenAI client's openapi_dumps.
+    """
+    return json.dumps(
+        provider_payload(body),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def assert_body_within_limit(body: Mapping[str, Any]) -> None:
+    raw = serialized_provider_body(body)
+    if len(raw) > BODY_CAP_BYTES:
+        raise RequestBodyTooLarge(len(raw))
+
+
 def _create_sync(client: Any, body: dict[str, Any]) -> Any:
     if is_stopped():
         raise GenerationStopped()
+    assert_body_within_limit(body)
     return client.chat.completions.create(**body)
 
 
 async def _create_async(client: Any, body: dict[str, Any]) -> Any:
     if is_stopped():
         raise GenerationStopped()
+    assert_body_within_limit(body)
     return await client.chat.completions.create(**body)
 
 
@@ -414,6 +449,7 @@ async def stream_chat(
     role: Role,
     usage_out: dict[str, Any] | None = None,
     tools: Any = None,
+    images: Sequence[ChatImage] | None = None,
 ):
     """Yield reasoning and answer deltas for one role.
 
@@ -422,10 +458,11 @@ async def stream_chat(
     Rate limits and timeouts raise ``LLMInfraError`` and are not retried here.
     """
     _refuse_outbound(messages, tools)
+    prepared = attach_user_images(messages, tuple(images or ()))
     if is_stopped():
         raise GenerationStopped()
     if not settings.llm_api_key:
-        async for ch in _mock_stream(messages):
+        async for ch in _mock_stream(prepared):
             if not ch:
                 continue
             if is_stopped():
@@ -434,19 +471,23 @@ async def stream_chat(
         return
 
     call = resolve(role)
-    body = _build_request(call, messages, kind="text", stream=True, tools=tools)
+    body = _build_request(call, prepared, kind="text", stream=True, tools=tools)
     if usage_out is not None:
         body["stream_options"] = {"include_usage": True}
     client = _get_async_client()
     async with async_model_slot(call.model):
         try:
             resp = await _create_async(client, body)
+        except RequestBodyTooLarge:
+            raise
         except Exception as exc:
             if _rejects_stream_options(exc) and "stream_options" in body:
                 logger.debug("stream_chat retry without stream_options")
                 body.pop("stream_options", None)
                 try:
                     resp = await _create_async(client, body)
+                except RequestBodyTooLarge:
+                    raise
                 except Exception as retry_exc:
                     if is_llm_infra_exception(retry_exc):
                         _raise_infra(retry_exc)
@@ -455,10 +496,24 @@ async def stream_chat(
                 _raise_infra(exc)
             else:
                 raise
+        seen_usage: Any = None
+        recorded = False
+
+        def _store_usage() -> None:
+            nonlocal recorded
+            if recorded:
+                return
+            recorded = True
+            from app.services.llm_usage import record_response_usage
+
+            record_response_usage(role=call.role.value, model=call.model, usage=seen_usage)
+
         try:
             async for chunk in resp:
+                usage = getattr(chunk, "usage", None)
+                if usage is not None:
+                    seen_usage = usage
                 if usage_out is not None:
-                    usage = getattr(chunk, "usage", None)
                     pt = _usage_prompt_tokens(usage)
                     if pt is not None:
                         usage_out["prompt_tokens"] = pt
@@ -487,18 +542,25 @@ async def stream_chat(
                 content, reasoning = message_parts(delta)
                 if reasoning:
                     if is_stopped():
+                        _store_usage()
                         return
                     yield ReasoningDelta(reasoning)
                 if content:
                     if is_stopped():
+                        _store_usage()
                         return
                     yield AnswerDelta(content)
+        except (GeneratorExit, asyncio.CancelledError):
+            _store_usage()
+            raise
         except (LLMInfraError, LLMStructuredError):
             raise
         except Exception as exc:
             if is_llm_infra_exception(exc):
                 _raise_infra(exc)
             raise
+        else:
+            _store_usage()
 
 
 def complete_text(
@@ -510,16 +572,18 @@ def complete_text(
     raise_on_error: bool = False,
     tools: Any = None,
     kind: Literal["text", "json"] = "text",
+    images: Sequence[ChatImage] | None = None,
 ) -> Spoken:
     _refuse_outbound(messages, tools)
+    prepared = attach_user_images(messages, tuple(images or ()))
     if is_stopped():
         raise GenerationStopped()
     if not settings.llm_api_key:
-        return Spoken(_mock_text(messages), "", None)
+        return Spoken(_mock_text(prepared), "", None)
 
     call = resolve(role)
     req_timeout = float(timeout if timeout is not None else settings.llm_timeout)
-    body = _build_request(call, messages, kind=kind, stream=False, tools=tools, timeout=req_timeout)
+    body = _build_request(call, prepared, kind=kind, stream=False, tools=tools, timeout=req_timeout)
     client = _get_sync_client()
     attempts = 1 + max(0, int(retries))
     for attempt in range(1, attempts + 1):
@@ -529,6 +593,8 @@ def complete_text(
         try:
             with model_slot(call.model):
                 resp = _create_sync(client, body)
+        except RequestBodyTooLarge:
+            raise
         except Exception as exc:
             if is_stopped():
                 raise GenerationStopped()
@@ -559,6 +625,13 @@ def complete_text(
         prompt_tokens = _usage_prompt_tokens(getattr(resp, "usage", None))
         if finish is FinishClass.STOP:
             _record_call(prompt_tokens, started)
+            from app.services.llm_usage import record_response_usage
+
+            record_response_usage(
+                role=call.role.value,
+                model=call.model,
+                usage=getattr(resp, "usage", None),
+            )
             return Spoken(content.strip(), reasoning, prompt_tokens)
         reason = getattr(choice, "finish_reason", None)
         if finish is FinishClass.INFRA:
@@ -600,6 +673,8 @@ def complete_json(
     try:
         with model_slot(call.model):
             resp = _create_sync(client, body)
+    except RequestBodyTooLarge:
+        raise
     except Exception as exc:
         if is_stopped():
             raise GenerationStopped()
@@ -807,8 +882,8 @@ def _parse_json_object(raw: str) -> dict | None:
 
 
 async def _mock_stream(messages: list[dict]):
-    last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-    system = next((m["content"] for m in messages if m["role"] == "system"), "")
+    last_user = next((text_of(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
+    system = next((text_of(m.get("content")) for m in messages if m.get("role") == "system"), "")
     if system and "【证据池】" in system:
         reply = (
             "（演示模式 · 证据池问答）\n\n"

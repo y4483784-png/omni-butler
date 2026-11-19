@@ -12,7 +12,8 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
-from app.models.models import Document, User
+from app.models.models import Document, LlmCall, TaskImage, TaskRun, User
+from app.models.models import Session as ChatSession
 
 pytestmark = pytest.mark.integration
 
@@ -42,6 +43,10 @@ def _cleanup(db) -> None:
     db.rollback()
     for user_id in (_ALICE, _BOB):
         set_rls_context(db, user_id)
+        db.execute(text("DELETE FROM task_images WHERE user_id = :u"), {"u": user_id})
+        db.execute(text("DELETE FROM llm_calls WHERE user_id = :u"), {"u": user_id})
+        db.execute(text("DELETE FROM task_runs WHERE user_id = :u"), {"u": user_id})
+        db.execute(text("DELETE FROM sessions WHERE user_id = :u"), {"u": user_id})
         db.execute(text("DELETE FROM documents WHERE user_id = :u"), {"u": user_id})
         db.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
     db.commit()
@@ -69,6 +74,17 @@ def test_rls_policies_are_installed():
             "SessionLocal must be a non-superuser role without BYPASSRLS; "
             "superusers ignore FORCE RLS"
         )
+        for table in ("llm_calls", "task_images"):
+            forced_row = db.execute(
+                text("SELECT relforcerowsecurity FROM pg_class WHERE relname = :name"),
+                {"name": table},
+            ).scalar()
+            policy_count = db.execute(
+                text("SELECT count(*) FROM pg_policies WHERE tablename = :name"),
+                {"name": table},
+            ).scalar()
+            assert forced_row is True, f"{table} must have FORCE ROW LEVEL SECURITY"
+            assert int(policy_count or 0) >= 1, f"{table} must carry an RLS policy"
     finally:
         db.close()
 
@@ -121,6 +137,72 @@ def test_rls_context_switches_between_requests():
         set_rls_context(db, _ALICE)
         visible = {d.filename for d in db.query(Document).all()}
         assert "alice-scoped.md" in visible
+    finally:
+        try:
+            _cleanup(db)
+        finally:
+            db.close()
+
+
+@_needs_postgres
+def test_rls_hides_llm_calls_and_task_images():
+    db = SessionLocal()
+    try:
+        _ensure_user(db, _ALICE, "rls-alice")
+        _ensure_user(db, _BOB, "rls-bob")
+        set_rls_context(db, _ALICE)
+        session = ChatSession(user_id=_ALICE, title="picture-rls")
+        db.add(session)
+        db.flush()
+        run = TaskRun(
+            user_id=_ALICE,
+            session_id=session.id,
+            generation=1,
+            status="running",
+            allowed_tools="",
+        )
+        db.add(run)
+        db.flush()
+        db.add(
+            LlmCall(
+                user_id=_ALICE,
+                generation=1,
+                role="chat",
+                model="deepseek-flash",
+                prompt_tokens=None,
+                completion_tokens=0,
+            )
+        )
+        db.add(
+            TaskImage(
+                user_id=_ALICE,
+                task_run_id=run.id,
+                media_type="image/png",
+                byte_length=4,
+                sha256="ab",
+                storage_key="task-image/alice/1/ab-0",
+                purge_state="ready",
+            )
+        )
+        db.commit()
+
+        set_rls_context(db, _ALICE)
+        call = db.query(LlmCall).one()
+        assert call.prompt_tokens is None
+        assert call.completion_tokens == 0
+        assert db.query(TaskImage).count() == 1
+
+        set_rls_context(db, _BOB)
+        assert db.query(LlmCall).count() == 0
+        assert db.query(TaskImage).count() == 0
+
+        set_rls_context(db, _ALICE)
+        db.add(LlmCall(user_id=None, role="chat", model="deepseek-flash"))
+        with pytest.raises(Exception):
+            db.commit()
+        db.rollback()
+        set_rls_context(db, _ALICE)
+        assert db.query(LlmCall).count() == 1
     finally:
         try:
             _cleanup(db)

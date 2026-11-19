@@ -1,3 +1,5 @@
+import type { ChatImagePayload, LocalImagePreview } from "../chatImage";
+
 export interface AuthUser {
   id: number;
   username: string;
@@ -30,6 +32,7 @@ export interface ChatMsg {
   scheduleCard?: ScheduleCard | null;
   artifact?: ArtifactPayload | null;
   feedback?: "up" | "down" | null;
+  localImages?: LocalImagePreview[];
 }
 
 export interface ScheduleSlot {
@@ -304,6 +307,7 @@ export async function* streamChat(
     useKb?: boolean;
     documentIds?: number[];
     regenerateMessageId?: number;
+    images?: ChatImagePayload[];
   }
 ): AsyncGenerator<string> {
   const body: Record<string, unknown> = {
@@ -312,6 +316,9 @@ export async function* streamChat(
     use_kb: Boolean(handlers?.useKb),
     document_ids: handlers?.documentIds?.length ? handlers.documentIds : [],
   };
+  if (handlers?.images && handlers.images.length > 0) {
+    body.images = handlers.images;
+  }
   if (handlers?.regenerateMessageId != null) {
     body.regenerate_message_id = handlers.regenerateMessageId;
   }

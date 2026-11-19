@@ -1,5 +1,6 @@
 import { streamChat, loadMessages } from "../api/client";
 import type { ChatMsg, Citation, ScheduleCard, ArtifactPayload } from "../api/client";
+import type { ChatImagePayload, LocalImagePreview } from "../chatImage";
 import { useStore, type SessionChatState } from "../store/useStore";
 import { artifactFromPayload } from "../utils/artifact";
 import { foldThinking, type ThinkingFold } from "../thinkingFold";
@@ -12,6 +13,8 @@ export type StartChatOptions = {
   useKb: boolean;
   kbFocusIds: number[];
   onTitle?: (sessionId: number, title: string) => void;
+  images?: ChatImagePayload[];
+  localImages?: LocalImagePreview[];
 };
 
 function isAbortError(e: unknown): boolean {
@@ -69,12 +72,16 @@ function voidOpenDrafts(messages: SessionChatState["messages"]) {
   });
 }
 
-function appendAssistantPlaceholder(sessionId: number, userText: string) {
+function appendAssistantPlaceholder(
+  sessionId: number,
+  userText: string,
+  localImages?: LocalImagePreview[]
+) {
   const prev = voidOpenDrafts(useStore.getState().sessionChats[sessionId]?.messages ?? []);
   patchSession(sessionId, {
     messages: [
       ...prev,
-      { role: "user", content: userText },
+      { role: "user", content: userText, localImages },
       {
         role: "assistant",
         content: "",
@@ -171,6 +178,7 @@ async function runStreamLoop(
       useKb: options.useKb,
       documentIds: options.kbFocusIds.length ? options.kbFocusIds : undefined,
       regenerateMessageId: options.regenerateMessageId,
+      images: options.images,
       onTitle: (title) => options.onTitle?.(sessionId, title),
       onAck: (path) => {
         patchSession(sessionId, {
@@ -292,7 +300,7 @@ export async function startChatStream(
   const state = useStore.getState();
   if (state.sessionChats[sessionId]?.busy) return;
 
-  appendAssistantPlaceholder(sessionId, message);
+  appendAssistantPlaceholder(sessionId, message, options.localImages);
   useStore.getState().touchSession(sessionId);
   await runStreamLoop(sessionId, message, options);
 }

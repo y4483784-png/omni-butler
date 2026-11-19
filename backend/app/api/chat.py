@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DbSession
 
 from app.agents.dispatch import assign_turn
@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
 from app.core.deps import get_db_scoped
 from app.core.generation_stop import GenerationStopped, bind, is_stopped, reset
+from app.chat_images import ChatImage, ImageRejected, decode_chat_images
 from app.core.llm import AnswerDelta, LLMInfraError, ReasoningDelta, Role, stream_chat
 from app.core.moderation import INPUT_BLOCKED_MESSAGE, RedactBuffer, contains_sensitive, redact_text
 from app.core.messages import llm_user_error
@@ -51,12 +52,19 @@ SSE_HEADERS = {
 }
 
 
+class ChatImageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    media_type: str
+    data_base64: str
+
+
 class ChatRequest(BaseModel):
     session_id: int
     message: str = ""
     use_kb: bool = False
     document_ids: list[int] = Field(default_factory=list)
     regenerate_message_id: int | None = None
+    images: list[ChatImageIn] = Field(default_factory=list)
 
 
 def _sse(data: dict) -> str:
@@ -394,6 +402,9 @@ async def chat(
             headers={**SSE_HEADERS, "Retry-After": str(max(1, retry_after))},
         )
 
+    if is_regenerate and req.images:
+        return JSONResponse({"detail": "regenerate"}, status_code=400)
+
     if is_regenerate:
         reg = _apply_regenerate(db, req, user_id=uid)
         if reg is None:
@@ -425,6 +436,14 @@ async def chat(
 
     if contains_sensitive(user_message):
         return JSONResponse({"detail": INPUT_BLOCKED_MESSAGE}, status_code=400)
+
+    try:
+        images: tuple[ChatImage, ...] = decode_chat_images(
+            req.images,
+            max_upload_mb=settings.max_upload_mb,
+        )
+    except ImageRejected as exc:
+        return JSONResponse({"detail": exc.code}, status_code=400)
 
     turn = task_run.begin_turn(user_id=uid, session_id=session.id)
 
@@ -520,6 +539,7 @@ async def chat(
                         task_id=turn.id,
                         generation=turn.generation,
                         surface=surface_for_login(),
+                        images=images,
                     )
                 )
                 while not wf_task.done():
@@ -639,44 +659,51 @@ async def chat(
                         return _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
                     try:
                         leave_stream = False
-                        async for delta in stream_chat(
-                            llm_messages, role=Role.CHAT, usage_out=stream_usage
-                        ):
-                            if is_stopped() or await request.is_disconnected():
-                                task_run.stop(user_id=uid, generation=turn.generation)
-                                leave_stream = True
-                                break
-                            if isinstance(delta, ReasoningDelta):
-                                for piece in reason_buf.push(delta.text):
-                                    if is_stopped() or await request.is_disconnected():
-                                        task_run.stop(user_id=uid, generation=turn.generation)
-                                        leave_stream = True
-                                        break
+                        stream = stream_chat(
+                            llm_messages,
+                            role=Role.CHAT,
+                            usage_out=stream_usage,
+                            images=images,
+                        )
+                        try:
+                            async for delta in stream:
+                                if is_stopped() or await request.is_disconnected():
+                                    task_run.stop(user_id=uid, generation=turn.generation)
+                                    leave_stream = True
+                                    break
+                                if isinstance(delta, ReasoningDelta):
+                                    for piece in reason_buf.push(delta.text):
+                                        if is_stopped() or await request.is_disconnected():
+                                            task_run.stop(user_id=uid, generation=turn.generation)
+                                            leave_stream = True
+                                            break
+                                        reasoning_parts.append(piece)
+                                        yield _sse({"type": "reasoning", "content": piece})
+                                elif isinstance(delta, AnswerDelta):
+                                    for piece in answer_buf.push(delta.text):
+                                        if is_stopped() or await request.is_disconnected():
+                                            task_run.stop(user_id=uid, generation=turn.generation)
+                                            leave_stream = True
+                                            break
+                                        marker = _note_ttft()
+                                        if marker:
+                                            yield marker
+                                        acc.append(piece)
+                                        yield _sse({"type": "token", "content": piece})
+                                if leave_stream:
+                                    break
+                            if not leave_stream:
+                                for piece in reason_buf.finish():
                                     reasoning_parts.append(piece)
                                     yield _sse({"type": "reasoning", "content": piece})
-                            elif isinstance(delta, AnswerDelta):
-                                for piece in answer_buf.push(delta.text):
-                                    if is_stopped() or await request.is_disconnected():
-                                        task_run.stop(user_id=uid, generation=turn.generation)
-                                        leave_stream = True
-                                        break
+                                for piece in answer_buf.finish():
                                     marker = _note_ttft()
                                     if marker:
                                         yield marker
                                     acc.append(piece)
                                     yield _sse({"type": "token", "content": piece})
-                            if leave_stream:
-                                break
-                        if not leave_stream:
-                            for piece in reason_buf.finish():
-                                reasoning_parts.append(piece)
-                                yield _sse({"type": "reasoning", "content": piece})
-                            for piece in answer_buf.finish():
-                                marker = _note_ttft()
-                                if marker:
-                                    yield marker
-                                acc.append(piece)
-                                yield _sse({"type": "token", "content": piece})
+                        finally:
+                            await stream.aclose()
                     except LLMInfraError as exc:
                         if is_stopped() or await request.is_disconnected():
                             task_run.stop(user_id=uid, generation=turn.generation)

@@ -136,8 +136,22 @@ body {
 .row.user .bubble { background: #185fa5; color: #fff; }
 .row.assistant .bubble { background: #ffffff; border: 1px solid #e6e8eb; }
 
+.composer-wrap {
+  border-top: 1px solid #e6e8eb;
+  background: #fff;
+}
+.composer-images, .bubble-images {
+  display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 16px 0;
+}
+.bubble-images { padding: 0 0 8px; }
+.composer-images img, .bubble-images img {
+  width: 48px; height: 48px; object-fit: cover; border-radius: 6px;
+}
+.composer-image-error {
+  margin: 0; padding: 6px 16px 0; color: #a8071a; font-size: 12px;
+}
 .composer {
-  display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid #e6e8eb;
+  display: flex; gap: 10px; padding: 12px 16px;
   background: #fff;
 }
 .composer textarea {
@@ -157,6 +171,9 @@ body {
   white-space: nowrap;
 }
 .composer button.stop-btn:hover { background: #fff1f0; }
+.composer button.attach-btn {
+  background: #fff; color: #185fa5; border: 1px solid #d8dce0;
+}
 
 /* Markdown / code blocks */
 .bubble pre {

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-flowchart" viewBox="0 0 1238 1196" width="1238" height="1196" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_r:var(--pele-radius,4px);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="flowchart"><style>
+.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect {
+  fill: #ffecee !important;
+  stroke: #e72e3b !important;
+  stroke-width: 2.5px !important;
+}
+.pele .breaks text { fill: #cd2834 !important; }
+.pele .mayBreak rect {
+  fill: #fff3e6 !important;
+  stroke: #e8730c !important;
+  stroke-width: 2.5px !important;
+}
+.pele .mayBreak text { fill: #b85a06 !important; }
+.pele .bugPath rect {
+  stroke: #1680f3 !important;
+  stroke-width: 2.5px !important;
+}
+.pele .repeats rect {
+  stroke: #9b35d6 !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 6 3;
+}
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect { fill: #2e2021 !important; stroke: #cf2b35 !important; }
+  .pele .breaks text { fill: #ff6463 !important; }
+  .pele .mayBreak rect { fill: #2e2619 !important; stroke: #d0700f !important; }
+  .pele .mayBreak text { fill: #ffa257 !important; }
+  .pele .bugPath rect { stroke: #116dd2 !important; }
+  .pele .repeats rect { stroke: #9a3fcf !important; }
+}
+</style><g class="pele-clusters"><g class="pele-cluster" data-id="mainPath"><rect x="191.32" y="8" width="665.5" height="824" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-cluster-label" fill="var(--_m)" x="251.12" y="33.6" text-anchor="middle">Chat request</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge" data-id="L_attach_post_0"><path d="M674.74,96L674.74,121"/><path class="pele-marker" d="M674.74,128L671.38,120L678.1,120Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_post_decode_0"><path d="M674.74,176L674.74,201"/><path class="pele-marker" d="M674.74,208L671.38,200L678.1,200Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_decode_turn_0"><path d="M575.26,256L575.26,281"/><path class="pele-marker" d="M575.26,288L571.9,280L578.62,280Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_turn_chatRole_0"><path d="M575.26,336L575.26,361"/><path class="pele-marker" d="M575.26,368L571.9,360L578.62,360Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_chatRole_measure_0"><path d="M575.26,416L575.26,441"/><path class="pele-marker" d="M575.26,448L571.9,440L578.62,440Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_measure_answered_0"><path d="M517.8,496L517.8,521"/><path class="pele-marker" d="M517.8,528L514.44,520L521.16,520Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_answered_usageRow_0"><path d="M486.89,576C486.89,585.5 404.98,585.5 404.98,595L404.98,601"/><path class="pele-marker" d="M404.98,608L401.62,600L408.34,600Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_usageRow_text_0"><path d="M404.98,656L404.98,681"/><path class="pele-marker" d="M404.98,688L401.62,680L408.34,680Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_text_pad_0" style="stroke:#ffffde;"><path d="M376.98,736L376.98,761"/><path class="pele-marker" d="M376.98,768L373.62,760L380.34,760Z" fill="#ffffde" stroke="none"/></g><g class="pele-edge" data-id="L_decode_badImage_0"><path d="M795.57,256L795.57,832C795.57,849.36 854.96,860 951.87,860C1048.78,860 1108.18,870.26 1108.18,887L1108.18,893"/><path class="pele-marker" d="M1108.18,900L1104.82,892L1111.54,892Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_measure_tooBig_0"><path d="M692.09,496L692.09,832C692.09,856.8 716.24,872 755.64,872C795.04,872 819.19,877.99 819.19,887.75L819.19,893"/><path class="pele-marker" d="M819.19,900L815.83,892L822.55,892Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_answered_failed_0"><path d="M548.72,576C548.72,592 630.63,592 630.63,608L630.63,832C630.63,856.8 606.48,872 567.08,872C527.68,872 503.53,877.99 503.53,887.75L503.53,893"/><path class="pele-marker" d="M503.53,900L500.17,892L506.89,892Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_text_seam_0"><path d="M513.8,736L513.8,832C513.8,849.36 448.84,860 342.83,860C236.83,860 171.86,870.26 171.86,887L171.86,893"/><path class="pele-marker" d="M171.86,900L168.5,892L175.22,892Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_seam_pending_0"><path d="M171.86,948L171.86,973"/><path class="pele-marker" d="M171.86,980L168.5,972L175.22,972Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_pending_purge_0"><path d="M171.86,1028L171.86,1053"/><path class="pele-marker" d="M171.86,1060L168.5,1052L175.22,1052Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge" data-id="L_purge_retry_0"><path d="M171.86,1108L171.86,1133"/><path class="pele-marker" d="M171.86,1140L168.5,1132L175.22,1132Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-nodes"><g class="pele-node pele-shape-rect" data-id="attach" transform="translate(674.74,72)"><rect x="-158.94" y="-24" width="317.87" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">User attaches JPEG PNG GIF or WebP</text></g><g class="pele-node pele-shape-rect" data-id="post" transform="translate(674.74,152)"><rect x="-72.25" y="-24" width="144.5" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">POST /api/chat</text></g><g class="pele-node pele-shape-rect" data-id="decode" transform="translate(674.74,232)"><rect x="-162.08" y="-24" width="324.16" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Decode base64 and match the signature</text></g><g class="pele-node pele-shape-rect" data-id="turn" transform="translate(575.26,312)"><rect x="-166.96" y="-24" width="333.92" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">begin_turn then the existing chat workflow</text></g><g class="pele-node pele-shape-rect" data-id="chatRole" transform="translate(575.26,392)"><rect x="-152.7" y="-24" width="305.39" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Role CHAT receives image_url blocks</text></g><g class="pele-node pele-shape-rect" data-id="measure" transform="translate(575.26,472)"><rect x="-133.15" y="-24" width="266.3" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Count the serialized UTF-8 body</text></g><g class="pele-node pele-shape-rect" data-id="answered" transform="translate(517.8,552)"><rect x="-82.91" y="-24" width="165.82" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Provider responds</text></g><g class="pele-node pele-shape-rect" data-id="usageRow" transform="translate(404.98,632)"><rect x="-170.94" y="-24" width="341.89" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Store LlmCall and keep missing counts null</text></g><g class="pele-node pele-shape-rect" data-id="text" transform="translate(404.98,712)"><rect x="-193.66" y="-24" width="387.31" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Save Message.content as text and drop the bytes</text></g><g class="pele-node pele-shape-rect hide" data-id="pad" transform="translate(376.98,780)"><rect x="-24" y="-12" width="48" height="24" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r);fill:#ffffde;stroke:#ffffde;"/></g><g class="pele-node pele-shape-rect" data-id="badImage" transform="translate(1108.18,924)"><rect x="-121.16" y="-24" width="242.32" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">400 for type signature or size</text></g><g class="pele-node pele-shape-rect" data-id="tooBig" transform="translate(819.19,924)"><rect x="-119.82" y="-24" width="239.65" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Body over 48 MiB is not sent</text></g><g class="pele-node pele-shape-rect" data-id="failed" transform="translate(503.53,924)"><rect x="-147.84" y="-24" width="295.68" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">A failed request stores no usage row</text></g><g class="pele-node pele-shape-rect" data-id="seam" transform="translate(171.86,924)"><rect x="-135.82" y="-24" width="271.65" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">A later job may bind task_images</text></g><g class="pele-node pele-shape-rect" data-id="pending" transform="translate(171.86,1004)"><rect x="-150.94" y="-24" width="301.87" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Terminal commit sets pending_delete</text></g><g class="pele-node pele-shape-rect" data-id="purge" transform="translate(171.86,1084)"><rect x="-163.85" y="-24" width="327.7" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">After commit delete the blob then the row</text></g><g class="pele-node pele-shape-rect" data-id="retry" transform="translate(171.86,1164)"><rect x="-163.86" y="-24" width="327.73" height="48" fill="var(--_s)" stroke="var(--_b)" style="rx:var(--_r)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">A failed blob delete stays pending_delete</text></g></g></svg>

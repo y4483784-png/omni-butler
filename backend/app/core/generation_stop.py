@@ -27,6 +27,10 @@ def reset(token: Token) -> None:
     _current.reset(token)
 
 
+def current_key() -> GenerationKey | None:
+    return _current.get()
+
+
 def is_stopped() -> bool:
     key = _current.get()
     if key is None:

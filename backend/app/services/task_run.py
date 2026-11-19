@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy import update
@@ -8,6 +9,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.db import SessionLocal, set_rls_context
 from app.models.models import TASK_RUN_STATUSES, Session as ChatSession, TaskRun
+
+logger = logging.getLogger(__name__)
 
 _EVENTS = ("finish", "wait_person", "wait_resource", "stop")
 _OPEN = tuple(status for status in TASK_RUN_STATUSES if status not in {"completed", "stopped"})
@@ -141,6 +144,10 @@ def _apply_event(db, row: TaskRun, event: str) -> Turn:
         )
         if result.rowcount == 1:
             row.status = target
+            if target in {"completed", "stopped"}:
+                from app.services.task_images import mark_pending_delete
+
+                mark_pending_delete(db, user_id=row.user_id, task_run_id=row.id)
             return _to_turn(row)
         db.expire(row)
         fresh = _load_row(db, user_id=row.user_id, generation=row.generation)
@@ -175,6 +182,15 @@ def is_card_action(allowed_tools: str | tuple) -> bool:
         return False
     kind, sep, message_id = parsed[0].partition(":")
     return kind == _CARD_ACTION and sep == ":" and message_id.isdigit()
+
+
+def _purge_quietly(user_id: int) -> None:
+    try:
+        from app.services.task_images import purge_pending
+
+        purge_pending(user_id=user_id)
+    except Exception:
+        logger.exception("task image purge failed")
 
 
 def _turn_key_conflict(exc: IntegrityError) -> bool:
@@ -267,6 +283,7 @@ def begin_turn(*, user_id: int, session_id: int) -> Turn:
             set_rls_context(db, user_id)
             turn = _insert_running(db, user_id=user_id, session_id=session_id)
             db.commit()
+            _purge_quietly(user_id)
             return turn
         except IntegrityError as exc:
             db.rollback()
@@ -288,12 +305,14 @@ def _mutate(*, user_id: int, generation: int, event: str) -> Turn:
             raise MissingTurn()
         turn = _apply_event(db, row, event)
         db.commit()
-        return turn
     except Exception:
         db.rollback()
         raise
     finally:
         db.close()
+    if turn.status in {"completed", "stopped"}:
+        _purge_quietly(user_id)
+    return turn
 
 
 def finish(*, user_id: int, generation: int) -> Turn:
