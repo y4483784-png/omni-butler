@@ -279,7 +279,8 @@ async function runStreamLoop(
     patchSession(sessionId, { busy: false, thinking: false, phaseHint: "" });
     try {
       const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-      const synced = await loadMessages(sessionId);
+      const folded = withHydratedFold(before, await loadMessages(sessionId));
+      const synced = overlaySettledScheduleCards(before, folded);
       const { messages, releaseUrls } = messagesAfterHydrate(before, synced, aborted);
       revokePreviewUrls(releaseUrls);
       patchSession(sessionId, { messages, hydrated: true });
@@ -302,9 +303,7 @@ export function messagesAfterHydrate(
   synced: ChatMsg[],
   aborted = false,
 ): { messages: ChatMsg[]; releaseUrls: string[] } {
-  const folded = withHydratedFold(before, synced);
-  const scheduled = overlaySettledScheduleCards(before, folded);
-  const merged = aborted ? scheduled : overlayUnsavedError(before, scheduled);
+  const merged = aborted ? synced : overlayUnsavedError(before, synced);
   return mergeHydratedPreviews(before, merged);
 }
 
