@@ -7,7 +7,7 @@ from typing import Callable
 from uuid import uuid4
 
 from app.core.config import settings
-from app.core.db import SessionLocal, set_rls_context
+from app.core.db import SessionLocal, maintenance_session, set_rls_context
 from app.core.generation_stop import bind, is_stopped, reset
 from app.models.models import Message, TaskRun, TaskStep, ToolCall
 from app.services import task_run
@@ -103,75 +103,64 @@ def _start(db, *, user_id: int, session_id: int, generation: int, goal: str) -> 
 
 @celery_app.task(name="app.tasks.job.run_job", queue="default")
 def run_job(
-    user_id: int,
-    session_id: int,
-    goal: str,
-    web_constraint: str = "allow",
-    web_constraint_message_id: int | None = None,
+    task_run_id: int,
+    dispatch_token: str,
+    dispatch_epoch: int,
+    intent_version: int,
 ) -> None:
+    user_id = _task_user_id(int(task_run_id))
+    if user_id is None:
+        return
     db = SessionLocal()
     try:
-        set_rls_context(db, int(user_id))
-        if _loop_enabled():
-            held = _held_job(
-                db,
-                user_id=int(user_id),
-                session_id=int(session_id),
-                goal=goal or "",
-                message_id=web_constraint_message_id,
-            )
-            if held is not None:
-                task_id = int(held.id)
-                worker = str(held.exec_token)
-                generation = int(held.generation)
-                token = bind(user_id=int(user_id), generation=generation)
-                try:
-                    _drive(db, user_id=int(user_id), task_id=task_id, worker=worker)
-                finally:
-                    reset(token)
-                return
-        turn = task_run.open_alongside(
-            db,
-            user_id=int(user_id),
-            session_id=int(session_id),
-            kind="job",
-            goal=goal or "",
-            web_constraint=web_constraint or "allow",
-            web_constraint_message_id=web_constraint_message_id,
-        )
-        token = bind(user_id=int(user_id), generation=turn.generation)
-        try:
-            if not _loop_enabled():
-                _start(db, user_id=int(user_id), session_id=int(session_id), generation=int(turn.generation), goal=goal or "")
-                return
-            from app.services.loop_round import take_created_hold
+        set_rls_context(db, user_id)
+        from app.services.resume import adopt
 
-            worker = str(uuid4())
-            taken = take_created_hold(db, user_id=int(user_id), task_id=turn.id, exec_token=worker)
-            if taken != 1:
-                db.rollback()
+        worker = uuid4().hex
+        taken = adopt(
+            db,
+            task_run_id=int(task_run_id),
+            token=str(dispatch_token),
+            epoch=int(dispatch_epoch),
+            intent_version=int(intent_version),
+            worker=worker,
+        )
+        if taken != 1:
+            db.rollback()
+            return
+        db.commit()
+        job = db.get(TaskRun, int(task_run_id))
+        if job is None:
+            return
+        token = bind(user_id=int(user_id), generation=int(job.generation))
+        try:
+            if _latest_step(db, int(job.id)) is None and job.last_progress_at is None:
+                _start(
+                    db,
+                    user_id=int(user_id),
+                    session_id=int(job.session_id),
+                    generation=int(job.generation),
+                    goal=job.goal or "",
+                )
+                db.refresh(job)
+            if not _loop_enabled():
                 return
-            _start(db, user_id=int(user_id), session_id=int(session_id), generation=int(turn.generation), goal=goal or "")
-            _drive(db, user_id=int(user_id), task_id=turn.id, worker=worker)
+            _drive(db, user_id=int(user_id), task_id=int(job.id), worker=str(job.exec_token or worker))
         finally:
             reset(token)
     finally:
         db.close()
 
 
-def _held_job(db, *, user_id: int, session_id: int, goal: str, message_id: int | None) -> TaskRun | None:
-    query = db.query(TaskRun).filter(
-        TaskRun.user_id == int(user_id),
-        TaskRun.session_id == int(session_id),
-        TaskRun.kind == "job",
-        TaskRun.status == "running",
-        TaskRun.exec_token.isnot(None),
-    )
-    if message_id is not None:
-        query = query.filter(TaskRun.web_constraint_message_id == int(message_id))
-    else:
-        query = query.filter(TaskRun.goal == goal)
-    return query.first()
+def _task_user_id(task_run_id: int) -> int | None:
+    db = maintenance_session()
+    try:
+        row = db.get(TaskRun, int(task_run_id))
+        if row is None or row.user_id is None:
+            return None
+        return int(row.user_id)
+    finally:
+        db.close()
 
 
 def _latest_step(db, task_id: int):

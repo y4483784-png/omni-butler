@@ -361,9 +361,16 @@ def _apply_talk(
     from app.agents.dispatch import TalkReply
 
     if relation.relation == "new":
-        from app.tasks.job import run_job
+        from app.services.resume import enqueue_job
 
-        run_job.delay(user_id, session_id, message, relation.web, message_id)
+        enqueue_job(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            goal=message,
+            web=relation.web,
+            message_id=message_id,
+        )
         return relation, None
     if relation.relation in {"supplement", "redirect"} and relation.target_generation is not None:
         applied = task_run.apply_intent(

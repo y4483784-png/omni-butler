@@ -26,7 +26,7 @@ from app.models.models import (
 from app.services import task_run
 from app.services.schedule_confirm import publish_schedule_claim
 from app.tasks.celery_app import celery_app
-from app.tasks.job import commit_job_output, run_job
+from app.tasks.job import commit_job_output
 from app.tasks.watchdog import run_sweep
 
 
@@ -217,14 +217,15 @@ def test_null_stamp_stays_running_without_a_notice():
         observed_progress_at=planted,
         notice_progress_at=None,
     )
-    before = len(_messages(session_id))
     run_sweep()
     run_sweep()
     fresh = _load(user_id, job.generation)
+    notes = _messages(session_id)
     assert fresh.status == "running"
-    assert len(_messages(session_id)) == before
-    assert fresh.observed_progress_at is None
+    assert [row.content for row in notes] == ["已开始：watch"]
     assert fresh.notice_progress_at is None
+    assert fresh.observed_progress_at == fresh.last_progress_at
+    assert all("没有新的进展" not in row.content for row in notes)
 
 
 def test_one_notice_per_stamp_survives_reload():
@@ -503,8 +504,15 @@ def test_output_commit_gap():
 
 
 def test_run_job_sets_last_progress_at_on_the_start_message():
+    from app.services.resume import enqueue_job
+
     user_id, session_id = _pair()
-    run_job(user_id, session_id, "alpha")
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        enqueue_job(db, user_id=user_id, session_id=session_id, goal="alpha")
+    finally:
+        db.close()
     db = SessionLocal()
     try:
         job = (

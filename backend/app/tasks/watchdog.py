@@ -87,6 +87,14 @@ def run_sweep() -> None:
             except Exception:
                 logger.exception("watchdog notice failed task_run_id=%s", task_run_id)
                 db.rollback()
+        for task_run_id in ids:
+            try:
+                from app.services.resume import dispatch_task
+
+                dispatch_task(db, int(task_run_id))
+            except Exception:
+                logger.exception("dispatch failed task_run_id=%s", task_run_id)
+                db.rollback()
     finally:
         db.close()
 
