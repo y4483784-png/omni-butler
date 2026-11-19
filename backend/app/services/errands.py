@@ -364,8 +364,11 @@ def interpret(body: dict, armed: str) -> ShopReply:
         named = False
     if outcome == "app_wall":
         return ShopReply("app_wall", order_id=order_id, told=told, clicks_after_wall=clicks, price=price)
-    if outcome == "placed" and not (echoed_key and echoed_key != armed):
-        return ShopReply("placed", order_id=order_id, told=told, clicks_after_wall=clicks, price=price, named=True)
+    if outcome == "placed":
+        matched = echoed_key == armed and echoed_key != "" and order_id != ""
+        if matched:
+            return ShopReply("placed", order_id=order_id, told=told, clicks_after_wall=clicks, price=price, named=True)
+        return ShopReply("unknown", order_id=order_id, told=told, clicks_after_wall=clicks, price=price)
     if outcome == "already":
         if named:
             return ShopReply("already", order_id=order_id, told=told, clicks_after_wall=clicks, price=price, named=True)

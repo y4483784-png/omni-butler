@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import sys
 import threading
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from uuid import uuid4
@@ -39,6 +42,7 @@ class _ShopState:
         self.lookups: list[dict] = []
         self.tasks: list[dict] = []
         self.place_mode = "placed"
+        self.echo_place_key = True
         self.place_body: dict = {"outcome": "placed", "order_id": "ord-1"}
         self.lookup_body: dict = {"told": ""}
         self.compose_body: dict = {
@@ -69,7 +73,12 @@ class _Handler(BaseHTTPRequestHandler):
             if state.place_mode == "timeout":
                 self._hold()
                 return
-            self._send(200, state.place_body)
+            body = dict(state.place_body)
+            if state.echo_place_key:
+                header = self.headers.get("Idempotency-Key")
+                if isinstance(header, str) and header.strip() != "":
+                    body["idempotency_key"] = header.strip()
+            self._send(200, body)
             return
         if path == "/lookup":
             state.lookups.append(item)
@@ -412,6 +421,187 @@ def test_compose_decides_without_a_browser(plain_client: TestClient):
     driver = (REPO / "services" / "errand-compose" / "driver.py").read_text(encoding="utf-8")
     assert "playwright" in driver.lower()
     assert "The plan did not choose this library." in driver
+
+
+def test_public_reply_returns_the_armed_key():
+    module = _load(REPO / "services" / "errand-compose" / "server.py", "errand_compose_server")
+    body = module._public(
+        {
+            "outcome": "placed",
+            "order_id": "m-1",
+            "idempotency_key": "armed-1",
+            "pay": "secret-pay",
+            "login": "secret-login",
+            "told": "",
+            "clicks_after_wall": 0,
+        }
+    )
+    assert body["idempotency_key"] == "armed-1"
+    assert body["order_id"] == "m-1"
+    assert "pay" not in body
+    assert "login" not in body
+    echoed = module._public(
+        {"outcome": "placed", "order_id": "m-1", "pay": "secret-pay"},
+        {"idempotency_key": "armed-2", "pay": "secret-pay", "login": "secret-login"},
+    )
+    assert echoed["idempotency_key"] == "armed-2"
+    assert "pay" not in echoed
+    assert "login" not in echoed
+    skipped = module._public({"outcome": "unknown", "order_id": "", "idempotency_key": 7})
+    assert "idempotency_key" not in skipped
+    numbered = module._public({"outcome": "unknown"}, {"idempotency_key": 5, "pay": "secret-pay"})
+    assert "idempotency_key" not in numbered
+    assert "pay" not in numbered
+    prefer = module._public(
+        {"outcome": "placed", "order_id": "m-1", "idempotency_key": "from-result"},
+        {"idempotency_key": "from-task", "pay": "secret-pay"},
+    )
+    assert prefer["idempotency_key"] == "from-result"
+    assert "pay" not in prefer
+
+
+def test_compose_post_returns_the_task_key():
+    module = _load(REPO / "services" / "errand-compose" / "server.py", "errand_compose_post")
+    previous_token = module._TOKEN
+    module._TOKEN = ""
+    stub = types.ModuleType("driver")
+    stub.run_task = lambda task: {
+        "outcome": "placed",
+        "order_id": "m-3",
+        "pay": "pay-secret",
+        "login": "login-secret",
+    }
+    previous_driver = sys.modules.get("driver")
+    sys.modules["driver"] = stub
+    payload = json.dumps(
+        {"kind": "place", "idempotency_key": "armed-3", "pay": "pay-secret", "login": "login-secret"}
+    ).encode("utf-8")
+    raw = (
+        b"POST /tasks HTTP/1.1\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: " + str(len(payload)).encode("ascii") + b"\r\n"
+        b"\r\n" + payload
+    )
+    try:
+        sock = _FakeSocket(raw)
+        module.Handler(sock, ("127.0.0.1", 0), None)
+    finally:
+        module._TOKEN = previous_token
+        if previous_driver is None:
+            sys.modules.pop("driver", None)
+        else:
+            sys.modules["driver"] = previous_driver
+    head, _, encoded = sock.written.getvalue().partition(b"\r\n\r\n")
+    assert b"200" in head.split(b"\r\n", 1)[0]
+    body = json.loads(encoded)
+    text = encoded.decode("utf-8")
+    assert body["idempotency_key"] == "armed-3"
+    assert body["order_id"] == "m-3"
+    assert "pay" not in body
+    assert "login" not in body
+    assert "pay-secret" not in text
+    assert "login-secret" not in text
+
+
+def test_empty_echo_is_not_placed():
+    from app.services.errands import interpret
+
+    armed = "armed-1"
+    empty = interpret({"outcome": "placed", "order_id": "m-1"}, armed)
+    assert empty.kind != "placed"
+    assert empty.kind == "unknown"
+    assert empty.named is False
+    quoted = interpret({"outcome": "placed", "order_id": "m-1", "told": f"已下单 {armed}"}, armed)
+    assert quoted.kind == "unknown"
+    assert quoted.named is False
+    matched = interpret({"outcome": "placed", "order_id": "m-1", "idempotency_key": armed}, armed)
+    assert matched.kind == "placed"
+    assert matched.named is True
+    assert matched.order_id == "m-1"
+    blank = interpret({"outcome": "placed", "order_id": "", "idempotency_key": armed}, armed)
+    assert blank.kind != "placed"
+    other = interpret({"outcome": "placed", "order_id": "m-1", "idempotency_key": "other-order"}, armed)
+    assert other.kind != "placed"
+    assert other.named is False
+
+
+def test_missing_echo_is_not_stored_or_ordered_again(plain_client: TestClient, shop: _ShopState, monkeypatch):
+    shop.echo_place_key = False
+    merchant = _merchant()
+    order = _order(merchant)
+    _connector(merchant, shop.base)
+    stored = _vault(plain_client, merchant, "pay-secret-9")
+    assert stored.status_code == 200, stored.text
+    session_id = _session()
+    offered = _propose(plain_client, session_id, order)
+    token = offered.json()["confirm_token"]
+    first = _commit(plain_client, token, order)
+    assert first.status_code == 409, first.text
+    assert first.json()["detail"] == "结果未知，未再次写入。请先核对日历。"
+    assert _records(_admin_id(), merchant) == []
+    status, remote = _claim(token)
+    assert status == "unknown"
+    assert remote
+    assert len(shop.places) == 1
+    assert json.loads(shop.lookups[-1]["body"]) == {"idempotency_key": remote}
+
+    def placed(*_args, **_kwargs):
+        raise AssertionError("placed")
+
+    monkeypatch.setattr("app.services.errands._place", placed)
+    second = _commit(plain_client, token, order)
+    assert second.status_code == 409, second.text
+    assert len(shop.places) == 1
+    assert _records(_admin_id(), merchant) == []
+    shop.lookup_body = {"outcome": "placed", "order_id": "m-1", "idempotency_key": remote}
+    found = _commit(plain_client, token, order)
+    assert found.status_code == 200, found.text
+    assert found.json()["order_id"] == "m-1"
+    assert len(shop.places) == 1
+    assert _records(_admin_id(), merchant) == [(remote, "m-1")]
+
+
+def test_compose_reply_without_the_armed_key_stays_unknown(plain_client: TestClient, shop: _ShopState):
+    merchant = _merchant()
+    order = _order(merchant)
+    stored = _vault(plain_client, merchant, "pay-secret-9")
+    assert stored.status_code == 200, stored.text
+    session_id = _session()
+    offered = _propose(plain_client, session_id, order)
+    token = offered.json()["confirm_token"]
+    shop.compose_body = {"outcome": "placed", "order_id": "ord-compose", "told": "已下单"}
+    first = _commit(plain_client, token, order)
+    assert first.status_code == 409, first.text
+    assert first.json()["detail"] == "结果未知，未再次写入。请先核对日历。"
+    assert _records(_admin_id(), merchant) == []
+    status, remote = _claim(token)
+    assert status == "unknown"
+    assert remote
+    assert [json.loads(item["body"])["kind"] for item in shop.tasks].count("place") == 1
+    before = len(shop.tasks)
+    second = _commit(plain_client, token, order)
+    assert second.status_code == 409, second.text
+    fresh = [json.loads(item["body"])["kind"] for item in shop.tasks[before:]]
+    assert fresh == ["lookup"]
+    assert [json.loads(item["body"])["kind"] for item in shop.tasks].count("place") == 1
+    assert _records(_admin_id(), merchant) == []
+    again, armed = _claim(token)
+    assert again == "unknown"
+    assert armed == remote
+
+
+class _FakeSocket:
+    def __init__(self, raw: bytes) -> None:
+        self._reader = io.BytesIO(raw)
+        self.written = io.BytesIO()
+
+    def makefile(self, mode: str, *args, **kwargs):
+        if "r" in mode:
+            return self._reader
+        return self.written
+
+    def sendall(self, data: bytes) -> None:
+        self.written.write(data)
 
 
 def _ready(base: str) -> None:
