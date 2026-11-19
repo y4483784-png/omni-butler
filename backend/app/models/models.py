@@ -131,6 +131,8 @@ class TaskRun(Base):
     web_constraint_message_id = Column(Integer, nullable=True)
     intent_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
     last_progress_at = Column(DateTime, nullable=True)
+    observed_progress_at = Column(DateTime, nullable=True)
+    notice_progress_at = Column(DateTime, nullable=True)
     dispatch_token = Column(String, nullable=True)
     dispatch_epoch = Column(Integer, nullable=False, default=0, server_default=text("0"))
     dispatch_until = Column(DateTime, nullable=True)

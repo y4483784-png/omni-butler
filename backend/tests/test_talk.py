@@ -295,6 +295,7 @@ def test_supplement_changes_only_that_job_and_its_open_claim():
     assert armed_row.status == "unknown"
     assert armed_row.remote_request_id == "remote-1"
     assert armed_row.intent_version == 1
+    _set_hold(user_id, job.generation, "worker-old")
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)

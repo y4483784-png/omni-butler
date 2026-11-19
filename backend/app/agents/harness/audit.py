@@ -73,6 +73,14 @@ def _persist_db(payload: dict[str, Any]) -> None:
                     args=json.dumps(payload.get("args") or {}, ensure_ascii=False)[:4000],
                 )
             )
+            generation = payload.get("generation")
+            user_id = payload.get("user_id")
+            if payload.get("progress") == "result" and type(generation) is int and user_id is not None:
+                from app.core.db import set_rls_context
+                from app.services.task_run import touch_progress
+
+                set_rls_context(db, int(user_id))
+                touch_progress(db, user_id=int(user_id), generation=generation)
             db.commit()
         finally:
             db.close()

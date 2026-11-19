@@ -1,33 +1,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Literal
 
-from app.core.db import maintenance_session
-from app.models.models import TASK_RUN_STATUSES, TaskRun
-from app.services import task_run
+from app.core.db import maintenance_session, set_rls_context
+from app.models.models import TASK_RUN_STATUSES, Message, TaskRun
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-CHECK_INTERVAL = timedelta(seconds=60)
-SUSPENDED_SWEEPS = 3
-STALL_FLOOR = timedelta(seconds=60)
-ORDINARY_STALL = timedelta(minutes=20)
-
-TaskStatus = Literal[
-    "running",
-    "waiting_person",
-    "waiting_resource",
-    "completed",
-    "stopped",
-]
-
 _EFFECT: dict[str, str] = {
-    "running": "stop",
+    "running": "leave",
     "waiting_person": "leave",
     "waiting_resource": "leave",
     "completed": "leave",
@@ -42,126 +24,76 @@ def _validate_effect() -> None:
         if effect not in {"stop", "leave"}:
             raise RuntimeError("watchdog effect is unknown")
         if status == "running":
-            if effect != "stop":
-                raise RuntimeError("running watchdog effect is not stop")
+            if effect != "leave":
+                raise RuntimeError("running watchdog effect is not leave")
         elif effect != "leave":
             raise RuntimeError("non-running watchdog effect is not leave")
-    if ORDINARY_STALL < STALL_FLOOR or ORDINARY_STALL < CHECK_INTERVAL:
-        raise RuntimeError("ordinary stall is below the floor")
 
 
 _validate_effect()
 
 
-@dataclass(frozen=True)
-class GenerationKey:
-    user_id: int
-    generation: int
+def load_open_ids(db) -> tuple[int, ...]:
+    rows = (
+        db.query(TaskRun.id)
+        .filter(TaskRun.status.in_(("running", "waiting_person", "waiting_resource")))
+        .all()
+    )
+    return tuple(int(row[0]) for row in rows)
 
 
-@dataclass(frozen=True)
-class RunView:
-    key: GenerationKey
-    status: TaskStatus
-    created_at: datetime
+def notice_running(db, task_run_id: int) -> None:
+    row = (
+        db.query(TaskRun)
+        .filter(TaskRun.id == task_run_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if row is None or row.status != "running":
+        db.rollback()
+        return
+    set_rls_context(db, int(row.user_id))
+    stamp = row.last_progress_at
+    if stamp is not None and stamp == row.observed_progress_at and stamp != row.notice_progress_at:
+        shown = stamp.strftime("%Y-%m-%d %H:%M:%S")
+        db.add(
+            Message(
+                session_id=row.session_id,
+                role="assistant",
+                content=f"这一任务自 {shown} 起没有新的进展，仍在运行。generation={row.generation}",
+                reasoning=None,
+                citations="",
+                schedule_card="",
+                artifact="",
+            )
+        )
+        row.notice_progress_at = stamp
+    row.observed_progress_at = stamp
+    db.commit()
 
 
-@dataclass(frozen=True)
-class SweepLedger:
-    previous_tick: datetime | None
-    credit: Mapping[GenerationKey, timedelta]
-
-
-@dataclass(frozen=True)
-class Decision:
-    stops: tuple[GenerationKey, ...]
-
-
-def _as_utc(moment: datetime) -> datetime:
-    if moment.tzinfo is None or moment.tzinfo.utcoffset(moment) is None:
-        return moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc)
-
-
-def _suspended_credit(previous_tick: datetime | None, now: datetime) -> timedelta:
-    if previous_tick is None:
-        return timedelta(0)
-    current = _as_utc(now)
-    previous = _as_utc(previous_tick)
-    if current < previous:
-        return timedelta(0)
-    gap = current - previous
-    if gap > SUSPENDED_SWEEPS * CHECK_INTERVAL:
-        return gap
-    return timedelta(0)
-
-
-def _silence(created_at: datetime, now: datetime, credit: timedelta) -> timedelta:
-    return max(timedelta(0), _as_utc(now) - _as_utc(created_at) - credit)
-
-
-def decide(
-    runs: Sequence[RunView],
-    *,
-    now: datetime,
-    ledger: SweepLedger,
-) -> tuple[Decision, SweepLedger]:
-    added = _suspended_credit(ledger.previous_tick, now)
-    credit: dict[GenerationKey, timedelta] = {}
-    stops: set[GenerationKey] = set()
-    for run in runs:
-        credit[run.key] = ledger.credit.get(run.key, timedelta(0)) + added
-        if _EFFECT[run.status] != "stop":
-            continue
-        if _silence(run.created_at, now, credit[run.key]) >= ORDINARY_STALL:
-            stops.add(run.key)
-    ordered = tuple(sorted(stops, key=lambda key: (key.user_id, key.generation)))
-    return Decision(stops=ordered), SweepLedger(previous_tick=now, credit=credit)
-
-
-def load_runs() -> tuple[RunView, ...]:
+def run_sweep() -> None:
     db = maintenance_session()
     try:
-        views: list[RunView] = []
-        for row in db.query(TaskRun).all():
-            if row.created_at is None or row.status not in _EFFECT:
-                continue
-            views.append(
-                RunView(
-                    key=GenerationKey(user_id=int(row.user_id), generation=int(row.generation)),
-                    status=row.status,
-                    created_at=row.created_at,
-                )
-            )
-        return tuple(views)
+        try:
+            ids = load_open_ids(db)
+        except Exception:
+            logger.exception("watchdog load failed")
+            db.rollback()
+            return
+        for task_run_id in ids:
+            try:
+                notice_running(db, task_run_id)
+            except Exception:
+                logger.exception("watchdog notice failed task_run_id=%s", task_run_id)
+                db.rollback()
     finally:
         db.close()
 
 
-def run_sweep(now: datetime, ledger: SweepLedger) -> SweepLedger:
-    decision, updated = decide(load_runs(), now=now, ledger=ledger)
-    for key in decision.stops:
-        try:
-            fresh = task_run.get(user_id=key.user_id, generation=key.generation)
-            if fresh is None or _EFFECT[fresh.status] != "stop":
-                continue
-            task_run.stop(user_id=key.user_id, generation=key.generation)
-        except Exception:
-            logger.exception(
-                "watchdog stop failed user_id=%s generation=%s",
-                key.user_id,
-                key.generation,
-            )
-    return updated
-
-
-_ledger = SweepLedger(previous_tick=None, credit={})
-
-
 @celery_app.task(name="app.tasks.watchdog.sweep_task", queue="maintenance")
 def sweep_task() -> None:
-    global _ledger
-    _ledger = run_sweep(datetime.now(timezone.utc), _ledger)
+    run_sweep()
     try:
         from app.services.task_images import reconcile_task_images
 

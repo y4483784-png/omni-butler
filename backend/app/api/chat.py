@@ -82,6 +82,7 @@ def _persist_assistant_only(
     schedule_card: dict | None = None,
     artifact_stored: dict | None = None,
     pending_calendar_json: str = "",
+    job_generation: int | None = None,
 ) -> None:
     session.pending_calendar = pending_calendar_json
     session.updated_at = datetime.now(timezone.utc)
@@ -93,6 +94,7 @@ def _persist_assistant_only(
         citations_payload=citations_payload,
         schedule_card=schedule_card,
         artifact_stored=artifact_stored,
+        job_generation=job_generation,
     )
 
 
@@ -251,6 +253,7 @@ def _save_assistant_turn(
     citations_payload: list | None = None,
     schedule_card: dict | None = None,
     artifact_stored: dict | None = None,
+    job_generation: int | None = None,
 ) -> None:
     stored_reasoning = reasoning.strip() if isinstance(reasoning, str) else ""
     if not content and not stored_reasoning:
@@ -267,6 +270,14 @@ def _save_assistant_turn(
             artifact=json.dumps(artifact_stored, ensure_ascii=False) if artifact_stored else "",
         )
     )
+    if job_generation is not None:
+        owner = db.get(ChatSession, session_id)
+        if owner is not None and owner.user_id is not None:
+            task_run.touch_progress(
+                db,
+                user_id=int(owner.user_id),
+                generation=int(job_generation),
+            )
     db.commit()
 
 
@@ -282,6 +293,7 @@ def _persist_turn(
     schedule_card: dict | None = None,
     artifact_stored: dict | None = None,
     pending_calendar_json: str = "",
+    job_generation: int | None = None,
 ) -> None:
     session.pending_calendar = pending_calendar_json
     _commit_user_turn(db, session, user_message)
@@ -293,6 +305,7 @@ def _persist_turn(
         citations_payload=citations_payload,
         schedule_card=schedule_card,
         artifact_stored=artifact_stored,
+        job_generation=job_generation,
     )
 
 
@@ -549,6 +562,7 @@ async def chat(
                 schedule_card=schedule_card,
                 artifact_stored=artifact_stored,
                 pending_calendar_json=pending_calendar_json,
+                job_generation=turn.generation,
             )
         elif saved_user_id is not None:
             session.pending_calendar = pending_calendar_json
@@ -560,6 +574,7 @@ async def chat(
                 citations_payload=citations_payload,
                 schedule_card=schedule_card,
                 artifact_stored=artifact_stored,
+                job_generation=turn.generation,
             )
         else:
             _persist_turn(
@@ -573,6 +588,7 @@ async def chat(
                 schedule_card=schedule_card,
                 artifact_stored=artifact_stored,
                 pending_calendar_json=pending_calendar_json,
+                job_generation=turn.generation,
             )
 
     # Always run agent workflow (no fast-path skip). Reload KB flags.

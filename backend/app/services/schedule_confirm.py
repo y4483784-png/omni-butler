@@ -810,6 +810,7 @@ def _bind_open_claim(
     if existing is not None and _still_authorized(db, key.user_id, existing):
         _attach(existing, task_run_ids)
         db.flush()
+        _stamp_bound_jobs(db, key.user_id, task_run_ids)
         return existing.token, existing.expires_at
     if existing is not None:
         existing.status = "cancelled"
@@ -829,7 +830,15 @@ def _bind_open_claim(
     )
     db.add(row)
     db.flush()
+    _stamp_bound_jobs(db, key.user_id, task_run_ids)
     return token, expires_at
+
+
+def _stamp_bound_jobs(db: Session, user_id: int, task_run_ids: list[int]) -> None:
+    for row in _locked_runs(db, user_id, task_run_ids):
+        if row.kind != "job" or row.status not in {"running", "waiting_person", "waiting_resource"}:
+            continue
+        task_run.touch_progress(db, user_id=user_id, generation=int(row.generation))
 
 
 def _job_intent_version(db: Session, user_id: int, task_run_ids: list[int]) -> int:
