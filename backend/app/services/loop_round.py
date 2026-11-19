@@ -355,6 +355,10 @@ def begin_read(db: Session, *, hold: Hold, tool_call_id: str) -> Literal["invoke
         return "stale"
     if call_row.name in _WEB and job.web_constraint != "allow":
         return _deny_web(db, job=job, hold=hold, step_row=step_row, call_row=call_row, memory=memory)
+    if call_row.state == CallState.RUNNING.value:
+        if not _commit_job(db, job):
+            return "stale"
+        return "invoke"
     if call_row.name in _WEB:
         changed = _cas_running(db, call_row, hold, require_allow=True)
     else:
@@ -837,7 +841,7 @@ def _deny_web(db, *, job, hold, step_row, call_row, memory) -> Literal["denied",
     changed = db.execute(
         update(ToolCall)
         .where(ToolCall.id == call_row.id)
-        .where(ToolCall.state == CallState.PENDING.value)
+        .where(ToolCall.state.in_((CallState.PENDING.value, CallState.RUNNING.value)))
         .where(ToolCall.intent_version == int(hold.intent_version))
         .where(exists().where(_holder_match(hold, web="forbid")))
         .values(state=CallState.REJECTED.value, result=WEB_DENIAL)

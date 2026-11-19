@@ -112,6 +112,14 @@ def run_job(
     db = SessionLocal()
     try:
         set_rls_context(db, int(user_id))
+        if _loop_enabled() and _already_held(
+            db,
+            user_id=int(user_id),
+            session_id=int(session_id),
+            goal=goal or "",
+            message_id=web_constraint_message_id,
+        ):
+            return
         turn = task_run.open_alongside(
             db,
             user_id=int(user_id),
@@ -130,14 +138,39 @@ def run_job(
 
             worker = str(uuid4())
             taken = take_created_hold(db, user_id=int(user_id), task_id=turn.id, exec_token=worker)
-            _start(db, user_id=int(user_id), session_id=int(session_id), generation=int(turn.generation), goal=goal or "")
             if taken != 1:
+                db.rollback()
                 return
+            _start(db, user_id=int(user_id), session_id=int(session_id), generation=int(turn.generation), goal=goal or "")
             _drive(db, user_id=int(user_id), task_id=turn.id, worker=worker)
         finally:
             reset(token)
     finally:
         db.close()
+
+
+def _already_held(db, *, user_id: int, session_id: int, goal: str, message_id: int | None) -> bool:
+    query = db.query(TaskRun).filter(
+        TaskRun.user_id == int(user_id),
+        TaskRun.session_id == int(session_id),
+        TaskRun.kind == "job",
+        TaskRun.status == "running",
+        TaskRun.exec_token.isnot(None),
+    )
+    if message_id is not None:
+        query = query.filter(TaskRun.web_constraint_message_id == int(message_id))
+    else:
+        query = query.filter(TaskRun.goal == goal)
+    return query.first() is not None
+
+
+def _latest_step(db, task_id: int):
+    return (
+        db.query(TaskStep)
+        .filter(TaskStep.task_run_id == int(task_id))
+        .order_by(TaskStep.seq.desc())
+        .first()
+    )
 
 
 def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
@@ -157,15 +190,24 @@ def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
             return
         if _renew(db, hold) != 1:
             return
-        produced, message_id = _request(db, job)
-        if produced is None or is_stopped():
+        db.refresh(job)
+        step = _latest_step(db, job.id)
+        if step is not None and step.phase == Phase.FINAL_ANSWER.value:
             return
-        saved = save_turn(db, hold=hold, turn=produced, message_id=message_id)
-        if saved is None or saved.phase is Phase.FINAL_ANSWER:
-            return
+        if step is None or step.phase == Phase.RESULTS_READY.value:
+            asked = None if step is None else int(step.seq)
+            produced, message_id = _request(db, job)
+            if produced is None or is_stopped():
+                return
+            saved = save_turn(db, hold=hold, turn=produced, message_id=message_id)
+            if saved is None or saved.phase is Phase.FINAL_ANSWER:
+                return
+            if asked is not None and saved.seq == asked:
+                return
+            continue
         drafts: dict[str, dict] = {}
         while True:
-            action = _one_pass(db, hold, saved.seq, job, drafts)
+            action = _one_pass(db, hold, step.seq, job, drafts)
             if action == "again":
                 continue
             if action == "model":
@@ -375,7 +417,7 @@ def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict]) -> str:
             continue
         if row.state == CallState.RUNNING.value and row.tool_call_id in drafts:
             continue
-        if row.state != CallState.PENDING.value:
+        if row.state not in {CallState.PENDING.value, CallState.RUNNING.value}:
             continue
         if is_stopped():
             return "leave"
