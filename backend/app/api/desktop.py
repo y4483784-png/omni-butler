@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agents.harness.desktop_channel import PackageProof, recognize_package
@@ -7,6 +10,7 @@ from app.agents.harness.surface import ServerSurface, local_tool_denial
 from app.core.auth import get_current_user
 from app.core.deps import get_db_scoped
 from app.models.models import User
+from app.services import desktop_devices
 from app.services.local_action import (
     LocalClosed,
     commit_local,
@@ -18,6 +22,28 @@ from app.services.local_action import (
 router = APIRouter(prefix="/api/desktop", tags=["desktop"])
 
 _DENIAL = local_tool_denial(local=True, surface=ServerSurface.WEB) or ""
+
+
+class DeviceEnroll(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    label: str
+
+
+class DeviceEnrolled(BaseModel):
+    id: int
+    token: str
+    label: str
+
+
+class DeviceListItem(BaseModel):
+    id: int
+    label: str
+    created_at: datetime
+
+
+class DeviceRevoked(BaseModel):
+    id: int
 
 
 class LocalRequest(BaseModel):
@@ -109,3 +135,38 @@ def finish(
         )
     except LocalClosed as exc:
         raise _closed(exc) from None
+
+
+@router.post("/devices", response_model=DeviceEnrolled)
+def enroll_device(
+    body: DeviceEnroll,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        device_id, token, label = desktop_devices.enroll(
+            db, user_id=current_user.id, label=body.label
+        )
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail="设备已存在") from None
+    return {"id": device_id, "token": token, "label": label}
+
+
+@router.get("/devices", response_model=list[DeviceListItem])
+def list_devices(
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    return desktop_devices.list_devices(db, user_id=current_user.id)
+
+
+@router.post("/devices/{device_id}/revoke", response_model=DeviceRevoked)
+def revoke_device(
+    device_id: int,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    revoked = desktop_devices.revoke(db, user_id=current_user.id, device_id=device_id)
+    if revoked is None:
+        raise HTTPException(status_code=404, detail="设备不存在")
+    return {"id": revoked}

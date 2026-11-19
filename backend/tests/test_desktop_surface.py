@@ -7,6 +7,7 @@ import re
 import secrets
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,7 +24,13 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.models.models import DesktopDevice, Message, ScheduleConfirmClaim, TaskRun, User
 from app.services import task_run
-from app.services.local_action import LOCAL_ACTIONS, LocalAction, LocalClosed, propose_local
+from app.services.local_action import (
+    LOCAL_ACTIONS,
+    LocalAction,
+    LocalClosed,
+    commit_local,
+    propose_local,
+)
 from app.services.schedule_confirm import canonical_action, write_parts, write_scope
 from app.tasks.celery_app import celery_app
 from tests.test_schedule_confirm_claims import _admin_id, _session
@@ -46,23 +53,48 @@ def _headers(token: str) -> dict[str, str]:
 
 
 def _enroll(client: TestClient, label: str = "package") -> str:
-    me = client.get("/api/auth/me")
-    assert me.status_code == 200, me.text
-    token = secrets.token_urlsafe(32)
-    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    saved = client.post("/api/desktop/devices", json={"label": label})
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert set(body) == {"id", "token", "label"}
+    assert body["label"] == label
+    assert body["token"]
+    return body["token"]
+
+
+def _devices() -> list[dict]:
     db = SessionLocal()
     try:
-        db.add(
-            DesktopDevice(
-                user_id=me.json()["id"],
-                token_hash=digest,
-                label=label,
-            )
-        )
-        db.commit()
+        rows = db.query(DesktopDevice).order_by(DesktopDevice.id.asc()).all()
+        return [
+            {
+                "id": row.id,
+                "user_id": row.user_id,
+                "token_hash": row.token_hash,
+                "label": row.label,
+                "created_at": row.created_at,
+                "revoked_at": row.revoked_at,
+            }
+            for row in rows
+        ]
     finally:
         db.close()
-    return token
+
+
+def _device(device_id: int) -> dict:
+    return next(row for row in _devices() if row["id"] == device_id)
+
+
+def _armed_count() -> int:
+    db = SessionLocal()
+    try:
+        return (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.remote_request_id != "")
+            .count()
+        )
+    finally:
+        db.close()
 
 
 def _propose(
@@ -457,6 +489,174 @@ def test_run_starts_the_program_once(plain_client: TestClient) -> None:
         run_program=lambda program, args: runs.append((program, tuple(args))),
     ) is False
     assert runs == [("/usr/bin/true", ())]
+
+
+def test_two_devices_revoke_independently(
+    plain_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = len(_devices())
+    first = plain_client.post("/api/desktop/devices", json={"label": "left"})
+    second = plain_client.post("/api/desktop/devices", json={"label": "right"})
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    left = first.json()
+    right = second.json()
+    assert set(left) == {"id", "token", "label"}
+    assert set(right) == {"id", "token", "label"}
+    assert left["token"] != right["token"]
+    assert len(_devices()) == before + 2
+    stored = {row["id"]: row for row in _devices()}
+    for body in (left, right):
+        row = stored[body["id"]]
+        digest = hashlib.sha256(body["token"].encode("utf-8")).hexdigest()
+        assert row["token_hash"] == digest
+        assert all(body["token"] not in str(value) for value in row.values() if value is not None)
+    listed = plain_client.get("/api/desktop/devices")
+    assert listed.status_code == 200, listed.text
+    assert "token" not in listed.text
+    payload = listed.json()
+    for body in (left, right):
+        digest = hashlib.sha256(body["token"].encode("utf-8")).hexdigest()
+        assert digest not in listed.text
+        match = next(item for item in payload if item["id"] == body["id"])
+        assert set(match) == {"id", "label", "created_at"}
+        assert match["label"] == body["label"]
+        datetime.fromisoformat(match["created_at"])
+    proof_left = recognize_package(left["token"])
+    proof_right = recognize_package(right["token"])
+    assert isinstance(proof_left, PackageProof)
+    assert isinstance(proof_right, PackageProof)
+    assert proof_left != proof_right
+    assert proof_left.device_id == left["id"]
+    assert proof_right.device_id == right["id"]
+    with pytest.raises(AttributeError):
+        proof_right.device_id = left["id"]
+    with pytest.raises(TypeError):
+        PackageProof("desktop")
+
+    revoked = plain_client.post(f"/api/desktop/devices/{left['id']}/revoke")
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json() == {"id": left["id"]}
+    stamp = _device(left["id"])["revoked_at"]
+    assert stamp is not None
+    again = plain_client.post(f"/api/desktop/devices/{left['id']}/revoke")
+    assert again.status_code == 200, again.text
+    assert again.json() == {"id": left["id"]}
+    assert _device(left["id"])["revoked_at"] == stamp
+    assert _device(right["id"])["revoked_at"] is None
+    remaining = plain_client.get("/api/desktop/devices").json()
+    remaining_ids = {item["id"] for item in remaining}
+    assert left["id"] not in remaining_ids
+    assert right["id"] in remaining_ids
+    assert recognize_package(left["token"]) is None
+    live = recognize_package(right["token"])
+    assert isinstance(live, PackageProof)
+    assert live.device_id == right["id"]
+    session_id = _session()
+    offered = _propose(plain_client, session_id, local_target=PROBE + ".devices", token=right["token"])
+    assert offered["confirm_token"]
+    denied = plain_client.post(
+        "/api/desktop/propose",
+        json={
+            "session_id": session_id,
+            "action": "desktop.open",
+            "local_target": PROBE + ".revoked",
+            "local_args": [],
+        },
+        headers=_headers(left["token"]),
+    )
+    assert denied.status_code == 403
+
+    monkeypatch.setattr(settings, "desktop_package_token", "desktop")
+    assert recognize_package("desktop") is None
+    assert recognize_package("web") is None
+    for word in ("desktop", "web"):
+        saved = plain_client.post(
+            "/api/desktop/propose",
+            json={
+                "session_id": session_id,
+                "action": "desktop.open",
+                "local_target": PROBE + ".word",
+                "local_args": [],
+            },
+            headers=_headers(word),
+        )
+        assert saved.status_code == 403
+        assert recognize_package(word) is None
+    unenrolled = secrets.token_urlsafe(32)
+    monkeypatch.setattr(settings, "desktop_package_token", unenrolled)
+    assert recognize_package(unenrolled) is None
+    assert recognize_package("desktop") is None
+    assert recognize_package("web") is None
+
+    armed_before = _armed_count()
+    db = SessionLocal()
+    try:
+        with pytest.raises(LocalClosed) as caught:
+            commit_local(
+                db,
+                user_id=_admin_id(),
+                token="",
+                action=LocalAction("desktop.open", PROBE + ".blank", ()),
+                proof=live,
+            )
+        assert caught.value.status == 409
+        db.rollback()
+    finally:
+        db.close()
+    assert _armed_count() == armed_before
+    assert _device(right["id"])["revoked_at"] is None
+
+    assert _stop_live(session_id)
+    assert _device(right["id"])["revoked_at"] is None
+    assert isinstance(recognize_package(right["token"]), PackageProof)
+
+    count_before = len(_devices())
+    monkeypatch.setattr("app.services.desktop_devices.secrets.token_urlsafe", lambda _n: right["token"])
+    conflict = plain_client.post("/api/desktop/devices", json={"label": "same"})
+    assert conflict.status_code == 409, conflict.text
+    assert len(_devices()) == count_before
+    digest = hashlib.sha256(right["token"].encode("utf-8")).hexdigest()
+    assert sum(1 for row in _devices() if row["token_hash"] == digest) == 1
+
+    other = _other_client()
+    stolen = other.post(
+        "/api/desktop/propose",
+        json={
+            "session_id": session_id,
+            "action": "desktop.open",
+            "local_target": PROBE + ".stolen",
+            "local_args": [],
+        },
+        headers=_headers(right["token"]),
+    )
+    assert stolen.status_code == 403
+    assert isinstance(recognize_package(right["token"]), PackageProof)
+    missing = other.post(f"/api/desktop/devices/{right['id']}/revoke")
+    assert missing.status_code == 404
+    assert plain_client.post("/api/desktop/devices/999999999/revoke").status_code == 404
+    assert _device(right["id"])["revoked_at"] is None
+
+    from sqlalchemy.orm import Session as OrmSession
+
+    original = OrmSession.commit
+
+    def fail_revoke(self):
+        pending = [
+            obj
+            for obj in list(self.dirty) + list(self.new)
+            if isinstance(obj, DesktopDevice) and obj.revoked_at is not None
+        ]
+        if pending:
+            raise RuntimeError("revoke commit failed")
+        return original(self)
+
+    monkeypatch.setattr(OrmSession, "commit", fail_revoke)
+    with pytest.raises(RuntimeError, match="revoke commit failed"):
+        plain_client.post(f"/api/desktop/devices/{right['id']}/revoke")
+    monkeypatch.setattr(OrmSession, "commit", original)
+    assert _device(right["id"])["revoked_at"] is None
+    assert isinstance(recognize_package(right["token"]), PackageProof)
 
 
 def test_a_shell_string_is_not_an_argument_list() -> None:
