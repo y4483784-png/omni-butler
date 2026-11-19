@@ -15,6 +15,7 @@ import {
 import { isSessionBusy } from "../services/chatStream";
 import { UserAdminPanel } from "./UserAdminPanel";
 import { ChangePasswordPanel } from "./ChangePasswordPanel";
+import { DevicesPanel } from "./DevicesPanel";
 import { AuditPanel } from "./AuditPanel";
 import { groupSessions } from "../utils/sessionGroups";
 
@@ -38,6 +39,7 @@ export function SessionSidebar({ user, onLogout }: Props) {
   const [draft, setDraft] = useState("");
   const [adminOpen, setAdminOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [calendarStatus, setCalendarStatus] = useState<GoogleCalendarStatus | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -195,6 +197,9 @@ export function SessionSidebar({ user, onLogout }: Props) {
         <button type="button" className="sidebar-link" onClick={() => setPasswordOpen(true)}>
           改密
         </button>
+        <button type="button" className="sidebar-link" onClick={() => setDevicesOpen(true)}>
+          设备
+        </button>
         {user.is_admin ? (
           <button type="button" className="sidebar-link" onClick={() => setAdminOpen(true)}>
             用户
@@ -241,6 +246,7 @@ export function SessionSidebar({ user, onLogout }: Props) {
       </div>
       {adminOpen ? <UserAdminPanel onClose={() => setAdminOpen(false)} /> : null}
       {passwordOpen ? <ChangePasswordPanel onClose={() => setPasswordOpen(false)} /> : null}
+      {devicesOpen ? <DevicesPanel onClose={() => setDevicesOpen(false)} /> : null}
       {auditOpen ? <AuditPanel onClose={() => setAuditOpen(false)} /> : null}
     </aside>
   );

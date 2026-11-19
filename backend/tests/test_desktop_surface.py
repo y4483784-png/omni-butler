@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import secrets
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -684,6 +682,7 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
         if path.suffix not in {".ts", ".tsx", ".js", ".css"}:
             continue
         text = path.read_text(encoding="utf-8")
+        assert "package-token" not in text, path
         for needle in banned:
             assert needle not in text, path
     window = (REPO / "frontend" / "src" / "components" / "ChatWindow.tsx").read_text(encoding="utf-8")
@@ -706,7 +705,10 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
     assert "http://127.0.0.1:5173" in main
     assert "nodeIntegration: false" in main
     assert "contextIsolation: true" in main
-    assert "DESKTOP_PACKAGE_TOKEN" in main
+    assert "process.env.DESKTOP_PACKAGE_TOKEN" not in main
+    assert "DESKTOP_PACKAGE_TOKEN:" in main
+    assert "package-token" in main
+    assert "0o600" in main
     assert "shell: false" in main
     assert "desktop-propose" in main
     assert "desktop-confirm" in main
@@ -716,6 +718,11 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
     assert "desktop-propose" in preload
     assert "desktop-confirm" in preload
     assert "DESKTOP_PACKAGE_TOKEN" not in preload
+    panel = (REPO / "frontend" / "src" / "components" / "DevicesPanel.tsx").read_text(encoding="utf-8")
+    client = (REPO / "frontend" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    assert "revokeDevice" in panel
+    assert "/api/desktop/devices/${id}/revoke" in client
+    assert "enrollDevice" not in client
 
 
 def test_compose_and_beat_stay_put() -> None:
@@ -749,11 +756,8 @@ def test_desktop_dev_refuses_an_empty_token() -> None:
     assert "npm run dev" in text
     assert "electron" in text
     assert "docker" not in text.lower()
-    env = os.environ.copy()
-    env["DESKTOP_PACKAGE_TOKEN"] = ""
-    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=5)
-    assert result.returncode != 0
-    assert "DESKTOP_PACKAGE_TOKEN" in result.stderr
+    assert "DESKTOP_PACKAGE_TOKEN" not in text
+    assert "The API must have the same" not in text
 
 
 def inspect_source(fn: object) -> str:
