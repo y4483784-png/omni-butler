@@ -15,6 +15,7 @@ CHAT_FIELDS = {
     "use_kb",
     "document_ids",
     "regenerate_message_id",
+    "images",
 }
 
 

@@ -1,3 +1,5 @@
+import type { ChatImagePayload, LocalImagePreview } from "../chatImage";
+
 export interface AuthUser {
   id: number;
   username: string;
@@ -30,6 +32,7 @@ export interface ChatMsg {
   scheduleCard?: ScheduleCard | null;
   artifact?: ArtifactPayload | null;
   feedback?: "up" | "down" | null;
+  localImages?: LocalImagePreview[];
 }
 
 export interface ScheduleSlot {
@@ -297,6 +300,17 @@ export async function listToolAudits(limit = 50): Promise<ToolAuditRow[]> {
   return r.json();
 }
 
+export class ChatRejected extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = "ChatRejected";
+  }
+}
+
+export function isChatRejected(error: unknown): error is ChatRejected {
+  return error instanceof ChatRejected;
+}
+
 export async function* streamChat(
   sessionId: number,
   message: string,
@@ -304,6 +318,7 @@ export async function* streamChat(
     useKb?: boolean;
     documentIds?: number[];
     regenerateMessageId?: number;
+    images?: ChatImagePayload[];
   }
 ): AsyncGenerator<string> {
   const body: Record<string, unknown> = {
@@ -312,6 +327,9 @@ export async function* streamChat(
     use_kb: Boolean(handlers?.useKb),
     document_ids: handlers?.documentIds?.length ? handlers.documentIds : [],
   };
+  if (handlers?.images && handlers.images.length > 0) {
+    body.images = handlers.images;
+  }
   if (handlers?.regenerateMessageId != null) {
     body.regenerate_message_id = handlers.regenerateMessageId;
   }
@@ -321,7 +339,7 @@ export async function* streamChat(
     body: JSON.stringify(body),
     signal: handlers?.signal,
   });
-  if (!resp.ok) throw new Error(await parseError(resp, "生成失败"));
+  if (!resp.ok) throw new ChatRejected(await parseError(resp, "生成失败"));
   if (!resp.body) return;
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();

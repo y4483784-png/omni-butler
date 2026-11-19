@@ -1,0 +1,49 @@
+---
+title: "Chat image"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Start
+    lg1: In flight
+    lg2: Ending
+    lg3: Stopped
+    lg4: Cleared
+  }
+  class lg0 tan
+  class lg1 blue
+  class lg2 orange
+  class lg3 yellow
+  class lg4 teal
+  s0: No image yet
+  s1: Image refused
+  s2: Image held for this chat
+  s3: Sent to the chat model
+  s4: Token counts stored
+  s5: Transport failure stores no row
+  s6: Missing counts stay null
+  s7: Job ended, blob still held
+  s8: Image bytes removed
+  s9: Blob gone, row still pending
+  [*] --> s0
+  s0 --> s1: the image is refused
+  s0 --> s2: the chat keeps the image
+  s2 --> s3: the chat model receives the image
+  s3 --> s4: the response includes token counts
+  s3 --> s5: the provider never answers
+  s3 --> s6: the response omits token counts
+  s4 --> s7: the job ends and deletion stays pending
+  s5 --> s7: the job ends and deletion stays pending
+  s6 --> s7: the job ends and deletion stays pending
+  s7 --> s8: the blob and the row are deleted
+  s7 --> s9: the blob goes and the row remains
+  s9 --> s8: a missing blob still drops the row
+  class s0 tan
+  class s1 yellow
+  class s2 blue
+  class s3 blue
+  class s4 blue
+  class s5 yellow
+  class s6 blue
+  class s7 orange
+  class s8 teal
+  class s9 orange

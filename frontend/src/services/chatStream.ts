@@ -1,5 +1,7 @@
-import { streamChat, loadMessages } from "../api/client";
+import { streamChat, loadMessages, isChatRejected } from "../api/client";
+import { mergeHydratedPreviews, releasePreviewUrls } from "../composerImages";
 import type { ChatMsg, Citation, ScheduleCard, ArtifactPayload } from "../api/client";
+import type { ChatImagePayload, LocalImagePreview } from "../chatImage";
 import { useStore, type SessionChatState } from "../store/useStore";
 import { artifactFromPayload } from "../utils/artifact";
 import { foldThinking, type ThinkingFold } from "../thinkingFold";
@@ -12,6 +14,8 @@ export type StartChatOptions = {
   useKb: boolean;
   kbFocusIds: number[];
   onTitle?: (sessionId: number, title: string) => void;
+  images?: ChatImagePayload[];
+  localImages?: LocalImagePreview[];
 };
 
 function isAbortError(e: unknown): boolean {
@@ -69,12 +73,16 @@ function voidOpenDrafts(messages: SessionChatState["messages"]) {
   });
 }
 
-function appendAssistantPlaceholder(sessionId: number, userText: string) {
+function appendAssistantPlaceholder(
+  sessionId: number,
+  userText: string,
+  localImages?: LocalImagePreview[]
+) {
   const prev = voidOpenDrafts(useStore.getState().sessionChats[sessionId]?.messages ?? []);
   patchSession(sessionId, {
     messages: [
       ...prev,
-      { role: "user", content: userText },
+      { role: "user", content: userText, localImages },
       {
         role: "assistant",
         content: "",
@@ -156,7 +164,7 @@ async function runStreamLoop(
   sessionId: number,
   message: string,
   options: StartChatOptions & { regenerateMessageId?: number }
-): Promise<void> {
+): Promise<ChatStreamResult> {
   let acc = "";
   let cites: Citation[] = [];
   let scheduleCard: ScheduleCard | null = null;
@@ -171,6 +179,7 @@ async function runStreamLoop(
       useKb: options.useKb,
       documentIds: options.kbFocusIds.length ? options.kbFocusIds : undefined,
       regenerateMessageId: options.regenerateMessageId,
+      images: options.images,
       onTitle: (title) => options.onTitle?.(sessionId, title),
       onAck: (path) => {
         patchSession(sessionId, {
@@ -243,6 +252,16 @@ async function runStreamLoop(
       });
     }
   } catch (e) {
+    const rejectedDetail = draftRejectionDetail(e);
+    if (rejectedDetail !== null) {
+      const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];
+      const last = prev.at(-1);
+      const prior = prev.at(-2);
+      if (last?.role === "assistant" && last.id == null && prior?.role === "user" && prior.id == null) {
+        patchSession(sessionId, { messages: prev.slice(0, -2) });
+      }
+      return { accepted: false, detail: rejectedDetail };
+    }
     if (isAbortError(e)) {
       aborted = true;
       if (!acc) {
@@ -260,16 +279,38 @@ async function runStreamLoop(
     patchSession(sessionId, { busy: false, thinking: false, phaseHint: "" });
     try {
       const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-      const synced = overlaySettledScheduleCards(before, withHydratedFold(before, await loadMessages(sessionId)));
-      const messages = aborted ? synced : overlayUnsavedError(before, synced);
+      const folded = withHydratedFold(before, await loadMessages(sessionId));
+      const synced = overlaySettledScheduleCards(before, folded);
+      const { messages, releaseUrls } = messagesAfterHydrate(before, synced, aborted);
+      revokePreviewUrls(releaseUrls);
       patchSession(sessionId, { messages, hydrated: true });
     } catch {
-      /* keep in-memory partial if sync fails */
     }
   }
+  return { accepted: true };
 }
 
-/** Load history from API when session has no in-memory cache. */
+function draftRejectionDetail(error: unknown): string | null {
+  if (isChatRejected(error)) return error.message;
+  if (error instanceof Error && error.message === "body_limit") return error.message;
+  return null;
+}
+
+export type ChatStreamResult = { accepted: true } | { accepted: false; detail: string };
+
+export function messagesAfterHydrate(
+  before: ChatMsg[],
+  synced: ChatMsg[],
+  aborted = false,
+): { messages: ChatMsg[]; releaseUrls: string[] } {
+  const merged = aborted ? synced : overlayUnsavedError(before, synced);
+  return mergeHydratedPreviews(before, merged);
+}
+
+function revokePreviewUrls(urls: readonly string[]) {
+  releasePreviewUrls(urls, (url) => URL.revokeObjectURL(url));
+}
+
 export async function hydrateSessionMessages(sessionId: number) {
   const existing = useStore.getState().sessionChats[sessionId];
   if (existing?.hydrated || existing?.busy) return;
@@ -279,7 +320,10 @@ export async function hydrateSessionMessages(sessionId: number) {
 
 export async function reloadSessionMessages(sessionId: number) {
   const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-  const messages = withHydratedFold(before, await loadMessages(sessionId));
+  const folded = withHydratedFold(before, await loadMessages(sessionId));
+  const scheduled = overlaySettledScheduleCards(before, folded);
+  const { messages, releaseUrls } = mergeHydratedPreviews(before, scheduled);
+  revokePreviewUrls(releaseUrls);
   patchSession(sessionId, { messages, hydrated: true });
 }
 
@@ -288,16 +332,15 @@ export async function startChatStream(
   sessionId: number,
   message: string,
   options: StartChatOptions
-): Promise<void> {
+): Promise<ChatStreamResult> {
   const state = useStore.getState();
-  if (state.sessionChats[sessionId]?.busy) return;
+  if (state.sessionChats[sessionId]?.busy) return { accepted: false, detail: "" };
 
-  appendAssistantPlaceholder(sessionId, message);
+  appendAssistantPlaceholder(sessionId, message, options.localImages);
   useStore.getState().touchSession(sessionId);
-  await runStreamLoop(sessionId, message, options);
+  return runStreamLoop(sessionId, message, options);
 }
 
-/** Regenerate an existing assistant reply (truncates later turns server-side). */
 export async function startRegenerateStream(
   sessionId: number,
   assistantMessageId: number,

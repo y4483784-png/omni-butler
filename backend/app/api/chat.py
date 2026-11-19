@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DbSession
 
 from app.agents.dispatch import assign_turn
@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
 from app.core.deps import get_db_scoped
 from app.core.generation_stop import GenerationStopped, bind, is_stopped, reset
+from app.chat_images import ChatImage, ImageRejected, RequestBodyTooLarge, decode_chat_images
 from app.core.llm import AnswerDelta, LLMInfraError, ReasoningDelta, Role, stream_chat
 from app.core.moderation import INPUT_BLOCKED_MESSAGE, RedactBuffer, contains_sensitive, redact_text
 from app.core.messages import llm_user_error
@@ -51,12 +52,19 @@ SSE_HEADERS = {
 }
 
 
+class ChatImageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    media_type: str
+    data_base64: str
+
+
 class ChatRequest(BaseModel):
     session_id: int
     message: str = ""
     use_kb: bool = False
     document_ids: list[int] = Field(default_factory=list)
     regenerate_message_id: int | None = None
+    images: list[ChatImageIn] = Field(default_factory=list)
 
 
 def _sse(data: dict) -> str:
@@ -394,6 +402,9 @@ async def chat(
             headers={**SSE_HEADERS, "Retry-After": str(max(1, retry_after))},
         )
 
+    if is_regenerate and req.images:
+        return JSONResponse({"detail": "regenerate"}, status_code=400)
+
     if is_regenerate:
         reg = _apply_regenerate(db, req, user_id=uid)
         if reg is None:
@@ -425,6 +436,14 @@ async def chat(
 
     if contains_sensitive(user_message):
         return JSONResponse({"detail": INPUT_BLOCKED_MESSAGE}, status_code=400)
+
+    try:
+        images: tuple[ChatImage, ...] = decode_chat_images(
+            req.images,
+            max_upload_mb=settings.max_upload_mb,
+        )
+    except ImageRejected as exc:
+        return JSONResponse({"detail": exc.code}, status_code=400)
 
     turn = task_run.begin_turn(user_id=uid, session_id=session.id)
 
@@ -501,6 +520,7 @@ async def chat(
             extra_artifact: dict | None = None
             artifact_stored: dict | None = None
             stream_usage: dict = {}
+            rejected_body = False
             try:
                 yield _sse({"type": "ack", "path": "agent"})
                 if new_title:
@@ -520,6 +540,7 @@ async def chat(
                         task_id=turn.id,
                         generation=turn.generation,
                         surface=surface_for_login(),
+                        images=images,
                     )
                 )
                 while not wf_task.done():
@@ -639,44 +660,51 @@ async def chat(
                         return _sse({"type": "ttft", "ms": ttft_ms, "path": "agent"})
                     try:
                         leave_stream = False
-                        async for delta in stream_chat(
-                            llm_messages, role=Role.CHAT, usage_out=stream_usage
-                        ):
-                            if is_stopped() or await request.is_disconnected():
-                                task_run.stop(user_id=uid, generation=turn.generation)
-                                leave_stream = True
-                                break
-                            if isinstance(delta, ReasoningDelta):
-                                for piece in reason_buf.push(delta.text):
-                                    if is_stopped() or await request.is_disconnected():
-                                        task_run.stop(user_id=uid, generation=turn.generation)
-                                        leave_stream = True
-                                        break
+                        stream = stream_chat(
+                            llm_messages,
+                            role=Role.CHAT,
+                            usage_out=stream_usage,
+                            images=images,
+                        )
+                        try:
+                            async for delta in stream:
+                                if is_stopped() or await request.is_disconnected():
+                                    task_run.stop(user_id=uid, generation=turn.generation)
+                                    leave_stream = True
+                                    break
+                                if isinstance(delta, ReasoningDelta):
+                                    for piece in reason_buf.push(delta.text):
+                                        if is_stopped() or await request.is_disconnected():
+                                            task_run.stop(user_id=uid, generation=turn.generation)
+                                            leave_stream = True
+                                            break
+                                        reasoning_parts.append(piece)
+                                        yield _sse({"type": "reasoning", "content": piece})
+                                elif isinstance(delta, AnswerDelta):
+                                    for piece in answer_buf.push(delta.text):
+                                        if is_stopped() or await request.is_disconnected():
+                                            task_run.stop(user_id=uid, generation=turn.generation)
+                                            leave_stream = True
+                                            break
+                                        marker = _note_ttft()
+                                        if marker:
+                                            yield marker
+                                        acc.append(piece)
+                                        yield _sse({"type": "token", "content": piece})
+                                if leave_stream:
+                                    break
+                            if not leave_stream:
+                                for piece in reason_buf.finish():
                                     reasoning_parts.append(piece)
                                     yield _sse({"type": "reasoning", "content": piece})
-                            elif isinstance(delta, AnswerDelta):
-                                for piece in answer_buf.push(delta.text):
-                                    if is_stopped() or await request.is_disconnected():
-                                        task_run.stop(user_id=uid, generation=turn.generation)
-                                        leave_stream = True
-                                        break
+                                for piece in answer_buf.finish():
                                     marker = _note_ttft()
                                     if marker:
                                         yield marker
                                     acc.append(piece)
                                     yield _sse({"type": "token", "content": piece})
-                            if leave_stream:
-                                break
-                        if not leave_stream:
-                            for piece in reason_buf.finish():
-                                reasoning_parts.append(piece)
-                                yield _sse({"type": "reasoning", "content": piece})
-                            for piece in answer_buf.finish():
-                                marker = _note_ttft()
-                                if marker:
-                                    yield marker
-                                acc.append(piece)
-                                yield _sse({"type": "token", "content": piece})
+                        finally:
+                            await stream.aclose()
                     except LLMInfraError as exc:
                         if is_stopped() or await request.is_disconnected():
                             task_run.stop(user_id=uid, generation=turn.generation)
@@ -696,6 +724,9 @@ async def chat(
                             yield _sse({"type": "artifact", "artifact": extra_artifact})
             except GenerationStopped:
                 pass
+            except RequestBodyTooLarge:
+                rejected_body = True
+                yield _sse({"type": "error", "content": "body_limit"})
             except asyncio.CancelledError:
                 task_run.stop(user_id=uid, generation=turn.generation)
                 if wf_task is not None and not wf_task.done():
@@ -717,117 +748,124 @@ async def chat(
                     acc.append(err_content)
                 yield _sse({"type": "error", "content": err_content})
             finally:
-                assistant_content = redact_text("".join(acc))
-                assistant_reasoning = "".join(reasoning_parts)
-                persisted = False
-                if wf is not None:
-                    persist_artifact = prepare_artifact_for_storage(wf.get("artifact")) or extra_artifact
-                    pending_json = (
-                        json.dumps(wf.get("pending_calendar"), ensure_ascii=False)
-                        if wf.get("pending_calendar")
-                        else ""
-                    )
-                    set_rls_context(db, uid)
-                    _finish_persist(
-                        assistant_content,
-                        reasoning=assistant_reasoning,
-                        citations_payload=wf.get("citations"),
-                        schedule_card=wf.get("schedule_card"),
-                        pending_calendar_json=pending_json,
-                        artifact_stored=persist_artifact,
-                    )
-                    persisted = True
-                elif acc:
-                    set_rls_context(db, uid)
-                    _finish_persist(
-                        assistant_content,
-                        reasoning=assistant_reasoning,
-                        artifact_stored=extra_artifact,
-                    )
-                    persisted = True
-                elif not is_regenerate:
-                    set_rls_context(db, uid)
-                    _commit_user_turn(db, session, user_message)
-                if persisted and not is_stopped():
+                if rejected_body:
                     try:
-                        finished = task_run.finish(user_id=uid, generation=turn.generation)
-                    except task_run.LateResult as exc:
-                        logger.warning(
-                            "late task finish user_id=%s generation=%s status=%s",
-                            uid,
-                            turn.generation,
-                            exc.turn.status,
+                        task_run.stop(user_id=uid, generation=turn.generation)
+                    except task_run.LateResult:
+                        pass
+                    yield _sse({"type": "done"})
+                else:
+                    assistant_content = redact_text("".join(acc))
+                    assistant_reasoning = "".join(reasoning_parts)
+                    persisted = False
+                    if wf is not None:
+                        persist_artifact = prepare_artifact_for_storage(wf.get("artifact")) or extra_artifact
+                        pending_json = (
+                            json.dumps(wf.get("pending_calendar"), ensure_ascii=False)
+                            if wf.get("pending_calendar")
+                            else ""
                         )
-                        finished = exc.turn
-                    if finished.status == "completed":
+                        set_rls_context(db, uid)
+                        _finish_persist(
+                            assistant_content,
+                            reasoning=assistant_reasoning,
+                            citations_payload=wf.get("citations"),
+                            schedule_card=wf.get("schedule_card"),
+                            pending_calendar_json=pending_json,
+                            artifact_stored=persist_artifact,
+                        )
+                        persisted = True
+                    elif acc:
+                        set_rls_context(db, uid)
+                        _finish_persist(
+                            assistant_content,
+                            reasoning=assistant_reasoning,
+                            artifact_stored=extra_artifact,
+                        )
+                        persisted = True
+                    elif not is_regenerate:
+                        set_rls_context(db, uid)
+                        _commit_user_turn(db, session, user_message)
+                    if persisted and not is_stopped():
+                        try:
+                            finished = task_run.finish(user_id=uid, generation=turn.generation)
+                        except task_run.LateResult as exc:
+                            logger.warning(
+                                "late task finish user_id=%s generation=%s status=%s",
+                                uid,
+                                turn.generation,
+                                exc.turn.status,
+                            )
+                            finished = exc.turn
+                        if finished.status == "completed":
+                            try:
+                                await asyncio.to_thread(
+                                    _remember_turn_isolated,
+                                    uid,
+                                    user_message,
+                                    assistant_content,
+                                    finished.generation,
+                                    finished.status,
+                                )
+                            except Exception:
+                                logger.exception("memory extract thread failed")
                         try:
                             await asyncio.to_thread(
-                                _remember_turn_isolated,
+                                _refresh_context_isolated,
                                 uid,
-                                user_message,
-                                assistant_content,
-                                finished.generation,
-                                finished.status,
+                                session.id,
+                                citations=wf.get("citations") if wf else None,
+                                document_ids=req.document_ids or None,
+                                analysis_summary=wf.get("analysis_summary") if wf else None,
+                                artifact=(
+                                    prepare_artifact_for_storage(wf.get("artifact"))
+                                    if wf
+                                    else extra_artifact
+                                ),
                             )
                         except Exception:
-                            logger.exception("memory extract thread failed")
-                    try:
-                        await asyncio.to_thread(
-                            _refresh_context_isolated,
-                            uid,
-                            session.id,
-                            citations=wf.get("citations") if wf else None,
-                            document_ids=req.document_ids or None,
-                            analysis_summary=wf.get("analysis_summary") if wf else None,
-                            artifact=(
-                                prepare_artifact_for_storage(wf.get("artifact"))
-                                if wf
-                                else extra_artifact
-                            ),
-                        )
-                    except Exception:
-                        logger.exception("context refresh thread failed")
-                    try:
-                        est = int(ctx_stats.get("tokens") or 0)
-                        actual = stream_usage.get("prompt_tokens")
-                        err_pct = None
-                        if actual is not None and int(actual) > 0:
-                            err_pct = round(abs(est - int(actual)) / float(actual) * 100.0, 2)
-                        logger.info(
-                            "chat_ctx session_id=%s ctx_est_tokens=%d ctx_actual_tokens=%s "
-                            "ctx_err_pct=%s ctx_level=%s ctx_compose_level=%s "
-                            "summary_status=%s",
-                            session.id,
-                            est,
-                            actual if actual is not None else "-",
-                            err_pct if err_pct is not None else "-",
-                            ctx_stats.get("level") or "safe",
-                            ctx_stats.get("compose_level") or "-",
-                            "deferred",
-                        )
-                    except Exception:
-                        logger.exception("chat_ctx log failed")
-                    if new_title and not is_regenerate:
+                            logger.exception("context refresh thread failed")
                         try:
-                            llm_title = await asyncio.to_thread(
-                                generate_session_title,
-                                user_message,
-                                assistant_content,
+                            est = int(ctx_stats.get("tokens") or 0)
+                            actual = stream_usage.get("prompt_tokens")
+                            err_pct = None
+                            if actual is not None and int(actual) > 0:
+                                err_pct = round(abs(est - int(actual)) / float(actual) * 100.0, 2)
+                            logger.info(
+                                "chat_ctx session_id=%s ctx_est_tokens=%d ctx_actual_tokens=%s "
+                                "ctx_err_pct=%s ctx_level=%s ctx_compose_level=%s "
+                                "summary_status=%s",
+                                session.id,
+                                est,
+                                actual if actual is not None else "-",
+                                err_pct if err_pct is not None else "-",
+                                ctx_stats.get("level") or "safe",
+                                ctx_stats.get("compose_level") or "-",
+                                "deferred",
                             )
-                            if llm_title and llm_title != new_title:
-                                replaced = await asyncio.to_thread(
-                                    _replace_session_title,
-                                    session.id,
-                                    new_title,
-                                    llm_title,
-                                    uid,
-                                )
-                                if replaced:
-                                    session.title = llm_title
-                                    yield _sse({"type": "session_title", "content": llm_title})
                         except Exception:
-                            logger.exception("session title llm failed")
-                yield _sse({"type": "done"})
+                            logger.exception("chat_ctx log failed")
+                        if new_title and not is_regenerate:
+                            try:
+                                llm_title = await asyncio.to_thread(
+                                    generate_session_title,
+                                    user_message,
+                                    assistant_content,
+                                )
+                                if llm_title and llm_title != new_title:
+                                    replaced = await asyncio.to_thread(
+                                        _replace_session_title,
+                                        session.id,
+                                        new_title,
+                                        llm_title,
+                                        uid,
+                                    )
+                                    if replaced:
+                                        session.title = llm_title
+                                        yield _sse({"type": "session_title", "content": llm_title})
+                            except Exception:
+                                logger.exception("session title llm failed")
+                    yield _sse({"type": "done"})
         finally:
             reset(stop_token)
 

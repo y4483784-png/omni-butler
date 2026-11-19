@@ -420,3 +420,50 @@ class MemoryLedger(Base):
     source_ref = Column(String, nullable=False, default="")
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+LLM_CALL_ROLES = ("chat", "planner", "router", "judge")
+TASK_IMAGE_MEDIA = ("image/jpeg", "image/png", "image/gif", "image/webp")
+TASK_IMAGE_PURGE = ("ready", "pending_delete", "staged", "tombstone")
+
+
+class LlmCall(Base):
+    __tablename__ = "llm_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ({})".format(", ".join(repr(role) for role in LLM_CALL_ROLES)),
+            name="ck_llm_calls_role",
+        ),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    generation = Column(Integer, nullable=True)
+    role = Column(String, nullable=False)
+    model = Column(String, nullable=False)
+    prompt_tokens = Column(Integer, nullable=True)
+    completion_tokens = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class TaskImage(Base):
+    __tablename__ = "task_images"
+    __table_args__ = (
+        CheckConstraint(
+            "media_type IN ({})".format(", ".join(repr(item) for item in TASK_IMAGE_MEDIA)),
+            name="ck_task_images_media",
+        ),
+        CheckConstraint(
+            "purge_state IN ({})".format(", ".join(repr(item) for item in TASK_IMAGE_PURGE)),
+            name="ck_task_images_purge",
+        ),
+        Index("ix_task_images_task_run_id", "task_run_id"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    task_run_id = Column(Integer, ForeignKey("task_runs.id"), nullable=False)
+    media_type = Column(String, nullable=False)
+    byte_length = Column(Integer, nullable=False)
+    sha256 = Column(String, nullable=False)
+    storage_key = Column(String, nullable=False)
+    purge_state = Column(String, nullable=False, default="ready")
+    created_at = Column(DateTime, default=_utcnow)

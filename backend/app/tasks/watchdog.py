@@ -162,3 +162,9 @@ _ledger = SweepLedger(previous_tick=None, credit={})
 def sweep_task() -> None:
     global _ledger
     _ledger = run_sweep(datetime.now(timezone.utc), _ledger)
+    try:
+        from app.services.task_images import reconcile_task_images
+
+        reconcile_task_images()
+    except Exception:
+        logger.exception("task image reconcile failed")
