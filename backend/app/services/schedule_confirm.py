@@ -640,7 +640,11 @@ def phase_for_stored_card(db: Session, card: dict | None) -> dict | None:
     if claim.status == "unknown" and card.get("phase") != "unknown":
         return {**card, "phase": "unknown"}
     if claim.status == "written" and card.get("phase") != "confirmed":
-        return {**card, "phase": "confirmed"}
+        from app.services.message_format import shown_create_card
+
+        probed = shown_create_card(db, {**card, "phase": "confirmed"})
+        if probed.get("phase") == "confirmed":
+            return probed
     if claim.status == "cancelled" and card.get("phase") == "draft":
         return {**card, "phase": "cancelled"}
     return card

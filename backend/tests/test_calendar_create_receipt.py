@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from uuid import uuid4
 
@@ -10,9 +11,17 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
-from app.models.models import CalendarEvent, EventReceipt, ScheduleConfirmClaim, Session as ChatSession
+from app.models.models import (
+    CalendarEvent,
+    EventReceipt,
+    Message,
+    ScheduleConfirmClaim,
+    Session as ChatSession,
+)
 from app.services import task_run
 from app.services.calendar_secrets import sign_oauth_state
+from app.services.message_format import serialize_message
+from app.services.schedule_confirm import phase_for_stored_card
 from tests.test_calendar_google import CLIENT_SECRET, CODE, FERNET_KEY, FakeGoogle, _cleanup, _insert_calls
 
 
@@ -419,6 +428,104 @@ def test_repair_updates_one_unsealed_receipt_and_does_not_post(
         assert rows[0].body == event_id
         assert rows[0].external_request_id == armed
         assert rows[0].external_request_id != event_id
+    finally:
+        db.rollback()
+        db.close()
+        _drop_receipts(user_id)
+        _cleanup(user_id)
+
+
+def test_written_create_stays_incomplete_until_the_receipt_is_filed(
+    auth_client: TestClient, fake_google: FakeGoogle
+):
+    init_db()
+    me = auth_client.get("/api/auth/me")
+    assert me.status_code == 200, me.text
+    user_id = me.json()["id"]
+    token = str(uuid4())
+    armed = f"req-{uuid4().hex}"
+    event_id = f"evt-{uuid4().hex}"
+    title = f"未回执-{uuid4().hex[:8]}"
+    db = SessionLocal()
+    try:
+        session = ChatSession(user_id=user_id, title="创建回执")
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        session_id = session.id
+        db.add(
+            ScheduleConfirmClaim(
+                token=token,
+                user_id=user_id,
+                session_id=session_id,
+                status="written",
+                action="calendar.create",
+                fingerprint=uuid4().hex,
+                scope=f"calendar:user:{user_id}",
+                generation_ids="[]",
+                remote_request_id=armed,
+            )
+        )
+        event = CalendarEvent(
+            user_id=user_id,
+            title=title,
+            start_at=datetime(2031, 3, 3, 9, 0),
+            end_at=datetime(2031, 3, 3, 10, 0),
+            status="active",
+            external_id=event_id,
+            provider="google",
+        )
+        db.add(event)
+        db.flush()
+        event_row_id = event.id
+        db.add(
+            Message(
+                session_id=session_id,
+                role="assistant",
+                content="请确认",
+                schedule_card=json.dumps(
+                    {
+                        "phase": "confirmed",
+                        "mode": "create",
+                        "title": title,
+                        "confirm_token": token,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        db.commit()
+
+        listed = auth_client.get(f"/api/sessions/{session_id}/messages")
+        assert listed.status_code == 200, listed.text
+        assert listed.json()[-1]["scheduleCard"]["phase"] == "unknown"
+        stored = db.query(Message).filter(Message.session_id == session_id, Message.role == "assistant").one()
+        db.refresh(stored)
+        assert json.loads(stored.schedule_card)["phase"] == "confirmed"
+        assert serialize_message(stored)["scheduleCard"]["phase"] == "unknown"
+        assert json.loads(stored.schedule_card)["phase"] == "confirmed"
+        draft = phase_for_stored_card(db, {"phase": "draft", "confirm_token": token, "title": title})
+        assert draft is not None
+        assert draft["phase"] == "draft"
+
+        from app.api.calendar import record_create_success
+
+        before = list(fake_google.calls)
+        record_create_success(db, user_id, token, event_row_id)
+        assert fake_google.calls == before
+        receipt = _receipt(user_id, token)
+        assert receipt is not None
+        assert receipt["count"] == 1
+        assert receipt["state"] == "external_success"
+        assert event_id in receipt["body"]
+        assert receipt["external_request_id"] == armed
+
+        again = auth_client.get(f"/api/sessions/{session_id}/messages")
+        assert again.status_code == 200, again.text
+        assert again.json()[-1]["scheduleCard"]["phase"] == "confirmed"
+        repaired = phase_for_stored_card(db, {"phase": "draft", "confirm_token": token, "title": title})
+        assert repaired is not None
+        assert repaired["phase"] == "confirmed"
     finally:
         db.rollback()
         db.close()
