@@ -369,7 +369,8 @@ def begin_read(db: Session, *, hold: Hold, tool_call_id: str) -> Literal["invoke
         return "stale"
     _store_phase(db, step_row, step.phase)
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
-    _commit_job(db, job)
+    if not _commit_job(db, job):
+        return "stale"
     return "invoke"
 
 
@@ -404,7 +405,8 @@ def save_read_result(
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     if entered:
         _clear_due_if_set(db, hold)
-    _commit_job(db, job)
+    if not _commit_job(db, job):
+        return None, False
     return step, entered
 
 
@@ -477,7 +479,8 @@ def open_cards(
     if _leave(db, hold, status="waiting_person") != 1:
         db.rollback()
         return ()
-    _commit_job(db, job)
+    if not _commit_job(db, job):
+        return ()
     return tuple(tokens)
 
 
@@ -499,8 +502,7 @@ def observe_ready(db: Session, *, hold: Hold, step_id: int) -> bool:
     if not entered and cleared != 1:
         db.rollback()
         return False
-    _commit_job(db, job)
-    return True
+    return _commit_job(db, job)
 
 
 def confirm_call(
@@ -579,7 +581,8 @@ def confirm_call(
         claim.status = "unknown"
     else:
         claim.status = "cancelled"
-    _commit_job(db, job)
+    if not _commit_job(db, job):
+        raise ScheduleConfirmClosed("closed")
     return step
 
 
@@ -652,7 +655,8 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     if entered:
         _clear_due_if_set(db, hold)
-    _commit_job(db, job)
+    if not _commit_job(db, job):
+        return None
     return step
 
 
@@ -851,7 +855,8 @@ def _deny_web(db, *, job, hold, step_row, call_row, memory) -> Literal["denied",
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     if step.phase is Phase.RESULTS_READY:
         _clear_due_if_set(db, hold)
-    _commit_job(db, job)
+    if not _commit_job(db, job):
+        return "stale"
     return "denied"
 
 

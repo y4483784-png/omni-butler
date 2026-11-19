@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -176,11 +177,13 @@ def test_a_calendar_write_waits_for_one_confirm(plain_client: TestClient):
     user_id = _admin_id()
     session_id = _session(user_id)
     title = f"loop-{uuid4().hex}"
+    stamp = uuid4().int % 20000
+    start = datetime(2031, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=stamp)
     raw = {
         "action": "create",
         "title": title,
-        "start_at": "2031-03-14T04:00:00",
-        "end_at": "2031-03-14T05:00:00",
+        "start_at": start.strftime("%Y-%m-%dT%H:%M:%S"),
+        "end_at": (start + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"),
     }
     set_executor(lambda _messages, _tools: _turn(ToolCallSpec("call-a", "calendar", json.dumps(raw))))
     with patch("app.services.calendar.create_event", side_effect=AssertionError("created")):
@@ -209,16 +212,24 @@ def test_a_calendar_write_waits_for_one_confirm(plain_client: TestClient):
         "meet": False,
         "confirm_token": card["confirm_token"],
     }
-    first = plain_client.post("/api/calendar", json=body)
-    assert first.status_code == 200, first.text
-    second = plain_client.post("/api/calendar", json=body)
-    assert second.status_code == 409
-    db = SessionLocal()
     try:
-        assert db.query(CalendarEvent).filter(CalendarEvent.title == title).count() == 1
-        assert _calls(job.id)[0].state == "result"
+        first = plain_client.post("/api/calendar", json=body)
+        assert first.status_code == 200, first.text
+        second = plain_client.post("/api/calendar", json=body)
+        assert second.status_code == 409
+        db = SessionLocal()
+        try:
+            assert db.query(CalendarEvent).filter(CalendarEvent.title == title).count() == 1
+            assert _calls(job.id)[0].state == "result"
+        finally:
+            db.close()
     finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            db.query(CalendarEvent).filter(CalendarEvent.title == title).delete()
+            db.commit()
+        finally:
+            db.close()
 
 
 def test_forbid_omits_search_and_denies_it_again():

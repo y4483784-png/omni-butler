@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 from uuid import uuid4
 
@@ -158,6 +158,8 @@ def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
         if _renew(db, hold) != 1:
             return
         produced, message_id = _request(db, job)
+        if produced is None or is_stopped():
+            return
         saved = save_turn(db, hold=hold, turn=produced, message_id=message_id)
         if saved is None or saved.phase is Phase.FINAL_ANSWER:
             return
@@ -201,7 +203,10 @@ def _request(db, job: TaskRun):
     assert_body_within_limit(_build_job_request(resolve_executor(), messages, stream=False, tools=tools))
     if _executor is not None:
         return _executor(messages, tools), None
-    return asyncio.run(_stream_turn(db, job, messages, tools))
+    streamed = asyncio.run(_stream_turn(db, job, messages, tools))
+    if streamed is None:
+        return None, None
+    return streamed
 
 
 def _transcript(db, job: TaskRun, blocks) -> list[dict]:
@@ -255,6 +260,19 @@ def _transcript(db, job: TaskRun, blocks) -> list[dict]:
     return messages
 
 
+def _renew_current(db, job: TaskRun) -> int:
+    if not job.exec_token:
+        return 0
+    return task_run.renew_hold(
+        db,
+        user_id=int(job.user_id),
+        generation=int(job.generation),
+        exec_token=str(job.exec_token),
+        exec_epoch=int(job.exec_epoch or 0),
+        intent_version=int(job.intent_version or 1),
+    )
+
+
 async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]):
     from app.core.llm import (
         AnswerDelta,
@@ -273,7 +291,15 @@ async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]
     finish = "stop"
     message_id = None
     previous = None
+    renewed_at = datetime.now(timezone.utc)
+    half = timedelta(seconds=float(settings.llm_timeout) / 2)
+
     async for item in stream_chat(messages, role=Role.CHAT, tools=tools, job=True):
+        now = datetime.now(timezone.utc)
+        if now - renewed_at >= half:
+            if _renew_current(db, job) != 1:
+                return None
+            renewed_at = now
         if isinstance(item, ReasoningDelta):
             reasoning.append(item.text)
             continue
@@ -302,6 +328,8 @@ async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]
             continue
         if isinstance(item, ToolRoundEnd):
             finish = item.finish
+    if datetime.now(timezone.utc) - renewed_at >= half and _renew_current(db, job) != 1:
+        return None
     if content:
         message_id, _previous = commit_job_output(
             db,

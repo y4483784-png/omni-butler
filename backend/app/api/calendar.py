@@ -492,15 +492,18 @@ def _consume_schedule_claim(
             return saved
         detail = CONFIRM_DETAIL.get(exc.reason, CONFIRM_DETAIL["closed"])
         raise HTTPException(status_code=409, detail=detail) from None
-    from app.services.loop_round import note_confirmed
-
-    note_confirmed(db, user_id=user_id, token=str(token or ""))
     return None
 
 
 def _seal_schedule_write(db: Session, token: str | None) -> None:
+    from app.models.models import ScheduleConfirmClaim
+    from app.services.loop_round import note_confirmed
     from app.services.schedule_confirm import finish_confirm
 
+    key = str(token or "").strip()
+    claim = db.get(ScheduleConfirmClaim, key) if key else None
+    if claim is not None:
+        note_confirmed(db, user_id=int(claim.user_id), token=key)
     finish_confirm(db, token)
 
 
