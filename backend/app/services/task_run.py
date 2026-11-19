@@ -427,7 +427,29 @@ def wait_for_resource(*, user_id: int, generation: int) -> Turn:
 
 
 def stop(*, user_id: int, generation: int) -> Turn:
-    return _mutate(user_id=user_id, generation=generation, event="stop")
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        row = _load_row(db, user_id=user_id, generation=generation)
+        if row is None:
+            raise MissingTurn()
+        if row.kind != "job":
+            db.rollback()
+            return _mutate(user_id=user_id, generation=generation, event="stop")
+        from app.services.loop_round import cancel_open_calls
+
+        cancel_open_calls(db, user_id=user_id, generation=generation)
+        db.commit()
+        db.refresh(row)
+        turn = _to_turn(row)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    if turn.status in {"completed", "stopped"}:
+        _purge_quietly(user_id)
+    return turn
 
 
 def continue_job(*, user_id: int, generation: int) -> Turn:

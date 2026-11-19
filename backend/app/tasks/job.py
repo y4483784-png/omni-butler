@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, timezone
+from typing import Callable
+from uuid import uuid4
 
+from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
-from app.core.generation_stop import bind, reset
-from app.models.models import Message
+from app.core.generation_stop import bind, is_stopped, reset
+from app.models.models import Message, TaskRun, TaskStep, ToolCall
 from app.services import task_run
 from app.tasks.celery_app import celery_app
+
+_executor: Callable | None = None
+_CALENDAR_READS = frozenset(
+    {
+        "list",
+        "suggest",
+        "prep",
+        "followup",
+        "calendar.list",
+        "calendar.suggest",
+        "calendar.prep",
+        "calendar.followup",
+    }
+)
+
+
+def set_executor(executor: Callable | None) -> None:
+    global _executor
+    _executor = executor
 
 
 def commit_job_output(
@@ -57,6 +81,26 @@ def commit_job_output(
     return message_id, now
 
 
+def _loop_enabled() -> bool:
+    return _executor is not None or bool(settings.llm_api_key)
+
+
+def _start(db, *, user_id: int, session_id: int, generation: int, goal: str) -> None:
+    text = (goal or "").strip()
+    commit_job_output(
+        db,
+        user_id=int(user_id),
+        session_id=int(session_id),
+        generation=int(generation),
+        message_id=None,
+        content=f"已开始：{text}" if text else "已开始。",
+        now=datetime.now(timezone.utc),
+        previous_commit_at=None,
+        newer=True,
+        call_ended=True,
+    )
+
+
 @celery_app.task(name="app.tasks.job.run_job", queue="default")
 def run_job(
     user_id: int,
@@ -79,20 +123,350 @@ def run_job(
         )
         token = bind(user_id=int(user_id), generation=turn.generation)
         try:
-            text = (goal or "").strip()
-            commit_job_output(
-                db,
-                user_id=int(user_id),
-                session_id=int(session_id),
-                generation=int(turn.generation),
-                message_id=None,
-                content=f"已开始：{text}" if text else "已开始。",
-                now=datetime.now(timezone.utc),
-                previous_commit_at=None,
-                newer=True,
-                call_ended=True,
-            )
+            if not _loop_enabled():
+                _start(db, user_id=int(user_id), session_id=int(session_id), generation=int(turn.generation), goal=goal or "")
+                return
+            from app.services.loop_round import take_created_hold
+
+            worker = str(uuid4())
+            taken = take_created_hold(db, user_id=int(user_id), task_id=turn.id, exec_token=worker)
+            _start(db, user_id=int(user_id), session_id=int(session_id), generation=int(turn.generation), goal=goal or "")
+            if taken != 1:
+                return
+            _drive(db, user_id=int(user_id), task_id=turn.id, worker=worker)
         finally:
             reset(token)
     finally:
         db.close()
+
+
+def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
+    from app.services.loop_round import Hold, Phase, save_turn
+
+    job = db.get(TaskRun, task_id)
+    db.refresh(job)
+    hold = Hold(
+        user_id=int(user_id),
+        generation=int(job.generation),
+        exec_token=worker,
+        exec_epoch=int(job.exec_epoch or 0),
+        intent_version=int(job.intent_version or 1),
+    )
+    while True:
+        if is_stopped():
+            return
+        if _renew(db, hold) != 1:
+            return
+        produced, message_id = _request(db, job)
+        saved = save_turn(db, hold=hold, turn=produced, message_id=message_id)
+        if saved is None or saved.phase is Phase.FINAL_ANSWER:
+            return
+        drafts: dict[str, dict] = {}
+        while True:
+            action = _one_pass(db, hold, saved.seq, job, drafts)
+            if action == "again":
+                continue
+            if action == "model":
+                break
+            return
+
+
+def _renew(db, hold) -> int:
+    return task_run.renew_hold(
+        db,
+        user_id=hold.user_id,
+        generation=hold.generation,
+        exec_token=hold.exec_token,
+        exec_epoch=hold.exec_epoch,
+        intent_version=hold.intent_version,
+    )
+
+
+def _request(db, job: TaskRun):
+    from app.agents.harness.constitution import load_constitution
+    from app.core.llm import _build_job_request, assert_body_within_limit, resolve_executor
+    from app.services.loop_round import job_tools
+    from app.services.task_images import load_image_blocks
+    from app.storage.factory import get_blob_store
+
+    db.refresh(job)
+    loaded = load_image_blocks(
+        db,
+        user_id=int(job.user_id),
+        task_run_id=int(job.id),
+        store=get_blob_store(),
+    )
+    messages = _transcript(db, job, loaded.blocks if loaded.kind != "hidden" else ())
+    tools = job_tools(constitution=load_constitution(), web_constraint=job.web_constraint or "allow")
+    assert_body_within_limit(_build_job_request(resolve_executor(), messages, stream=False, tools=tools))
+    if _executor is not None:
+        return _executor(messages, tools), None
+    return asyncio.run(_stream_turn(db, job, messages, tools))
+
+
+def _transcript(db, job: TaskRun, blocks) -> list[dict]:
+    from app.services.loop_round import Phase, stored_reasoning
+
+    goal = job.goal or ""
+    if blocks:
+        content: str | list = [{"type": "text", "text": goal}, *list(blocks)]
+    else:
+        content = goal
+    messages: list[dict] = [{"role": "user", "content": content}]
+    steps = (
+        db.query(TaskStep)
+        .filter(TaskStep.task_run_id == job.id)
+        .order_by(TaskStep.seq.asc())
+        .all()
+    )
+    for step in steps:
+        if step.phase != Phase.RESULTS_READY.value:
+            continue
+        calls = (
+            db.query(ToolCall)
+            .filter(ToolCall.task_step_id == step.id)
+            .order_by(ToolCall.position.asc())
+            .all()
+        )
+        from app.core.llm import assistant_tool_message
+
+        messages.append(
+            assistant_tool_message(
+                content=step.content or "",
+                reasoning=stored_reasoning(step),
+                calls=[
+                    {
+                        "id": call.tool_call_id,
+                        "type": "function",
+                        "function": {"name": call.name, "arguments": call.arguments or "{}"},
+                    }
+                    for call in calls
+                ],
+            )
+        )
+        for call in calls:
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.tool_call_id,
+                    "content": call.result or "",
+                }
+            )
+    return messages
+
+
+async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]):
+    from app.core.llm import (
+        AnswerDelta,
+        ModelTurn,
+        ReasoningDelta,
+        Role,
+        ToolCallDelta,
+        ToolCallSpec,
+        ToolRoundEnd,
+        stream_chat,
+    )
+
+    content: list[str] = []
+    reasoning: list[str] = []
+    fragments: dict[int, dict[str, str]] = {}
+    finish = "stop"
+    message_id = None
+    previous = None
+    async for item in stream_chat(messages, role=Role.CHAT, tools=tools, job=True):
+        if isinstance(item, ReasoningDelta):
+            reasoning.append(item.text)
+            continue
+        if isinstance(item, AnswerDelta):
+            content.append(item.text)
+            message_id, previous = commit_job_output(
+                db,
+                user_id=int(job.user_id),
+                session_id=int(job.session_id),
+                generation=int(job.generation),
+                message_id=message_id,
+                content="".join(content),
+                now=datetime.now(timezone.utc),
+                previous_commit_at=previous,
+                newer=True,
+                call_ended=False,
+            )
+            continue
+        if isinstance(item, ToolCallDelta):
+            slot = fragments.setdefault(item.index, {"id": "", "name": "", "arguments": ""})
+            if item.id:
+                slot["id"] = item.id
+            if item.name:
+                slot["name"] = item.name
+            slot["arguments"] += item.arguments
+            continue
+        if isinstance(item, ToolRoundEnd):
+            finish = item.finish
+    if content:
+        message_id, _previous = commit_job_output(
+            db,
+            user_id=int(job.user_id),
+            session_id=int(job.session_id),
+            generation=int(job.generation),
+            message_id=message_id,
+            content="".join(content),
+            now=datetime.now(timezone.utc),
+            previous_commit_at=previous,
+            newer=True,
+            call_ended=True,
+        )
+    specs = tuple(
+        ToolCallSpec(slot["id"], slot["name"], slot["arguments"])
+        for _index, slot in sorted(fragments.items())
+    )
+    return ModelTurn("".join(content).strip(), "".join(reasoning), specs, finish), message_id
+
+
+def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict]) -> str:
+    from app.services.loop_round import TERMINAL, CallState, Phase, begin_read, claim_call, observe_ready, open_cards, save_read_result
+
+    step = (
+        db.query(TaskStep)
+        .filter(TaskStep.task_run_id == job.id, TaskStep.seq == seq)
+        .one()
+    )
+    rows = (
+        db.query(ToolCall)
+        .filter(ToolCall.task_step_id == step.id)
+        .order_by(ToolCall.position.asc())
+        .all()
+    )
+    for row in rows:
+        if CallState(row.state) in TERMINAL:
+            continue
+        rejection = _reject_uninvoked(row)
+        if rejection is not None:
+            return _stored(db, hold, row.tool_call_id, rejection, rejected=True)
+        arguments = _load(row.arguments)
+        if claim_call(row.name, arguments):
+            continue
+        if row.state == CallState.RUNNING.value and row.tool_call_id in drafts:
+            continue
+        if row.state != CallState.PENDING.value:
+            continue
+        if is_stopped():
+            return "leave"
+        if _renew(db, hold) != 1:
+            return "leave"
+        outcome = begin_read(db, hold=hold, tool_call_id=row.tool_call_id)
+        if outcome == "stale":
+            return "leave"
+        if outcome == "denied":
+            fresh = db.get(TaskStep, step.id)
+            db.refresh(fresh)
+            if fresh.phase == Phase.RESULTS_READY.value:
+                return "model"
+            return "again"
+        try:
+            result = _invoke(db, job, row)
+        except Exception as exc:
+            return _stored(db, hold, row.tool_call_id, f"{type(exc).__name__}: {exc}", rejected=True)
+        card = result.schedule_card if isinstance(result.schedule_card, dict) else None
+        if card is not None:
+            from app.services.schedule_confirm import schedule_card_needs_claim
+
+            if schedule_card_needs_claim(card):
+                drafts[row.tool_call_id] = card
+                return "again"
+        if result.denied:
+            return _stored(db, hold, row.tool_call_id, result.deny_reason or "未执行", rejected=True)
+        return _stored(db, hold, row.tool_call_id, _result_text(result), rejected=False)
+    pending_claims = [
+        row
+        for row in rows
+        if row.state == CallState.PENDING.value and claim_call(row.name, _load(row.arguments))
+    ]
+    if pending_claims or drafts:
+        if is_stopped():
+            return "leave"
+        open_cards(db, hold=hold, step_id=step.id, drafts=drafts or None)
+        return "leave"
+    if any(CallState(row.state) not in TERMINAL for row in rows):
+        return "leave"
+    if observe_ready(db, hold=hold, step_id=step.id):
+        return "model"
+    return "leave"
+
+
+def _stored(db, hold, tool_call_id: str, result: str, *, rejected: bool) -> str:
+    from app.services.loop_round import save_read_result
+
+    _step, entered = save_read_result(
+        db,
+        hold=hold,
+        tool_call_id=tool_call_id,
+        result=result,
+        rejected=rejected,
+    )
+    return "model" if entered else "again"
+
+
+def _reject_uninvoked(row: ToolCall) -> str | None:
+    from app.services.loop_round import claim_call
+
+    if row.name == "errand.place" and (row.arguments or "").strip() in {"", "{}"}:
+        return "订单无效，未执行。"
+    if row.name != "calendar":
+        return None
+    arguments = _load(row.arguments)
+    if claim_call(row.name, arguments):
+        return None
+    action = str(arguments.get("action") or "").strip()
+    if action in _CALENDAR_READS:
+        return None
+    return "未知的日历动作，未执行。"
+
+
+def _invoke(db, job: TaskRun, row: ToolCall):
+    from app.agents.harness.gateway import invoke
+    from app.agents.harness.types import ToolContext
+
+    return invoke(
+        row.name,
+        ToolContext(
+            db=db,
+            message=job.goal or "",
+            history=[],
+            user_id=int(job.user_id),
+            task_id=int(job.id),
+            generation=int(job.generation),
+            require_task=True,
+        ),
+        _load(row.arguments),
+    )
+
+
+def _result_text(result) -> str:
+    answer = getattr(result, "direct_answer", None)
+    if isinstance(answer, str) and answer.strip():
+        return answer
+    lines = []
+    for item in getattr(result, "evidence", None) or []:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("snippet") or item.get("content") or item.get("title") or ""
+        if text:
+            lines.append(str(text))
+    if lines:
+        return "\n".join(lines)
+    card = getattr(result, "schedule_card", None)
+    if isinstance(card, dict):
+        title = card.get("title") or card.get("mode") or ""
+        if title:
+            return str(title)
+    return ""
+
+
+def _load(raw: str | None) -> dict:
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}

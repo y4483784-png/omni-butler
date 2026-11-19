@@ -492,6 +492,9 @@ def _consume_schedule_claim(
             return saved
         detail = CONFIRM_DETAIL.get(exc.reason, CONFIRM_DETAIL["closed"])
         raise HTTPException(status_code=409, detail=detail) from None
+    from app.services.loop_round import note_confirmed
+
+    note_confirmed(db, user_id=user_id, token=str(token or ""))
     return None
 
 

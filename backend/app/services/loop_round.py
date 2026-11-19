@@ -220,6 +220,41 @@ def job_effect(step: Step, *, status: str, continuation_due: bool) -> JobEffect:
     return JobEffect(status=None, clear_hold=False, continuation_due=None)
 
 
+def stored_reasoning(step: TaskStep) -> str:
+    return step.reasoning_content or ""
+
+
+def job_tools(*, constitution: dict, web_constraint: str) -> list[dict]:
+    from app.agents.tools.registry import ensure_builtin_tools, get_tool
+
+    ensure_builtin_tools()
+    names = [str(item) for item in (constitution.get("allowed_tools") or [])]
+    names.extend(CONFIRM_ONLY)
+    if web_constraint == "forbid":
+        names = [name for name in names if name not in _WEB]
+    descriptions = {
+        "mail.send": "Prepare a mail message. It is not sent until the person confirms.",
+        "errand.place": "Prepare an errand order. It is not placed until the person confirms.",
+        "desktop.open": "Prepare a desktop open. It does not open until the person confirms.",
+        "desktop.run": "Prepare a desktop run. It does not run until the person confirms.",
+    }
+    listed = []
+    for name in names:
+        spec = get_tool(name)
+        description = spec.description if spec is not None and spec.description else descriptions.get(name, name)
+        listed.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": {"type": "object"},
+                },
+            }
+        )
+    return listed
+
+
 def claim_call(name: str, arguments: dict | None) -> bool:
     if name in CONFIRM_ONLY:
         return True

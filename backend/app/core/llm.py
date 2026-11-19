@@ -365,6 +365,15 @@ def _wire_tool_calls(raw: Any) -> list[dict[str, Any]]:
     return cleaned
 
 
+def assistant_tool_message(*, content: str, reasoning: str, calls: list[dict]) -> dict[str, Any]:
+    return {
+        "role": "assistant",
+        "content": content,
+        "reasoning_content": reasoning,
+        "tool_calls": calls,
+    }
+
+
 def wire_job_messages(messages: list[dict] | None) -> list[dict[str, Any]]:
     wired: list[dict[str, Any]] = []
     for message in messages or []:
