@@ -18,7 +18,7 @@ The Task tool accepted those slugs. The first line of each rationale or review f
 | When | Slug requested | Agent | What happened |
 | --- | --- | --- | --- |
 | Gemini candidate | `gemini-4-neon-high` | `bc-3ceb508b-ae2d-55a7-a35e-8b144cdfeeb1` | `resource_exhausted` after mapping, citations, rationale, and open questions. No `plan.md`. Notes are in `review/historical-gemini/`. |
-| Gemini retry | `gemini-4-neon-high` | `bc-89428bea-b017-5ad6-8355-db2428877b5f` | Still `RUNNING` when the operator replaced the seat. A stop message was rejected because the child was running. No kill tool was available. Its output directory was made read-only. Late files from that child are not the plan. |
+| Gemini retry | `gemini-4-neon-high` | `bc-89428bea-b017-5ad6-8355-db2428877b5f` | Was `RUNNING` when this planning run tried to stop it. That stop was rejected because the child was running. No kill tool was available to this run. Its output directory was made read-only. On 2026-11-19 a later status read showed `IDLE`. The parent reported cancelling it and seeing it finished around 20:00 SGT. This run's status index did not show `isKilled`, so the cancel action is the parent's report. Late files from that child are not the plan. |
 | Fable candidate | `claude-fable-5-2-high` | `bc-b16e5dcf-af1a-5cf9-b6c3-52b83c1d91a7` | Stopped with "You've hit your usage limit." `/tmp/arena-plan/candidate-fable/` was empty. Not retried on another model. |
 
 After the Fable failure the operator said to finish with Grok, and set every pstack role to Grok 4.7 extra high with fast on. The supported Task slug is `grok-4.7-xhigh-fast`. `.cursor/rules/pstack-models.mdc` records that for later roles. This review did not use a second vendor after that instruction.

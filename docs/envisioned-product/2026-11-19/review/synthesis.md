@@ -55,6 +55,12 @@ The parent opened these pages on 2026-11-19:
 
 The parent did not re-open the pricing page, the chat-completion reference, a provider cancel API, calendar delete and RSVP bodies, `driver.py`, or the empty-403 branch. The plan says so inside the units that depend on those files.
 
+The parent review of head `059b643` is a separate review. `parent-review-response.md` answers it. This file does not turn that answer into approval.
+
+## Operator order
+
+Run one unit at a time from the latest `release`. The order is `picture`, `talk`, `watch`, `loop`, `search`, `mail`, `calendar`, `errand`, `devices`, `resume`, `desktop`. The parent review of `059b643` is answered in `parent-review-response.md`. That answer is not approval to implement.
+
 ## First unit
 
-Start `talk`. It is the spine. The five side units may branch from `release` without waiting for it, except where they edit the same file and must rebase.
+The first unit in that order is `picture`. `talk` is the first unit that changes job behavior. Do not start `talk` until `picture` is on `release`.
