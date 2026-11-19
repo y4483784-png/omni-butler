@@ -525,6 +525,8 @@ def test_two_devices_revoke_independently(
     assert isinstance(proof_left, PackageProof)
     assert isinstance(proof_right, PackageProof)
     assert proof_left != proof_right
+    assert recognize_package(left["token"]) == proof_left
+    assert recognize_package(right["token"]) == proof_right
     assert proof_left.device_id == left["id"]
     assert proof_right.device_id == right["id"]
     with pytest.raises(AttributeError):
@@ -750,7 +752,7 @@ def test_compose_and_beat_stay_put() -> None:
     }
 
 
-def test_desktop_dev_refuses_an_empty_token() -> None:
+def test_desktop_dev_starts_without_a_shared_token() -> None:
     script = REPO / "scripts" / "desktop-dev.sh"
     text = script.read_text(encoding="utf-8")
     assert "npm run dev" in text

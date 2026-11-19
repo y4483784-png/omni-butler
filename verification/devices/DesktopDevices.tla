@@ -3,9 +3,9 @@ EXTENDS Integers
 
 CONSTANT breakHash, breakRevoke, breakSpoof, breakConfirm
 
-VARIABLES stored, revoked, listed, spoofed, spoofProof, opened, claim
+VARIABLES stored, revoked, listed, spoofed, spoofProof, spoofOpened, opened, claim, paired
 
-vars == <<stored, revoked, listed, spoofed, spoofProof, opened, claim>>
+vars == <<stored, revoked, listed, spoofed, spoofProof, spoofOpened, opened, claim, paired>>
 
 Devices == {"d1", "d2"}
 Stores == {"absent", "hash", "token"}
@@ -16,45 +16,45 @@ Init ==
   /\ listed = {}
   /\ spoofed = FALSE
   /\ spoofProof = FALSE
+  /\ spoofOpened = FALSE
   /\ opened = FALSE
   /\ claim = "none"
+  /\ paired = FALSE
 
 Enroll(d) ==
   /\ stored[d] = "absent"
   /\ stored' = [stored EXCEPT ![d] = IF breakHash THEN "token" ELSE "hash"]
   /\ listed' = IF breakHash THEN listed \union {"hash"} ELSE listed \union {"id", "label", "created"}
-  /\ UNCHANGED <<revoked, spoofed, spoofProof, opened, claim>>
+  /\ UNCHANGED <<revoked, spoofed, spoofProof, spoofOpened, opened, claim, paired>>
 
 Revoke(d) ==
   /\ stored[d] # "absent"
   /\ ~revoked[d]
-  /\ ~\E x \in Devices: revoked[x]
   /\ revoked' = IF breakRevoke THEN [x \in Devices |-> TRUE] ELSE [revoked EXCEPT ![d] = TRUE]
-  /\ UNCHANGED <<stored, listed, spoofed, spoofProof, opened, claim>>
+  /\ paired' = IF breakRevoke THEN TRUE ELSE paired
+  /\ UNCHANGED <<stored, listed, spoofed, spoofProof, spoofOpened, opened, claim>>
 
 ProofOk(d) == stored[d] = "hash" /\ ~revoked[d]
 
 Spoof ==
   /\ ~spoofed
-  /\ ~opened
   /\ spoofed' = TRUE
   /\ spoofProof' = breakSpoof
-  /\ opened' = IF breakSpoof THEN TRUE ELSE opened
-  /\ UNCHANGED <<stored, revoked, listed, claim>>
+  /\ spoofOpened' = breakSpoof
+  /\ UNCHANGED <<stored, revoked, listed, opened, claim, paired>>
 
 Arm ==
   /\ claim = "none"
   /\ claim' = "present"
-  /\ UNCHANGED <<stored, revoked, listed, spoofed, spoofProof, opened>>
-
-Done ==
-  UNCHANGED vars
+  /\ UNCHANGED <<stored, revoked, listed, spoofed, spoofProof, spoofOpened, opened, paired>>
 
 Commit(d) ==
   /\ ProofOk(d)
-  /\ ~spoofed
   /\ opened' = IF claim = "present" \/ breakConfirm THEN TRUE ELSE opened
-  /\ UNCHANGED <<stored, revoked, listed, spoofed, spoofProof, claim>>
+  /\ UNCHANGED <<stored, revoked, listed, spoofed, spoofProof, spoofOpened, claim, paired>>
+
+Done ==
+  UNCHANGED vars
 
 Next ==
   \/ \E d \in Devices: Enroll(d) \/ Revoke(d) \/ Commit(d)
@@ -67,7 +67,8 @@ Spec == Init /\ [][Next]_vars
 TypeOK ==
   /\ \A d \in Devices: stored[d] \in Stores /\ revoked[d] \in BOOLEAN
   /\ listed \subseteq {"id", "label", "created", "hash", "token"}
-  /\ spoofed \in BOOLEAN /\ spoofProof \in BOOLEAN /\ opened \in BOOLEAN
+  /\ spoofed \in BOOLEAN /\ spoofProof \in BOOLEAN /\ spoofOpened \in BOOLEAN
+  /\ opened \in BOOLEAN /\ paired \in BOOLEAN
   /\ claim \in {"none", "present"}
 
 HashOnly ==
@@ -75,10 +76,9 @@ HashOnly ==
   /\ "hash" \notin listed
   /\ "token" \notin listed
 
-RevokeOne ==
-  (revoked["d1"] /\ stored["d2"] = "hash") => ~revoked["d2"]
+RevokeOne == ~paired
 
-SpoofDenied == spoofed => ~opened /\ ~spoofProof
+SpoofDenied == spoofed => ~spoofOpened /\ ~spoofProof
 
 TokenIsNotAConfirm ==
   (claim = "none" /\ \E d \in Devices: ProofOk(d)) => ~opened

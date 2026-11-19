@@ -12,9 +12,11 @@ _SEAL = object()
 class PackageProof:
     __slots__ = ("device_id", "user_id")
 
-    def __init__(self, source: object, device_id: int | None = None, user_id: int | None = None) -> None:
+    def __init__(self, source: object, device_id: object = None, user_id: object = None) -> None:
         if isinstance(source, str) or source is not _SEAL:
             raise TypeError("PackageProof is not built from a client string")
+        if type(device_id) is not int or type(user_id) is not int:
+            raise TypeError("PackageProof requires a device id")
         object.__setattr__(self, "device_id", device_id)
         object.__setattr__(self, "user_id", user_id)
 
