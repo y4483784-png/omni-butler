@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import sys
 import threading
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from uuid import uuid4
@@ -446,6 +449,58 @@ def test_public_reply_returns_the_armed_key():
     assert "login" not in echoed
     skipped = module._public({"outcome": "unknown", "order_id": "", "idempotency_key": 7})
     assert "idempotency_key" not in skipped
+    numbered = module._public({"outcome": "unknown"}, {"idempotency_key": 5, "pay": "secret-pay"})
+    assert "idempotency_key" not in numbered
+    assert "pay" not in numbered
+    prefer = module._public(
+        {"outcome": "placed", "order_id": "m-1", "idempotency_key": "from-result"},
+        {"idempotency_key": "from-task", "pay": "secret-pay"},
+    )
+    assert prefer["idempotency_key"] == "from-result"
+    assert "pay" not in prefer
+
+
+def test_compose_post_returns_the_task_key():
+    module = _load(REPO / "services" / "errand-compose" / "server.py", "errand_compose_post")
+    previous_token = module._TOKEN
+    module._TOKEN = ""
+    stub = types.ModuleType("driver")
+    stub.run_task = lambda task: {
+        "outcome": "placed",
+        "order_id": "m-3",
+        "pay": "pay-secret",
+        "login": "login-secret",
+    }
+    previous_driver = sys.modules.get("driver")
+    sys.modules["driver"] = stub
+    payload = json.dumps(
+        {"kind": "place", "idempotency_key": "armed-3", "pay": "pay-secret", "login": "login-secret"}
+    ).encode("utf-8")
+    raw = (
+        b"POST /tasks HTTP/1.1\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: " + str(len(payload)).encode("ascii") + b"\r\n"
+        b"\r\n" + payload
+    )
+    try:
+        sock = _FakeSocket(raw)
+        module.Handler(sock, ("127.0.0.1", 0), None)
+    finally:
+        module._TOKEN = previous_token
+        if previous_driver is None:
+            sys.modules.pop("driver", None)
+        else:
+            sys.modules["driver"] = previous_driver
+    head, _, encoded = sock.written.getvalue().partition(b"\r\n\r\n")
+    assert b"200" in head.split(b"\r\n", 1)[0]
+    body = json.loads(encoded)
+    text = encoded.decode("utf-8")
+    assert body["idempotency_key"] == "armed-3"
+    assert body["order_id"] == "m-3"
+    assert "pay" not in body
+    assert "login" not in body
+    assert "pay-secret" not in text
+    assert "login-secret" not in text
 
 
 def test_empty_echo_is_not_placed():
@@ -523,15 +578,30 @@ def test_compose_reply_without_the_armed_key_stays_unknown(plain_client: TestCli
     assert status == "unknown"
     assert remote
     assert [json.loads(item["body"])["kind"] for item in shop.tasks].count("place") == 1
+    before = len(shop.tasks)
     second = _commit(plain_client, token, order)
     assert second.status_code == 409, second.text
-    kinds = [json.loads(item["body"])["kind"] for item in shop.tasks]
-    assert kinds.count("place") == 1
-    assert "lookup" in kinds
+    fresh = [json.loads(item["body"])["kind"] for item in shop.tasks[before:]]
+    assert fresh == ["lookup"]
+    assert [json.loads(item["body"])["kind"] for item in shop.tasks].count("place") == 1
     assert _records(_admin_id(), merchant) == []
-    status, remote = _claim(token)
-    assert status == "unknown"
-    assert remote
+    again, armed = _claim(token)
+    assert again == "unknown"
+    assert armed == remote
+
+
+class _FakeSocket:
+    def __init__(self, raw: bytes) -> None:
+        self._reader = io.BytesIO(raw)
+        self.written = io.BytesIO()
+
+    def makefile(self, mode: str, *args, **kwargs):
+        if "r" in mode:
+            return self._reader
+        return self.written
+
+    def sendall(self, data: bytes) -> None:
+        self.written.write(data)
 
 
 def _ready(base: str) -> None:
