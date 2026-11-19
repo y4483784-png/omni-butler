@@ -5,6 +5,7 @@ Pipeline: parse → (AutoHarness evaluate | local risk/permission) → execute �
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from typing import Any
@@ -19,6 +20,26 @@ from app.agents.harness.constitution import (
 from app.agents.harness.surface import coerce_surface, local_tool_denial
 from app.agents.harness.types import ToolContext, ToolResult
 from app.agents.tools.registry import ensure_builtin_tools, get_tool
+
+logger = logging.getLogger(__name__)
+
+
+def _stamp_tool_start(ctx: ToolContext) -> None:
+    if ctx.generation is None:
+        return
+    from app.core.db import SessionLocal, set_rls_context
+    from app.services.task_run import touch_progress
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, int(ctx.user_id))
+        touch_progress(db, user_id=int(ctx.user_id), generation=int(ctx.generation))
+        db.commit()
+    except Exception:
+        logger.exception("tool progress stamp failed")
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _deny(tool: str, reason: str, *, risk: str = "high", steps: list[str] | None = None) -> ToolResult:
@@ -290,6 +311,7 @@ def invoke(tool_name: str | None, ctx: ToolContext, args: dict[str, Any] | None 
         )
         return result
 
+    _stamp_tool_start(ctx)
     try:
         result = spec.execute(ctx, args)
     except Exception as e:
@@ -304,6 +326,8 @@ def invoke(tool_name: str | None, ctx: ToolContext, args: dict[str, Any] | None 
                 "engine": engine,
                 "args": args,
                 "elapsed_ms": result.elapsed_ms,
+                "generation": ctx.generation,
+                "progress": "result",
             }
         )
         return result
@@ -330,6 +354,8 @@ def invoke(tool_name: str | None, ctx: ToolContext, args: dict[str, Any] | None 
                 if tool == "sandbox"
                 else []
             ),
+            "generation": ctx.generation,
+            "progress": "result",
         }
     )
     if constitution.get("mode") == "standard" and result.risk in ("high", "medium"):

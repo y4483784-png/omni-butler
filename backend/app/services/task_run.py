@@ -577,6 +577,47 @@ def release_hold(
     return int(result.rowcount or 0)
 
 
+def _stored_moment(now: datetime) -> datetime:
+    if now.tzinfo is not None and now.tzinfo.utcoffset(now) is not None:
+        now = now.astimezone(timezone.utc)
+    return now.replace(tzinfo=None, microsecond=0)
+
+
+def touch_progress(db, *, user_id: int, generation: int, now: datetime | None = None) -> int:
+    moment = _clock() if now is None else _stored_moment(now)
+    result = db.execute(
+        update(TaskRun)
+        .where(TaskRun.user_id == user_id)
+        .where(TaskRun.generation == generation)
+        .where(TaskRun.kind == "job")
+        .where(TaskRun.status.in_(("running", "waiting_person", "waiting_resource")))
+        .values(last_progress_at=moment)
+    )
+    return int(result.rowcount or 0)
+
+
+OUTPUT_COMMIT_GAP = timedelta(seconds=5)
+
+
+def output_commit_due(
+    *,
+    have_output: bool,
+    newer: bool,
+    previous_commit_at: datetime | None,
+    now: datetime,
+    call_ended: bool,
+) -> bool:
+    if not have_output:
+        return False
+    if previous_commit_at is None:
+        return True
+    if call_ended:
+        return True
+    if newer and now - previous_commit_at >= OUTPUT_COMMIT_GAP:
+        return True
+    return False
+
+
 _WEB_TOOLS = frozenset({"web", "web_fetch"})
 
 
@@ -592,20 +633,25 @@ def claim_web_execution(
 ) -> int:
     if tool not in _WEB_TOOLS:
         return 0
-    result = db.execute(
-        update(TaskRun)
-        .where(TaskRun.user_id == user_id)
-        .where(TaskRun.generation == generation)
-        .where(TaskRun.kind == "job")
-        .where(TaskRun.status == "running")
-        .where(TaskRun.exec_token == exec_token)
-        .where(TaskRun.exec_epoch == exec_epoch)
-        .where(TaskRun.intent_version == intent_version)
-        .where(TaskRun.web_constraint == "allow")
-        .values(last_progress_at=_clock())
+    matched = (
+        db.query(TaskRun.id)
+        .filter(TaskRun.user_id == user_id)
+        .filter(TaskRun.generation == generation)
+        .filter(TaskRun.kind == "job")
+        .filter(TaskRun.status == "running")
+        .filter(TaskRun.exec_token == exec_token)
+        .filter(TaskRun.exec_epoch == exec_epoch)
+        .filter(TaskRun.intent_version == intent_version)
+        .filter(TaskRun.web_constraint == "allow")
+        .with_for_update()
+        .one_or_none()
     )
+    if matched is None:
+        db.commit()
+        return 0
+    updated = touch_progress(db, user_id=user_id, generation=generation)
     db.commit()
-    return int(result.rowcount or 0)
+    return updated
 
 
 def load_turn(*, user_id: int, task_id: int) -> Turn | None:
