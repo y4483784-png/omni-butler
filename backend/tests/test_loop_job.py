@@ -522,8 +522,9 @@ def test_a_second_run_while_held_does_not_start_again():
     with pytest.raises(SystemExit):
         run_job(user_id, session_id, "alpha")
     assert _notes(session_id) == ["已开始：alpha"]
-    run_job(user_id, session_id, "alpha")
-    assert calls == ["alpha"]
+    with pytest.raises(SystemExit):
+        run_job(user_id, session_id, "alpha")
+    assert calls == ["alpha", "alpha"]
     assert _notes(session_id) == ["已开始：alpha"]
     db = SessionLocal()
     try:
@@ -537,5 +538,41 @@ def test_a_second_run_while_held_does_not_start_again():
 
     set_executor(finish)
     run_job(user_id, session_id, "beta")
-    assert calls == ["alpha", "beta"]
+    assert calls == ["alpha", "alpha", "beta"]
     assert _notes(session_id).count("已开始：beta") == 1
+
+
+def test_a_second_run_job_recovers_a_pending_read():
+    user_id, session_id = _pair()
+    order: list[str] = []
+
+    def executor(messages, _tools):
+        order.append("model")
+        if any(item.get("role") == "tool" for item in messages):
+            return _turn(content="done", finish="stop")
+        return _turn(ToolCallSpec("call-a", "kb", "{}"))
+
+    def fake_invoke(name, _ctx, _args):
+        order.append("invoke")
+        return ToolResult(direct_answer=f"saw {name}")
+
+    set_executor(executor)
+    with patch("app.services.loop_round.begin_read", side_effect=SystemExit(7)):
+        with pytest.raises(SystemExit):
+            run_job(user_id, session_id, "alpha")
+    assert [(row.tool_call_id, row.state) for row in _calls(_job(session_id).id)] == [("call-a", "pending")]
+    assert _notes(session_id) == ["已开始：alpha"]
+    order.clear()
+    with patch("app.agents.harness.gateway.invoke", fake_invoke):
+        run_job(user_id, session_id, "alpha")
+    assert order[0] == "invoke"
+    assert order.count("model") == 1
+    assert _notes(session_id) == ["已开始：alpha"]
+    db = SessionLocal()
+    try:
+        assert db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").count() == 1
+    finally:
+        db.close()
+    job = _job(session_id)
+    assert job.status == "completed"
+    assert _calls(job.id)[0].state == "result"
