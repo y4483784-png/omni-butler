@@ -1,5 +1,3 @@
-"""DeepSeek Search and Fetch clients (POST /v1/tools/search and /v1/tools/fetch)."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
