@@ -1,0 +1,44 @@
+{
+  "start the tea search": {
+    "relation": "new",
+    "target_generation": null,
+    "web": "allow",
+    "ask": ""
+  },
+  "please cancel the idea of waiting and start a fresh search": {
+    "relation": "new",
+    "target_generation": null,
+    "web": "allow",
+    "ask": ""
+  },
+  "stop the budget job": {
+    "relation": "cancel",
+    "target_generation": null,
+    "web": "allow",
+    "ask": ""
+  },
+  "which job should stop": {
+    "relation": "cancel",
+    "target_generation": null,
+    "web": "allow",
+    "ask": "Which job should this message change?"
+  },
+  "stop only the first listed job": {
+    "relation": "cancel",
+    "target_generation": null,
+    "web": "allow",
+    "ask": ""
+  },
+  "add this to the same work": {
+    "relation": "supplement",
+    "target_generation": null,
+    "web": "allow",
+    "ask": ""
+  },
+  "do not search from here on": {
+    "relation": "redirect",
+    "target_generation": null,
+    "web": "forbid",
+    "ask": ""
+  }
+}

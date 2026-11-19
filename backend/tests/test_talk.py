@@ -14,11 +14,14 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
+from unittest.mock import patch
 
 from app.core.db import SessionLocal, set_rls_context
+from app.core.generation_stop import current_key
 from app.models.models import CalendarEvent, Message, ScheduleConfirmClaim, Session as ChatSession, TaskRun, User
 from app.services import task_run
 from app.services.calendar import void_draft_schedule_cards
+from app.services.message_format import serialize_message
 from app.services.schedule_confirm import arm_remote_claim, issue_schedule_claim
 
 
@@ -765,3 +768,303 @@ assert claim[0] == 1, claim
         check=False,
     )
     assert ran.returncode == 0, ran.stdout + ran.stderr
+
+
+_FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "talk_classifier.json").read_text())
+_WF = {
+    "intent": "chat",
+    "forced": False,
+    "citations": [],
+    "thinking_steps": [],
+    "llm_messages": [],
+    "schedule_card": None,
+    "artifact": None,
+    "direct_answer": "好",
+    "pending_calendar": None,
+    "answer_reasoning": "",
+}
+_FRESH = "please cancel the idea of waiting and start a fresh search"
+
+
+def _jobs(session_id: int) -> list[TaskRun]:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(TaskRun)
+            .filter(TaskRun.session_id == session_id, TaskRun.kind == "job")
+            .order_by(TaskRun.generation.asc())
+            .all()
+        )
+        for row in rows:
+            db.expunge(row)
+        return rows
+    finally:
+        db.close()
+
+
+def _user_messages(session_id: int) -> list[str]:
+    db = SessionLocal()
+    try:
+        return [
+            row.content
+            for row in db.query(Message)
+            .filter(Message.session_id == session_id, Message.role == "user")
+            .order_by(Message.id.asc())
+            .all()
+        ]
+    finally:
+        db.close()
+
+
+def _router(messages, result_model, *_args, **_kwargs):
+    body = json.loads(messages[-1]["content"])
+    row = dict(_FIXTURE[body["message"]])
+    if body["message"] == "stop only the first listed job" and body["open_jobs"]:
+        row["target_generation"] = body["open_jobs"][0]["generation"]
+    return result_model.model_validate(row)
+
+
+def _post(client: TestClient, session_id: int, message: str, router=_router) -> str:
+    with (
+        patch("app.core.llm.complete_json_object", router),
+        patch("app.api.chat._run_workflow_sync", return_value=_WF),
+    ):
+        response = client.post("/api/chat", json={"session_id": session_id, "message": message})
+    assert response.status_code == 200, response.text
+    assert '"type": "done"' in response.text
+    return response.text
+
+
+def test_the_saved_user_line_is_not_sent_to_the_reply_twice(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    seen: dict = {}
+
+    def capture(**kwargs):
+        seen["history"] = list(kwargs["history"])
+        seen["message"] = kwargs["message"]
+        return _WF
+
+    with (
+        patch("app.core.llm.complete_json_object", _router),
+        patch("app.api.chat._run_workflow_sync", side_effect=capture),
+    ):
+        response = plain_client.post(
+            "/api/chat",
+            json={"session_id": session_id, "message": "start the tea search"},
+        )
+    assert response.status_code == 200, response.text
+    assert seen["message"] == "start the tea search"
+    assert not any(
+        item.get("role") == "user" and item.get("content") == "start the tea search" for item in seen["history"]
+    )
+    assert _user_messages(session_id) == ["start the tea search"]
+    assert _jobs(session_id)[0].status == "running"
+
+
+def test_run_job_records_a_running_row_and_drops_its_binding():
+    from app.tasks.job import run_job
+
+    user_id, session_id = _pair()
+    run_job(user_id, session_id, "alpha", "allow", None)
+    rows = _jobs(session_id)
+    assert len(rows) == 1
+    assert rows[0].status == "running"
+    assert rows[0].kind == "job"
+    assert rows[0].goal == "alpha"
+    assert rows[0].exec_token is None
+    assert rows[0].web_constraint == "allow"
+    assert current_key() is None
+    db = SessionLocal()
+    try:
+        notes = db.query(Message).filter(Message.session_id == session_id, Message.role == "assistant").all()
+    finally:
+        db.close()
+    assert [row.content for row in notes] == ["已开始：alpha"]
+
+
+def test_a_second_message_leaves_the_previous_job_running(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    _post(plain_client, session_id, "start the tea search")
+    _post(plain_client, session_id, _FRESH)
+    rows = _jobs(session_id)
+    assert [row.goal for row in rows] == ["start the tea search", _FRESH]
+    assert [row.status for row in rows] == ["running", "running"]
+    assert _user_messages(session_id) == ["start the tea search", _FRESH]
+    assert current_key() is None
+
+
+def test_cancel_word_classified_new_does_not_stop_the_earlier_job(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    first = _open_job(user_id, session_id, goal="budget")
+    _post(plain_client, session_id, _FRESH)
+    assert "cancel" in _FRESH
+    earlier = task_run.get(user_id=user_id, generation=first.generation)
+    assert earlier.status == "running"
+    assert earlier.goal == "budget"
+    started = [row for row in _jobs(session_id) if row.generation != first.generation]
+    assert len(started) == 1
+    assert started[0].status == "running"
+    assert started[0].goal == _FRESH
+    assert _user_messages(session_id) == [_FRESH]
+
+
+def test_cancel_of_the_named_job_leaves_the_other_running(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    other_session = _session(user_id)
+    first = _open_job(user_id, session_id, goal="first")
+    second = _open_job(user_id, session_id, goal="second")
+    elsewhere = _open_job(user_id, other_session, goal="elsewhere")
+    _post(plain_client, session_id, "stop only the first listed job")
+    assert task_run.get(user_id=user_id, generation=first.generation).status == "stopped"
+    assert task_run.get(user_id=user_id, generation=second.generation).status == "running"
+    assert task_run.get(user_id=user_id, generation=elsewhere.generation).status == "running"
+    assert len(_jobs(session_id)) == 2
+
+
+def test_cancel_of_the_only_session_job_leaves_another_users_job_running(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    other_session = _session(user_id)
+    named = _open_job(user_id, session_id, goal="budget")
+    other = _open_job(user_id, other_session, goal="other")
+    _post(plain_client, session_id, "stop the budget job")
+    assert task_run.get(user_id=user_id, generation=named.generation).status == "stopped"
+    assert task_run.get(user_id=user_id, generation=other.generation).status == "running"
+
+
+def test_ambiguous_cancel_asks_and_both_jobs_stay_running(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    first = _open_job(user_id, session_id, goal="one")
+    second = _open_job(user_id, session_id, goal="two")
+    _post(plain_client, session_id, "which job should stop")
+    assert task_run.get(user_id=user_id, generation=first.generation).status == "running"
+    assert task_run.get(user_id=user_id, generation=second.generation).status == "running"
+    assert task_run.get(user_id=user_id, generation=first.generation).intent_version == 1
+    assert len(_jobs(session_id)) == 2
+
+
+def test_router_failure_asks_and_does_not_stop_or_start_a_job(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    job = _open_job(user_id, session_id, goal="keep")
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("router down")
+
+    _post(plain_client, session_id, "stop the budget job", router=boom)
+    current = task_run.get(user_id=user_id, generation=job.generation)
+    assert current.status == "running"
+    assert current.goal == "keep"
+    assert current.intent_version == 1
+    assert len(_jobs(session_id)) == 1
+
+
+def test_supplement_through_chat_changes_only_that_job(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    other = _open_job(user_id, _session(user_id), goal="untouched", web="forbid")
+    _post(plain_client, session_id, "start the tea search")
+    _post(plain_client, session_id, "add this to the same work")
+    rows = _jobs(session_id)
+    tea = next(row for row in rows if row.goal.startswith("start the tea search"))
+    assert tea.status == "running"
+    assert tea.intent_version == 2
+    assert tea.exec_token is None
+    assert tea.continuation_due is True
+    assert tea.web_constraint == "allow"
+    assert tea.goal == "start the tea searchadd this to the same work"
+    kept = task_run.get(user_id=user_id, generation=other.generation)
+    assert kept.status == "running"
+    assert kept.intent_version == 1
+    assert kept.web_constraint == "forbid"
+    assert kept.goal == "untouched"
+
+
+def test_forbid_on_one_job_survives_a_later_allow_job(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    _post(plain_client, session_id, "start the tea search")
+    _post(plain_client, session_id, "do not search from here on")
+    _post(plain_client, session_id, "start the tea search")
+    rows = _jobs(session_id)
+    assert len(rows) == 2
+    assert rows[0].web_constraint == "forbid"
+    assert rows[0].status == "running"
+    assert rows[0].intent_version == 2
+    assert rows[1].web_constraint == "allow"
+    assert rows[1].status == "running"
+    assert rows[1].intent_version == 1
+
+
+def test_default_fake_relation_does_not_start_a_job(plain_client: TestClient, fake_llm):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    with patch("app.api.chat._run_workflow_sync", return_value=_WF):
+        response = plain_client.post(
+            "/api/chat",
+            json={"session_id": session_id, "message": "hello from the fake"},
+        )
+    assert response.status_code == 200, response.text
+    assert '"type": "done"' in response.text
+    assert _jobs(session_id) == []
+    assert _user_messages(session_id) == ["hello from the fake"]
+
+
+def test_regenerate_does_not_classify_or_stop_a_job(plain_client: TestClient):
+    user_id = _admin_id()
+    session_id = _session(user_id)
+    job = _open_job(user_id, session_id, goal="stay")
+    db = SessionLocal()
+    try:
+        db.add(Message(session_id=session_id, role="user", content="earlier"))
+        assistant = Message(session_id=session_id, role="assistant", content="old")
+        db.add(assistant)
+        db.commit()
+        db.refresh(assistant)
+        assistant_id = assistant.id
+    finally:
+        db.close()
+    called: list[int] = []
+
+    def boom(*_args, **_kwargs):
+        called.append(1)
+        raise RuntimeError("classified")
+
+    with (
+        patch("app.core.llm.complete_json_object", boom),
+        patch("app.api.chat._run_workflow_sync", return_value=_WF),
+    ):
+        response = plain_client.post(
+            "/api/chat",
+            json={"session_id": session_id, "message": "", "regenerate_message_id": assistant_id},
+        )
+    assert response.status_code == 200, response.text
+    assert called == []
+    assert task_run.get(user_id=user_id, generation=job.generation).status == "running"
+    assert len(_jobs(session_id)) == 1
+
+
+def test_serialize_message_marks_a_job_card_without_writing_it():
+    user_id, session_id = _pair()
+    job = _open_job(user_id, session_id, goal="card")
+    turn = task_run.begin_turn(user_id=user_id, session_id=session_id)
+    job_token = _issue(user_id, session_id, job.id, title="job card")
+    turn_token = _issue(user_id, session_id, turn.id, title="turn card")
+    _card(session_id, job_token, "job card")
+    _card(session_id, turn_token, "turn card")
+    db = SessionLocal()
+    try:
+        rows = db.query(Message).filter(Message.session_id == session_id, Message.role == "assistant").all()
+        marked = {json.loads(row.schedule_card)["title"]: serialize_message(row)["scheduleCard"] for row in rows}
+        stored = {json.loads(row.schedule_card)["title"]: json.loads(row.schedule_card) for row in rows}
+    finally:
+        db.close()
+    assert marked["job card"]["task_kind"] == "job"
+    assert "task_kind" not in stored["job card"]
+    assert "task_kind" not in marked["turn card"]
+

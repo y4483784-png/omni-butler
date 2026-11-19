@@ -403,6 +403,7 @@ def run_agent_workflow(
     generation: int | None = None,
     surface: ServerSurface | None = None,
     images: Sequence[ChatImage] | None = None,
+    talk_ask: str = "",
 ) -> WorkflowResult:
     if is_stopped():
         return _halted_result()
@@ -746,6 +747,9 @@ def run_agent_workflow(
         ]
 
         thinking = list(state.get("thinking_steps") or [])
+        note = (talk_ask or "").strip()
+        if note and llm_messages:
+            llm_messages = [*llm_messages, {"role": "system", "content": note}]
         if (
             not direct
             and llm_messages

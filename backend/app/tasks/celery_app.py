@@ -57,6 +57,7 @@ celery_app.conf.update(
 
 # Register tasks after celery_app exists (avoids circular import on Celery()).
 import app.tasks.ingestion as _ingestion  # noqa: E402,F401
+import app.tasks.job as _job  # noqa: E402,F401
 import app.tasks.pulse as _pulse  # noqa: E402,F401
 import app.tasks.watchdog as _watchdog  # noqa: E402,F401
 

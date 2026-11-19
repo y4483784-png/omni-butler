@@ -359,6 +359,21 @@ def open_alongside(
     )
 
 
+def open_jobs(db, *, user_id: int, session_id: int) -> list[Turn]:
+    rows = (
+        db.query(TaskRun)
+        .filter(
+            TaskRun.user_id == user_id,
+            TaskRun.session_id == session_id,
+            TaskRun.kind == "job",
+            TaskRun.status.in_(_OPEN),
+        )
+        .order_by(TaskRun.generation.asc())
+        .all()
+    )
+    return [_to_turn(row) for row in rows]
+
+
 def begin_turn(*, user_id: int, session_id: int) -> Turn:
     conflict: IntegrityError | None = None
     for _ in range(2):

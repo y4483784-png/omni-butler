@@ -137,6 +137,7 @@ export interface ScheduleCard {
   checked?: string[];
   consent?: string;
   confirm_token?: string;
+  task_kind?: "job" | "turn" | string;
 }
 
 export interface CalendarEventList {

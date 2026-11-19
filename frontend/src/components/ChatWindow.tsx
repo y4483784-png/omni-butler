@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store/useStore";
-import { hydrateSessionMessages, startChatStream, stopChatStream } from "../services/chatStream";
+import { hydrateSessionMessages, startChatStream } from "../services/chatStream";
 import type { ChatMsg, MeetingBrief } from "../api/client";
 import { imageFromFile } from "../chatImage";
 import {
@@ -116,7 +116,7 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
   }
 
   function addFiles(files: FileList | null) {
-    if (!files || busy) return;
+    if (!files) return;
     const ticket = composerRef.current.ticket;
     const chosen = Array.from(files);
     const slots: Array<ComposerImage | undefined> = [];
@@ -253,11 +253,9 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
             value={input}
             maxLength={MAX_CHARS}
             placeholder={
-              busy
-                ? "生成中，可点击停止…"
-                : useKb
-                  ? "强制知识库：基于已上传文档提问…"
-                  : "输入消息，Enter 发送 / Shift+Enter 换行（可自动走知识库）"
+              useKb
+                ? "强制知识库：基于已上传文档提问…"
+                : "输入消息，Enter 发送 / Shift+Enter 换行（可自动走知识库）"
             }
             onChange={(e) => publish(setComposerText(composerRef.current, e.target.value))}
             onKeyDown={(e) => {
@@ -267,31 +265,23 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
               }
             }}
           />
-          {busy ? (
-            <button type="button" className="stop-btn" onClick={() => stopChatStream(sessionId)}>
-              停止生成
-            </button>
-          ) : (
-            <>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp"
-                multiple
-                hidden
-                onChange={(event) => {
-                  addFiles(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-              <button type="button" className="attach-btn" onClick={() => fileRef.current?.click()}>
-                图片
-              </button>
-              <button disabled={!input.trim() && pending.length === 0} onClick={send}>
-                发送
-              </button>
-            </>
-          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            multiple
+            hidden
+            onChange={(event) => {
+              addFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <button type="button" className="attach-btn" onClick={() => fileRef.current?.click()}>
+            图片
+          </button>
+          <button disabled={busy || (!input.trim() && pending.length === 0)} onClick={send}>
+            发送
+          </button>
         </div>
       </div>
     </div>
