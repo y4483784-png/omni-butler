@@ -1,8 +1,19 @@
-........................................................................ [ 98%]
+=== web_thinking ===
 .                                                                        [100%]
+EXIT:0
+SECONDS 1.4493496417999268
+=== one_web_path ===
+..............                                                           [100%]
+EXIT:0
+SECONDS 1.4665746688842773
+=== named set ===
+........................................................................ [ 86%]
+...........                                                              [100%]
 =============================== warnings summary ===============================
 tests/test_zhipu_endpoints.py::test_api_startup_fails_naming_rerank_key
-  /tmp/ev-net-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  /tmp/ob-venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+EXIT:0
+SECONDS 4.0961594581604

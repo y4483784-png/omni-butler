@@ -83,8 +83,7 @@ def _decision_to_plan(d: RouterDecision) -> dict[str, Any]:
     pending: list[str] = []
     if d.needs_kb:
         pending.append("kb")
-    if d.needs_web:
-        pending.append("web")
+    # Web search is attached to the answer request. Queuing it would search twice.
     if d.needs_calendar:
         pending.append("calendar")
     if d.needs_sandbox:

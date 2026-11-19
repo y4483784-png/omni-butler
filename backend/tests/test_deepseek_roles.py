@@ -156,14 +156,41 @@ def _install_async(monkeypatch, outputs):
                 raise item
             return _AsyncChunks(item)
 
+    class Responses:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            item = queue.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return _AsyncChunks(item)
+
     class Client:
         def __init__(self):
-            self.chat = type("Chat", (), {})()
-            self.chat.completions = Completions()
+            self.responses = Responses()
 
     monkeypatch.setattr(llm_mod.settings, "llm_api_key", "test-key")
     monkeypatch.setattr(llm_mod, "_get_async_client", lambda: Client())
     return calls
+
+
+class _Ev:
+    def __init__(self, type, **kwargs):
+        self.type = type
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class _ResponseUsage:
+    def __init__(self, input_tokens, output_tokens=0):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+class _CompletedResponse:
+    def __init__(self, input_tokens=None, output_tokens=0, message="failed"):
+        self.usage = None if input_tokens is None else _ResponseUsage(input_tokens, output_tokens)
+        self.output = []
+        self.error = type("Err", (), {"message": message})()
 
 
 def _assert_thinking_on(body: dict, model: str) -> None:
@@ -227,8 +254,9 @@ def test_stream_request_omits_temperature_and_splits_deltas(monkeypatch):
     calls = _install_async(
         monkeypatch,
         [[
-            _Chunk(_Delta(None, "think")),
-            _Chunk(_Delta("ans", None), finish_reason="stop"),
+            _Ev("response.reasoning_text.delta", delta="think"),
+            _Ev("response.output_text.delta", delta="ans"),
+            _Ev("response.completed", response=_CompletedResponse()),
         ]],
     )
 
@@ -236,9 +264,14 @@ def test_stream_request_omits_temperature_and_splits_deltas(monkeypatch):
         return [item async for item in stream_chat([{"role": "user", "content": "q"}], role=Role.CHAT)]
 
     assert asyncio.run(collect()) == [ReasoningDelta("think"), AnswerDelta("ans")]
-    _assert_thinking_on(calls[0], "deepseek-flash")
+    assert calls[0]["model"] == "deepseek-v4-pro"
+    assert calls[0]["reasoning"] == {"effort": "high"}
+    assert calls[0]["tools"] == [{"type": "web_search"}]
+    assert "tool_choice" not in calls[0]
     assert calls[0]["stream"] is True
+    assert "temperature" not in calls[0]
     assert "response_format" not in calls[0]
+    assert "extra_body" not in calls[0]
 
 
 def test_none_content_is_not_concatenated(monkeypatch):
@@ -427,16 +460,16 @@ def test_stream_rate_limit_is_infra_and_is_not_retried(monkeypatch):
     with pytest.raises(LLMInfraError):
         asyncio.run(collect())
     assert len(calls) == 1
-    assert "stream_options" in calls[0]
+    assert "stream_options" not in calls[0]
 
 
-def test_stream_retries_only_a_stream_options_rejection(monkeypatch):
+def test_stream_reads_usage_from_the_completed_event(monkeypatch):
     calls = _install_async(
         monkeypatch,
-        [
-            _RejectsStreamOptions("unknown parameter stream_options"),
-            [_Chunk(_Delta("ans", None), finish_reason="stop")],
-        ],
+        [[
+            _Ev("response.output_text.delta", delta="ans"),
+            _Ev("response.completed", response=_CompletedResponse(9, 2)),
+        ]],
     )
     usage: dict = {}
 
@@ -449,8 +482,8 @@ def test_stream_retries_only_a_stream_options_rejection(monkeypatch):
         ]
 
     assert asyncio.run(collect()) == [AnswerDelta("ans")]
-    assert "stream_options" in calls[0]
-    assert "stream_options" not in calls[1]
+    assert usage == {"prompt_tokens": 9, "completion_tokens": 2}
+    assert "stream_options" not in calls[0]
 
 
 def test_stream_unrelated_client_error_is_not_retried(monkeypatch):
@@ -471,7 +504,11 @@ def test_stream_unrelated_client_error_is_not_retried(monkeypatch):
 def test_stream_midway_rate_limit_is_infra(monkeypatch):
     _install_async(
         monkeypatch,
-        [[_Chunk(_Delta("partial", "thought")), _RateLimitError("slow down")]],
+        [[
+            _Ev("response.reasoning_text.delta", delta="thought"),
+            _Ev("response.output_text.delta", delta="partial"),
+            _RateLimitError("slow down"),
+        ]],
     )
     got: list = []
 
@@ -520,8 +557,8 @@ def test_stream_infra_finish_does_not_yield_the_failing_chunk(monkeypatch):
     _install_async(
         monkeypatch,
         [[
-            _Chunk(_Delta(None, "kept")),
-            _Chunk(_Delta("drop-me", "also-drop"), finish_reason="insufficient_system_resource"),
+            _Ev("response.reasoning_text.delta", delta="kept"),
+            _Ev("response.failed", response=_CompletedResponse(message="insufficient_system_resource")),
         ]],
     )
     got: list = []

@@ -19,7 +19,8 @@ from app.core.config import settings
 from app.core.db import SessionLocal, set_rls_context
 from app.core.deps import get_db_scoped
 from app.core.generation_stop import GenerationStopped, bind, is_stopped, reset
-from app.core.llm import AnswerDelta, LLMInfraError, ReasoningDelta, Role, stream_chat
+from app.core.llm import AnswerDelta, CitationDelta, LLMInfraError, ReasoningDelta, Role, SearchDelta, stream_chat
+from app.core.responses_api import web_offered
 from app.core.moderation import INPUT_BLOCKED_MESSAGE, RedactBuffer, contains_sensitive, redact_text
 from app.core.messages import llm_user_error
 from app.core.ownership import require_owned_session
@@ -640,13 +641,33 @@ async def chat(
                     try:
                         leave_stream = False
                         async for delta in stream_chat(
-                            llm_messages, role=Role.CHAT, usage_out=stream_usage
+                            llm_messages,
+                            role=Role.CHAT,
+                            usage_out=stream_usage,
+                            offer_web=web_offered(turn.allowed_tools),
                         ):
                             if is_stopped() or await request.is_disconnected():
                                 task_run.stop(user_id=uid, generation=turn.generation)
                                 leave_stream = True
                                 break
-                            if isinstance(delta, ReasoningDelta):
+                            if isinstance(delta, SearchDelta):
+                                if is_stopped() or await request.is_disconnected():
+                                    task_run.stop(user_id=uid, generation=turn.generation)
+                                    leave_stream = True
+                                    break
+                                reasoning_parts.append(delta.text)
+                                yield _sse({"type": "reasoning", "content": delta.text})
+                            elif isinstance(delta, CitationDelta):
+                                if is_stopped() or await request.is_disconnected():
+                                    task_run.stop(user_id=uid, generation=turn.generation)
+                                    leave_stream = True
+                                    break
+                                found = [item for item in delta.citations if item.get("url")]
+                                if found:
+                                    citations_payload = [*(citations_payload or []), *found]
+                                    wf["citations"] = citations_payload
+                                    yield _sse({"type": "citations", "citations": found})
+                            elif isinstance(delta, ReasoningDelta):
                                 for piece in reason_buf.push(delta.text):
                                     if is_stopped() or await request.is_disconnected():
                                         task_run.stop(user_id=uid, generation=turn.generation)
