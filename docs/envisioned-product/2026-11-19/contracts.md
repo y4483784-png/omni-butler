@@ -2,53 +2,143 @@
 
 `plan.md` is the unit sequence. This file is the contract those units implement. Where an older sentence in `plan.md` disagrees with this file, this file wins. The parent review that asked for these contracts has not approved the revision.
 
-The shapes below use tables and compare-and-set updates that this repository already uses. They do not add a lock service, a second queue, or a silence kill.
+The shapes below use compare-and-set updates that this repository already uses. They do not add a second queue or a silence kill. The session cursor uses one row lock, described in that section. It is not a separate lock service.
 
-## Owner claim
+## Dispatch reservation and execution hold
 
-Celery already sets `task_acks_late` and `task_reject_on_worker_lost`. `visibility_timeout` is `max(3600, celery_ingest_time_limit + 300)` in `backend/app/tasks/celery_app.py` lines 22-28. That timeout stops one broker message from being handed to a second worker while the first delivery is still inside the timeout. It does not stop a sweep from publishing a different message for the same job. A unique `(task_run_id, seq)` insert stops a second row. It does not stop the second worker from performing the action before the insert fails.
+A queued reservation is not proof that a process is alive. An execution hold is that proof, and only while `hold_until` is still in the future.
 
-Document ingest already claims with a compare-and-set on `ingest_task_id` in `backend/app/tasks/ingestion.py` lines 93-108. `recover_stale_ingests` then marks a stale document failed (`backend/app/rag/ingestion.py` lines 39-78). The job worker copies the compare-and-set. It does not copy the failure. A job whose holder is gone stays `running`.
+Celery already sets `task_acks_late` and `task_reject_on_worker_lost`. `visibility_timeout` is `max(3600, celery_ingest_time_limit + 300)` in `backend/app/tasks/celery_app.py` lines 22-28. That timeout covers one broker message. It does not say which database row a sweep may publish. Document ingest claims with a compare-and-set on `ingest_task_id` in `backend/app/tasks/ingestion.py` lines 93-108. `recover_stale_ingests` then marks a stale document failed (`backend/app/rag/ingestion.py` lines 39-78). This contract copies the compare-and-set. It does not copy the failure. A job with no live holder stays `running`.
 
-`talk` adds three columns to `task_runs`.
+`talk` adds these columns to `task_runs`. `resume` is the unit that publishes and adopts.
 
 | Column | Meaning |
 | --- | --- |
-| `owner_token` | Null when no worker holds the job. Otherwise the token of the worker that won the claim. |
-| `owner_epoch` | Integer, starting at 0. It increases by one on every successful claim. |
-| `hold_until` | Null when no worker holds the job. Otherwise the time through which that claim is valid. |
+| `dispatch_token` | Set only while a delivery is reserved and not yet adopted. Null when no reservation is outstanding. |
+| `dispatch_epoch` | Integer, starting at 0. It increases by one each time a new reservation is stored. |
+| `dispatch_until` | The time until which that reservation may be adopted. It is not a heartbeat. |
+| `exec_token` | Set only when a worker process has adopted a reservation. Null means no process holds the job. |
+| `exec_epoch` | Integer, starting at 0. It increases by one on adoption. |
+| `hold_until` | Renewed only by the executing process. A future value is the proof that process is alive. |
+| `continuation_due` | True when a continuation has been committed and no adoption has cleared it. |
 
-A worker claims with one update.
+`llm_timeout` in `backend/app/core/config.py` line 23 is the reservation lifetime and the hold lifetime. Its default is 120 seconds. No new duration is added. `dispatch_until` and `hold_until` both use that value. They are not interchangeable. A reservation with no `exec_token` does not mean a process is alive.
+
+The sweep never sets `exec_token`. The worker never reserves. The broker message is `{task_run_id, dispatch_token, dispatch_epoch, intent_version}`.
+
+The sweep reserves an idle job with one update. This does not clear `continuation_due`.
 
 ```text
 UPDATE task_runs
-SET owner_token = :token,
-    owner_epoch = owner_epoch + 1,
-    hold_until = :now + llm_timeout
+SET dispatch_token = :token,
+    dispatch_epoch = dispatch_epoch + 1,
+    dispatch_until = :now + llm_timeout
 WHERE id = :id
   AND status = 'running'
-  AND (owner_token IS NULL OR hold_until < :now)
+  AND exec_token IS NULL
+  AND (dispatch_token IS NULL OR dispatch_until < :now)
 ```
 
-`llm_timeout` is the existing setting in `backend/app/core/config.py` line 23. Its default is 120 seconds. No new duration is added. Zero rows means this worker does not read tools, does not call the model, and does not write a step.
+A dead executor is retired and reserved in a different update. The status stays `running`.
 
-The holder renews `hold_until` to `:now + llm_timeout` before each model attempt and on a timer of half that value while a call or a tool is still in progress. The renewal matches `owner_token`, `owner_epoch`, and `status = running`. Zero rows means the holder stops and discards any result it has not yet committed. A renewal does not change `last_progress_at`.
+```text
+UPDATE task_runs
+SET exec_token = NULL,
+    hold_until = NULL,
+    dispatch_token = :token,
+    dispatch_epoch = dispatch_epoch + 1,
+    dispatch_until = :now + llm_timeout
+WHERE id = :id
+  AND status = 'running'
+  AND exec_token IS NOT NULL
+  AND hold_until < :now
+```
 
-Every step write, tool-call update, and session-event insert for that job includes `owner_epoch` and `intent_version` in the `WHERE` clause. Zero rows means the write is discarded. The discarded result is not shown as current.
+A `waiting_person` row with `continuation_due` becomes `running` and reserved in one update. `continuation_due` stays true.
 
-The sweep in `resume` publishes `run_job` only after this update claims the row. It does not select every `running` row. A row whose `hold_until` is still in the future is left with its current holder.
+```text
+UPDATE task_runs
+SET status = 'running',
+    dispatch_token = :token,
+    dispatch_epoch = dispatch_epoch + 1,
+    dispatch_until = :now + llm_timeout
+WHERE id = :id
+  AND status = 'waiting_person'
+  AND continuation_due = true
+  AND exec_token IS NULL
+  AND (dispatch_token IS NULL OR dispatch_until < :now)
+```
 
-`waiting_person` and `waiting_resource` are not claimed by the sweep. The only exception is the continuation repair in the tool-round contract.
+Zero rows means the sweep publishes nothing for that attempt. After a successful update of one row, the sweep publishes the message. A publish error does not change the row. The reservation expires, `continuation_due` is still true if it was true, and a later sweep may reserve a new epoch.
 
-### Crash cases
+The worker adopts only the token in its message.
+
+```text
+UPDATE task_runs
+SET exec_token = :worker,
+    exec_epoch = exec_epoch + 1,
+    hold_until = :now + llm_timeout,
+    dispatch_token = NULL,
+    dispatch_until = NULL,
+    continuation_due = false
+WHERE id = :id
+  AND status = 'running'
+  AND dispatch_token = :token
+  AND dispatch_epoch = :epoch
+  AND intent_version = :intent
+  AND dispatch_until >= :now
+  AND exec_token IS NULL
+```
+
+Zero rows means this delivery does no work. `continuation_due` is cleared only by this adoption update. It is not cleared when the sweep reserves, and it is not cleared when publish returns. If publish is lost, adoption never happens, so `continuation_due` remains true and the expired reservation can be replaced.
+
+The executing worker renews only its own hold.
+
+```text
+UPDATE task_runs
+SET hold_until = :now + llm_timeout
+WHERE id = :id
+  AND status = 'running'
+  AND exec_token = :worker
+  AND exec_epoch = :epoch
+  AND intent_version = :intent
+```
+
+The renewal matches `intent_version`. A supplement or redirect that has moved the version makes this update match zero rows. The worker then stops and discards uncommitted output. It cannot keep the hold by renewing. A renewal does not change `last_progress_at`.
+
+Every step write and tool-call update includes `exec_epoch` and `intent_version`. Zero rows means the write is discarded.
+
+### Traces
+
+Successful delivery:
+
+1. The row is `running`, `exec_token` is null, and `dispatch_token` is null.
+2. The sweep stores `dispatch_token` D1 and `dispatch_epoch` 1. `exec_token` stays null.
+3. The sweep publishes `{id, D1, 1, intent_version}`.
+4. The worker adoption matches D1 and epoch 1, sets `exec_token`, clears the reservation, and clears `continuation_due` if it was set.
+5. The worker renews `hold_until` and runs the saved step.
+6. A later sweep sees `exec_token` set and `hold_until` in the future. It publishes nothing.
+
+Crash after reserve and before publish:
+
+1. The sweep stores D1 and epoch 1, then dies before publish. No broker message exists. `exec_token` is null, so no process is alive. `continuation_due` is unchanged.
+2. After `dispatch_until`, the sweep stores D2 and epoch 2 and publishes that message.
+3. The worker adopts D2 and runs.
+4. A late message for D1 matches zero rows and does not run.
+
+Other required cases:
 
 | Case | Required outcome |
 | --- | --- |
-| Active holder and a sweep | The sweep updates zero rows and publishes nothing. |
-| Two deliveries of the same job | One update wins. The other gets zero rows and does not execute. |
-| Crash after the tool calls are saved and before they execute | The saved calls remain. The next holder executes the calls that have no result. It does not call the model first. |
-| Crash after `arm_remote_claim` | `remote_request_id` is already committed (`schedule_confirm.py` lines 413-436). The next holder looks up that marker. It does not arm a second marker and does not send the write again. |
-| Old holder returns after a new claim | The old epoch matches no row. The old result is discarded. The new holder continues from the saved calls. |
+| Executing holder and a sweep | `hold_until` is in the future, so both reserve updates match zero rows. Nothing is published. |
+| Two workers receive the same message | One adoption matches. The other sees `exec_token` already set and does nothing. |
+| Delayed message after a newer reservation | The old `dispatch_epoch` matches zero rows. |
+| Broker accepted the message but the publisher crashed before seeing the ack | The reservation is still unexpired, so the sweep does not publish a second token. The worker adopts the original message. |
+| Crash after tool calls are saved and before they run | The next adopted worker runs calls with no terminal result. It does not call the model first. |
+| Crash after `arm_remote_claim` | `remote_request_id` is already committed (`schedule_confirm.py` lines 413-436). The next holder looks up that marker. It does not arm a second marker. |
+| Old holder returns after a new adoption | The old `exec_epoch` matches zero rows. The result is discarded. |
+
+`waiting_resource` is not reserved by the sweep. A `waiting_person` row is reserved only by the `continuation_due` update above.
 
 ## Tool rounds
 
@@ -56,49 +146,73 @@ The sweep in `resume` publishes `run_job` only after this update claims the row.
 
 A step has one phase.
 
-| Phase | When it is set |
-| --- | --- |
-| `calls_saved` | The assistant payload and every tool call row are committed. No call has run. |
-| `awaiting_results` | At least one call has started or is waiting for a person, and at least one call has no terminal result. |
-| `ready_for_model` | The response had no tool calls, or every tool call has a terminal result. |
+| Phase | When it is set | What happens next |
+| --- | --- | --- |
+| `calls_saved` | The assistant payload contains one or more tool calls, and those rows are committed. No call has run. | Execute calls that are not terminal. Do not call the model. |
+| `awaiting_results` | At least one call has started or is waiting for a person, and at least one call is not terminal. | Keep waiting or executing. Do not call the model. |
+| `results_ready` | Every tool call in this response is terminal. | Send exactly one model request that includes one tool result for every `tool_call_id`. This is not completion. |
+| `final_answer` | The assistant payload contains zero tool calls. | Set the job to `completed` in that same transaction. Do not send another model request. Do not set `continuation_due`. |
 
-A tool call has one state. `pending`, `running`, and `awaiting_confirm` are not terminal. `result`, `rejected`, `expired`, `cancelled`, and `unknown` are terminal. Each terminal state has a tool-result payload. The next model request is sent only from `ready_for_model`, and that request includes one tool result for every `tool_call_id` in the saved response. A saved response is never sent to the model as if its calls had already been executed.
+`final_answer` and `results_ready` are different. A response with no tool calls is the answer, and the job ends. A response whose calls are all terminal schedules one more model request. That request produces a new step. If the new step has tool calls, it starts at `calls_saved`. If it has none, it is `final_answer` and the job completes. The worker does not feed `final_answer` back into the model.
+
+A tool call has one state. `pending`, `running`, and `awaiting_confirm` are not terminal. `result`, `rejected`, `expired`, `cancelled`, and `unknown` are terminal. A response may mix those terminal states. For example, one call can be `result` while another is `rejected` and a third is `unknown`. The step becomes `results_ready` only when every call is terminal. `unknown` is not executed again. A saved response is never sent to the model as if its calls had already been executed.
 
 The holder handles one saved response as follows.
 
-1. Move a `pending` read to `running` with a compare-and-set on that call id, the current epoch, and the current `intent_version`. Then run it. Commit `result` before starting the next call.
+1. Move a `pending` read to `running` with a compare-and-set on that call id, the worker's `exec_epoch`, and the current `intent_version`. Then run it. Commit `result` before starting the next call.
 2. Do not run a write inside `gateway.invoke`. Insert the existing confirm claim, store its token on the call, and set `awaiting_confirm`. One response may contain several writes. Each write gets its own card. The step stays `awaiting_results` until every card has a terminal result.
 3. A crash while a read is `running` leaves that call without a result. The next holder may run that read again. A call that already has `result` is not run again.
 4. A write that already has `remote_request_id` is not armed again. The holder looks up. Desktop lookup reads whether `finish_local` stored a finish for that claim token. No finish means `unknown`. The holder does not call `perform`, `desktop.open`, or `desktop.run` for that token.
 5. Rejection, expiry, and cancel of a card write that outcome as the tool result. They do not perform the write. Cancel of the job sets the job `stopped`, marks its open calls `cancelled`, and does not send another model request.
 6. An unknown write stays unknown after lookup. Lookup does not send, place, open, or run again.
 
-When the last call becomes terminal, the same transaction sets the step to `ready_for_model` and sets `task_runs.continuation_due`. If the job is `waiting_person`, the confirm path then tries `continue_job`, claims the owner row, and enqueues `run_job`. `continuation_due` is cleared only after that claim updates one row.
+If the executing worker still holds `exec_token` and the job is `running` when every call is terminal, that same worker sets `results_ready` and sends the one model request. It does not release the hold and it does not set `continuation_due`.
 
-If the process dies after the claim is finished and before the enqueue, `continuation_due` is still true. The `resume` sweep is the repair. For a `waiting_person` row with `continuation_due`, it applies `continue_job`, then the owner update, then the enqueue. If `continue_job` already happened and the enqueue was lost, the row is `running` with a null or expired holder. The normal owner claim enqueues it. The repair does not create a second confirm card and does not send the write again.
+If the job is `waiting_person` when the last call becomes terminal, the same transaction sets `results_ready` and `continuation_due`. It does not reserve, publish, or clear `continuation_due`. The sweep update in the dispatch section then moves the job to `running` and reserves a token. Adoption is what clears `continuation_due`. If the process dies after `continuation_due` is committed and before publish, the flag stays true, the reservation expires if one was stored, and a later sweep reserves a new epoch. The repair does not create a second card and does not send the write again. A `final_answer` step does not set `continuation_due`.
 
 A model response with more than one tool call is the same rule. Partial read results stay stored. Only calls without a terminal result are eligible. The model is not called while any call is `pending`, `running`, or `awaiting_confirm`.
 
 ## Session cursor
 
-`TaskStep.seq` orders steps inside one job. It is not a cursor for the session. `resume` adds `session_events`.
+`task_steps.seq` orders steps inside one job. It is not a cursor for the session. An integer primary key does not order commits. One transaction can allocate id 100 and stay uncommitted while another allocates and commits id 101. A snapshot that reads 101 and then subscribes after 101 never sees 100 when the first transaction commits. `resume` therefore does not use `max(session_events.id)` as the cursor.
 
-| Column | Meaning |
-| --- | --- |
-| `id` | Integer primary key. This is the only replay cursor. |
-| `session_id` | The session that receives the event. |
-| `task_run_id` | The job, when the event belongs to a job. |
-| `kind` | `message`, `step`, `status`, `confirm`, or `notice`. |
-| `subject_id` | The id of the message, step, claim, or job row. |
-| `intent_version` | The job version that produced the event. Null for a session message that is not a job. |
+`resume` adds `session_cursors`, one row per session, with `published_seq` starting at 0. It also adds `session_events.seq`. The publication transaction is the serialization boundary.
 
-Every job status change, tool step, confirm card, and watch notice inserts one event in the same transaction as the change it reports. A status change or a new card inserts an event even when no `task_steps` row is added.
+On PostgreSQL the transaction is:
 
-`GET /api/sessions/{id}/jobs` and the read of `max(session_events.id)` for that session run in one transaction. The response includes that max as `cursor`. The client opens `GET /api/sessions/{id}/events?after={cursor}` and applies events with a greater id. An event committed after the snapshot has a greater id. An event included in the snapshot has an id less than or equal to `cursor`.
+```text
+BEGIN
+SELECT published_seq FROM session_cursors WHERE session_id = :session FOR UPDATE
+INSERT session_events (..., seq) VALUES (..., published_seq + 1)
+UPDATE session_cursors SET published_seq = published_seq + 1
+COMMIT
+```
 
-Reconnect sends the last id the client applied. The server may send an id the client already applied. The client applies each id once. There is no poll interval.
+`FOR UPDATE` is held until commit. The next publisher for that session cannot allocate the next seq until this commit. On SQLite, `FOR UPDATE` is not the lock. The publication transaction starts with `BEGIN IMMEDIATE`, which takes the writer lock until commit. Either engine blocks the next publication of the same session. A lower seq cannot commit after a higher seq of that session.
 
-Two jobs in one session are ordered by `session_events.id`, not by either job's `seq`. A client that has applied job A's event still receives a later event for job B.
+The status change, the tool step, the confirm card, or the watch notice is written in that same transaction, before commit. A status or card change inserts an event even when no `task_steps` row is added. The event `seq` is the only replay cursor. Kinds remain `message`, `step`, `status`, `confirm`, and `notice`.
+
+The jobs snapshot uses the same lock for its whole read.
+
+```text
+BEGIN
+lock session_cursors for that session, as above
+read published_seq
+read the job rows and open claims
+COMMIT
+```
+
+A publisher cannot commit during that read, so the job rows and `published_seq` include the same commits. The response field `cursor` is `published_seq`. The client opens `GET /api/sessions/{id}/events?after={cursor}` and the server returns `seq > cursor` ordered by `seq`. Reconnect sends the last seq the client applied and scans the same way. If the client sees a gap, it drops the stream and loads the snapshot again. The lock protocol does not produce a committed gap. The gap check is there so a skipped insert cannot hide forever.
+
+The client applies each `(session_id, seq)` once. Two jobs share that session sequence. A client that has applied job A's seq still receives a later seq for job B.
+
+The delayed-id trace under this protocol:
+
+1. T1 locks the cursor, allocates seq 100, and has not committed.
+2. T2 blocks on the same session lock. It cannot allocate 101.
+3. T1 commits. A snapshot that starts after that commit can return cursor 100 and the status T1 wrote.
+4. T2 then allocates 101 and commits.
+5. A subscriber whose cursor is 100 receives 101. Seq 100 is not delivered after 101, because it was committed first and was already included in any snapshot that could see 101.
 
 ## Web constraint and intent version
 
@@ -113,9 +227,17 @@ A user message carries `web` of `allow` or `forbid`. The default for a message t
 
 An unrelated message does not clear a forbid on a job it does not target. A later message that does target that job replaces the constraint with that message's own `web`. A forbid is therefore not permanent, and a bystander message does not reset it.
 
-`talk` stores `web_constraint`, `web_constraint_message_id`, and `intent_version` on the job. Open confirm claims store the `intent_version` they were armed under. The same transaction that increments `intent_version` sets those older open claims to `cancelled`.
+`talk` stores `web_constraint`, `web_constraint_message_id`, and `intent_version` on the job. Each claim stores the `intent_version` it was created under.
 
-`loop` checks the stored constraint at execution, not only when the tool list is built. `web_constraint = forbid` denies both `web` and `web_fetch` inside `execution_denial`. A model that still names either tool does not run it. A worker whose `intent_version` is older than the row does not invoke and does not publish its result. A confirm whose stored version is older than the job returns closed and does not write.
+The supplement or redirect transaction does all of the following before it commits.
+
+1. Increment `intent_version`, store the new `web` value, clear `exec_token`, `hold_until`, `dispatch_token`, and `dispatch_until`, and set `continuation_due`. The old worker's renewal then matches zero rows.
+2. A claim whose `remote_request_id` is already non-empty keeps that marker. Its status becomes `reconcile`. It is not `cancelled`. The old intent version stays on the claim. Later lookup may record the provider result. The new intent does not arm that token again and does not create a second arm for that same fingerprint.
+3. A claim that is still `open` and has an empty `remote_request_id` becomes `cancelled`. Nothing was sent.
+
+After that commit, the sweep sees `continuation_due` or an idle `running` row and reserves a message that carries the new `intent_version`. The old worker cannot keep renewing.
+
+`arm_remote_claim` is the commit that allows the provider call. Its update matches the claim, the job's current `intent_version`, and the worker's `exec_epoch`. Zero rows means the provider call is not sent. A read of the version before that update is not the check. `web_constraint = forbid` denies both `web` and `web_fetch` in that same execution update. A confirm whose stored version is older than the job returns closed and does not write. A `reconcile` claim is not confirmed again as a new write.
 
 ## Task image bytes
 
@@ -123,9 +245,13 @@ An unrelated message does not clear a forbid on a job it does not target. A late
 
 `task_images` stores `task_run_id`, `media_type`, `byte_length`, `sha256`, and `storage_key`. The row is written when the message is bound to a job. A chat image that never binds to a job is dropped after that request. The bytes go through the existing `BlobStore.put` in `backend/app/storage/base.py` lines 14-16, under a key that starts with `task-image/`. That key is never written to `documents.stored_path`.
 
-The request boundary decodes the base64 and inspects the bytes. JPEG must start with `FF D8`, PNG with `89 50 4E 47`, GIF with `GIF87a` or `GIF89a`, and WebP with `RIFF` at the start and `WEBP` at offset 8. A declared type that disagrees with those bytes is rejected. One decoded image larger than `max_upload_mb` is rejected. `max_upload_mb` defaults to 20 in `backend/app/core/config.py` line 128. The sum of the decoded image bytes and the UTF-8 text is rejected when it exceeds 48 MiB, which is the body limit stated in the Vision guide opened for this design. The check uses the decoded size, not the declared type and not the base64 length alone.
+The request boundary decodes the base64 and inspects the bytes. JPEG must start with `FF D8`, PNG with `89 50 4E 47`, GIF with `GIF87a` or `GIF89a`, and WebP with `RIFF` at the start and `WEBP` at offset 8. A declared type that disagrees with those bytes is rejected. One decoded image is rejected when it is larger than `max_upload_mb` or larger than 32 MiB. `max_upload_mb` defaults to 20 in `backend/app/core/config.py` line 128. 32 MiB is the per-inline-image limit already recorded from the Vision guide in `review/historical-gemini/citations.md`. This revision does not replace that number.
 
-The job worker reads those bytes back into `image_url` blocks on every model request, including a request after restart. The browser does not receive the storage key. A session user can read the bytes only for their own non-terminal job. When the job becomes `completed` or `stopped`, the same transaction schedule deletes the blob and the `task_images` row. A chat transcript that is not the current job does not keep a copy.
+The 48 MiB figure is the Vision guide's limit on the request body, not a limit on the sum of decoded bytes. Base64 expansion, the JSON envelope, and prior messages can make the body larger than the decoded sum. Before the provider call, the worker measures the UTF-8 length of the serialized request body it is about to send. It rejects that call when the length is greater than 48 MiB. It does not invent a different provider limit, and it does not treat the decoded sum as that measurement.
+
+The job worker reads those bytes back into `image_url` blocks on every model request, including a request after restart. The browser does not receive the storage key. A session user can read the bytes only for their own non-terminal job.
+
+Blob deletion does not roll back with SQL. The terminal transaction sets `task_images.purge_state` to `pending_delete` and commits. It does not call `BlobStore.delete`. After that commit, cleanup deletes the blob and then deletes the row. If the blob delete fails, the row stays `pending_delete` and a later sweep retries. If the blob is already absent, the sweep deletes the row. A crash after the terminal commit and before the blob delete leaves `pending_delete`, so the retry still runs. A chat transcript that is not the current job does not keep a copy.
 
 If the job is still running and the blob is gone, the worker records that the image is unavailable. It does not call `ocr_image_bytes` and it does not invent a summary.
 
@@ -150,15 +276,11 @@ Mail uses the same split. The provider call stays outside the bookkeeping transa
 
 ## Watch samples
 
-`last_progress_at` changes only for user-visible activity.
+`last_progress_at` changes for persisted output and tool progress. It does not change on a hold renewal.
 
-- The first persisted output of a model call.
-- A tool call saved.
-- A tool execution started.
-- A tool result saved.
-- A confirm card published.
+During a model call, the worker commits an output batch and sets `last_progress_at` to that commit time. It commits the first output it has received, it commits again when newer output has arrived and at least five seconds have passed since the previous progress commit, and it commits again when the call ends. It does not write a row per token. The five seconds are only the gap between those output commits. They are not a stall timeout and they do not stop the job. A tool call saved, a tool execution started, a tool result saved, and a confirm card published each set `last_progress_at` immediately.
 
-A holder renewal does not change it. A null `last_progress_at` means no sample exists. It is not filled from `created_at`. The job is still visible as `running`.
+A null `last_progress_at` means no sample exists. It is not filled from `created_at`. The job is still visible as `running`.
 
 `watch` stores two more timestamps. `observed_progress_at` is the `last_progress_at` value the last committed sweep saw. `notice_progress_at` is the stamp for which a notice was inserted. The sweep locks the row, and in that transaction it inserts one notice only when `last_progress_at` is non-null, equals `observed_progress_at`, and `notice_progress_at` is different. It then sets `observed_progress_at` to the current `last_progress_at`, including null. A restart or a second sweep delivery sees those committed columns.
 

@@ -56,6 +56,34 @@ On 2026-11-19 this run read cloud-agent status for `bc-89428bea-b017-5ad6-8355-d
 
 The landing list already started with `picture`, while the directory README told the operator to start with `talk`. The operator order is now the numbered list, one unit at a time, each from the latest `release`. The parent may merge a reviewed unit without a new user prompt. This pull request does not merge and does not count as that review.
 
+## Follow-up on `a5c2431`
+
+This follow-up is not approval. The two blockers in that review are closed in `../contracts.md`. `../plan.md` no longer states the old single owner claim or the autoincrement cursor.
+
+### Dispatch handoff
+
+The finding is accepted. The previous owner update was used both by the sweep before publish and by the worker before work. The worker then matched zero rows.
+
+`contracts.md` section "Dispatch reservation and execution hold" splits `dispatch_token` from `exec_token`. The sweep reserves and publishes `{task_run_id, dispatch_token, dispatch_epoch, intent_version}`. Only the worker sets `exec_token`, and only when that message still matches. `hold_until` is the executing process. `dispatch_until` is only how long the queued token may be adopted. `continuation_due` is cleared only in the adoption update. It stays true when publish is lost.
+
+The same section has the successful trace and the crash-before-publish trace. A dead executor is reserved again and stays `running`. `talk` adds the columns. `resume` publishes and adopts. `loop` does not publish.
+
+### Session cursor
+
+The finding is accepted. `max(id)` under concurrent transactions can skip a lower id that commits later. One read transaction under read committed is not a snapshot by itself.
+
+`contracts.md` section "Session cursor" assigns `session_events.seq` while holding `session_cursors` until commit. PostgreSQL uses `FOR UPDATE`. SQLite uses `BEGIN IMMEDIATE`. The jobs read holds that same lock, so a status change cannot commit between the job read and the cursor. The delayed-id trace in that section shows T2 blocked until T1 commits seq 100. The client still dedupes `(session_id, seq)`, and two jobs share the session sequence. `resume` owns this table.
+
+### Compact clarifications
+
+`results_ready` schedules one model request. `final_answer` sets the job `completed` and does not. Mixed `result`, `rejected`, and `unknown` stay terminal. This is in "Tool rounds". `loop` implements it.
+
+A supplement clears `exec_token` in the same transaction as the version bump, so the old worker cannot renew. An armed claim becomes `reconcile` and keeps `remote_request_id`. Only an unarmed open claim is `cancelled`. `arm_remote_claim` matches `intent_version` and `exec_epoch` in the update that commits the marker. This is in "Web constraint and intent version". `talk` stores the transition. `loop` puts the match on the arm update.
+
+Decoded size is per file, against `max_upload_mb` and the recorded 32 MiB inline limit. The 48 MiB check is the UTF-8 length of the serialized request body. `purge_state = pending_delete` is committed with the terminal status. `BlobStore.delete` runs after that commit and retries. This is in "Task image bytes". `picture` implements it.
+
+Output batches after the first also set `last_progress_at`, at most one extra commit per five seconds of continued output, plus tool boundaries. A hold renewal does not. The notice is still not a stop. This is in "Watch samples". `watch` implements the notice. `loop` writes the samples.
+
 ## Research audit
 
 `sources/research-bots-latest-coverage.md` is preserved. Its newer project names are deferred in `../contracts.md`. They were not source-read, because none of them decides owner compare-and-set, tool-call accounting, the session cursor, or the receipt transaction. Already adopted mechanisms stay the ones in the OSS report. Unverified briefs are not treated as source confirmation. No proactive or auto-send feature is added.

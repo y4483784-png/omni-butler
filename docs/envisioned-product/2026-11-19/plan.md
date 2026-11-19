@@ -86,13 +86,13 @@ A new `LlmCall` row records `user_id`, `generation`, `role`, `model`, `prompt_to
 
 ### Interfaces
 
-`POST /api/chat` accepts the current body plus `images`, an array of `{ "media_type": string, "data_base64": string }`. `media_type` is one of `image/jpeg`, `image/png`, `image/gif`, or `image/webp`. The server decodes the base64 and checks the signatures in `contracts.md`. A declared type that disagrees with the bytes is rejected. One decoded image over `max_upload_mb` (`backend/app/core/config.py` line 128, default 20) is rejected. The sum of decoded image bytes and UTF-8 text over 48 MiB is rejected. That 48 MiB figure is the body limit in the Vision guide. The check does not trust the declared type or the base64 length alone. The outbound Chat Completions message uses the fields named in that guide. No new size number is introduced.
+`POST /api/chat` accepts the current body plus `images`, an array of `{ "media_type": string, "data_base64": string }`. `media_type` is one of `image/jpeg`, `image/png`, `image/gif`, or `image/webp`. The server decodes the base64 and checks the signatures in `contracts.md`. A declared type that disagrees with the bytes is rejected. One decoded image is rejected when it exceeds `max_upload_mb` (`backend/app/core/config.py` line 128, default 20) or 32 MiB. The 48 MiB figure is the Vision guide's limit on the serialized request body. Before the provider call, the worker measures that serialized body and rejects it when the UTF-8 length is over 48 MiB. The decoded sum is not that measurement. No new provider limit is introduced.
 
 `complete_text` and `stream_chat` write one `LlmCall` after a response. Fields read from the response are the ones this code already reads: `prompt_tokens` and `completion_tokens` (`backend/app/core/llm.py:356-376` and `459-474`). Other usage names were not on a page opened for this design, so they are not stored.
 
 ### Persistence and migration
 
-One Alembic revision creates `llm_calls` and `task_images`. Existing messages stay text. A chat image is not written into `documents` and is not passed to `ocr_image_bytes`. The message row stores the user's text. The decoded bytes are available to the chat completion that is in flight. They are written with `BlobStore.put` under a `task-image/` key only when that message is bound to a job, as `contracts.md` specifies. They are not copied into the long-term memory ledger. A non-terminal job keeps those bytes so `loop` and `resume` can rebuild the `image_url` blocks. A `completed` or `stopped` job deletes them. A chat image that never binds to a job is not kept after that request. A historical transcript does not keep a copy.
+One Alembic revision creates `llm_calls` and `task_images`. Existing messages stay text. A chat image is not written into `documents` and is not passed to `ocr_image_bytes`. The message row stores the user's text. The decoded bytes are available to the chat completion that is in flight. They are written with `BlobStore.put` under a `task-image/` key only when that message is bound to a job, as `contracts.md` specifies. They are not copied into the long-term memory ledger. A non-terminal job keeps those bytes so `loop` and `resume` can rebuild the `image_url` blocks. A `completed` or `stopped` job marks the image `pending_delete` in that commit. Blob deletion happens after the commit and retries while the row remains, as `contracts.md` specifies. A chat image that never binds to a job is not kept after that request. A historical transcript does not keep a copy.
 
 `.env.example` is edited so the embedding and vision lines say: unset means the code default `embedding-3` and `glm-4.6v`; the previous example names are overrides, not the defaults. `backend/app/core/config.py` defaults stay as they are. `LLM_MODEL_CONCURRENCY_LIMITS` on `.env.example:109` gets the same sentence. No index is rebuilt.
 
@@ -119,7 +119,7 @@ Do not change ingest OCR, embeddings, or rerank. Do not add a tool loop here. Do
 
 ### Acceptance
 
-Unit assertion: a chat request with one PNG whose bytes start with `89 50 4E 47` builds a user content array that contains an `image_url` data URL, calls the model resolved for `Role.CHAT`, and does not call `ocr_image_bytes`. A payload whose declared type is `image/png` and whose bytes do not match that signature is rejected. A response with `usage is None` inserts an `LlmCall` whose token columns are null. Binding that message to a job stores one `task_images` row. A chat image with no job stores none. After the linked job is `stopped`, the blob and the `task_images` row are gone, and the message text remains. A restarted job worker can rebuild the `image_url` block from the row while the job is running.
+Unit assertion: a chat request with one PNG whose bytes start with `89 50 4E 47` builds a user content array that contains an `image_url` data URL, calls the model resolved for `Role.CHAT`, and does not call `ocr_image_bytes`. A payload whose declared type is `image/png` and whose bytes do not match that signature is rejected. A response with `usage is None` inserts an `LlmCall` whose token columns are null. Binding that message to a job stores one `task_images` row. A chat image with no job stores none. After the linked job is `stopped`, the row is `pending_delete` even if the blob delete has not finished. A retry removes the blob and then the row. The message text remains. A failed blob delete does not roll back the terminal status. A restarted job worker can rebuild the `image_url` block from the row while the job is running.
 
 Formal property: `ImageStaysOnChatModel` and `MissingUsageStaysNull`. The model is one request. It does not cover the provider's image safety review, a second user, or a restart during the HTTP call.
 
@@ -171,7 +171,7 @@ The interaction layer asks `Role.ROUTER` for one JSON object:
 
 That object is this application's schema. It is not a provider field. The spoken reply still uses `Role.CHAT`. If the router call fails, the relation is `ask` and no job is stopped or started.
 
-A supplement appends the user text onto the target job and does not stop it. A redirect appends the text for the next model boundary and does not stop the job. A cancel calls `task_run.stop` on that job only. A new task inserts another job. Each message carries its own `web` value, defaulting to `allow` when that message does not forbid search. `new` stores that value on the new job only. `supplement` and `redirect` store that value on the target job, increment `intent_version`, and cancel open claims from the previous version. Other jobs are unchanged. The execution check is specified in `contracts.md`. An unrelated message does not clear a forbid, and a forbid does not stick to a job after a later message targets that job with `allow`.
+A supplement appends the user text onto the target job and does not stop it. A redirect appends the text for the next model boundary and does not stop the job. A cancel calls `task_run.stop` on that job only. A new task inserts another job. Each message carries its own `web` value, defaulting to `allow` when that message does not forbid search. `new` stores that value on the new job only. `supplement` and `redirect` run the intent transaction in `contracts.md`. That transaction increments `intent_version`, clears the execution hold and the reservation, sets `continuation_due`, keeps an already armed claim as `reconcile`, and cancels only a claim that was never armed. Other jobs are unchanged. The sweep then reserves a delivery for the new version. The old worker's renewal matches zero rows. An unrelated message does not clear a forbid.
 
 ### Interfaces
 
@@ -181,7 +181,7 @@ The worker is a Celery task `app.tasks.job.run_job` on the existing default queu
 
 ### Persistence and migration
 
-The revision adds `task_runs.kind`, `web_constraint` (`allow` or `forbid`, default `allow`), `web_constraint_message_id`, `intent_version` (starting at 1), `last_progress_at` (nullable), `owner_token`, `owner_epoch` (starting at 0), `hold_until`, and `continuation_due` (default false). Backfill sets `kind=turn` and leaves `last_progress_at` null. Do not copy `created_at` into that column. `run_job` claims the owner row with the compare-and-set in `contracts.md` before it does any work. This unit does not yet store tool steps. That table arrives with `loop`. The reclaim sweep arrives with `resume`. Until then, an expired hold is not a stop.
+The revision adds `task_runs.kind`, `web_constraint` (`allow` or `forbid`, default `allow`), `web_constraint_message_id`, `intent_version` (starting at 1), `last_progress_at` (nullable), `dispatch_token`, `dispatch_epoch` (starting at 0), `dispatch_until`, `exec_token`, `exec_epoch` (starting at 0), `hold_until`, and `continuation_due` (default false). Backfill sets `kind=turn` and leaves `last_progress_at` null. Do not copy `created_at` into that column. This unit does not publish or adopt. `resume` does. Until then, an expired reservation is not a stop. This unit does not yet store tool steps. That table arrives with `loop`.
 
 Before `loop` lands, `run_job` inserts the job as `running`, stores the goal on the row, calls no model tool and no search, and returns. The unit passes when a second chat message leaves the previous job `running`.
 
@@ -213,7 +213,7 @@ Do not put every new message on one queue. Do not keyword-route the four relatio
 
 ### Acceptance
 
-Unit assertion: creating a `kind=job` row and then calling `begin_turn` for the same session leaves the job `running`. Stopping the interaction generation leaves the job `running`. A classified cancel of that generation leaves the job `stopped`, and a second open job on the same user stays `running`. A forbid on job A stays forbid when a later message creates job B with allow. A supplement that targets job A with allow changes only job A, increments its `intent_version`, and cancels an open claim that still has the old version. A redirect of an allow job to forbid denies a later web execution. Confirming the cancelled card does not write.
+Unit assertion: creating a `kind=job` row and then calling `begin_turn` for the same session leaves the job `running`. Stopping the interaction generation leaves the job `running`. A classified cancel of that generation leaves the job `stopped`, and a second open job on the same user stays `running`. A forbid on job A stays forbid when a later message creates job B with allow. A supplement that targets job A with allow changes only job A, increments its `intent_version`, clears `exec_token`, and sets `continuation_due`. An armed claim on the old version becomes `reconcile` and keeps `remote_request_id`. An open claim with an empty `remote_request_id` becomes `cancelled`. The old worker's renewal updates zero rows. A redirect of an allow job to forbid denies a later web execution. Confirming the cancelled unarmed card does not write. Confirming the `reconcile` card does not arm a second write.
 
 Formal property: `JobSurvivesNewTurn`, `JobSurvivesDisconnect`, `CancelStopsNamedJob`, `AmbiguousCancelAsks`. The model is one user, two jobs, and one interaction turn. It does not cover an HTTP call already inside the provider, a second browser, or Celery redelivery.
 
@@ -250,7 +250,7 @@ A job that is still saving progress is not stopped at twenty minutes after creat
 
 ### Modules, types, and state
 
-`decide` stops using `created_at` as the silence clock. It reads `last_progress_at`. That stamp moves when the worker persists the first output of a model call, saves a tool call, starts a tool, saves a tool result, or publishes a confirm card. A holder renewal does not move it. A null stamp is not a sample and is not filled from `created_at`. The job remains visible as `running`.
+`decide` stops using `created_at` as the silence clock. It reads `last_progress_at`. The worker updates that stamp on each committed output batch in `contracts.md`, including later batches in the same call, and on a tool save, a tool start, a tool result, and a confirm card. A hold renewal does not move it. A null stamp is not a sample and is not filled from `created_at`. The job remains visible as `running`.
 
 `observed_progress_at` stores the stamp the last committed sweep saw. `notice_progress_at` stores the stamp already notified. The sweep locks the row and follows the transaction in `contracts.md`. It does not call `task_run.stop`. `_validate_effect` in `watchdog.py` lines 37-48 requires `running` to be `stop`. This unit changes that check so `running` is `leave`. It does not add an effect named `report`. One 60-second sweep that sees an unchanged stamp only records `observed_progress_at`. The notice on the following sweep is an inspection message, not a confirmed failure. `waiting_person` and `waiting_resource` stay unchanged.
 
@@ -272,7 +272,7 @@ Add `observed_progress_at` and `notice_progress_at` if they are not on the row. 
 
 ### Concurrency, disconnect, and restart
 
-The sweep uses `maintenance_session`. Notice dedupe uses the committed `observed_progress_at` and `notice_progress_at` columns, not a value remembered only inside one process. A null `last_progress_at` produces no notice. The sweep that first records a new stamp does not send the notice. A disconnect of a browser does not enter this sweep. This sweep does not claim `owner_token` and does not publish `run_job`. Reclaim belongs to `resume`.
+The sweep uses `maintenance_session`. Notice dedupe uses the committed `observed_progress_at` and `notice_progress_at` columns, not a value remembered only inside one process. A null `last_progress_at` produces no notice. The sweep that first records a new stamp does not send the notice. A disconnect of a browser does not enter this sweep. This sweep does not reserve a dispatch token and does not publish `run_job`. Reclaim belongs to `resume`.
 
 ### Confirm, cancel, and unknown results
 
@@ -333,9 +333,9 @@ The job worker builds a tool list from the constitution plus four confirm-only n
 
 The executor role resolves to `settings.chat_model` and `settings.chat_thinking` when `EXECUTOR_MODEL` and `EXECUTOR_THINKING` are unset. No temperature and no output limit are set. `tool_choice` is omitted. The thinking-mode sample that was opened does not set `tool_choice`.
 
-A `task_steps` row stores one model response. Its phase is `calls_saved`, `awaiting_results`, or `ready_for_model`. A `tool_calls` row stores one `tool_call_id`, its state, its claim token, and its `intent_version`. The states and the rule for the next model request are in `contracts.md`. The worker commits the assistant payload and every tool-call row before `gateway.invoke`. A failed commit does not invoke. A saved response is not sent to the next model turn until every tool call has a terminal result. `continuation_due` is set in the same transaction as the last terminal result and is cleared only after a later owner claim wins.
+A `task_steps` row stores one model response. Its phase is `calls_saved`, `awaiting_results`, `results_ready`, or `final_answer`. A `tool_calls` row stores one `tool_call_id`, its state, its claim token, and its `intent_version`. `results_ready` schedules one model request. `final_answer` completes the job and does not schedule another request. The worker commits the assistant payload and every tool-call row before `gateway.invoke`. A failed commit does not invoke. `continuation_due` is set when the last waiting call becomes terminal. Adoption clears it. The sweep does not.
 
-Calendar, mail, errand, and desktop writes from the loop return a confirm card through the existing claim helpers. They do not perform the write inside `invoke`. One model response may open more than one card. On confirm, the existing consume-and-arm path runs. The tool result is saved in the same transaction that can set `continuation_due`. The worker then calls `continue_job` and enqueues `run_job` only when the step is `ready_for_model`. If the process dies after the claim is finished and before the enqueue, the sweep repair in `contracts.md` enqueues once. It does not arm the write again. A changed fingerprint still mismatches and does not write (`schedule_confirm.py` lines 378-380). An armed desktop call with no `finish_local` result is `unknown` and does not call `perform`. Before every tool runs, the worker reads `web_constraint` and `intent_version` again. A forbid denies `web` and `web_fetch`. An older `intent_version` does not run the tool and does not publish the result. The worker also loads `task_images` for the job and puts those bytes back into the model request.
+Calendar, mail, errand, and desktop writes from the loop return a confirm card through the existing claim helpers. They do not perform the write inside `invoke`. One model response may open more than one card. On confirm, the existing consume-and-arm path runs. The tool result is saved in the same transaction that can set `continuation_due`. That transaction does not publish. `arm_remote_claim` matches the current `intent_version` and `exec_epoch` in the update that commits the marker. Zero rows means the provider call is not sent. If the process dies after `continuation_due` is set and before publish, the flag stays true until adoption. The repair does not arm the write again. A changed fingerprint still mismatches and does not write (`schedule_confirm.py` lines 378-380). An armed desktop call with no `finish_local` result is `unknown` and does not call `perform`. Before every tool runs, the worker reads `web_constraint` and `intent_version` again. A forbid denies `web` and `web_fetch`. An older `intent_version` does not run the tool and does not publish the result. The worker also loads `task_images` for the job and puts those bytes back into the model request.
 
 `assign_turn` remains the interaction layer's current helper and is not the job's tool queue. The job no longer starts from `plan_tools`.
 
@@ -377,7 +377,7 @@ Do not replace the interaction layer with this loop. Do not add a browser tool. 
 
 ### Acceptance
 
-Unit assertion: the worker commits a `calls_saved` step and one `tool_calls` row per id before `gateway.invoke`. A response with two tool calls does not call the model again until both have terminal results. A crash after that commit and before invoke leaves the calls pending, and recovery runs the pending read instead of calling the model. A calendar tool becomes a claim and does not call `create_event`. A job with `web_constraint=forbid` denies `web` inside `execution_denial` even if the tool was named. A second confirm with the same token does not write again. An armed `desktop.open` with no finish does not call `perform`. A crash after `continuation_due` is set and before enqueue leaves `continuation_due` true. The repair enqueues one `run_job` and does not create a second card.
+Unit assertion: the worker commits a `calls_saved` step and one `tool_calls` row per id before `gateway.invoke`. A response with two tool calls stays off the model until both are terminal, including one `result` and one `rejected`. That step is `results_ready` and schedules one model request. A later response with zero tool calls is `final_answer`, sets the job `completed`, and does not schedule another request. A crash after the tool rows are committed and before invoke leaves the calls pending, and recovery runs the pending read instead of calling the model. A calendar tool becomes a claim and does not call `create_event`. A job with `web_constraint=forbid` denies `web` inside the execution update even if the tool was named. A second confirm with the same token does not write again. An armed `desktop.open` with no finish does not call `perform`. A crash after `continuation_due` is set and before publish leaves `continuation_due` true. Adoption of the later reservation clears it once and does not create a second card.
 
 Formal property: `SaveBeforeExecute`, `ResultBeforeNextModel`, `WriteWaitsForClaim`, `ForbidWebBlocksSearch`, `StoppedJobDoesNotExecute`, `ContinuationDueSurvivesCrash`. The model is one job, one response with two tool calls, and a crash before enqueue. It does not cover a provider 400. A crash after `arm_remote_claim` stays on the lookup path in `contracts.md`.
 
@@ -769,11 +769,11 @@ Closing the page or losing the network does not cancel a job. Opening the sessio
 
 ### Modules, types, and state
 
-`GET /api/sessions/{id}/jobs` returns the server rows and `cursor`, the max `session_events.id` read in the same transaction. The browser uses this on load and when the document becomes visible. No poll interval is added.
+`GET /api/sessions/{id}/jobs` locks `session_cursors` for that session, then reads `published_seq` and the job rows before it releases the lock. `cursor` is `published_seq`. It is not `max(session_events.id)`. The browser uses this on load and when the document becomes visible. No poll interval is added.
 
 `GET /api/sessions/{id}/events?after={cursor}` streams `session_events` for that session with a greater id. The event kinds and the snapshot rule are in `contracts.md`. A confirm or a status change is an event even when no `task_steps` row is added. Disconnect closes that response and does not call `task_run.stop`. A second window opens its own subscription. The last window to disconnect leaves the job running. The client applies each event id once.
 
-`run_job` claims `owner_token` before it reads work. Zero rows means it returns. It then follows the tool-round contract. A `ready_for_model` step calls the model and does not invoke saved calls again. A `calls_saved` step executes calls that have no terminal result and does not call the model first. An armed write is looked up and is not sent again. `waiting_person` without `continuation_due` returns without a model call. `stopped` and `completed` return. A write whose `owner_epoch` is older is discarded.
+`run_job` adopts the `dispatch_token` in its message. Zero rows means it returns without work. It does not reserve. A `results_ready` step calls the model once and does not invoke saved calls again. A `final_answer` step completes the job and does not call the model. A `calls_saved` step executes calls that have no terminal result and does not call the model first. An armed write is looked up and is not sent again. `waiting_person` without `continuation_due` returns without a model call. `stopped` and `completed` return. A write whose `exec_epoch` is older is discarded.
 
 The interaction stream's stop path sets `leave_stream` when `stream_chat` returns because the turn is stopped, so the buffers are not flushed as a continuation. `done` is still sent so the client can close. The event is a close of the interaction stream, not a statement that the job stopped. The jobs GET is the authority.
 
@@ -781,29 +781,29 @@ The interaction stream's stop path sets `leave_stream` when `stream_chat` return
 
 ### Interfaces
 
-The jobs GET returns JSON from `TaskRun` and `ScheduleConfirmClaim`, plus `cursor`. The events GET emits the `session_events` kinds. `after` is the last `session_events.id` the client applied, not a per-job `seq`. No new provider field is involved.
+The jobs GET returns JSON from `TaskRun` and `ScheduleConfirmClaim`, plus `cursor` equal to `published_seq`. The events GET emits `session_events` with `seq` greater than `after`, ordered by `seq`. `after` is the last published seq the client applied, not a per-job step seq and not an autoincrement id. No new provider field is involved.
 
 ### Persistence and migration
 
-This unit adds `session_events`. Owner columns and `continuation_due` already come from `talk`. Tool rows come from `loop`. Notice columns come from `watch`. The reclaim sweep publishes `run_job` only after the owner update in `contracts.md` changes one row. A live `hold_until` is not reclaimed. A `waiting_person` row is reclaimed only when `continuation_due` is true, and that path applies `continue_job` before the claim. An armed write is enqueued onto lookup, not onto send.
+This unit adds `session_cursors` and `session_events.seq`. Dispatch columns and `continuation_due` already come from `talk`. Tool rows come from `loop`. Notice columns come from `watch`. The sweep reserves with the updates in `contracts.md` and only then publishes `{task_run_id, dispatch_token, dispatch_epoch, intent_version}`. It never sets `exec_token`. A future `hold_until` is not reserved again. A `waiting_person` row is reserved only when `continuation_due` is true. An armed write is delivered onto lookup, not onto send.
 
 ### Concurrency, disconnect, and restart
 
-Two subscriptions read the same rows. Two deliveries race the owner update. One wins. The other gets zero rows and does not execute. A late write with an older `owner_epoch` updates zero rows. Restart does not mark the job stopped and does not mark it completed.
+Two subscriptions read the same published seq. Two workers can adopt one reservation. One update matches. The other does nothing. A late write with an older `exec_epoch` updates zero rows. Restart does not mark the job stopped and does not mark it completed.
 
-The concrete restart sequence is:
+The concrete restart sequence follows the traces in `contracts.md`.
 
 1. The worker process comes back and the existing beat runs.
-2. The sweep claims a `kind=job` row only when it is `running` and its holder is missing or `hold_until` has passed, or when it is `waiting_person` with `continuation_due`.
-3. A live holder is not claimed. The sweep publishes nothing for that row.
-4. The winning worker reads the latest step and its tool-call rows.
-5. `calls_saved`, or a call with no terminal result, runs those calls and does not call the model first.
-6. `ready_for_model` calls the model and does not repeat a call that already has a result.
-7. An armed write is looked up. Desktop with no finish stays `unknown` and does not call `perform`.
-8. A `waiting_person` row without `continuation_due` is skipped. The card remains.
-9. The worker commits a new step only when `owner_epoch` and `intent_version` still match.
+2. The sweep reserves a `running` row only when `exec_token` is null and the reservation is missing or expired, or it retires an executor whose `hold_until` has passed. A future `hold_until` publishes nothing.
+3. A `waiting_person` row is reserved only when `continuation_due` is true. That update does not clear the flag.
+4. The sweep publishes the new token. If it dies before publish, the next beat after `dispatch_until` publishes a new epoch. The job stays `running`.
+5. The worker adopts that message. Adoption sets `exec_token` and clears `continuation_due`.
+6. `calls_saved` runs calls with no terminal result and does not call the model first.
+7. `results_ready` calls the model once. `final_answer` completes the job.
+8. An armed write is looked up. Desktop with no finish stays `unknown` and does not call `perform`.
+9. The worker commits a new step only when `exec_epoch` and `intent_version` still match.
 
-"The row is in the database" is not a step in that sequence. A unique `seq` is not the ownership check.
+"The row is in the database" is not a step. A reservation is not an execution hold. An autoincrement id is not the session cursor.
 
 ### Confirm, cancel, and unknown results
 
@@ -819,9 +819,9 @@ Do not add a poll interval. Do not raise `visibility_timeout`. Do not recover by
 
 ### Acceptance
 
-Unit assertion: aborting the session fetch leaves `kind=job` `running`. Two jobs GETs return the same status, the same open token, and the same `cursor`. A sweep while `hold_until` is in the future publishes no second `run_job`. Two deliveries produce one owner update. The loser does not invoke. A crash after tool calls are saved runs those calls on the next holder and does not call the model first. A crash after arm looks up and does not send. An old holder whose epoch has been replaced updates zero rows. Job A at event id 100 and job B at event id 101 are both returned to a client whose cursor is 99. A client whose cursor is 100 receives job B. A confirm card inserts a `session_events` row even when `task_steps` does not grow, and a subscriber after the previous cursor receives it.
+Unit assertion: aborting the session fetch leaves `kind=job` `running`. The sweep stores a dispatch token, publishes that token, and the worker adoption sets `exec_token` and then runs. A crash after the token is stored and before publish leaves `exec_token` null. After `dispatch_until`, a new token is published and adopted, and the job is not `stopped`. A message for the first token updates zero rows. A sweep while `hold_until` is in the future publishes nothing. Two deliveries of one token produce one adoption. A crash after tool calls are saved runs those calls on the next adopted worker and does not call the model first. A crash after arm looks up and does not send. An old `exec_epoch` updates zero rows. A publisher that has allocated seq 100 and not committed blocks the publisher of seq 101. A snapshot that returns cursor 101 has already committed seq 100. A client whose cursor is 100 receives 101. A confirm card gets a seq even when `task_steps` does not grow.
 
-Formal property: `DisconnectDoesNotStopJob`, `OneOwner`, `LiveHolderNotReclaimed`, `CallsSavedBeforeModel`, `ArmedWriteNotSent`, `StaleEpochDropped`, `SessionCursorOrdersJobs`. The model is two jobs, two subscribers, and two deliveries. It does not cover the provider network, a stolen confirm token, or the follow-up button's clipboard.
+Formal property: `DisconnectDoesNotStopJob`, `ReservationThenAdopt`, `PublishCrashRecovers`, `LiveHolderNotReclaimed`, `CallsSavedBeforeModel`, `ArmedWriteNotSent`, `StaleEpochDropped`, `CommitOrderedCursor`. The model is two jobs, two subscribers, one reserve-before-publish crash, and one delayed seq. It does not cover the provider network, a stolen confirm token, or the follow-up button's clipboard.
 
 Live scenario: start two jobs, close the tab, and open the session in a second window. Pass predicate: neither job is `stopped`, the second window shows the same waiting card, confirming in the second window writes once, and an event for the second job is not dropped because the first job has a higher step seq.
 
@@ -833,7 +833,7 @@ Waits for `talk`, `loop`, and `watch`.
 
 ### Risks
 
-Celery can still redeliver one message after `visibility_timeout`. The owner update is what makes that delivery a no-op while the first holder is inside `hold_until`. A bug that invokes before the owner update would defeat the contract. The acceptance test claims first.
+Celery can still redeliver one message after `visibility_timeout`. Adoption of the same token is what makes the second delivery a no-op. A bug that invokes before adoption would defeat the contract. The acceptance test reserves, publishes, and adopts, in that order. An autoincrement id is not used as `cursor`.
 
 ### Open points for this unit
 
