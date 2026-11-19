@@ -281,7 +281,7 @@ The 48 MiB figure is the Vision guide's limit on the request body, not a limit o
 
 The job worker reads those bytes back into `image_url` blocks on every model request, including a request after restart. The browser does not receive the storage key. A session user can read the bytes only for their own non-terminal job.
 
-Blob deletion does not roll back with SQL. The terminal transaction sets `task_images.purge_state` to `pending_delete` and commits. It does not call `BlobStore.delete`. After that commit, cleanup deletes the blob and then deletes the row. If the blob delete fails, the row stays `pending_delete` and a later sweep retries. If the blob is already absent, the sweep deletes the row. A crash after the terminal commit and before the blob delete leaves `pending_delete`, so the retry still runs. A chat transcript that is not the current job does not keep a copy.
+Blob deletion does not roll back with SQL. The terminal transaction commits the status and the image states together. It does not call `BlobStore.delete`. A `ready` row becomes `pending_delete`. A `staged` row becomes `tombstone`. After that commit, cleanup deletes the blob. It then deletes a `pending_delete` row. It keeps a `tombstone` row when the blob is absent and after the blob is deleted. A later put under that key is deleted on a later sweep. If the blob delete fails, the row stays and a later sweep retries. A crash after the terminal commit and before the blob delete leaves the row, so the retry still runs. A chat transcript that is not the current job does not keep a copy.
 
 If the job is still running and the blob is gone, the worker records that the image is unavailable. It does not call `ocr_image_bytes` and it does not invent a summary.
 

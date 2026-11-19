@@ -294,6 +294,53 @@ def _ensure_app_role_body(ident: str, password: str, dbname: str) -> None:
         )
 
 
+def _ensure_task_image_tombstone() -> None:
+    """create_all does not widen a check constraint that an earlier process created."""
+    from app.models.models import TASK_IMAGE_PURGE, TaskImage
+
+    allowed = ", ".join(repr(item) for item in TASK_IMAGE_PURGE)
+    if _IS_SQLITE:
+        with engine.begin() as conn:
+            sql = conn.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='table' AND name='task_images'")
+            ).scalar()
+            if not sql or "tombstone" in str(sql):
+                return
+            conn.execute(text("ALTER TABLE task_images RENAME TO task_images_pretombstone"))
+            conn.execute(text("DROP INDEX IF EXISTS ix_task_images_user_id"))
+            conn.execute(text("DROP INDEX IF EXISTS ix_task_images_task_run_id"))
+            TaskImage.__table__.create(conn)
+            conn.execute(
+                text(
+                    "INSERT INTO task_images ("
+                    "id, user_id, task_run_id, media_type, byte_length, sha256, "
+                    "storage_key, purge_state, created_at"
+                    ") SELECT "
+                    "id, user_id, task_run_id, media_type, byte_length, sha256, "
+                    "storage_key, purge_state, created_at "
+                    "FROM task_images_pretombstone"
+                )
+            )
+            conn.execute(text("DROP TABLE task_images_pretombstone"))
+        return
+    with ddl_engine.begin() as conn:
+        definition = conn.execute(
+            text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'ck_task_images_purge'"
+            )
+        ).scalar()
+        if definition is None or "tombstone" in str(definition):
+            return
+        conn.execute(text("ALTER TABLE task_images DROP CONSTRAINT ck_task_images_purge"))
+        conn.execute(
+            text(
+                "ALTER TABLE task_images ADD CONSTRAINT ck_task_images_purge "
+                f"CHECK (purge_state IN ({allowed}))"
+            )
+        )
+
+
 def init_db():
     import app.models.models  # noqa: F401  (register mappers)
 
@@ -345,3 +392,4 @@ def init_db():
     # Partial unique index from alembic 0008. create_all does not alter an existing table.
     _ensure_calendar_external_unique_index()
     _ensure_schedule_confirm_fingerprint()
+    _ensure_task_image_tombstone()

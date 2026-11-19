@@ -1,5 +1,5 @@
 import { streamChat, loadMessages, isChatRejected } from "../api/client";
-import { keepSentPreviews } from "../composerImages";
+import { mergeHydratedPreviews, releasePreviewUrls } from "../composerImages";
 import type { ChatMsg, Citation, ScheduleCard, ArtifactPayload } from "../api/client";
 import type { ChatImagePayload, LocalImagePreview } from "../chatImage";
 import { useStore, type SessionChatState } from "../store/useStore";
@@ -279,9 +279,9 @@ async function runStreamLoop(
     patchSession(sessionId, { busy: false, thinking: false, phaseHint: "" });
     try {
       const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-      const synced = overlaySettledScheduleCards(before, withHydratedFold(before, await loadMessages(sessionId)));
-      const merged = aborted ? synced : overlayUnsavedError(before, synced);
-      const messages = keepSentPreviews(before, merged);
+      const synced = await loadMessages(sessionId);
+      const { messages, releaseUrls } = messagesAfterHydrate(before, synced, aborted);
+      revokePreviewUrls(releaseUrls);
       patchSession(sessionId, { messages, hydrated: true });
     } catch {
     }
@@ -297,6 +297,21 @@ function draftRejectionDetail(error: unknown): string | null {
 
 export type ChatStreamResult = { accepted: true } | { accepted: false; detail: string };
 
+export function messagesAfterHydrate(
+  before: ChatMsg[],
+  synced: ChatMsg[],
+  aborted = false,
+): { messages: ChatMsg[]; releaseUrls: string[] } {
+  const folded = withHydratedFold(before, synced);
+  const scheduled = overlaySettledScheduleCards(before, folded);
+  const merged = aborted ? scheduled : overlayUnsavedError(before, scheduled);
+  return mergeHydratedPreviews(before, merged);
+}
+
+function revokePreviewUrls(urls: readonly string[]) {
+  releasePreviewUrls(urls, (url) => URL.revokeObjectURL(url));
+}
+
 export async function hydrateSessionMessages(sessionId: number) {
   const existing = useStore.getState().sessionChats[sessionId];
   if (existing?.hydrated || existing?.busy) return;
@@ -306,7 +321,9 @@ export async function hydrateSessionMessages(sessionId: number) {
 
 export async function reloadSessionMessages(sessionId: number) {
   const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-  const messages = withHydratedFold(before, await loadMessages(sessionId));
+  const folded = withHydratedFold(before, await loadMessages(sessionId));
+  const { messages, releaseUrls } = mergeHydratedPreviews(before, folded);
+  revokePreviewUrls(releaseUrls);
   patchSession(sessionId, { messages, hydrated: true });
 }
 

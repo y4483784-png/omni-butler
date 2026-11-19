@@ -424,7 +424,7 @@ class MemoryLedger(Base):
 
 LLM_CALL_ROLES = ("chat", "planner", "router", "judge")
 TASK_IMAGE_MEDIA = ("image/jpeg", "image/png", "image/gif", "image/webp")
-TASK_IMAGE_PURGE = ("ready", "pending_delete", "staged")
+TASK_IMAGE_PURGE = ("ready", "pending_delete", "staged", "tombstone")
 
 
 class LlmCall(Base):

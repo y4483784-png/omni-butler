@@ -26,9 +26,9 @@ flowchart TB
   tooBig[Body over 48 MiB is not sent]
   failed[A transport failure stores no usage row]
   seam[A later job reserves a staged row then stores bytes]
-  pending[Terminal commit marks ready and staged pending_delete]
-  purge[After commit delete the blob then the row]
-  retry[The watchdog beat retries pending_delete]
+  pending[Terminal commit marks ready pending_delete and staged tombstone]
+  purge[After commit delete bytes then drop only a pending_delete row]
+  retry[The beat deletes pending_delete and tombstone bytes]
   decode --> badImage
   measure --> tooBig
   answered --> failed

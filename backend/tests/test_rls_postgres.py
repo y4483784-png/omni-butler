@@ -173,12 +173,14 @@ def test_reconcile_keeps_a_delete_committed_during_the_blob_check():
                 .filter(TaskImage.storage_key == staged.storage_key)
                 .one_or_none()
             )
-            assert left is None or left.purge_state != "ready"
+            assert left is not None
+            assert left.purge_state == "tombstone"
             survivor = check.get(TaskImage, safe.id)
             assert survivor is not None
             assert survivor.purge_state == "ready"
         finally:
             check.close()
+        assert staged.storage_key not in gate.objects
         assert gate.objects[safe.storage_key] == b"kept-bytes"
     finally:
         if gate is not None:

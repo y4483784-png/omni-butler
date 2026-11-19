@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store/useStore";
 import { hydrateSessionMessages, startChatStream, stopChatStream } from "../services/chatStream";
 import type { ChatMsg, MeetingBrief } from "../api/client";
-import { imageFromFile, type LocalImagePreview } from "../chatImage";
+import { imageFromFile } from "../chatImage";
 import {
   IMAGE_READ_ERROR,
-  draftAfterReject,
-  removeDraftImage,
-  serverDraftError,
-  takeCompletedBatch,
-  urlsReleasedWhenSent,
+  beginSend,
+  completeComposerRead,
+  createComposer,
+  rejectSend,
+  releasePreviewUrls,
+  removeComposerImage,
+  setComposerText,
+  switchComposerSession,
+  type ComposerImage,
 } from "../composerImages";
 import { Markdown } from "./Markdown";
 import { FollowupCard } from "./FollowupCard";
@@ -24,19 +28,20 @@ import { foldThinking } from "../thinkingFold";
 
 const MAX_CHARS = 10000;
 
-type PendingImage = LocalImagePreview & { id: string; dataBase64: string };
-
 export function ChatWindow({ sessionId }: { sessionId: number }) {
+  const composerRef = useRef(createComposer());
   const [input, setInput] = useState("");
-  const [pending, setPending] = useState<PendingImage[]>([]);
+  const [pending, setPending] = useState<ComposerImage[]>([]);
   const [imageError, setImageError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const pendingRef = useRef<PendingImage[]>([]);
   const readersRef = useRef<FileReader[]>([]);
-  const ticketRef = useRef(0);
-  const epochRef = useRef(0);
-  pendingRef.current = pending;
+
+  function publish(next: ReturnType<typeof createComposer>) {
+    composerRef.current = next;
+    setInput(next.text);
+    setPending(next.pending);
+  }
 
   const chat = useStore((s) => s.sessionChats[sessionId]);
   const messages = chat?.messages ?? [];
@@ -60,16 +65,16 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
   }, [sessionId]);
 
   useEffect(() => {
-    ticketRef.current += 1;
-    epochRef.current += 1;
+    const switched = switchComposerSession(composerRef.current);
+    publish(switched.composer);
+    releasePreviewUrls(switched.releaseUrls, releaseUrl);
+    setImageError("");
     return () => {
-      ticketRef.current += 1;
-      epochRef.current += 1;
       for (const reader of readersRef.current) reader.abort();
       readersRef.current = [];
-      for (const item of pendingRef.current) URL.revokeObjectURL(item.url);
-      pendingRef.current = [];
-      setPending([]);
+      const closed = switchComposerSession(composerRef.current);
+      publish(closed.composer);
+      releasePreviewUrls(closed.releaseUrls, releaseUrl);
       setImageError("");
     };
   }, [sessionId]);
@@ -83,60 +88,38 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
   }
 
   async function send() {
-    const text = input.trim();
-    if (busy || (!text && pending.length === 0)) return;
-    const snapshot = pending;
-    const sentEpoch = epochRef.current;
-    const images = snapshot.map((item) => ({
-      media_type: item.mediaType,
-      data_base64: item.dataBase64,
-    }));
-    const localImages = snapshot.map((item) => ({
-      mediaType: item.mediaType,
-      url: item.url,
-    }));
-    ticketRef.current += 1;
+    const started = beginSend(composerRef.current, busy);
+    if (!started) return;
     for (const reader of readersRef.current) reader.abort();
     readersRef.current = [];
-    for (const url of urlsReleasedWhenSent(
-      snapshot.map((item) => item.url),
-      localImages.map((item) => item.url),
-    )) {
-      releaseUrl(url);
-    }
-    setInput("");
-    pendingRef.current = [];
-    setPending([]);
+    publish(started.composer);
+    releasePreviewUrls(started.releaseUrls, releaseUrl);
     setImageError("");
-    const result = await startChatStream(sessionId, text, {
+    const result = await startChatStream(sessionId, started.claim.text, {
       useKb,
       kbFocusIds,
       onTitle: updateSessionTitle,
-      images,
-      localImages,
+      images: started.claim.images,
+      localImages: started.claim.localImages,
     });
     if (result.accepted) return;
-    const decision = draftAfterReject(epochRef.current, sentEpoch, snapshot);
-    for (const url of decision.releaseUrls) releaseUrl(url);
-    if (decision.restore) {
-      setInput(text);
-      setPending(decision.restore);
-      setImageError(serverDraftError(result.detail));
-    }
+    const rejected = rejectSend(composerRef.current, started.claim, result.detail);
+    publish(rejected.composer);
+    releasePreviewUrls(rejected.releaseUrls, releaseUrl);
+    if (rejected.error) setImageError(rejected.error);
   }
 
   function removePending(id: string) {
-    const decision = removeDraftImage(pendingRef.current, id);
+    const decision = removeComposerImage(composerRef.current, id);
+    publish(decision.composer);
     if (decision.releaseUrl) releaseUrl(decision.releaseUrl);
-    pendingRef.current = decision.pending;
-    setPending(decision.pending);
   }
 
   function addFiles(files: FileList | null) {
     if (!files || busy) return;
-    const ticket = ticketRef.current;
+    const ticket = composerRef.current.ticket;
     const chosen = Array.from(files);
-    const slots: Array<PendingImage | undefined> = [];
+    const slots: Array<ComposerImage | undefined> = [];
     let rejected = false;
     const readers = chosen.map(
       (file, index) =>
@@ -158,7 +141,7 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
               return;
             }
             const url = URL.createObjectURL(file);
-            if (ticket !== ticketRef.current) {
+            if (ticket !== composerRef.current.ticket) {
               releaseUrl(url);
               resolve();
               return;
@@ -179,19 +162,12 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
         })
     );
     void Promise.all(readers).then(() => {
-      const accepted = slots.filter((item): item is PendingImage => item !== undefined);
-      const decision = takeCompletedBatch(
-        pendingRef.current,
-        ticket,
-        ticketRef.current,
-        accepted,
-        rejected,
-      );
-      for (const url of decision.releaseUrls) releaseUrl(url);
-      if (ticket !== ticketRef.current) return;
-      pendingRef.current = decision.pending;
+      const accepted = slots.filter((item): item is ComposerImage => item !== undefined);
+      const decision = completeComposerRead(composerRef.current, ticket, accepted, rejected);
+      releasePreviewUrls(decision.releaseUrls, releaseUrl);
+      if (!decision.applied) return;
+      publish(decision.composer);
       setImageError(decision.showError ? IMAGE_READ_ERROR : "");
-      setPending(decision.pending);
     });
   }
 
@@ -283,7 +259,7 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
                   ? "强制知识库：基于已上传文档提问…"
                   : "输入消息，Enter 发送 / Shift+Enter 换行（可自动走知识库）"
             }
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => publish(setComposerText(composerRef.current, e.target.value))}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

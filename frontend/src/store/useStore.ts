@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { SessionSummary, ChatMsg } from "../api/client";
+import { previewUrls, releasePreviewUrls } from "../composerImages";
 
 import type { ChartPoint } from "../utils/chartPoints";
 
@@ -100,6 +101,7 @@ export const useStore = create<StoreState>((set) => ({
     })),
   clearSessionChat: (id) =>
     set((state) => {
+      releasePreviewUrls(previewUrls(state.sessionChats[id]?.messages ?? []), revokeStoredPreview);
       const next = { ...state.sessionChats };
       delete next[id];
       return { sessionChats: next };
@@ -125,15 +127,23 @@ export const useStore = create<StoreState>((set) => ({
     })),
   clearKbFocus: () => set({ kbFocusIds: [] }),
   resetWorkspace: () =>
-    set({
-      sessions: [],
-      activeId: null,
-      sessionChats: {},
-      artifact: null,
-      artifactOpen: false,
-      useKb: false,
-      kbPanelOpen: false,
-      memoryPanelOpen: false,
-      kbFocusIds: [],
+    set((state) => {
+      const urls = Object.values(state.sessionChats).flatMap((chat) => previewUrls(chat.messages));
+      releasePreviewUrls(urls, revokeStoredPreview);
+      return {
+        sessions: [],
+        activeId: null,
+        sessionChats: {},
+        artifact: null,
+        artifactOpen: false,
+        useKb: false,
+        kbPanelOpen: false,
+        memoryPanelOpen: false,
+        kbFocusIds: [],
+      };
     }),
 }));
+
+function revokeStoredPreview(url: string) {
+  URL.revokeObjectURL(url);
+}

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, not_, select, update
 
 from app.chat_images import ChatImage, data_url
 from app.core.db import SessionLocal, maintenance_session, set_rls_context
@@ -141,6 +141,16 @@ def finish_reserved(reserved: Sequence[ReservedImage]) -> bool:
         if int(result.rowcount or 0) == len(ids):
             db.commit()
             return True
+        ready = db.execute(
+            select(TaskImage.id).where(
+                TaskImage.id.in_(ids),
+                TaskImage.purge_state == "ready",
+                TaskImage.task_run_id.in_(running),
+            )
+        ).all()
+        if len(ready) == len(ids):
+            db.commit()
+            return True
         db.execute(
             update(TaskImage)
             .where(TaskImage.id.in_(ids))
@@ -167,7 +177,7 @@ def release_reserved(reserved: Sequence[ReservedImage], store: BlobStore) -> Non
             update(TaskImage)
             .where(TaskImage.id.in_(ids))
             .where(TaskImage.purge_state == "staged")
-            .values(purge_state="pending_delete")
+            .values(purge_state="tombstone")
         )
         db.commit()
     except Exception:
@@ -193,14 +203,21 @@ def _bind_failure(reserved: Sequence[ReservedImage]) -> str:
 
 
 def mark_pending_delete(db, *, user_id: int, task_run_id: int) -> int:
-    result = db.execute(
+    ready = db.execute(
         update(TaskImage)
         .where(TaskImage.user_id == int(user_id))
         .where(TaskImage.task_run_id == int(task_run_id))
-        .where(TaskImage.purge_state.in_(("ready", "staged")))
+        .where(TaskImage.purge_state == "ready")
         .values(purge_state="pending_delete")
     )
-    return int(result.rowcount or 0)
+    staged = db.execute(
+        update(TaskImage)
+        .where(TaskImage.user_id == int(user_id))
+        .where(TaskImage.task_run_id == int(task_run_id))
+        .where(TaskImage.purge_state == "staged")
+        .values(purge_state="tombstone")
+    )
+    return int(ready.rowcount or 0) + int(staged.rowcount or 0)
 
 
 def _read_blob(store: BlobStore, key: str) -> bytes | None:
@@ -257,33 +274,104 @@ def _aware(moment: datetime) -> datetime:
     return moment.astimezone(timezone.utc)
 
 
-def reconcile_task_images(*, now: datetime | None = None, store: BlobStore | None = None) -> int:
-    moment = _aware(now or datetime.now(timezone.utc))
+def _running_task(task_run_id: int):
+    return select(TaskRun.id).where(
+        TaskRun.id == int(task_run_id),
+        TaskRun.status.notin_(_TERMINAL),
+    )
+
+
+def _staged_update(image_id: int):
+    return (
+        update(TaskImage)
+        .where(TaskImage.id == int(image_id))
+        .where(TaskImage.purge_state == "staged")
+    )
+
+
+def _fence_staged(image_id: int, task_run_id: int, *, mode: str) -> None:
     db = maintenance_session()
-    blob = store
     try:
-        staged = db.query(TaskImage).filter(TaskImage.purge_state == "staged").all()
-        for row in staged:
-            created = _aware(row.created_at or moment)
-            task = db.get(TaskRun, row.task_run_id)
-            terminal = task is None or task.status in _TERMINAL
-            if not terminal and moment - created < STAGED_HOLD:
-                continue
-            if terminal:
-                row.purge_state = "pending_delete"
-                continue
-            if blob is None:
-                blob = _default_store()
-            if not blob.exists(row.storage_key):
-                db.delete(row)
-                continue
-            row.purge_state = "ready"
+        running = _running_task(task_run_id)
+        if mode == "adopt":
+            db.execute(
+                _staged_update(image_id)
+                .where(TaskImage.task_run_id.in_(running))
+                .values(purge_state="ready")
+            )
+            db.execute(
+                _staged_update(image_id)
+                .where(not_(TaskImage.task_run_id.in_(running)))
+                .values(purge_state="tombstone")
+            )
+        elif mode == "terminal":
+            db.execute(
+                _staged_update(image_id)
+                .where(not_(TaskImage.task_run_id.in_(running)))
+                .values(purge_state="tombstone")
+            )
+        else:
+            db.execute(_staged_update(image_id).values(purge_state="tombstone"))
         db.commit()
     except Exception:
         db.rollback()
         raise
     finally:
         db.close()
+
+
+def _retire_ready_rows() -> None:
+    db = maintenance_session()
+    try:
+        terminal = select(TaskRun.id).where(TaskRun.status.in_(_TERMINAL))
+        db.execute(
+            update(TaskImage)
+            .where(TaskImage.purge_state == "ready")
+            .where(TaskImage.task_run_id.in_(terminal))
+            .values(purge_state="pending_delete")
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def reconcile_task_images(*, now: datetime | None = None, store: BlobStore | None = None) -> int:
+    moment = _aware(now or datetime.now(timezone.utc))
+    db = maintenance_session()
+    try:
+        rows = db.execute(
+            select(
+                TaskImage.id,
+                TaskImage.task_run_id,
+                TaskImage.storage_key,
+                TaskImage.created_at,
+            ).where(TaskImage.purge_state == "staged")
+        ).all()
+        staged = [
+            (int(row.id), int(row.task_run_id), str(row.storage_key), _aware(row.created_at or moment))
+            for row in rows
+        ]
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    blob = store
+    for image_id, task_run_id, key, created in staged:
+        if moment - created < STAGED_HOLD:
+            _fence_staged(image_id, task_run_id, mode="terminal")
+            continue
+        if blob is None:
+            blob = _default_store()
+        if blob.exists(key):
+            _fence_staged(image_id, task_run_id, mode="adopt")
+        else:
+            _fence_staged(image_id, task_run_id, mode="abandon")
+    _retire_ready_rows()
     return _purge_all(store=blob)
 
 
@@ -293,7 +381,10 @@ def purge_pending(*, user_id: int, store: BlobStore | None = None) -> int:
         set_rls_context(db, user_id)
         rows = (
             db.query(TaskImage)
-            .filter(TaskImage.user_id == int(user_id), TaskImage.purge_state == "pending_delete")
+            .filter(
+                TaskImage.user_id == int(user_id),
+                TaskImage.purge_state.in_(("pending_delete", "tombstone")),
+            )
             .all()
         )
         if not rows:
@@ -309,7 +400,9 @@ def purge_pending(*, user_id: int, store: BlobStore | None = None) -> int:
 def _purge_all(*, store: BlobStore | None) -> int:
     db = maintenance_session()
     try:
-        rows = db.query(TaskImage).filter(TaskImage.purge_state == "pending_delete").all()
+        rows = db.query(TaskImage).filter(
+            TaskImage.purge_state.in_(("pending_delete", "tombstone"))
+        ).all()
         if not rows:
             return 0
         return _delete_pending_rows(db, rows, store if store is not None else _default_store())
@@ -324,6 +417,8 @@ def _delete_pending_rows(db, rows: Sequence[TaskImage], store: BlobStore) -> int
     removed = 0
     for row in rows:
         key = row.storage_key
+        image_id = int(row.id)
+        state = row.purge_state
         try:
             if store.exists(key):
                 store.delete(key)
@@ -332,7 +427,17 @@ def _delete_pending_rows(db, rows: Sequence[TaskImage], store: BlobStore) -> int
         except Exception:
             logger.exception("task image blob delete failed key=%s", key)
             continue
-        db.delete(row)
+        if state != "pending_delete":
+            continue
+        result = db.execute(
+            delete(TaskImage).where(
+                TaskImage.id == image_id,
+                TaskImage.purge_state == "pending_delete",
+            )
+        )
+        if int(result.rowcount or 0) != 1:
+            db.rollback()
+            continue
         db.commit()
         removed += 1
     return removed

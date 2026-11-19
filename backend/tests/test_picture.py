@@ -566,7 +566,7 @@ class _MemoryStore:
         try:
             row = db.query(TaskImage).filter(TaskImage.storage_key == key).one_or_none()
             if row is not None:
-                assert row.purge_state == "pending_delete"
+                assert row.purge_state in {"pending_delete", "tombstone"}
         finally:
             db.close()
         if self.fail:
@@ -836,7 +836,9 @@ def _assert_staged_cleanup(image, session_id, turn, store) -> None:
     assert reserved[0].storage_key not in store.objects
     db = SessionLocal()
     try:
-        assert db.get(TaskImage, reserved[0].id) is None
+        held_row = db.get(TaskImage, reserved[0].id)
+        assert held_row is not None
+        assert held_row.purge_state == "tombstone"
     finally:
         db.close()
 
@@ -850,7 +852,9 @@ def _assert_staged_cleanup(image, session_id, turn, store) -> None:
     task_images.reconcile_task_images(now=when + STAGED_HOLD + timedelta(seconds=1), store=store)
     db = SessionLocal()
     try:
-        assert db.get(TaskImage, missed[0].id) is None
+        missed_row = db.get(TaskImage, missed[0].id)
+        assert missed_row is not None
+        assert missed_row.purge_state == "tombstone"
     finally:
         db.close()
 
@@ -1363,6 +1367,7 @@ def test_picture_revision_upgrades_sqlite(tmp_path):
     with engine.connect() as conn:
         ddl = conn.execute(text("SELECT sql FROM sqlite_master WHERE name='task_images'")).scalar()
     assert "staged" in str(ddl)
+    assert "tombstone" in str(ddl)
     down = subprocess.run(
         [sys.executable, "-m", "alembic", "downgrade", "0017_errand"],
         cwd=backend,

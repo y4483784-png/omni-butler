@@ -60,6 +60,10 @@ def anchors() -> None:
     require('startswith("task-image/")' in images, "storage key prefix is gone")
     require('"pending_delete"' in images, "pending_delete is gone")
     require('"staged"' in images, "staged bind rows are gone")
+    require('"tombstone"' in images, "an unacknowledged image key is not retained")
+    settle = images[images.find("def _running_task") : images.find("\ndef purge_pending")]
+    require('purge_state == "staged"' in settle, "reconcile writes image state without a staged fence")
+    require("row.purge_state" not in settle, "reconcile assigns a loaded image row")
     watchdog = read("backend/app/tasks/watchdog.py")
     require("reconcile_task_images" in watchdog, "image cleanup is not on the maintenance beat")
     complete = llm[llm.find("def complete_text") : llm.find("\ndef complete_json")]
