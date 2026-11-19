@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -19,7 +21,7 @@ from app.agents.tools.registry import _REGISTRY, ToolSpec, ensure_builtin_tools,
 from app.core.auth import hash_password
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.models.models import Message, ScheduleConfirmClaim, TaskRun, User
+from app.models.models import DesktopDevice, Message, ScheduleConfirmClaim, TaskRun, User
 from app.services import task_run
 from app.services.local_action import LOCAL_ACTIONS, LocalAction, LocalClosed, propose_local
 from app.services.schedule_confirm import canonical_action, write_parts, write_scope
@@ -39,8 +41,28 @@ PROBE = "/tmp/ev-desktop-probe.txt"
 BACKEND = REPO / "backend"
 
 
-def _headers(token: str = TOKEN) -> dict[str, str]:
+def _headers(token: str) -> dict[str, str]:
     return {"X-Omni-Package": token}
+
+
+def _enroll(client: TestClient, label: str = "package") -> str:
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200, me.text
+    token = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    db = SessionLocal()
+    try:
+        db.add(
+            DesktopDevice(
+                user_id=me.json()["id"],
+                token_hash=digest,
+                label=label,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    return token
 
 
 def _propose(
@@ -51,7 +73,7 @@ def _propose(
     local_target: str = PROBE,
     local_args: list[str] | None = None,
     extra: dict | None = None,
-    token: str = TOKEN,
+    token: str,
 ) -> dict:
     payload = {
         "session_id": session_id,
@@ -69,7 +91,7 @@ def _propose(
 
 
 class _Transport:
-    def __init__(self, client: TestClient, token: str = TOKEN) -> None:
+    def __init__(self, client: TestClient, token: str) -> None:
         self.client = client
         self.token = token
 
@@ -172,21 +194,27 @@ def _open_spy():
     return calls, open_file, run_program
 
 
-def test_package_word_is_not_a_proof(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_package_word_is_not_a_proof(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(TypeError):
         PackageProof("desktop")
-    monkeypatch.setattr(settings, "desktop_package_token", "")
-    assert recognize_package(TOKEN) is None
     monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
     assert recognize_package(None) is None
+    assert recognize_package("") is None
+    assert recognize_package("   ") is None
     assert recognize_package("desktop") is None
     assert recognize_package(" web ") is None
+    assert recognize_package(TOKEN) is None
     assert recognize_package("other-secret") is None
-    proof = recognize_package("  " + TOKEN + "  ")
+    enrolled = _enroll(plain_client)
+    proof = recognize_package("  " + enrolled + "  ")
     assert isinstance(proof, PackageProof)
     assert proof.audit_word() == "desktop"
+    assert proof.user_id == plain_client.get("/api/auth/me").json()["id"]
     monkeypatch.setattr(settings, "desktop_package_token", "desktop")
     assert recognize_package("desktop") is None
+    fresh = "not-enrolled-" + uuid4().hex
+    monkeypatch.setattr(settings, "desktop_package_token", fresh)
+    assert recognize_package(fresh) is None
 
 
 def test_web_session_denies_local_probe(plain_client: TestClient) -> None:
@@ -226,9 +254,8 @@ def test_unregistered_desktop_open_stays_on_the_whitelist(plain_client: TestClie
     assert not target.exists()
 
 
-def test_string_proof_writes_no_claim(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_string_proof_writes_no_claim(plain_client: TestClient) -> None:
     assert plain_client is not None
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
     session_id = _session()
     before = _claim_count()
     db = SessionLocal()
@@ -249,8 +276,8 @@ def test_string_proof_writes_no_claim(plain_client: TestClient, monkeypatch: pyt
     assert _claim_count() == before
 
 
-def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".spoof"
     before = _claim_count()
@@ -261,7 +288,7 @@ def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient, monkeypat
     assert missing.status_code == 403
     assert missing.json()["detail"] == DENIAL
     assert _claim_count() == before
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     token = offered["confirm_token"]
     status, remote, scope = _claim(token)
     assert status == "open"
@@ -295,17 +322,17 @@ def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient, monkeypat
     assert remote == ""
 
 
-def test_recognized_package_opens_once(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_recognized_package_opens_once(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
-    offered = _propose(plain_client, session_id)
+    offered = _propose(plain_client, session_id, token=token)
     content, card = _desktop_message(session_id)
     assert content == "请确认后才会打开。"
     assert card["mode"] == "desktop"
     assert card["surface"] == "desktop"
     assert card["local_target"] == PROBE
     calls, open_file, run_program = _open_spy()
-    transport = _Transport(plain_client)
+    transport = _Transport(plain_client, token)
     assert confirm_local(transport, offered, open_file=open_file, run_program=run_program) is True
     assert calls == [PROBE]
     audit = (BACKEND / "data" / "harness" / "harness-audit.jsonl").read_text(encoding="utf-8")
@@ -321,14 +348,13 @@ def test_recognized_package_opens_once(plain_client: TestClient, monkeypatch: py
     assert remote_again == remote
 
 
-def test_other_user_cannot_open_and_owner_still_can(
-    plain_client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_other_user_cannot_open_and_owner_still_can(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".owner"
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     other = _other_client()
+    other_token = _enroll(other)
     saved = other.post(
         "/api/desktop/commit",
         json={
@@ -337,21 +363,21 @@ def test_other_user_cannot_open_and_owner_still_can(
             "local_target": target,
             "local_args": [],
         },
-        headers=_headers(),
+        headers=_headers(other_token),
     )
     assert saved.status_code == 409
     assert saved.json()["detail"] == "这张确认已经失效，未写入。"
     calls, open_file, run_program = _open_spy()
     assert calls == []
-    assert confirm_local(_Transport(plain_client), offered, open_file=open_file, run_program=run_program) is True
+    assert confirm_local(_Transport(plain_client, token), offered, open_file=open_file, run_program=run_program) is True
     assert calls == [target]
 
 
-def test_stopped_generation_does_not_open(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_stopped_generation_does_not_open(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".stopped"
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     assert _stop_live(session_id)
     saved = plain_client.post(
         "/api/desktop/commit",
@@ -361,7 +387,7 @@ def test_stopped_generation_does_not_open(plain_client: TestClient, monkeypatch:
             "local_target": target,
             "local_args": [],
         },
-        headers=_headers(),
+        headers=_headers(token),
     )
     assert saved.status_code == 409, saved.text
     assert saved.json()["detail"] == "这张确认已经失效，未写入。"
@@ -374,11 +400,11 @@ def test_stopped_generation_does_not_open(plain_client: TestClient, monkeypatch:
     assert status != "unknown"
 
 
-def test_stop_after_open_does_not_close(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_stop_after_open_does_not_close(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     target = PROBE + ".finished"
-    offered = _propose(plain_client, session_id, local_target=target)
+    offered = _propose(plain_client, session_id, local_target=target, token=token)
     calls, open_file, run_program = _open_spy()
     closes: list[str] = []
 
@@ -387,7 +413,7 @@ def test_stop_after_open_does_not_close(plain_client: TestClient, monkeypatch: p
         run_program(program, args)
 
     assert confirm_local(
-        _Transport(plain_client),
+        _Transport(plain_client, token),
         offered,
         open_file=open_file,
         run_program=run_program_unused,
@@ -401,8 +427,8 @@ def test_stop_after_open_does_not_close(plain_client: TestClient, monkeypatch: p
     assert status == "written"
 
 
-def test_run_starts_the_program_once(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "desktop_package_token", TOKEN)
+def test_run_starts_the_program_once(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
     session_id = _session()
     offered = _propose(
         plain_client,
@@ -410,13 +436,14 @@ def test_run_starts_the_program_once(plain_client: TestClient, monkeypatch: pyte
         action="desktop.run",
         local_target="/usr/bin/true",
         local_args=[],
+        token=token,
     )
     content, _card = _desktop_message(session_id)
     assert content == "请确认后才会运行。"
     opens: list[str] = []
     runs: list[tuple[str, tuple[str, ...]]] = []
     assert confirm_local(
-        _Transport(plain_client),
+        _Transport(plain_client, token),
         offered,
         open_file=lambda path: opens.append(path),
         run_program=lambda program, args: runs.append((program, tuple(args))),
@@ -424,7 +451,7 @@ def test_run_starts_the_program_once(plain_client: TestClient, monkeypatch: pyte
     assert opens == []
     assert runs == [("/usr/bin/true", ())]
     assert confirm_local(
-        _Transport(plain_client),
+        _Transport(plain_client, token),
         offered,
         open_file=lambda path: opens.append(path),
         run_program=lambda program, args: runs.append((program, tuple(args))),

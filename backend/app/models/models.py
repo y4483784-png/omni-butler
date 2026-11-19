@@ -556,3 +556,16 @@ class TaskImage(Base):
     storage_key = Column(String, nullable=False)
     purge_state = Column(String, nullable=False, default="ready")
     created_at = Column(DateTime, default=_utcnow)
+
+
+class DesktopDevice(Base):
+    __tablename__ = "desktop_devices"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_desktop_devices_token_hash"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False)
+    label = Column(String, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    revoked_at = Column(DateTime, nullable=True)

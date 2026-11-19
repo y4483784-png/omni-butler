@@ -31,9 +31,9 @@ class LocalRequest(BaseModel):
     request_id: str = ""
 
 
-def _recognized(header: str | None) -> PackageProof:
+def _recognized(header: str | None, user_id: int) -> PackageProof:
     proof = recognize_package(header)
-    if not isinstance(proof, PackageProof):
+    if not isinstance(proof, PackageProof) or proof.user_id != user_id:
         raise HTTPException(status_code=403, detail=_DENIAL)
     return proof
 
@@ -53,7 +53,7 @@ def propose(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    proof = _recognized(_header(request))
+    proof = _recognized(_header(request), current_user.id)
     if body.session_id is None:
         raise HTTPException(status_code=422, detail="会话无效")
     try:
@@ -77,7 +77,7 @@ def commit(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    proof = _recognized(_header(request))
+    proof = _recognized(_header(request), current_user.id)
     try:
         action = parse_local_action(body.action, body.local_target, body.local_args)
         return commit_local(
@@ -98,7 +98,7 @@ def finish(
     db: Session = Depends(get_db_scoped),
     current_user: User = Depends(get_current_user),
 ):
-    proof = _recognized(_header(request))
+    proof = _recognized(_header(request), current_user.id)
     try:
         return finish_local(
             db,
