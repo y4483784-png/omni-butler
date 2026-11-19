@@ -98,7 +98,7 @@ def test_shell_stays_on_the_whitelist(probe_calls: list[int]) -> None:
 
 def test_builtin_tools_are_not_local(probe_calls: list[int]) -> None:
     assert probe_calls[0] == 0
-    for name in ("kb", "web", "calendar", "sandbox"):
+    for name in ("kb", "web", "web_fetch", "calendar", "sandbox"):
         spec = get_tool(name)
         assert spec is not None
         assert spec.local is False

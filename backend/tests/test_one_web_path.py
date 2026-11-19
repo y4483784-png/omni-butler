@@ -127,7 +127,7 @@ def test_complete_text_refuses_tools_before_the_client_is_called(monkeypatch):
 
 def test_web_remains_the_only_queued_web_tool():
     allowed = load_constitution()["allowed_tools"]
-    assert allowed == ["kb", "web", "calendar", "sandbox"]
+    assert allowed == ["kb", "web", "web_fetch", "calendar", "sandbox"]
     assert "上网" not in allowed
 
     plan = _decision_to_plan(RouterDecision(needs_web=True))

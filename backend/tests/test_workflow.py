@@ -17,6 +17,8 @@ from app.agents.workflow import (
 from app.services.calendar import EventDraft
 from app.core.llm import _mock_stream
 from app.core.prompts import max_pool_chars, today_str
+from app.services.deepseek_search import SearchHit as DeepSeekHit
+from app.services.deepseek_search import SearchPage
 from app.services.web_search import (
     SearchHit,
     SearchOptions,
@@ -251,10 +253,13 @@ def test_pool_prompt_and_citations_aligned():
             "url": "https://ex.com",
             "content": "短",
             "snippet": "短",
+            "summary": "政策摘要",
             "publish_date": "2026-08-04",
         },
     ]
     prompt, included = build_pool_prompt(evidence)
+    linked = prompt.split("链接：https://ex.com", 1)[1]
+    assert linked.index("政策摘要") < linked.index("短")
     assert today_str() in prompt
     assert "今天是" in prompt
     assert "已截断" in prompt
@@ -335,12 +340,16 @@ def test_search_api_falls_back_when_std_has_no_links():
 
 
 def test_web_only_one_tool_round():
-    fake = SearchOutcome(
-        results=[SearchHit(title="新闻", url="https://n.example/1", snippet="摘要", media="站")],
-        query_used="q",
-        count=8,
-        recency_filter="oneDay",
-        query_rewritten=True,
+    page = SearchPage(
+        results=(
+            DeepSeekHit(
+                title="新闻",
+                url="https://n.example/1",
+                snippet="摘要",
+                summary="",
+                content="摘要",
+            ),
+        )
     )
     web_plan = {
         "pending_tools": ["web"],
@@ -352,7 +361,7 @@ def test_web_only_one_tool_round():
     db = SessionLocal()
     try:
         with (
-            patch("app.agents.tools.web.search_planned", return_value=fake),
+            patch("app.agents.tools.web.deepseek_search", return_value=page) as search,
             _grounding_pass(),
         ):
             r = run_agent_workflow(
@@ -365,6 +374,7 @@ def test_web_only_one_tool_round():
     finally:
         db.close()
     assert r["intent"] == "web_search"
+    assert search.call_args.args[0] == "今天有什么 AI 新闻"
     assert r["citations"][0]["url"] == "https://n.example/1"
     assert any("正在搜索" in s for s in r["thinking_steps"])
     assert r["llm_messages"] == []
@@ -376,19 +386,16 @@ def test_web_only_one_tool_round():
 
 
 def test_kb_then_web_separate_rounds():
-    fake = SearchOutcome(
-        results=[
-            SearchHit(
+    page = SearchPage(
+        results=(
+            DeepSeekHit(
                 title="政策",
                 url="https://gov.example/p",
                 snippet="最近政策",
-                media="官网",
-                publish_date=today_str(),
-            )
-        ],
-        query_used="q",
-        count=8,
-        recency_filter="oneDay",
+                summary="政策摘要",
+                content="最近政策",
+            ),
+        )
     )
 
     class C:
@@ -400,7 +407,7 @@ def test_kb_then_web_separate_rounds():
 
     with (
         patch("app.agents.tools.kb.retrieve", return_value=[C()]),
-        patch("app.agents.tools.web.search_planned", return_value=fake) as web_mock,
+        patch("app.agents.tools.web.deepseek_search", return_value=page) as web_mock,
         _grounding_pass(),
     ):
         r = run_agent_workflow(
@@ -424,6 +431,7 @@ def test_kb_then_web_separate_rounds():
     assert any("正在搜索" in s for s in r["thinking_steps"])
     assert any("继续下一工具" in s for s in r["thinking_steps"])
     assert web_mock.call_count == 1
+    assert web_mock.call_args.args[0] == "结合我上传的方案看看最近政策更新"
     assert not any("改写后重试" in s for s in r["thinking_steps"])
 
 
@@ -626,11 +634,16 @@ def test_sandbox_tool_produces_artifact():
 def test_grounded_answer_raises_llm_infra_instead_of_empty_draft():
     from app.core.llm import LLMInfraError
 
-    fake = SearchOutcome(
-        results=[SearchHit(title="新闻", url="https://n.example/1", snippet="摘要", media="站")],
-        query_used="q",
-        count=8,
-        recency_filter="oneDay",
+    page = SearchPage(
+        results=(
+            DeepSeekHit(
+                title="新闻",
+                url="https://n.example/1",
+                snippet="摘要",
+                summary="",
+                content="摘要",
+            ),
+        )
     )
 
     def boom(*_a, **kwargs):
@@ -641,7 +654,7 @@ def test_grounded_answer_raises_llm_infra_instead_of_empty_draft():
     db = SessionLocal()
     try:
         with (
-            patch("app.agents.tools.web.search_planned", return_value=fake),
+            patch("app.agents.tools.web.deepseek_search", return_value=page),
             patch("app.agents.workflow.complete_text", side_effect=boom),
         ):
             try:
