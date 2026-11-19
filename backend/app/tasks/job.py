@@ -177,6 +177,8 @@ def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
 
     job = db.get(TaskRun, task_id)
     db.refresh(job)
+    if _leave_before_model(job):
+        return
     hold = Hold(
         user_id=int(user_id),
         generation=int(job.generation),
@@ -190,8 +192,11 @@ def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
         if _renew(db, hold) != 1:
             return
         db.refresh(job)
+        if _leave_before_model(job):
+            return
         step = _latest_step(db, job.id)
         if step is not None and step.phase == Phase.FINAL_ANSWER.value:
+            _complete_saved_answer(db, hold)
             return
         if step is None or step.phase == Phase.RESULTS_READY.value:
             asked = None if step is None else int(step.seq)
@@ -212,6 +217,33 @@ def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
             if action == "model":
                 break
             return
+
+
+def _leave_before_model(job: TaskRun) -> bool:
+    if job.status in {"stopped", "completed"}:
+        return True
+    return job.status == "waiting_person" and not bool(job.continuation_due)
+
+
+def _complete_saved_answer(db, hold) -> None:
+    from sqlalchemy import update
+
+    from app.services.loop_round import _leave
+
+    matched = db.execute(
+        update(TaskRun)
+        .where(TaskRun.user_id == hold.user_id)
+        .where(TaskRun.generation == hold.generation)
+        .where(TaskRun.status == "running")
+        .where(TaskRun.exec_token == hold.exec_token)
+        .where(TaskRun.exec_epoch == hold.exec_epoch)
+        .where(TaskRun.intent_version == hold.intent_version)
+        .values(continuation_due=False)
+    )
+    if int(matched.rowcount or 0) != 1 or _leave(db, hold, status="completed") != 1:
+        db.rollback()
+        return
+    db.commit()
 
 
 def _renew(db, hold) -> int:
@@ -391,6 +423,34 @@ async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]
     return ModelTurn("".join(content).strip(), "".join(reasoning), specs, finish), message_id
 
 
+def _remote_marker(db, row: ToolCall) -> str:
+    token = (row.claim_token or "").strip()
+    if not token:
+        return ""
+    from app.models.models import ScheduleConfirmClaim
+
+    claim = db.get(ScheduleConfirmClaim, token)
+    if claim is None:
+        return ""
+    return (claim.remote_request_id or "").strip()
+
+
+def _lookup_armed(db, hold, row: ToolCall) -> str:
+    before = row.state
+    if row.name not in {"desktop.open", "desktop.run"}:
+        return "leave"
+    from app.services.loop_round import note_unknown
+
+    note_unknown(db, hold=hold, tool_call_id=row.tool_call_id)
+    fresh = db.get(ToolCall, row.id)
+    if fresh is None or fresh.state == before:
+        return "leave"
+    step = db.get(TaskStep, fresh.task_step_id)
+    if step is not None and step.phase == "results_ready":
+        return "model"
+    return "again"
+
+
 def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict]) -> str:
     from app.services.loop_round import TERMINAL, CallState, Phase, begin_read, claim_call, observe_ready, open_cards, save_read_result
 
@@ -408,6 +468,8 @@ def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict]) -> str:
     for row in rows:
         if CallState(row.state) in TERMINAL:
             continue
+        if _remote_marker(db, row):
+            return _lookup_armed(db, hold, row)
         rejection = _reject_uninvoked(row)
         if rejection is not None:
             return _stored(db, hold, row.tool_call_id, rejection, rejected=True)

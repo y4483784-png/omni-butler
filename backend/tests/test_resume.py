@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from datetime import datetime, timezone
@@ -9,8 +10,18 @@ from uuid import uuid4
 import pytest
 
 from app.core.db import SessionLocal, set_rls_context
-from app.core.llm import ModelTurn
-from app.models.models import Message, Session as ChatSession, SessionCursor, SessionEvent, TaskRun, User
+from app.core.llm import ModelTurn, ToolCallSpec
+from app.models.models import (
+    Message,
+    ScheduleConfirmClaim,
+    Session as ChatSession,
+    SessionCursor,
+    SessionEvent,
+    TaskRun,
+    TaskStep,
+    ToolCall,
+    User,
+)
 from app.services.resume import dispatch_task, enqueue_job, publish_event, read_snapshot
 from app.tasks.job import run_job, set_executor
 
@@ -438,3 +449,279 @@ def test_waiting_resource_is_not_reserved():
     assert published == []
     assert _load(task_id).status == "waiting_resource"
     assert _load(task_id).exec_token is None
+
+
+def _dispatch(user_id: int, task_id: int, *, expire: bool = False) -> None:
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        if expire:
+            row = db.get(TaskRun, task_id)
+            row.hold_until = datetime(2000, 1, 1)
+            row.dispatch_until = datetime(2000, 1, 1)
+            db.commit()
+        dispatch_task(db, task_id)
+    finally:
+        db.close()
+
+
+def _steps(task_id: int) -> list[TaskStep]:
+    db = SessionLocal()
+    try:
+        rows = db.query(TaskStep).filter(TaskStep.task_run_id == task_id).order_by(TaskStep.seq.asc()).all()
+        for row in rows:
+            db.expunge(row)
+        return rows
+    finally:
+        db.close()
+
+
+def _calls(task_id: int) -> list[ToolCall]:
+    db = SessionLocal()
+    try:
+        step_ids = [row.id for row in db.query(TaskStep).filter(TaskStep.task_run_id == task_id).all()]
+        rows = (
+            db.query(ToolCall)
+            .filter(ToolCall.task_step_id.in_(step_ids or [0]))
+            .order_by(ToolCall.position.asc())
+            .all()
+        )
+        for row in rows:
+            db.expunge(row)
+        return rows
+    finally:
+        db.close()
+
+
+def test_saved_calls_run_on_the_next_worker_before_the_model():
+    from app.agents.harness.types import ToolResult
+
+    user_id = _user()
+    session_id = _session(user_id)
+    order: list[str] = []
+
+    def executor(messages, _tools):
+        order.append("model")
+        if any(item.get("role") == "tool" for item in messages):
+            return ModelTurn("done", "", (), "stop")
+        return ModelTurn("", "", (ToolCallSpec("call-a", "kb", "{}"),), "stop")
+
+    def fake_invoke(name, _ctx, _args):
+        order.append("invoke")
+        return ToolResult(direct_answer=f"saw {name}")
+
+    set_executor(executor)
+    with patch("app.services.loop_round.begin_read", side_effect=SystemExit(7)):
+        with pytest.raises(SystemExit):
+            db = SessionLocal()
+            try:
+                set_rls_context(db, user_id)
+                enqueue_job(db, user_id=user_id, session_id=session_id, goal="alpha")
+            finally:
+                db.close()
+    db = SessionLocal()
+    try:
+        task_id = int(
+            db.query(TaskRun)
+            .filter(TaskRun.session_id == session_id, TaskRun.kind == "job")
+            .one()
+            .id
+        )
+    finally:
+        db.close()
+    assert [(row.tool_call_id, row.state) for row in _calls(task_id)] == [("call-a", "pending")]
+    order.clear()
+    with patch("app.agents.harness.gateway.invoke", fake_invoke):
+        _dispatch(user_id, task_id, expire=True)
+    assert order[0] == "invoke"
+    assert order.count("model") == 1
+    assert _load(task_id).status == "completed"
+    assert _calls(task_id)[0].state == "result"
+
+
+def test_an_armed_desktop_write_is_looked_up_and_not_sent():
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    token = f"arm-{uuid4().hex}"
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        step = TaskStep(
+            user_id=user_id,
+            task_run_id=task_id,
+            seq=1,
+            phase="awaiting_results",
+            content="",
+            reasoning_content="",
+        )
+        db.add(step)
+        db.flush()
+        db.add(
+            ToolCall(
+                user_id=user_id,
+                task_step_id=step.id,
+                tool_call_id="call-a",
+                position=0,
+                name="desktop.open",
+                arguments=json.dumps({"local_target": "report"}),
+                state="awaiting_confirm",
+                claim_token=token,
+                intent_version=1,
+            )
+        )
+        db.add(
+            ScheduleConfirmClaim(
+                token=token,
+                user_id=user_id,
+                session_id=session_id,
+                status="unknown",
+                action="desktop.open",
+                fingerprint=token,
+                scope="",
+                generation_ids=json.dumps([task_id]),
+                remote_request_id="req-1",
+                intent_version=1,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    def executor(_messages, _tools):
+        assert _calls(task_id)[0].state == "unknown"
+        return ModelTurn("done", "", (), "stop")
+
+    sent: list[str] = []
+    set_executor(executor)
+    with (
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+        patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+    ):
+        _dispatch(user_id, task_id)
+    assert sent == []
+    call = _calls(task_id)[0]
+    assert call.state == "unknown"
+    assert call.result == "结果未知"
+    claim = SessionLocal()
+    try:
+        stored = claim.get(ScheduleConfirmClaim, token)
+        assert stored.remote_request_id == "req-1"
+        assert stored.status == "unknown"
+    finally:
+        claim.close()
+
+
+def test_an_old_exec_epoch_discards_the_result():
+    from app.services import task_run
+
+    user_id = _user()
+    session_id = _session(user_id)
+    seen: dict = {}
+
+    def executor(_messages, _tools):
+        db = SessionLocal()
+        try:
+            set_rls_context(db, user_id)
+            row = db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").one()
+            seen["token"] = row.exec_token
+            seen["epoch"] = int(row.exec_epoch)
+            seen["intent"] = int(row.intent_version)
+            seen["generation"] = int(row.generation)
+            row.exec_epoch = int(row.exec_epoch) + 1
+            db.commit()
+        finally:
+            db.close()
+        return ModelTurn("discarded", "", (), "stop")
+
+    set_executor(executor)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        task_id = enqueue_job(db, user_id=user_id, session_id=session_id, goal="alpha")
+    finally:
+        db.close()
+    assert _steps(task_id) == []
+    assert "discarded" not in _notes(session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        renewed = task_run.renew_hold(
+            db,
+            user_id=user_id,
+            generation=seen["generation"],
+            exec_token=seen["token"],
+            exec_epoch=seen["epoch"],
+            intent_version=seen["intent"],
+        )
+    finally:
+        db.close()
+    assert renewed == 0
+    assert _load(task_id).status == "running"
+
+
+def test_a_saved_final_answer_completes_without_the_model():
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        db.add(
+            TaskStep(
+                user_id=user_id,
+                task_run_id=task_id,
+                seq=1,
+                phase="final_answer",
+                content="done",
+                reasoning_content="",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    called: list[int] = []
+    set_executor(lambda _messages, _tools: called.append(1))
+    _dispatch(user_id, task_id)
+    finished = _load(task_id)
+    assert called == []
+    assert finished.status == "completed"
+    assert finished.exec_token is None
+    assert finished.continuation_due is False
+    assert len(_steps(task_id)) == 1
+
+
+def test_waiting_person_without_continuation_returns_before_the_model():
+    from app.tasks import job as job_module
+
+    user_id = _user()
+    session_id = _session(user_id)
+    called: list[int] = []
+    original = job_module.commit_job_output
+
+    def park(*args, **kwargs):
+        result = original(*args, **kwargs)
+        db = SessionLocal()
+        try:
+            set_rls_context(db, user_id)
+            row = db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").one()
+            row.status = "waiting_person"
+            row.continuation_due = False
+            db.commit()
+        finally:
+            db.close()
+        return result
+
+    set_executor(lambda _messages, _tools: called.append(1))
+    with patch("app.tasks.job.commit_job_output", park):
+        db = SessionLocal()
+        try:
+            set_rls_context(db, user_id)
+            task_id = enqueue_job(db, user_id=user_id, session_id=session_id, goal="alpha")
+        finally:
+            db.close()
+    assert called == []
+    waiting = _load(task_id)
+    assert waiting.status == "waiting_person"
+    assert waiting.continuation_due is False
