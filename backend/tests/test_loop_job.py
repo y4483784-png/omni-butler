@@ -10,6 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.harness.constitution import load_constitution
+from app.core.config import settings
+from app.core.llm import Role, resolve
 from app.agents.harness.execution import execution_denial
 from app.agents.harness.types import ToolResult
 from app.core.db import SessionLocal, set_rls_context
@@ -257,6 +259,7 @@ def test_forbid_omits_search_and_denies_it_again():
     assert [item["function"]["name"] for item in listed] == [
         "kb",
         "web",
+        "web_fetch",
         "calendar",
         "sandbox",
         "mail.send",
@@ -264,8 +267,15 @@ def test_forbid_omits_search_and_denies_it_again():
         "desktop.open",
         "desktop.run",
     ]
-    assert listed[1]["function"]["parameters"] == {"type": "object"}
-    assert "required" not in listed[1]["function"]["parameters"]
+    by_name = {item["function"]["name"]: item["function"]["parameters"] for item in listed}
+    assert by_name["kb"] == {"type": "object"}
+    assert by_name["web"]["required"] == ["query"]
+    assert by_name["web"]["properties"]["query"]["minLength"] == 1
+    assert by_name["web"]["properties"]["query"]["maxLength"] == 128
+    assert by_name["web"]["properties"]["ori_question"]["maxLength"] == 128
+    assert "localization" not in by_name["web"]["properties"]
+    assert by_name["web_fetch"]["required"] == ["url"]
+    assert by_name["web_fetch"]["properties"]["url"]["maxLength"] == 8192
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)
@@ -576,3 +586,231 @@ def test_a_second_run_job_recovers_a_pending_read():
     job = _job(session_id)
     assert job.status == "completed"
     assert _calls(job.id)[0].state == "result"
+
+
+class _Fn:
+    def __init__(self, name, arguments):
+        self.name = name
+        self.arguments = arguments
+
+
+class _ToolPiece:
+    def __init__(self, index, call_id, name, arguments):
+        self.index = index
+        self.id = call_id
+        self.function = _Fn(name, arguments)
+
+
+class _Delta:
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.reasoning_content = None
+        self.tool_calls = tool_calls
+
+
+class _StreamChoice:
+    def __init__(self, delta, finish_reason=None):
+        self.delta = delta
+        self.finish_reason = finish_reason
+
+
+class _Chunk:
+    def __init__(self, delta, finish_reason=None):
+        self.choices = [_StreamChoice(delta, finish_reason)]
+        self.usage = None
+
+
+class _AsyncChunks:
+    def __init__(self, chunks):
+        self._it = iter(chunks)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._it)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+def _install_job_stream(monkeypatch, outputs):
+    from app.core import llm as llm_mod
+
+    calls: list[dict] = []
+    queue = list(outputs)
+
+    class Completions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            item = queue.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return _AsyncChunks(item)
+
+    class Client:
+        def __init__(self):
+            self.chat = type("Chat", (), {})()
+            self.chat.completions = Completions()
+
+    monkeypatch.setattr(llm_mod, "_get_async_client", lambda: Client())
+    return calls
+
+
+def _search_client(monkeypatch, payload):
+    posts: list[str] = []
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            posts.append("client")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            posts.append(url)
+            response = type("Response", (), {})()
+            response.status_code = 200
+            response.json = lambda: payload
+            return response
+
+    monkeypatch.setattr("app.services.deepseek_search.httpx.Client", Client)
+    return posts
+
+
+def test_search_keeps_the_following_completion_on_the_chat_model(monkeypatch):
+    monkeypatch.delenv("EXECUTOR_MODEL", raising=False)
+    monkeypatch.setattr(settings, "chat_model", "sentinel-chat")
+    monkeypatch.setattr(settings, "chat_thinking", "on")
+    monkeypatch.setattr(settings, "llm_api_key", "llm-secret")
+    monkeypatch.setattr(settings, "llm_base_url", "https://llm.example/")
+    posts = _search_client(
+        monkeypatch,
+        {
+            "results": [
+                {
+                    "title": "News",
+                    "url": "https://news.example/a",
+                    "snippet": "snip",
+                    "summary": "sum",
+                    "content": "body",
+                }
+            ]
+        },
+    )
+    calls = _install_job_stream(
+        monkeypatch,
+        [
+            [
+                _Chunk(_Delta(tool_calls=[_ToolPiece(0, "call-web", "web", '{"query":"news"}')])),
+                _Chunk(_Delta(), "tool_calls"),
+            ],
+            [_Chunk(_Delta(content="done"), "stop")],
+        ],
+    )
+    user_id, session_id = _pair()
+    run_job(user_id, session_id, "today")
+    search_posts = [url for url in posts if url != "client"]
+    assert search_posts == ["https://llm.example/v1/tools/search"]
+    assert all("web_search" not in url for url in posts)
+    assert [item["model"] for item in calls] == [resolve(Role.CHAT).model, resolve(Role.CHAT).model]
+    assert calls[1]["model"] == "sentinel-chat"
+    link = "[News](https://news.example/a)"
+    tool_messages = [item for item in calls[1]["messages"] if item.get("role") == "tool"]
+    assert tool_messages and link in tool_messages[0]["content"]
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        stored = [
+            row.content or ""
+            for row in db.query(Message).filter(Message.session_id == session_id).all()
+        ]
+    finally:
+        db.close()
+    assert any(link in text for text in stored)
+    assert _job(session_id).status == "completed"
+
+
+def test_a_turn_without_a_tool_call_does_not_search(monkeypatch):
+    posts = _search_client(monkeypatch, {"results": []})
+    user_id, session_id = _pair()
+    set_executor(lambda _messages, _tools: _turn(content="done", finish="stop"))
+    run_job(user_id, session_id, "today")
+    assert posts == []
+    assert _job(session_id).status == "completed"
+
+
+def test_forbid_does_not_construct_a_search_client(monkeypatch):
+    posts = _search_client(monkeypatch, {"results": []})
+    user_id, session_id = _pair()
+    answers = [
+        _turn(ToolCallSpec("call-a", "web", '{"query":"news"}')),
+        _turn(content="done", finish="stop"),
+    ]
+
+    def executor(_messages, _tools):
+        return answers.pop(0)
+
+    set_executor(executor)
+    run_job(user_id, session_id, "look", "forbid")
+    assert posts == []
+    row = _calls(_job(session_id).id)[0]
+    assert row.state == "rejected"
+    assert row.result == WEB_DENIAL
+
+
+def test_a_saved_web_result_is_not_searched_again(monkeypatch):
+    monkeypatch.setattr(settings, "llm_base_url", "https://llm.example")
+    posts = _search_client(
+        monkeypatch,
+        {
+            "results": [
+                {
+                    "title": "News",
+                    "url": "https://news.example/a",
+                    "snippet": "snip",
+                    "summary": "sum",
+                    "content": "body",
+                }
+            ]
+        },
+    )
+    user_id, session_id = _pair()
+    sent: list[list[dict]] = []
+
+    def executor(messages, _tools):
+        sent.append(messages)
+        if any(item.get("role") == "tool" for item in messages):
+            return _turn(content="done", finish="stop")
+        return _turn(ToolCallSpec("call-a", "web", '{"query":"news"}'))
+
+    from app.tasks import job as job_module
+
+    real_request = job_module._request
+
+    def stop_before_results(db, task):
+        step = (
+            db.query(TaskStep)
+            .filter(TaskStep.task_run_id == task.id)
+            .order_by(TaskStep.seq.desc())
+            .first()
+        )
+        if step is not None and step.phase == "results_ready":
+            raise SystemExit(7)
+        return real_request(db, task)
+
+    set_executor(executor)
+    with patch.object(job_module, "_request", stop_before_results):
+        with pytest.raises(SystemExit):
+            run_job(user_id, session_id, "today")
+    assert posts == ["client", "https://llm.example/v1/tools/search"]
+    saved = _calls(_job(session_id).id)[0]
+    assert saved.state == "result"
+    assert "[News](https://news.example/a)" in saved.result
+    _drive_held(user_id, session_id)
+    assert posts == ["client", "https://llm.example/v1/tools/search"]
+    assert len(sent) == 2
+    assert _job(session_id).status == "completed"

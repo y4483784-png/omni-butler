@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from app.agents.harness.types import ToolContext, ToolResult
@@ -16,6 +16,7 @@ class ToolSpec:
     effect: str
     description: str = ""
     local: bool = False
+    parameters: dict = field(default_factory=lambda: {"type": "object"})
 
 
 _REGISTRY: dict[str, ToolSpec] = {}

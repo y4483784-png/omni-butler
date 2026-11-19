@@ -242,13 +242,14 @@ def job_tools(*, constitution: dict, web_constraint: str) -> list[dict]:
     for name in names:
         spec = get_tool(name)
         description = spec.description if spec is not None and spec.description else descriptions.get(name, name)
+        parameters = spec.parameters if spec is not None and spec.parameters else {"type": "object"}
         listed.append(
             {
                 "type": "function",
                 "function": {
                     "name": name,
                     "description": description,
-                    "parameters": {"type": "object"},
+                    "parameters": parameters,
                 },
             }
         )

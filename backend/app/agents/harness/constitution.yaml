@@ -84,16 +84,19 @@ omni:
   allowed_tools:
     - kb
     - web
+    - web_fetch
     - calendar
     - sandbox
   tool_risk:
     kb: low
     web: medium
+    web_fetch: medium
     calendar: medium
     sandbox: high
   tool_effect:
     kb: read
     web: read
+    web_fetch: read
     calendar: read
     sandbox: read
   limits:

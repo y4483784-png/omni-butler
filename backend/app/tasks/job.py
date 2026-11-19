@@ -525,15 +525,26 @@ def _result_text(result) -> str:
     answer = getattr(result, "direct_answer", None)
     if isinstance(answer, str) and answer.strip():
         return answer
-    lines = []
+    blocks: list[str] = []
     for item in getattr(result, "evidence", None) or []:
         if not isinstance(item, dict):
             continue
+        url = item.get("url")
+        if isinstance(url, str) and url:
+            title = item.get("title")
+            label = title if isinstance(title, str) and title else url
+            lines = [f"[{label}]({url})"]
+            for key in ("snippet", "summary", "content"):
+                text = item.get(key)
+                if isinstance(text, str) and text:
+                    lines.append(text)
+            blocks.append("\n".join(lines))
+            continue
         text = item.get("snippet") or item.get("content") or item.get("title") or ""
         if text:
-            lines.append(str(text))
-    if lines:
-        return "\n".join(lines)
+            blocks.append(str(text))
+    if blocks:
+        return "\n\n".join(blocks)
     card = getattr(result, "schedule_card", None)
     if isinstance(card, dict):
         title = card.get("title") or card.get("mode") or ""

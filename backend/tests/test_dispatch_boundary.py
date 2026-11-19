@@ -9,7 +9,7 @@ from app.agents.workflow import run_agent_workflow
 from app.core.db import SessionLocal, init_db
 from app.models.models import Session as ChatSession
 from app.models.models import User
-from app.services.web_search import SearchHit, SearchOutcome
+from app.services.deepseek_search import SearchHit, SearchPage
 
 _HALTED = {
     "intent": "chat",
@@ -83,12 +83,16 @@ def test_assign_turn_writes_a_calendar_assignment_and_does_not_act():
 def test_work_graph_runs_web_once_without_planning():
     from app.agents.harness.critique import CritiqueVerdict
 
-    fake = SearchOutcome(
-        results=[SearchHit(title="新闻", url="https://n.example/1", snippet="摘要", media="站")],
-        query_used="q",
-        count=8,
-        recency_filter="oneDay",
-        query_rewritten=True,
+    page = SearchPage(
+        results=(
+            SearchHit(
+                title="新闻",
+                url="https://n.example/1",
+                snippet="摘要",
+                summary="",
+                content="摘要",
+            ),
+        )
     )
     verdict = CritiqueVerdict.model_validate(
         {"grounded": True, "addresses_question": True, "unsupported": []}
@@ -101,7 +105,7 @@ def test_work_graph_runs_web_once_without_planning():
     db = SessionLocal()
     try:
         with (
-            patch("app.agents.tools.web.search_planned", return_value=fake) as search,
+            patch("app.agents.tools.web.deepseek_search", return_value=page) as search,
             patch("app.agents.dispatch.plan_tools", side_effect=boom),
             patch("app.agents.router.plan_tools", side_effect=boom),
             patch("app.agents.workflow.complete_text", return_value="根据证据的简要说明。[1]"),
@@ -119,6 +123,8 @@ def test_work_graph_runs_web_once_without_planning():
         db.close()
     assert search.call_count == 1
     assert result["intent"] == "web_search"
+    assert result["citations"][0]["url"] == "https://n.example/1"
+    assert any("正在搜索" in step for step in result["thinking_steps"])
 
 
 def test_stopped_turn_returns_halted_result_without_a_tool():

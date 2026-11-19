@@ -65,7 +65,7 @@ def anchors() -> None:
 
     web = read("backend/app/agents/tools/web.py")
     execute = between(web, "def execute_web(", "\n\n")
-    require("search_planned(" in execute, "execute_web does not call search_planned")
+    require("deepseek_search(" in execute, "execute_web does not call deepseek_search")
     require("create_event" not in web, "the web tool writes the calendar")
 
     router = read("backend/app/agents/router.py")

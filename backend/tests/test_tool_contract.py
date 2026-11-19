@@ -621,7 +621,7 @@ def test_registered_tools_are_reads():
     from app.agents.tools.registry import ensure_builtin_tools, get_tool
 
     ensure_builtin_tools()
-    for name in ("kb", "web", "calendar", "sandbox"):
+    for name in ("kb", "web", "web_fetch", "calendar", "sandbox"):
         spec = get_tool(name)
         assert spec is not None
         assert spec.effect == "read"
