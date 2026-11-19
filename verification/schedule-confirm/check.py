@@ -176,6 +176,20 @@ def require(condition: bool, message: str) -> None:
         fail_model(message)
 
 
+def _overlay_is_stored(body: str) -> bool:
+    match = re.search(
+        r"(?:const|let)\s+(\w+)\s*=\s*overlaySettledScheduleCards\s*\(",
+        body,
+    )
+    if match is None:
+        return False
+    name = match.group(1)
+    after = body[match.end() :]
+    passed = re.search(rf"\w+\([^)]*\b{re.escape(name)}\b", after) is not None
+    stored = "patchSession(sessionId, { messages" in after
+    return passed and stored
+
+
 def require_before(text: str, earlier: str, later: str, message: str) -> None:
     if earlier not in text or later not in text or text.index(earlier) > text.index(later):
         fail_model(message)
@@ -260,8 +274,13 @@ def check_anchors() -> tuple[bool, bool]:
         "updateLastAssistant no longer keeps a settled schedule card.",
     )
     require(
-        "overlaySettledScheduleCards" in loop,
+        "overlaySettledScheduleCards" in loop and _overlay_is_stored(loop),
         "runStreamLoop no longer keeps a settled card when it reloads messages.",
+    )
+    reload = brace_slice(chat, "export async function reloadSessionMessages")
+    require(
+        "overlaySettledScheduleCards" in reload and _overlay_is_stored(reload),
+        "reloadSessionMessages no longer keeps a settled card when it reloads messages.",
     )
     require(
         "publish_schedule_claim" in read("backend/app/api/chat.py"),

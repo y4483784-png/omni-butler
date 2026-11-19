@@ -62,7 +62,7 @@ Postgres 16.15. A new database `omni_rls` was migrated with `alembic upgrade hea
 
 Frontend, from `frontend`. `npm test` exits 0. 45 passed. That includes the signature tests, the composer array tests, and the composer lifecycle tests for two empty sends, the same text, a removed message, a stale read after a session switch, a rejected send after newer text, and URL release. `npm run build` is `tsc && vite build` and exits 0.
 
-`verification/work-loop/check.py` was not re-run. The chat close path did not change. `verification/picture/check.py` was re-run, including the five break flags. Each break exits 1 and names its invariant. The held run exits 0. GitHub Actions on `32bdd44` failed `schedule confirm TLC` because `overlaySettledScheduleCards` was outside `runStreamLoop`. The reload calls it inside that function again, before the preview merge. `verification/schedule-confirm/check.py` then exits 0, and each of its five break flags exits 1. `verification/followup-confirm/check.py` exits 0.
+`verification/work-loop/check.py` was not re-run. The chat close path did not change. `verification/picture/check.py` was re-run, including the five break flags. Each break exits 1 and names its invariant. The held run exits 0. GitHub Actions on `32bdd44` failed `schedule confirm TLC` because `overlaySettledScheduleCards` was outside `runStreamLoop`. Both `runStreamLoop` and `reloadSessionMessages` now pass the loaded rows through `overlaySettledScheduleCards` and store that result. The checker requires the assigned value to be passed on and then written back.
 
 ## Flowchart
 

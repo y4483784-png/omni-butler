@@ -321,7 +321,8 @@ export async function hydrateSessionMessages(sessionId: number) {
 export async function reloadSessionMessages(sessionId: number) {
   const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
   const folded = withHydratedFold(before, await loadMessages(sessionId));
-  const { messages, releaseUrls } = mergeHydratedPreviews(before, folded);
+  const scheduled = overlaySettledScheduleCards(before, folded);
+  const { messages, releaseUrls } = mergeHydratedPreviews(before, scheduled);
   revokePreviewUrls(releaseUrls);
   patchSession(sessionId, { messages, hydrated: true });
 }
