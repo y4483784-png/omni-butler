@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy.orm import object_session
+from sqlalchemy.orm import Session, object_session
 
-from app.models.models import Message, ScheduleConfirmClaim, TaskRun
+from app.models.models import EventReceipt, Message, ScheduleConfirmClaim, TaskRun
 
 
 def serialize_message(m: Message) -> dict:
@@ -25,6 +25,9 @@ def serialize_message(m: Message) -> dict:
             schedule_card = None
         if isinstance(schedule_card, dict):
             schedule_card = _with_job_kind(m, schedule_card)
+            bound = object_session(m)
+            if bound is not None:
+                schedule_card = shown_create_card(bound, schedule_card)
     if getattr(m, "artifact", None):
         try:
             artifact = json.loads(m.artifact)
@@ -44,6 +47,43 @@ def serialize_message(m: Message) -> dict:
         "artifact": artifact,
         "feedback": fb if fb in ("up", "down") else None,
     }
+
+
+def shown_create_card(db: Session, card: dict) -> dict:
+    token = str(card.get("confirm_token") or "").strip()
+    if not token:
+        return card
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == token)
+        .one_or_none()
+    )
+    if claim is None or claim.action != "calendar.create":
+        return card
+    armed = (claim.remote_request_id or "").strip()
+    if not armed:
+        return card
+    receipt = (
+        db.query(EventReceipt)
+        .filter(
+            EventReceipt.user_id == claim.user_id,
+            EventReceipt.source == "internal",
+            EventReceipt.delivery_id == f"cal:{token}",
+        )
+        .one_or_none()
+    )
+    sealed = (
+        claim.status == "written"
+        and receipt is not None
+        and receipt.state == "external_success"
+        and (receipt.external_request_id or "").strip() == armed
+        and bool((receipt.body or "").strip())
+    )
+    if sealed:
+        return card
+    if card.get("phase") == "confirmed":
+        return {**card, "phase": "unknown"}
+    return card
 
 
 def _card_tokens(card: dict) -> list[str]:

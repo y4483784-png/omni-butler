@@ -281,7 +281,7 @@ def _create_connected_event(
     except CalendarTransientError as exc:
         _release_unsent(db)
         raise HTTPException(status_code=502, detail=str(exc)) from None
-    _seal_schedule_write(db, db.info.get("confirm_token"))
+    record_create_success(db, user_id, db.info.get("confirm_token"), event.id)
     return serialize_event_card(event)
 
 
@@ -507,6 +507,67 @@ def _seal_schedule_write(db: Session, token: str | None) -> None:
     finish_confirm(db, token)
 
 
+def record_create_success(db: Session, user_id: int, token: str | None, event_row_id: int) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.models import CalendarEvent, ScheduleConfirmClaim
+    from app.services.event_inbox import _existing, _insert, note_external_success
+    from app.services.loop_round import note_confirmed
+    from app.services.schedule_confirm import finish_confirm
+
+    key = str(token or "").strip()
+    if not key:
+        return
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == key)
+        .with_for_update()
+        .one_or_none()
+    )
+    if claim is None or claim.user_id != user_id or claim.status not in {"unknown", "written"}:
+        return
+    row = db.get(CalendarEvent, event_row_id)
+    if row is None or row.user_id != user_id:
+        return
+    event_id = (row.external_id or "").strip()
+    armed = (claim.remote_request_id or "").strip()
+    if not armed or not event_id:
+        return
+    finish_confirm(db, token, commit=False)
+    receipt = _existing(db, user_id, "internal", f"cal:{key}")
+    if receipt is None:
+        try:
+            with db.begin_nested():
+                receipt = _insert(
+                    db,
+                    user_id=user_id,
+                    session_id=int(claim.session_id),
+                    source="internal",
+                    delivery_id=f"cal:{key}",
+                    fingerprint="",
+                    state="received",
+                    route="filed",
+                    body=event_id,
+                    claim_token=key,
+                )
+        except IntegrityError:
+            receipt = _existing(db, user_id, "internal", f"cal:{key}")
+            if receipt is None:
+                raise
+    if not (receipt.body or "").strip():
+        receipt.body = event_id
+    note_confirmed(db, user_id=user_id, token=key)
+    note_external_success(
+        db,
+        user_id=user_id,
+        source="internal",
+        delivery_id=f"cal:{key}",
+        remote_request_id=armed,
+        commit=False,
+    )
+    db.commit()
+
+
 def _release_unsent(db: Session) -> None:
     from app.services.schedule_confirm import reopen_unsent_claim
 
@@ -560,7 +621,7 @@ def _keep_found_create(db: Session, user_id: int, body: CalendarWrite):
         description=body.description or "",
         google_id=google_id,
     )
-    _seal_schedule_write(db, token)
+    record_create_success(db, user_id, token, saved.id)
     return saved
 
 

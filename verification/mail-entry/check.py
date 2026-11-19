@@ -13,6 +13,7 @@ from typing import NoReturn
 ROOT = Path(__file__).resolve().parents[2]
 SPEC_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
+from verification.calendar.check import require_create_receipt
 from verification.tlc_jar import jar_path
 
 ENTRY_HELD = (
@@ -118,8 +119,7 @@ def anchors() -> None:
     require("def search_meeting_mail(" in gmail, "meeting search was removed")
     require("event_inbox" not in gmail, "meeting search submits events")
 
-    calendar = read("backend/app/api/calendar.py")
-    require("note_external_success" not in calendar, "calendar confirm notes mail success")
+    require_create_receipt()
 
     card = read("frontend/src/components/FollowupCard.tsx")
     require("gmail.send" not in card, "FollowupCard mentions gmail.send")
