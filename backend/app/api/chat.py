@@ -852,6 +852,12 @@ async def chat(
                         task_run.stop(user_id=uid, generation=turn.generation)
                     except task_run.LateResult:
                         pass
+                    if saved_user_id is not None:
+                        set_rls_context(db, uid)
+                        saved = db.get(Message, saved_user_id)
+                        if saved is not None:
+                            db.delete(saved)
+                            db.commit()
                     yield _sse({"type": "done"})
                 else:
                     assistant_content = redact_text("".join(acc))

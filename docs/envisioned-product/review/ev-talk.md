@@ -32,6 +32,8 @@ The same environment also ran `tests/test_message_actions.py`, `tests/test_calen
 
 A later pass re-ran those files plus `tests/test_watchdog.py` and `tests/test_tool_contract.py` with `DATABASE_URL=sqlite+pysqlite:///./ci-talk-verify.db`. Exit code 0. Both checkers exited 0 again after `run_job` bound the job generation around the session write instead of after it.
 
+The offline suite then failed `tests/test_picture.py::test_body_limit_is_the_route_error_and_keeps_the_turn_unsent`. The user line was saved before the reply stream, and a body-limit error left that line. The error path now deletes that line and still stops the interaction turn. The same test, plus the two talk tests that save a user line, exited 0 afterward.
+
 ## Perf
 
 This pass did not time the suite against trunk. There is no comparison.
