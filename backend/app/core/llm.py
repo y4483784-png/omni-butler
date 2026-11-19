@@ -19,7 +19,7 @@ import time
 import weakref
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, AsyncIterator, Literal, Mapping, Sequence, TypeVar
+from typing import Any, AsyncIterator, Literal, Mapping, Sequence, TypeVar, overload
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -231,6 +231,9 @@ class ToolCallDelta:
 @dataclass(frozen=True)
 class ToolRoundEnd:
     finish: str
+
+
+JobStreamDelta = StreamDelta | ToolCallDelta | ToolRoundEnd
 
 
 def _parse_role(role: Role, source: Any) -> RoleCall:
@@ -659,6 +662,30 @@ def _raise_unfinished(reason: str | None, *, thinking: bool, role: Role) -> None
     raise LLMStructuredError(f"finish_reason={reason}")
 
 
+@overload
+async def stream_chat(
+    messages: list[dict],
+    *,
+    role: Role,
+    usage_out: dict[str, Any] | None = ...,
+    tools: Any = ...,
+    images: Sequence[ChatImage] | None = ...,
+    job: Literal[False] = False,
+) -> AsyncIterator[StreamDelta]: ...
+
+
+@overload
+async def stream_chat(
+    messages: list[dict],
+    *,
+    role: Role,
+    usage_out: dict[str, Any] | None = ...,
+    tools: Any = ...,
+    images: Sequence[ChatImage] | None = ...,
+    job: Literal[True],
+) -> AsyncIterator[JobStreamDelta]: ...
+
+
 async def stream_chat(
     messages: list[dict],
     *,
@@ -667,13 +694,12 @@ async def stream_chat(
     tools: Any = None,
     images: Sequence[ChatImage] | None = None,
     job: bool = False,
-):
+) -> AsyncIterator[JobStreamDelta]:
     """Yield reasoning and answer deltas for one role.
 
     ``usage_out`` receives ``prompt_tokens`` when the stream includes usage.
     A 400 or 422 that names ``stream_options`` is retried once without it.
     Rate limits and timeouts raise ``LLMInfraError`` and are not retried here.
-    ``job`` sends a tool round and yields one end marker after the deltas.
     """
     if not job:
         _refuse_outbound(messages, tools)
