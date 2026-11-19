@@ -30,6 +30,8 @@ A forbid on job A stays `forbid` when a later message creates job B with `allow`
 
 The same environment also ran `tests/test_message_actions.py`, `tests/test_calendar_card.py`, and `tests/test_event_inbox.py`. That command exits 0. A regenerate does not classify and does not stop the job.
 
+A later pass re-ran those files plus `tests/test_watchdog.py` and `tests/test_tool_contract.py` with `DATABASE_URL=sqlite+pysqlite:///./ci-talk-verify.db`. Exit code 0. Both checkers exited 0 again after `run_job` bound the job generation around the session write instead of after it.
+
 ## Perf
 
 This pass did not time the suite against trunk. There is no comparison.
@@ -40,7 +42,7 @@ No browser lane was run. This repo has no `control-ui` skill. The composer chang
 
 ## Formal evidence
 
-The two checker commands above are the formal evidence. There is no separate evidence directory. No second model reviewed this diff. The kickoff forbids subagents.
+The two checker commands above are the formal evidence. There is no separate evidence directory. A comment pass deleted docstrings that repeated the code. It did not review the state machine.
 
 ## What this unit does not do
 

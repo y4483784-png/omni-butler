@@ -345,7 +345,7 @@ def open_alongside(
     """Open one generation without stopping another open generation.
 
     The caller commits. An event inbox uses this so a new task does not cancel
-    work that is already running in the same session. A job passes kind=job.
+    work that is already running in the same session.
     """
     return _insert_running(
         db,
@@ -475,7 +475,6 @@ def apply_intent(
     web: str,
     web_constraint_message_id: int | None,
 ) -> IntentApply:
-    """One commit. An open job stores the new text and web value. Anything else asks."""
     from app.models.models import ScheduleConfirmClaim
 
     row = (

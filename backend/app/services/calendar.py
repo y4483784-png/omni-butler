@@ -1365,11 +1365,7 @@ def void_draft_schedule_cards(
     *,
     keep_task_run_id: int | None = None,
 ) -> int:
-    """Mark unconfirmed write cards cancelled. Suggest/info cards are left alone.
-
-    A job that is waiting on the person keeps its card. A supplement also passes
-    that job id so a running job's open card stays.
-    """
+    """Mark unconfirmed write cards cancelled. Suggest/info cards are left alone."""
     from app.models.models import Message, TaskRun
     from app.services.schedule_confirm import cancel_open_schedule_claims, task_ids_for_tokens
 

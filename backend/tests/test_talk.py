@@ -1,5 +1,3 @@
-"""A job stays running when a later turn starts."""
-
 from __future__ import annotations
 
 import json

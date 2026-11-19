@@ -152,11 +152,6 @@ def _resolve(parsed: TalkReply, jobs: list[OpenJob]) -> TalkReply:
 
 
 def classify_message(message: str, jobs: list[OpenJob]) -> TalkReply:
-    """Ask the router which open job this sentence is about.
-
-    The production path does not read a fixture and does not scan the sentence
-    for cancel, stop, forbid, or search words. A bad reply asks and changes nothing.
-    """
     from app.core.llm import Role, complete_json_object
 
     listed = [

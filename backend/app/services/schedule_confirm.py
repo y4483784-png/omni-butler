@@ -433,8 +433,6 @@ def arm_remote_claim(
 
     A later rollback cannot reopen this claim. An empty key means the remote
     call has not been armed, so a failed refresh can still roll the claim back.
-    A claim linked to a job matches that job's current intent and the caller's
-    hold. Zero rows means the caller does not send.
     """
     key = str(token or "").strip()
     marker = str(request_id or "").strip()

@@ -1,10 +1,4 @@
 ---- MODULE Talk ----
-\* One user, two jobs, and one interaction turn.
-\* A new turn does not stop a job. Disconnect stops only that turn.
-\* A named cancel stops job1 and leaves job2 running.
-\* An ambiguous cancel asks and changes neither job.
-\* This model does not cover an HTTP call already inside the provider,
-\* a second browser, or Celery redelivery.
 
 VARIABLES job1, job2, turn, asked, sawPlain, sawDisconnect, sawNamed, sawAmbiguous
 vars == <<job1, job2, turn, asked, sawPlain, sawDisconnect, sawNamed, sawAmbiguous>>

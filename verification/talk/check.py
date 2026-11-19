@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Check that a new turn, a disconnect, and a cancel leave the right job running."""
 
 from __future__ import annotations
 

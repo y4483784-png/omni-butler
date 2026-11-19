@@ -1,5 +1,3 @@
-"""Record one job in the session. The tool loop is not in this unit."""
-
 from __future__ import annotations
 
 from app.core.db import SessionLocal, set_rls_context
@@ -18,7 +16,6 @@ def run_job(
     web_constraint_message_id: int | None = None,
 ) -> None:
     db = SessionLocal()
-    turn = None
     try:
         set_rls_context(db, int(user_id))
         turn = task_run.open_alongside(
@@ -30,21 +27,18 @@ def run_job(
             web_constraint=web_constraint or "allow",
             web_constraint_message_id=web_constraint_message_id,
         )
-        text = (goal or "").strip()
-        db.add(
-            Message(
-                session_id=int(session_id),
-                role="assistant",
-                content=f"已开始：{text}" if text else "已开始。",
+        token = bind(user_id=int(user_id), generation=turn.generation)
+        try:
+            text = (goal or "").strip()
+            db.add(
+                Message(
+                    session_id=int(session_id),
+                    role="assistant",
+                    content=f"已开始：{text}" if text else "已开始。",
+                )
             )
-        )
-        db.commit()
+            db.commit()
+        finally:
+            reset(token)
     finally:
         db.close()
-    if turn is None:
-        return
-    token = bind(user_id=int(user_id), generation=turn.generation)
-    try:
-        return
-    finally:
-        reset(token)
