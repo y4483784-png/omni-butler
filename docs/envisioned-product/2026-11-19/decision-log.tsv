@@ -31,3 +31,4 @@ ts	phase	decision	why	evidence	result
 2026-11-19T13:10:00Z	pick	set one operator order starting at picture	README had said talk first while the numbered list started at picture	docs/envisioned-product/2026-11-19/README.md	open
 2026-11-19T13:10:00Z	pick	deferred newer research-bot names without a source read	they do not decide the owner, cursor, or receipt contracts and several are proactive features	sources/research-bots-latest-coverage.md	open
 2026-11-19T13:20:00Z	pick	split dispatch reservation from execution hold and locked session seq	the single owner CAS deadlocked the worker, and autoincrement ids are not commit order	docs/envisioned-product/2026-11-19/contracts.md	open
+2026-11-19T13:40:00Z	pick	release the execution hold in the same transaction that leaves running	a token left on waiting_person is never retired, and reconcile is not a claim status	docs/envisioned-product/2026-11-19/contracts.md	open

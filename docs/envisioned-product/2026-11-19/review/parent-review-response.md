@@ -78,11 +78,23 @@ The finding is accepted. `max(id)` under concurrent transactions can skip a lowe
 
 `results_ready` schedules one model request. `final_answer` sets the job `completed` and does not. Mixed `result`, `rejected`, and `unknown` stay terminal. This is in "Tool rounds". `loop` implements it.
 
-A supplement clears `exec_token` in the same transaction as the version bump, so the old worker cannot renew. An armed claim becomes `reconcile` and keeps `remote_request_id`. Only an unarmed open claim is `cancelled`. `arm_remote_claim` matches `intent_version` and `exec_epoch` in the update that commits the marker. This is in "Web constraint and intent version". `talk` stores the transition. `loop` puts the match on the arm update.
+A supplement clears `exec_token` in the same transaction as the version bump, so the old worker cannot renew. An armed claim keeps `remote_request_id`. The note on `06f81dd` keeps that claim `unknown`. The word `reconcile` is not a claim status. Only an unarmed open claim is `cancelled`. `arm_remote_claim` matches `intent_version` and `exec_epoch` in the update that commits the marker. This is in "Web constraint and intent version". `talk` stores the transition. `loop` puts the match on the arm update.
 
 Decoded size is per file, against `max_upload_mb` and the recorded 32 MiB inline limit. The 48 MiB check is the UTF-8 length of the serialized request body. `purge_state = pending_delete` is committed with the terminal status. `BlobStore.delete` runs after that commit and retries. This is in "Task image bytes". `picture` implements it.
 
 Output batches after the first also set `last_progress_at`, at most one extra commit per five seconds of continued output, plus tool boundaries. A hold renewal does not. The notice is still not a stop. This is in "Watch samples". `watch` implements the notice. `loop` writes the samples.
+
+## Follow-up on `06f81dd`
+
+The reservation split and the commit-ordered cursor stay. This note closes the missing leave.
+
+The `waiting_person` reserve requires `exec_token IS NULL`, and the running retire requires `status = 'running'`. `contracts.md` now says the transition out of `running` is one update that clears `exec_token` and `hold_until`, clears the reservation, and increments `exec_epoch`. Returning from the worker is not that update. Renewal still requires `status = 'running'`, the same `exec_token`, the same `exec_epoch`, and the same `intent_version`. The cadence is on adoption, before each model or tool attempt, and every half of `llm_timeout` during a call. A terminal exit uses the same release and sets `continuation_due` false.
+
+The wait trace in that section is worker holding epoch 4, leave to `waiting_person` with the hold cleared, one of several confirms leaving `continuation_due` false, the last confirm setting it, then reserve, adopt, and one model request. A confirm that wins before the leave does not clear the hold. The worker sees every call terminal, stays `running`, and sends the model itself. A crash before that send is the normal running retire. A delayed epoch 4 renewal matches zero rows.
+
+`wait_for_resource` is only called from `backend/tests/test_task_generation.py`. The sweep does not select `waiting_resource`. This plan does not claim automatic resource recovery. An intent amendment on that status applies `continue_job` in the same transaction and leaves a reservable `running` row. An amendment on `waiting_person` leaves that status only after `exec_token` is null and, once the old calls are terminal, `continuation_due` is true. Setting the flag alone on a status the sweep never selects is not the rule.
+
+Claim status stays `open`, `unknown`, `written`, or `cancelled`. An armed claim remains `unknown` with its `remote_request_id`. `event_inbox.py` lines 731-734 reject any other status for mail binding. No `reconcile` status is added. A second arm matches zero rows.
 
 ## Research audit
 

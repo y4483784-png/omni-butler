@@ -92,7 +92,7 @@ WHERE id = :id
 
 Zero rows means this delivery does no work. `continuation_due` is cleared only by this adoption update. It is not cleared when the sweep reserves, and it is not cleared when publish returns. If publish is lost, adoption never happens, so `continuation_due` remains true and the expired reservation can be replaced.
 
-The executing worker renews only its own hold.
+The executing worker renews only its own hold. Adoption sets the first `hold_until`. The worker renews again before each model or tool attempt, and while a call is in progress it renews every half of `llm_timeout`. With the default of 120 seconds, that cadence is 60 seconds. It is not a new duration and it is not a stop. A renewal does not change `last_progress_at`.
 
 ```text
 UPDATE task_runs
@@ -104,9 +104,39 @@ WHERE id = :id
   AND intent_version = :intent
 ```
 
-The renewal matches `intent_version`. A supplement or redirect that has moved the version makes this update match zero rows. The worker then stops and discards uncommitted output. It cannot keep the hold by renewing. A renewal does not change `last_progress_at`.
+Zero rows means this process no longer holds the job. It discards uncommitted output and does not renew again. The sweep retires an executor only when `status = 'running' AND exec_token IS NOT NULL AND hold_until < :now`. A row that has left `running` is not retired by that update, so the leave itself must drop the hold.
 
-Every step write and tool-call update includes `exec_epoch` and `intent_version`. Zero rows means the write is discarded.
+Leaving `running` is one update. Returning from the worker function is not a release. `loop` uses this update for `waiting_person`, `completed`, and `stopped`. The same statement clears the hold and increments `exec_epoch`, so a delayed worker's old epoch matches nothing.
+
+```text
+UPDATE task_runs
+SET status = :next,
+    exec_token = NULL,
+    hold_until = NULL,
+    dispatch_token = NULL,
+    dispatch_until = NULL,
+    exec_epoch = exec_epoch + 1
+WHERE id = :id
+  AND status = 'running'
+  AND exec_token = :worker
+  AND exec_epoch = :epoch
+  AND intent_version = :intent
+```
+
+`:next` is `waiting_person`, `completed`, or `stopped`. The transaction sets `continuation_due` before this statement. Opening cards while any call remains `awaiting_confirm` sets it false. A terminal exit sets it false. After commit, renewal matches zero rows because the status is no longer `running`, `exec_token` is null, and `exec_epoch` has changed. A step write matches `exec_token`, `exec_epoch`, `intent_version`, and `status = 'running'`. The delayed worker therefore cannot renew or write.
+
+`wait_for_resource` is defined in `task_run.py` lines 307-308 and is called from `backend/tests/test_task_generation.py`. No production caller enters `waiting_resource`. The sweep does not select that status. `continue_job` may move it to `running`, but nothing in production observes a resource and sets `continuation_due`. This plan does not add that wakeup and does not claim automatic resource recovery. A later caller that does enter `waiting_resource` must use this same leave update, and the transaction that observes the resource must set `continuation_due` while `exec_token` is null. Until that caller exists, a `waiting_resource` row stays where it is.
+
+### Wait trace
+
+1. The adopted worker is `running` and holds `exec_token` W and `exec_epoch` 4.
+2. It opens one or more confirm cards. The same transaction sets the unfinished calls to `awaiting_confirm`, sets status to `waiting_person`, sets `continuation_due` false, clears `exec_token` and `hold_until`, and sets `exec_epoch` to 5.
+3. The person confirms one card. Sibling calls are still `awaiting_confirm`, so the confirm transaction stores that one tool result and leaves `continuation_due` false. The job stays `waiting_person`.
+4. The person confirms the last card. That transaction stores the result, sets the step to `results_ready`, and sets `continuation_due` true. It does not set `exec_token` and it does not send the write again.
+5. The sweep matches `waiting_person`, `continuation_due`, and `exec_token IS NULL`. It reserves D1 and then publishes.
+6. A worker adopts D1, clears `continuation_due`, and sends the one model request.
+
+If the last confirm commits while the status is still `running`, it sets the tool result and `continuation_due`, and it does not clear `exec_token`. The worker locks the row, sees every call terminal, does not enter `waiting_person`, clears `continuation_due`, and sends the model itself. The sweep sees a live `hold_until` and publishes nothing. If that worker crashes before sending, `hold_until` expires, the running retire reserves a new token, and the next adoption sees `results_ready`. A delayed renewal with epoch 4 matches zero rows after a leave. It also matches zero rows while a newer `exec_epoch` holds the job.
 
 ### Traces
 
@@ -138,7 +168,7 @@ Other required cases:
 | Crash after `arm_remote_claim` | `remote_request_id` is already committed (`schedule_confirm.py` lines 413-436). The next holder looks up that marker. It does not arm a second marker. |
 | Old holder returns after a new adoption | The old `exec_epoch` matches zero rows. The result is discarded. |
 
-`waiting_resource` is not reserved by the sweep. A `waiting_person` row is reserved only by the `continuation_due` update above.
+A `waiting_person` row is reserved only by the `continuation_due` update above, and only after the leave has cleared `exec_token`. `waiting_resource` is not reserved. There is no production resource-ready event.
 
 ## Tool rounds
 
@@ -168,7 +198,7 @@ The holder handles one saved response as follows.
 
 If the executing worker still holds `exec_token` and the job is `running` when every call is terminal, that same worker sets `results_ready` and sends the one model request. It does not release the hold and it does not set `continuation_due`.
 
-If the job is `waiting_person` when the last call becomes terminal, the same transaction sets `results_ready` and `continuation_due`. It does not reserve, publish, or clear `continuation_due`. The sweep update in the dispatch section then moves the job to `running` and reserves a token. Adoption is what clears `continuation_due`. If the process dies after `continuation_due` is committed and before publish, the flag stays true, the reservation expires if one was stored, and a later sweep reserves a new epoch. The repair does not create a second card and does not send the write again. A `final_answer` step does not set `continuation_due`.
+The worker's leave, not a later return, is what drops the hold before the sweep can see `waiting_person`. If the job is `waiting_person` and `exec_token` is null when the last call becomes terminal, that confirm transaction sets `results_ready` and `continuation_due`. It does not reserve or publish. One confirmed card among several does not set `continuation_due` while any call is still `awaiting_confirm`. The sweep then reserves. Adoption clears `continuation_due`. If publish is lost, the flag stays true until a later adoption. The repair does not create a second card and does not send the write again. A `final_answer` step releases the hold and sets `continuation_due` false in the same terminal update.
 
 A model response with more than one tool call is the same rule. Partial read results stay stored. Only calls without a terminal result are eligible. The model is not called while any call is `pending`, `running`, or `awaiting_confirm`.
 
@@ -231,13 +261,13 @@ An unrelated message does not clear a forbid on a job it does not target. A late
 
 The supplement or redirect transaction does all of the following before it commits.
 
-1. Increment `intent_version`, store the new `web` value, clear `exec_token`, `hold_until`, `dispatch_token`, and `dispatch_until`, and set `continuation_due`. The old worker's renewal then matches zero rows.
-2. A claim whose `remote_request_id` is already non-empty keeps that marker. Its status becomes `reconcile`. It is not `cancelled`. The old intent version stays on the claim. Later lookup may record the provider result. The new intent does not arm that token again and does not create a second arm for that same fingerprint.
-3. A claim that is still `open` and has an empty `remote_request_id` becomes `cancelled`. Nothing was sent.
+1. Increment `intent_version`, store the new `web` value, clear `exec_token`, `hold_until`, `dispatch_token`, and `dispatch_until`, and increment `exec_epoch`. The old worker's renewal and writes then match zero rows.
+2. A claim whose `remote_request_id` is already non-empty keeps status `unknown` and keeps that marker. `unknown` is the armed state already written by `arm_remote_claim` (`schedule_confirm.py` lines 413-436). The claim's `intent_version` stays at the version that armed it. Mail binding rejects any other status (`event_inbox.py` lines 731-734). Errand and mail queries list `open`, `unknown`, and `written` (`errands.py` line 482, `mail_entry.py` line 283). This plan does not add a `reconcile` status. Later lookup may record the provider result. The new intent does not arm that token again.
+3. A claim that is still `open` and has an empty `remote_request_id` becomes `cancelled`. Its tool call becomes `cancelled`. Nothing was sent.
+4. An armed tool call becomes `unknown` as its terminal tool result. That does not send again. If the latest step has no non-terminal call, set `continuation_due`. If that step exists, also set `results_ready`.
+5. If the status is `waiting_person`, leave it. `exec_token` is already null, so the `continuation_due` reserve matches. If the status is `waiting_resource`, apply `continue_job` in this same transaction and leave the row `running` with `exec_token` null and `continuation_due` true. The sweep does not select `waiting_resource`, and no production resource-ready event exists, so the person's amendment is the wakeup. It is not automatic resource recovery. If the status is `running`, leave it `running` with the hold cleared so the idle reserve matches.
 
-After that commit, the sweep sees `continuation_due` or an idle `running` row and reserves a message that carries the new `intent_version`. The old worker cannot keep renewing.
-
-`arm_remote_claim` is the commit that allows the provider call. Its update matches the claim, the job's current `intent_version`, and the worker's `exec_epoch`. Zero rows means the provider call is not sent. A read of the version before that update is not the check. `web_constraint = forbid` denies both `web` and `web_fetch` in that same execution update. A confirm whose stored version is older than the job returns closed and does not write. A `reconcile` claim is not confirmed again as a new write.
+`arm_remote_claim` is the commit that allows the provider call. Its update matches the claim, an empty `remote_request_id`, the job's current `intent_version`, and the worker's `exec_token` and `exec_epoch`. Zero rows means the provider call is not sent. A read of the version before that update is not the check. `web_constraint = forbid` denies both `web` and `web_fetch` in that same execution update. A confirm whose stored version is older than the job returns closed and does not write. An armed `unknown` claim is not armed again.
 
 ## Task image bytes
 
