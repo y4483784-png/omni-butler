@@ -147,6 +147,12 @@ body {
 .composer-images img, .bubble-images img {
   width: 48px; height: 48px; object-fit: cover; border-radius: 6px;
 }
+.composer-image { position: relative; width: 48px; height: 48px; }
+.composer-image button {
+  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px;
+  border: 0; border-radius: 9px; padding: 0; line-height: 18px;
+  background: #3a3f45; color: #fff; cursor: pointer;
+}
 .composer-image-error {
   margin: 0; padding: 6px 16px 0; color: #a8071a; font-size: 12px;
 }

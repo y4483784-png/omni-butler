@@ -19,7 +19,7 @@ stateDiagram-v2
   s2: Image held for this chat
   s3: Sent to the chat model
   s4: Token counts stored
-  s5: Failed call stores no row
+  s5: Transport failure stores no row
   s6: Missing counts stay null
   s7: Job ended, blob still held
   s8: Image bytes removed
@@ -29,7 +29,7 @@ stateDiagram-v2
   s0 --> s2: the chat keeps the image
   s2 --> s3: the chat model receives the image
   s3 --> s4: the response includes token counts
-  s3 --> s5: the provider call fails
+  s3 --> s5: the provider never answers
   s3 --> s6: the response omits token counts
   s4 --> s7: the job ends and deletion stays pending
   s5 --> s7: the job ends and deletion stays pending

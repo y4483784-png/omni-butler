@@ -59,6 +59,19 @@ def anchors() -> None:
     require("usage_count" in usage, "durable usage reader is gone")
     require('startswith("task-image/")' in images, "storage key prefix is gone")
     require('"pending_delete"' in images, "pending_delete is gone")
+    require('"staged"' in images, "staged bind rows are gone")
+    watchdog = read("backend/app/tasks/watchdog.py")
+    require("reconcile_task_images" in watchdog, "image cleanup is not on the maintenance beat")
+    complete = llm[llm.find("def complete_text") : llm.find("\ndef complete_json")]
+    stop_at = complete.find("if finish is FinishClass.STOP")
+    require(stop_at > 0, "complete_text lost the stop finish")
+    require(
+        "record_response_usage" in complete[:stop_at],
+        "usage is recorded only after a stop finish",
+    )
+    stream = llm[llm.find("def stream_chat") : llm.find("\ndef complete_text")]
+    handler = stream.find("except (LLMInfraError, LLMStructuredError)")
+    require("_store_usage()" in stream[handler : handler + 160], "a stream error drops usage")
 
 
 def write_cfg(

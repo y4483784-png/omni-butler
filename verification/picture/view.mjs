@@ -7,7 +7,7 @@ export const state = (v) => {
   if (v.usage === "pending") return "Sent to the chat model";
   if (v.closed === false && v.usage === "missing") return "Missing counts stay null";
   if (v.closed === false && v.usage === "counted") return "Token counts stored";
-  if (v.closed === false && v.usage === "failed") return "Failed call stores no row";
+  if (v.closed === false && v.usage === "failed") return "Transport failure stores no row";
   if (v.imageRow === "pending" && v.blob === "held") return "Job ended, blob still held";
   if (v.imageRow === "pending" && v.blob === "gone") return "Blob gone, row still pending";
   if (v.imageRow === "deleted") return "Image bytes removed";
@@ -21,7 +21,7 @@ export const step = (action) => {
     Send: "the chat model receives the image",
     NoteMissing: "the response omits token counts",
     NoteNumbers: "the response includes token counts",
-    NoteFailed: "the provider call fails",
+    NoteFailed: "the provider never answers",
     Finish: "the job ends and deletion stays pending",
     Purge: "the blob and the row are deleted",
     CrashAfterBlob: "the blob goes and the row remains",

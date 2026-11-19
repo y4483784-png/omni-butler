@@ -554,8 +554,10 @@ async def stream_chat(
             _store_usage()
             raise
         except (LLMInfraError, LLMStructuredError):
+            _store_usage()
             raise
         except Exception as exc:
+            _store_usage()
             if is_llm_infra_exception(exc):
                 _raise_infra(exc)
             raise
@@ -615,6 +617,13 @@ def complete_text(
             _STATS["infra_errors"] += 1
             logger.warning("complete_text %s: %s", type(exc).__name__, exc)
             return Spoken("", "", None)
+        from app.services.llm_usage import record_response_usage
+
+        record_response_usage(
+            role=call.role.value,
+            model=call.model,
+            usage=getattr(resp, "usage", None),
+        )
         choice = resp.choices[0]
         finish = classify_finish(
             getattr(choice, "finish_reason", None),
@@ -625,13 +634,6 @@ def complete_text(
         prompt_tokens = _usage_prompt_tokens(getattr(resp, "usage", None))
         if finish is FinishClass.STOP:
             _record_call(prompt_tokens, started)
-            from app.services.llm_usage import record_response_usage
-
-            record_response_usage(
-                role=call.role.value,
-                model=call.model,
-                usage=getattr(resp, "usage", None),
-            )
             return Spoken(content.strip(), reasoning, prompt_tokens)
         reason = getattr(choice, "finish_reason", None)
         if finish is FinishClass.INFRA:
@@ -814,7 +816,7 @@ def complete_json_object(
         try:
             with model_slot(call.model):
                 resp = _create_sync(client, body)
-        except (ToolsRefused, RoleConfigError):
+        except (ToolsRefused, RoleConfigError, RequestBodyTooLarge):
             raise
         except Exception as exc:
             if is_stopped():

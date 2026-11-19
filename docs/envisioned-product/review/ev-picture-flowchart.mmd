@@ -9,7 +9,7 @@ flowchart TB
     chatRole[Role CHAT receives image_url blocks]
     measure[Count the serialized UTF-8 body]
     answered[Provider responds]
-    usageRow[Store LlmCall and keep missing counts null]
+    usageRow[Store the returned counts or null]
     text[Save Message.content as text and drop the bytes]
     pad[" "]
     attach --> post
@@ -24,11 +24,11 @@ flowchart TB
   end
   badImage[400 for type signature or size]
   tooBig[Body over 48 MiB is not sent]
-  failed[A failed request stores no usage row]
-  seam[A later job may bind task_images]
-  pending[Terminal commit sets pending_delete]
+  failed[A transport failure stores no usage row]
+  seam[A later job reserves a staged row then stores bytes]
+  pending[Terminal commit marks ready and staged pending_delete]
   purge[After commit delete the blob then the row]
-  retry[A failed blob delete stays pending_delete]
+  retry[The watchdog beat retries pending_delete]
   decode --> badImage
   measure --> tooBig
   answered --> failed

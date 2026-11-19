@@ -3,6 +3,14 @@ import { useStore } from "../store/useStore";
 import { hydrateSessionMessages, startChatStream, stopChatStream } from "../services/chatStream";
 import type { ChatMsg, MeetingBrief } from "../api/client";
 import { imageFromFile, type LocalImagePreview } from "../chatImage";
+import {
+  IMAGE_READ_ERROR,
+  draftAfterReject,
+  removeDraftImage,
+  serverDraftError,
+  takeCompletedBatch,
+  urlsReleasedWhenSent,
+} from "../composerImages";
 import { Markdown } from "./Markdown";
 import { FollowupCard } from "./FollowupCard";
 import { ErrandCard } from "./ErrandCard";
@@ -14,9 +22,9 @@ import { MessageActions } from "./MessageActions";
 import { artifactButtonLabel, artifactFromPayload } from "../utils/artifact";
 import { foldThinking } from "../thinkingFold";
 
-const MAX_CHARS = 10000; // PRD 3.1.1
+const MAX_CHARS = 10000;
 
-type PendingImage = LocalImagePreview & { dataBase64: string };
+type PendingImage = LocalImagePreview & { id: string; dataBase64: string };
 
 export function ChatWindow({ sessionId }: { sessionId: number }) {
   const [input, setInput] = useState("");
@@ -24,6 +32,11 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
   const [imageError, setImageError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const pendingRef = useRef<PendingImage[]>([]);
+  const readersRef = useRef<FileReader[]>([]);
+  const ticketRef = useRef(0);
+  const epochRef = useRef(0);
+  pendingRef.current = pending;
 
   const chat = useStore((s) => s.sessionChats[sessionId]);
   const messages = chat?.messages ?? [];
@@ -47,34 +60,81 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
   }, [sessionId]);
 
   useEffect(() => {
+    ticketRef.current += 1;
+    epochRef.current += 1;
+    return () => {
+      ticketRef.current += 1;
+      epochRef.current += 1;
+      for (const reader of readersRef.current) reader.abort();
+      readersRef.current = [];
+      for (const item of pendingRef.current) URL.revokeObjectURL(item.url);
+      pendingRef.current = [];
+      setPending([]);
+      setImageError("");
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinkingSteps, sessionId]);
 
-  function send() {
+  function releaseUrl(url: string) {
+    URL.revokeObjectURL(url);
+  }
+
+  async function send() {
     const text = input.trim();
     if (busy || (!text && pending.length === 0)) return;
-    const images = pending.map((item) => ({
+    const snapshot = pending;
+    const sentEpoch = epochRef.current;
+    const images = snapshot.map((item) => ({
       media_type: item.mediaType,
       data_base64: item.dataBase64,
     }));
-    const localImages = pending.map((item) => ({
+    const localImages = snapshot.map((item) => ({
       mediaType: item.mediaType,
       url: item.url,
     }));
+    ticketRef.current += 1;
+    for (const reader of readersRef.current) reader.abort();
+    readersRef.current = [];
+    for (const url of urlsReleasedWhenSent(
+      snapshot.map((item) => item.url),
+      localImages.map((item) => item.url),
+    )) {
+      releaseUrl(url);
+    }
     setInput("");
+    pendingRef.current = [];
     setPending([]);
     setImageError("");
-    void startChatStream(sessionId, text, {
+    const result = await startChatStream(sessionId, text, {
       useKb,
       kbFocusIds,
       onTitle: updateSessionTitle,
       images,
       localImages,
     });
+    if (result.accepted) return;
+    const decision = draftAfterReject(epochRef.current, sentEpoch, snapshot);
+    for (const url of decision.releaseUrls) releaseUrl(url);
+    if (decision.restore) {
+      setInput(text);
+      setPending(decision.restore);
+      setImageError(serverDraftError(result.detail));
+    }
+  }
+
+  function removePending(id: string) {
+    const decision = removeDraftImage(pendingRef.current, id);
+    if (decision.releaseUrl) releaseUrl(decision.releaseUrl);
+    pendingRef.current = decision.pending;
+    setPending(decision.pending);
   }
 
   function addFiles(files: FileList | null) {
     if (!files || busy) return;
+    const ticket = ticketRef.current;
     const chosen = Array.from(files);
     const slots: Array<PendingImage | undefined> = [];
     let rejected = false;
@@ -82,6 +142,8 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
       (file, index) =>
         new Promise<void>((resolve) => {
           const reader = new FileReader();
+          readersRef.current.push(reader);
+          reader.onabort = () => resolve();
           reader.onload = () => {
             const buffer = reader.result;
             if (!(buffer instanceof ArrayBuffer)) {
@@ -95,10 +157,17 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
               resolve();
               return;
             }
+            const url = URL.createObjectURL(file);
+            if (ticket !== ticketRef.current) {
+              releaseUrl(url);
+              resolve();
+              return;
+            }
             slots[index] = {
+              id: crypto.randomUUID(),
               mediaType: image.media_type,
               dataBase64: image.data_base64,
-              url: URL.createObjectURL(file),
+              url,
             };
             resolve();
           };
@@ -110,9 +179,19 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
         })
     );
     void Promise.all(readers).then(() => {
-      setImageError(rejected ? "只接受 JPEG、PNG、GIF 或 WebP，且单张不超过 32MiB。" : "");
       const accepted = slots.filter((item): item is PendingImage => item !== undefined);
-      if (accepted.length > 0) setPending((current) => [...current, ...accepted]);
+      const decision = takeCompletedBatch(
+        pendingRef.current,
+        ticket,
+        ticketRef.current,
+        accepted,
+        rejected,
+      );
+      for (const url of decision.releaseUrls) releaseUrl(url);
+      if (ticket !== ticketRef.current) return;
+      pendingRef.current = decision.pending;
+      setImageError(decision.showError ? IMAGE_READ_ERROR : "");
+      setPending(decision.pending);
     });
   }
 
@@ -182,8 +261,13 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
       <div className="composer-wrap">
         {pending.length > 0 ? (
           <div className="composer-images">
-            {pending.map((item, index) => (
-              <img key={`${item.url}-${index}`} src={item.url} alt="" />
+            {pending.map((item) => (
+              <div className="composer-image" key={item.id}>
+                <img src={item.url} alt="" />
+                <button type="button" aria-label="移除图片" onClick={() => removePending(item.id)}>
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         ) : null}

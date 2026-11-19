@@ -1,4 +1,5 @@
-import { streamChat, loadMessages } from "../api/client";
+import { streamChat, loadMessages, isChatRejected } from "../api/client";
+import { keepSentPreviews } from "../composerImages";
 import type { ChatMsg, Citation, ScheduleCard, ArtifactPayload } from "../api/client";
 import type { ChatImagePayload, LocalImagePreview } from "../chatImage";
 import { useStore, type SessionChatState } from "../store/useStore";
@@ -163,7 +164,7 @@ async function runStreamLoop(
   sessionId: number,
   message: string,
   options: StartChatOptions & { regenerateMessageId?: number }
-): Promise<void> {
+): Promise<ChatStreamResult> {
   let acc = "";
   let cites: Citation[] = [];
   let scheduleCard: ScheduleCard | null = null;
@@ -251,6 +252,16 @@ async function runStreamLoop(
       });
     }
   } catch (e) {
+    const rejectedDetail = draftRejectionDetail(e);
+    if (rejectedDetail !== null) {
+      const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];
+      const last = prev.at(-1);
+      const prior = prev.at(-2);
+      if (last?.role === "assistant" && last.id == null && prior?.role === "user" && prior.id == null) {
+        patchSession(sessionId, { messages: prev.slice(0, -2) });
+      }
+      return { accepted: false, detail: rejectedDetail };
+    }
     if (isAbortError(e)) {
       aborted = true;
       if (!acc) {
@@ -269,15 +280,23 @@ async function runStreamLoop(
     try {
       const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
       const synced = overlaySettledScheduleCards(before, withHydratedFold(before, await loadMessages(sessionId)));
-      const messages = aborted ? synced : overlayUnsavedError(before, synced);
+      const merged = aborted ? synced : overlayUnsavedError(before, synced);
+      const messages = keepSentPreviews(before, merged);
       patchSession(sessionId, { messages, hydrated: true });
     } catch {
-      /* keep in-memory partial if sync fails */
     }
   }
+  return { accepted: true };
 }
 
-/** Load history from API when session has no in-memory cache. */
+function draftRejectionDetail(error: unknown): string | null {
+  if (isChatRejected(error)) return error.message;
+  if (error instanceof Error && error.message === "body_limit") return error.message;
+  return null;
+}
+
+export type ChatStreamResult = { accepted: true } | { accepted: false; detail: string };
+
 export async function hydrateSessionMessages(sessionId: number) {
   const existing = useStore.getState().sessionChats[sessionId];
   if (existing?.hydrated || existing?.busy) return;
@@ -296,16 +315,15 @@ export async function startChatStream(
   sessionId: number,
   message: string,
   options: StartChatOptions
-): Promise<void> {
+): Promise<ChatStreamResult> {
   const state = useStore.getState();
-  if (state.sessionChats[sessionId]?.busy) return;
+  if (state.sessionChats[sessionId]?.busy) return { accepted: false, detail: "" };
 
   appendAssistantPlaceholder(sessionId, message, options.localImages);
   useStore.getState().touchSession(sessionId);
-  await runStreamLoop(sessionId, message, options);
+  return runStreamLoop(sessionId, message, options);
 }
 
-/** Regenerate an existing assistant reply (truncates later turns server-side). */
 export async function startRegenerateStream(
   sessionId: number,
   assistantMessageId: number,
