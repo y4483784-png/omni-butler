@@ -567,7 +567,7 @@ def test_a_second_run_job_recovers_a_pending_read():
         run_job(user_id, session_id, "alpha")
     assert order[0] == "invoke"
     assert order.count("model") == 1
-    assert _notes(session_id) == ["已开始：alpha"]
+    assert _notes(session_id).count("已开始：alpha") == 1
     db = SessionLocal()
     try:
         assert db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").count() == 1

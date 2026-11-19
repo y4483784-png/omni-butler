@@ -112,14 +112,24 @@ def run_job(
     db = SessionLocal()
     try:
         set_rls_context(db, int(user_id))
-        if _loop_enabled() and _already_held(
-            db,
-            user_id=int(user_id),
-            session_id=int(session_id),
-            goal=goal or "",
-            message_id=web_constraint_message_id,
-        ):
-            return
+        if _loop_enabled():
+            held = _held_job(
+                db,
+                user_id=int(user_id),
+                session_id=int(session_id),
+                goal=goal or "",
+                message_id=web_constraint_message_id,
+            )
+            if held is not None:
+                task_id = int(held.id)
+                worker = str(held.exec_token)
+                generation = int(held.generation)
+                token = bind(user_id=int(user_id), generation=generation)
+                try:
+                    _drive(db, user_id=int(user_id), task_id=task_id, worker=worker)
+                finally:
+                    reset(token)
+                return
         turn = task_run.open_alongside(
             db,
             user_id=int(user_id),
@@ -149,7 +159,7 @@ def run_job(
         db.close()
 
 
-def _already_held(db, *, user_id: int, session_id: int, goal: str, message_id: int | None) -> bool:
+def _held_job(db, *, user_id: int, session_id: int, goal: str, message_id: int | None) -> TaskRun | None:
     query = db.query(TaskRun).filter(
         TaskRun.user_id == int(user_id),
         TaskRun.session_id == int(session_id),
@@ -161,7 +171,7 @@ def _already_held(db, *, user_id: int, session_id: int, goal: str, message_id: i
         query = query.filter(TaskRun.web_constraint_message_id == int(message_id))
     else:
         query = query.filter(TaskRun.goal == goal)
-    return query.first() is not None
+    return query.first()
 
 
 def _latest_step(db, task_id: int):
