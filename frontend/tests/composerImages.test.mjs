@@ -56,6 +56,15 @@ test("sent previews stay shown and a later sync keeps their urls", () => {
   const synced = [{ id: 9, role: "user", content: "", localImages: [] }];
   const kept = keepSentPreviews(before, synced);
   assert.equal(kept[0].localImages[0].url, "blob:a");
+  const again = keepSentPreviews(
+    [...kept, { role: "user", content: "", localImages: [{ url: "blob:b" }] }],
+    [
+      { id: 9, role: "user", content: "" },
+      { id: 10, role: "user", content: "" },
+    ],
+  );
+  assert.equal(again[0].localImages[0].url, "blob:a");
+  assert.equal(again[1].localImages[0].url, "blob:b");
 });
 
 test("the browser cap does not claim the server will accept 32MiB", () => {

@@ -890,6 +890,89 @@ def _assert_staged_cleanup(image, session_id, turn, store) -> None:
     assert store.objects == {}
 
 
+def test_late_put_after_terminal_or_expiry_is_deleted_by_the_next_sweep():
+    from app.services import task_run
+
+    image = decode_chat_image("image/png", _b64(PNG), max_upload_mb=20)
+    kept_session = _session_for(7)
+    abandoned_session = _session_for(7)
+    kept = task_run.begin_turn(user_id=7, session_id=kept_session)
+    store = _MemoryStore()
+    from app.storage import factory as blob_factory
+
+    previous = blob_factory._store
+    blob_factory._store = store
+    try:
+        _assert_late_put_is_still_discoverable(image, abandoned_session, kept, store)
+    finally:
+        blob_factory._store = previous
+
+
+def _assert_late_put_is_still_discoverable(image, abandoned_session, kept, store) -> None:
+    from datetime import timedelta
+
+    from app.core.db import SessionLocal
+    from app.models.models import TaskImage
+    from app.services import task_images, task_run
+    from app.services.task_images import STAGED_HOLD
+
+    db = SessionLocal()
+    try:
+        ready = task_images.bind_images(
+            db,
+            user_id=7,
+            task_run_id=kept.id,
+            images=(image,),
+            store=store,
+        )
+        db.commit()
+        ready_key = ready[0].storage_key
+        ready_id = ready[0].id
+    finally:
+        db.close()
+
+    def abandoned(mode: str) -> None:
+        turn = task_run.begin_turn(user_id=7, session_id=abandoned_session)
+        reserved = task_images.reserve_images(user_id=7, task_run_id=turn.id, images=(image,))
+        key = reserved[0].storage_key
+        if mode == "terminal":
+            task_run.stop(user_id=7, generation=turn.generation)
+        else:
+            db = SessionLocal()
+            try:
+                row = db.get(TaskImage, reserved[0].id)
+                when = row.created_at
+            finally:
+                db.close()
+            task_images.reconcile_task_images(
+                now=when + STAGED_HOLD + timedelta(seconds=1),
+                store=store,
+            )
+        db = SessionLocal()
+        try:
+            found = (
+                db.query(TaskImage).filter(TaskImage.storage_key == key).one_or_none()
+            )
+            assert found is not None
+            assert found.purge_state != "ready"
+        finally:
+            db.close()
+        store.put(key, PNG)
+        task_images.reconcile_task_images(store=store)
+        assert key not in store.objects
+        db = SessionLocal()
+        try:
+            survivor = db.get(TaskImage, ready_id)
+            assert survivor is not None
+            assert survivor.purge_state == "ready"
+        finally:
+            db.close()
+        assert store.objects[ready_key] == PNG
+
+    abandoned("terminal")
+    abandoned("expiry")
+
+
 def test_absent_pending_blob_still_drops_the_row():
     from app.core.db import SessionLocal
     from app.models.models import TaskImage

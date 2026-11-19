@@ -7,6 +7,9 @@ that carries the policies (``alembic upgrade head``), not just ``create_all``.
 
 from __future__ import annotations
 
+import threading
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import text
 
@@ -50,6 +53,144 @@ def _cleanup(db) -> None:
         db.execute(text("DELETE FROM documents WHERE user_id = :u"), {"u": user_id})
         db.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
     db.commit()
+
+
+class _GateStore:
+    """Block inside exists so another transaction can commit before the sweep writes."""
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        self.objects = {key: b"png-bytes"}
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.opened = False
+
+    def put(self, key, data):
+        raw = data if isinstance(data, (bytes, bytearray)) else data.read()
+        self.objects[key] = bytes(raw)
+        return key
+
+    def exists(self, key) -> bool:
+        if key == self.key and not self.opened:
+            self.opened = True
+            self.started.set()
+            assert self.release.wait(5), "the terminal transaction did not commit"
+        return key in self.objects
+
+    def delete(self, key) -> None:
+        self.objects.pop(key, None)
+
+    def materialize(self, key):
+        raise FileNotFoundError(key)
+
+    def release_materialized(self, path, key) -> None:
+        return None
+
+
+@_needs_postgres
+def test_reconcile_keeps_a_delete_committed_during_the_blob_check():
+    """SQLite serializes the sweep's open transaction, so this interleaving runs on Postgres."""
+    from app.core.db import maintenance_session
+    from app.models.models import TaskImage
+    from app.services import task_images, task_run
+
+    user_id = 91021
+    db = SessionLocal()
+    gate = None
+    try:
+        _ensure_user(db, user_id, "picture-fence")
+        set_rls_context(db, user_id)
+        session = ChatSession(user_id=user_id, title="fence")
+        db.add(session)
+        db.commit()
+        set_rls_context(db, user_id)
+        other = ChatSession(user_id=user_id, title="fence-kept")
+        db.add(other)
+        db.commit()
+        set_rls_context(db, user_id)
+        run = TaskRun(
+            user_id=user_id,
+            session_id=session.id,
+            generation=1,
+            status="running",
+            allowed_tools="[]",
+        )
+        kept = TaskRun(
+            user_id=user_id,
+            session_id=other.id,
+            generation=2,
+            status="running",
+            allowed_tools="[]",
+        )
+        db.add(run)
+        db.add(kept)
+        db.flush()
+        staged = TaskImage(
+            user_id=user_id,
+            task_run_id=run.id,
+            media_type="image/png",
+            byte_length=9,
+            sha256="fence",
+            storage_key=f"task-image/{user_id}/{run.id}/fence",
+            purge_state="staged",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        )
+        safe = TaskImage(
+            user_id=user_id,
+            task_run_id=kept.id,
+            media_type="image/png",
+            byte_length=9,
+            sha256="kept",
+            storage_key=f"task-image/{user_id}/{kept.id}/kept",
+            purge_state="ready",
+        )
+        db.add(staged)
+        db.add(safe)
+        db.commit()
+        gate = _GateStore(staged.storage_key)
+        gate.objects[safe.storage_key] = b"kept-bytes"
+        holder: dict = {}
+
+        def sweep() -> None:
+            try:
+                holder["count"] = task_images.reconcile_task_images(store=gate)
+            except Exception as exc:
+                holder["error"] = exc
+
+        worker = threading.Thread(target=sweep)
+        worker.start()
+        assert gate.started.wait(5), "reconcile did not reach the blob check"
+        task_run.stop(user_id=user_id, generation=1)
+        gate.release.set()
+        worker.join(5)
+        assert not worker.is_alive()
+        if "error" in holder:
+            raise holder["error"]
+        check = maintenance_session()
+        try:
+            left = (
+                check.query(TaskImage)
+                .filter(TaskImage.storage_key == staged.storage_key)
+                .one_or_none()
+            )
+            assert left is None or left.purge_state != "ready"
+            survivor = check.get(TaskImage, safe.id)
+            assert survivor is not None
+            assert survivor.purge_state == "ready"
+        finally:
+            check.close()
+        assert gate.objects[safe.storage_key] == b"kept-bytes"
+    finally:
+        if gate is not None:
+            gate.release.set()
+        db.rollback()
+        set_rls_context(db, user_id)
+        db.execute(text("DELETE FROM task_images WHERE user_id = :u"), {"u": user_id})
+        db.execute(text("DELETE FROM task_runs WHERE user_id = :u"), {"u": user_id})
+        db.execute(text("DELETE FROM sessions WHERE user_id = :u"), {"u": user_id})
+        db.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
+        db.commit()
+        db.close()
 
 
 @_needs_postgres
