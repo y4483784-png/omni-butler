@@ -392,3 +392,150 @@ def test_a_secret_errand_is_rejected_without_invoke():
     assert row.state == "rejected"
     assert "hidden" not in row.arguments
     assert "password" not in row.arguments
+
+
+def _drive_held(user_id: int, session_id: int) -> None:
+    from app.tasks.job import _drive
+
+    job = _job(session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        _drive(db, user_id=user_id, task_id=job.id, worker=job.exec_token)
+    finally:
+        db.close()
+
+
+def test_a_later_drive_runs_a_pending_read_before_the_model():
+    user_id, session_id = _pair()
+    order: list[str] = []
+
+    def executor(messages, _tools):
+        order.append("model")
+        if any(item.get("role") == "tool" for item in messages):
+            return _turn(content="done", finish="stop")
+        return _turn(ToolCallSpec("call-a", "kb", "{}"))
+
+    def fake_invoke(name, _ctx, _args):
+        order.append("invoke")
+        return ToolResult(direct_answer=f"saw {name}")
+
+    set_executor(executor)
+    with patch("app.services.loop_round.begin_read", side_effect=SystemExit(7)):
+        with pytest.raises(SystemExit):
+            run_job(user_id, session_id, "alpha")
+    assert [(row.tool_call_id, row.state) for row in _calls(_job(session_id).id)] == [("call-a", "pending")]
+    order.clear()
+    with patch("app.agents.harness.gateway.invoke", fake_invoke):
+        _drive_held(user_id, session_id)
+    assert order[0] == "invoke"
+    assert order.count("model") == 1
+    job = _job(session_id)
+    assert job.status == "completed"
+    assert _calls(job.id)[0].state == "result"
+
+
+def test_a_later_drive_runs_a_running_read_again():
+    user_id, session_id = _pair()
+    invokes: list[str] = []
+
+    def executor(messages, _tools):
+        if any(item.get("role") == "tool" for item in messages):
+            return _turn(content="done", finish="stop")
+        return _turn(ToolCallSpec("call-a", "kb", "{}"))
+
+    def fake_invoke(name, _ctx, _args):
+        invokes.append(name)
+        if len(invokes) == 1:
+            raise SystemExit(7)
+        return ToolResult(direct_answer="again")
+
+    set_executor(executor)
+    with patch("app.agents.harness.gateway.invoke", fake_invoke):
+        with pytest.raises(SystemExit):
+            run_job(user_id, session_id, "alpha")
+    assert _calls(_job(session_id).id)[0].state == "running"
+    with patch("app.agents.harness.gateway.invoke", fake_invoke):
+        _drive_held(user_id, session_id)
+    assert invokes == ["kb", "kb"]
+    job = _job(session_id)
+    assert job.status == "completed"
+    assert _calls(job.id)[0].state == "result"
+    assert _calls(job.id)[0].result == "again"
+
+
+def test_a_later_drive_sends_one_request_from_stored_results():
+    user_id, session_id = _pair()
+    sent: list[list[dict]] = []
+
+    def executor(messages, _tools):
+        sent.append(messages)
+        if len(sent) == 1:
+            return _turn(ToolCallSpec("call-a", "kb", "{}"), ToolCallSpec("call-b", "web", "{}"))
+        return _turn(content="done", finish="stop")
+
+    def fake_invoke(name, _ctx, _args):
+        return ToolResult(direct_answer=f"saw {name}")
+
+    from app.tasks import job as job_module
+
+    real_request = job_module._request
+
+    def stop_before_results(db, task):
+        step = (
+            db.query(TaskStep)
+            .filter(TaskStep.task_run_id == task.id)
+            .order_by(TaskStep.seq.desc())
+            .first()
+        )
+        if step is not None and step.phase == "results_ready":
+            raise SystemExit(7)
+        return real_request(db, task)
+
+    set_executor(executor)
+    with patch("app.agents.harness.gateway.invoke", fake_invoke), patch.object(job_module, "_request", stop_before_results):
+        with pytest.raises(SystemExit):
+            run_job(user_id, session_id, "alpha")
+    assert len(sent) == 1
+    job = _job(session_id)
+    assert job.status == "running"
+    with patch("app.agents.harness.gateway.invoke", side_effect=AssertionError("invoked")):
+        _drive_held(user_id, session_id)
+    assert len(sent) == 2
+    results = [item for item in sent[1] if item.get("role") == "tool"]
+    assert [(item["tool_call_id"], item["content"]) for item in results] == [
+        ("call-a", "saw kb"),
+        ("call-b", "saw web"),
+    ]
+    assert _job(session_id).status == "completed"
+
+
+def test_a_second_run_while_held_does_not_start_again():
+    user_id, session_id = _pair()
+    calls: list[str] = []
+
+    def executor(_messages, _tools):
+        calls.append("alpha")
+        raise SystemExit(3)
+
+    set_executor(executor)
+    with pytest.raises(SystemExit):
+        run_job(user_id, session_id, "alpha")
+    assert _notes(session_id) == ["已开始：alpha"]
+    run_job(user_id, session_id, "alpha")
+    assert calls == ["alpha"]
+    assert _notes(session_id) == ["已开始：alpha"]
+    db = SessionLocal()
+    try:
+        assert db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").count() == 1
+    finally:
+        db.close()
+
+    def finish(_messages, _tools):
+        calls.append("beta")
+        return _turn(content="done", finish="stop")
+
+    set_executor(finish)
+    run_job(user_id, session_id, "beta")
+    assert calls == ["alpha", "beta"]
+    assert _notes(session_id).count("已开始：beta") == 1
