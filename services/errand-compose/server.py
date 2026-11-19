@@ -5,26 +5,30 @@ import logging
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from driver import run_task
-
 logger = logging.getLogger("errand-compose")
 _SEALED = frozenset({"password", "pan", "cvv", "cookie", "secret", "pay", "login"})
 _TOKEN = os.environ.get("ERRAND_COMPOSE_TOKEN", "").strip()
 
 
-def _public(result: dict) -> dict:
+def _public(result: dict, task: dict | None = None) -> dict:
     safe = {key: value for key, value in result.items() if str(key).strip().casefold() not in _SEALED}
     clicks = safe.get("clicks_after_wall", 0)
     try:
         clicks = int(clicks)
     except (TypeError, ValueError):
         clicks = 0
-    return {
+    body = {
         "outcome": str(safe.get("outcome") or "unknown"),
         "order_id": str(safe.get("order_id") or ""),
         "told": str(safe.get("told") or ""),
         "clicks_after_wall": clicks,
     }
+    key = result.get("idempotency_key")
+    if not isinstance(key, str) and isinstance(task, dict):
+        key = task.get("idempotency_key")
+    if isinstance(key, str):
+        body["idempotency_key"] = key
+    return body
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -69,12 +73,14 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(task, dict) or task.get("kind") not in {"place", "lookup"}:
             self._send(404, {"detail": "not found"})
             return
+        from driver import run_task
+
         try:
             result = run_task(task)
         except Exception:
             logger.info("errand compose failed")
             result = {"outcome": "unknown", "order_id": "", "told": "", "clicks_after_wall": 0}
-        public = _public(result if isinstance(result, dict) else {})
+        public = _public(result if isinstance(result, dict) else {}, task)
         logger.info("outcome=%s order_id=%s", public["outcome"], public["order_id"])
         self._send(200, public)
 

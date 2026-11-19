@@ -38,6 +38,36 @@ FLAGS = (
     "breakStop",
 )
 
+PLACE_BREAKS = {
+    "break_bare": ("breakBare", "BareWritesNothing"),
+    "break_unpaid": ("breakUnpaid", "UnpaidWritesNothing"),
+    "break_success": ("breakSuccess", "SuccessAfterRecord"),
+    "break_again": ("breakAgain", "AtMostOnePlace"),
+    "break_seen": ("breakSeen", "AtMostOnePlace"),
+    "break_page": ("breakPage", "UnnamedIsNotOrder"),
+    "break_wall": ("breakWall", "WallDoesNotClick"),
+    "break_stop": ("breakStop", "StopKeepsRecord"),
+}
+
+ECHO_HELD = (
+    "TypeOK",
+    "EchoRequiredForPlaced",
+    "LookupDoesNotPlace",
+    "SecretsDropped",
+)
+
+ECHO_FLAGS = (
+    "breakEmptyEcho",
+    "breakLookupPlace",
+    "breakSecrets",
+)
+
+ECHO_BREAKS = {
+    "break_empty_echo": ("breakEmptyEcho", "EchoRequiredForPlaced"),
+    "break_lookup_place": ("breakLookupPlace", "LookupDoesNotPlace"),
+    "break_secrets": ("breakSecrets", "SecretsDropped"),
+}
+
 
 def fail_model(message: str) -> NoReturn:
     print(f"modeling error: {message}", file=sys.stderr)
@@ -112,51 +142,76 @@ def anchors() -> None:
     require('"errand.place"' in detail, "errand.place is not a claim action")
 
 
-def write_cfg(directory: Path, flags: dict[str, bool], names: tuple[str, ...]) -> Path:
+def write_cfg(
+    directory: Path,
+    spec: str,
+    constants: tuple[str, ...],
+    flags: dict[str, bool],
+    names: tuple[str, ...],
+) -> Path:
     lines = ["SPECIFICATION Spec", "CONSTANT"]
-    for name in FLAGS:
-        lines.append(f"  {name} = {'TRUE' if flags[name] else 'FALSE'}")
+    for name in constants:
+        lines.append(f"  {name} = {'TRUE' if flags.get(name) else 'FALSE'}")
     for name in names:
         lines.append(f"INVARIANT {name}")
     lines.append("")
-    path = directory / "ErrandPlace.cfg"
+    path = directory / f"{spec}.cfg"
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
 
-def run_tlc(flags: dict[str, bool], names: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+def run_tlc(
+    spec: str,
+    constants: tuple[str, ...],
+    flags: dict[str, bool],
+    names: tuple[str, ...],
+) -> subprocess.CompletedProcess[str]:
     if shutil.which("java") is None:
         fail_model("java is not on PATH")
-    with tempfile.TemporaryDirectory(prefix="errand-place-tlc-") as tmp:
+    with tempfile.TemporaryDirectory(prefix=f"{spec.lower()}-tlc-") as tmp:
         meta = Path(tmp)
-        shutil.copy(SPEC_DIR / "ErrandPlace.tla", meta / "ErrandPlace.tla")
-        cfg = write_cfg(meta, flags, names)
-        return subprocess.run(
-            [
-                "java",
-                "-XX:+UseParallelGC",
-                "-cp",
-                str(jar_path()),
-                "tlc2.TLC",
-                "-workers",
-                "1",
-                "-nowarning",
-                "-config",
-                str(cfg),
-                "-metadir",
-                str(meta),
-                "ErrandPlace.tla",
-            ],
-            cwd=meta,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+        shutil.copy(SPEC_DIR / f"{spec}.tla", meta / f"{spec}.tla")
+        cfg = write_cfg(meta, spec, constants, flags, names)
+        try:
+            return subprocess.run(
+                [
+                    "java",
+                    "-XX:+UseParallelGC",
+                    "-cp",
+                    str(jar_path()),
+                    "tlc2.TLC",
+                    "-workers",
+                    "1",
+                    "-nowarning",
+                    "-config",
+                    str(cfg),
+                    "-metadir",
+                    str(meta),
+                    f"{spec}.tla",
+                ],
+                cwd=meta,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            fail_model(f"{spec} TLC timed out")
+
+
+def judge(spec: str, result: subprocess.CompletedProcess[str], label: str | None) -> None:
+    output = (result.stdout or "") + (result.stderr or "")
+    print(output)
+    if label:
+        if label not in output or "No error has been found" in output:
+            fail_model(f"the broken {spec} model did not violate {label}")
+        raise SystemExit(1)
+    if result.returncode != 0 or "No error has been found" not in output:
+        fail_model(f"the held {spec} run failed")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Check the errand place model.")
+    parser = argparse.ArgumentParser(description="Check the errand place and errand echo models.")
     parser.add_argument("--break-bare", action="store_true")
     parser.add_argument("--break-unpaid", action="store_true")
     parser.add_argument("--break-success", action="store_true")
@@ -165,42 +220,29 @@ def main() -> None:
     parser.add_argument("--break-page", action="store_true")
     parser.add_argument("--break-wall", action="store_true")
     parser.add_argument("--break-stop", action="store_true")
+    parser.add_argument("--break-empty-echo", action="store_true")
+    parser.add_argument("--break-lookup-place", action="store_true")
+    parser.add_argument("--break-secrets", action="store_true")
     args = parser.parse_args()
-    flags = {
-        "breakBare": args.break_bare,
-        "breakUnpaid": args.break_unpaid,
-        "breakSuccess": args.break_success,
-        "breakAgain": args.break_again,
-        "breakSeen": args.break_seen,
-        "breakPage": args.break_page,
-        "breakWall": args.break_wall,
-        "breakStop": args.break_stop,
-    }
-    if sum(1 for value in flags.values() if value) > 1:
+    chosen = [name for name in (*PLACE_BREAKS, *ECHO_BREAKS) if getattr(args, name)]
+    if len(chosen) > 1:
         fail_model("pass only one break flag")
     anchors()
-    expected = {
-        "breakBare": "BareWritesNothing",
-        "breakUnpaid": "UnpaidWritesNothing",
-        "breakSuccess": "SuccessAfterRecord",
-        "breakAgain": "AtMostOnePlace",
-        "breakSeen": "AtMostOnePlace",
-        "breakPage": "UnnamedIsNotOrder",
-        "breakWall": "WallDoesNotClick",
-        "breakStop": "StopKeepsRecord",
-    }
-    active = next((name for name, enabled in flags.items() if enabled), None)
-    names = ("TypeOK", expected[active]) if active else HELD
-    result = run_tlc(flags, names)
-    output = (result.stdout or "") + (result.stderr or "")
-    print(output)
-    if active:
-        label = expected[active]
-        if label not in output or "No error has been found" in output:
-            fail_model(f"the broken model did not violate {label}")
-        raise SystemExit(1)
-    if result.returncode != 0 or "No error has been found" not in output:
-        fail_model("the held run failed")
+    if not chosen:
+        place = run_tlc("ErrandPlace", FLAGS, {}, HELD)
+        judge("ErrandPlace", place, None)
+        echo = run_tlc("ErrandEcho", ECHO_FLAGS, {}, ECHO_HELD)
+        judge("ErrandEcho", echo, None)
+        return
+    name = chosen[0]
+    if name in PLACE_BREAKS:
+        constant, label = PLACE_BREAKS[name]
+        result = run_tlc("ErrandPlace", FLAGS, {constant: True}, ("TypeOK", label))
+        judge("ErrandPlace", result, label)
+        return
+    constant, label = ECHO_BREAKS[name]
+    result = run_tlc("ErrandEcho", ECHO_FLAGS, {constant: True}, ("TypeOK", label))
+    judge("ErrandEcho", result, label)
 
 
 if __name__ == "__main__":
