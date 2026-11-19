@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3360" height="3370" viewBox="0 0 3360 3370"><rect width="3360" height="3370" fill="#f5f7fb"/>
+<text x="80" y="110.5" font-family="Noto Sans CJK SC, sans-serif" font-size="65" font-weight="700" fill="#22354c">Omni-Butler｜预期项目结构大图</text>
+<text x="82" y="167.0" font-family="Noto Sans CJK SC, sans-serif" font-size="35" font-weight="400" fill="#50637a">预期目标｜未全部实现｜2026-11-19 SGT（新加坡时间）</text>
+<rect x="82" y="205" width="26" height="26" rx="5" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="124" y="227.0" font-family="Noto Sans CJK SC, sans-serif" font-size="29" font-weight="400" fill="#3676bd">蓝：本轮确认的目标</text>
+<rect x="850" y="205" width="26" height="26" rx="5" fill="#ffffff" stroke="#9aaabe" stroke-width="2"/>
+<text x="892" y="227.0" font-family="Noto Sans CJK SC, sans-serif" font-size="29" font-weight="400" fill="#9aaabe">灰：现有系统承接 / 待接线</text>
+<rect x="1950" y="205" width="26" height="26" rx="5" fill="#fff5df" stroke="#b97c19" stroke-width="2"/>
+<text x="1992" y="227.0" font-family="Noto Sans CJK SC, sans-serif" font-size="29" font-weight="400" fill="#b97c19">橙：候选待核对，未选定依赖</text>
+<rect x="80" y="310" width="800" height="235" rx="22" fill="#ffffff" stroke="#9aaabe" stroke-width="2"/>
+<text x="110" y="373.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">事件入口（支线）</text>
+<text x="110" y="437.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">现有日程 / 提醒 / 外部事件</text>
+<text x="110" y="486.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">接收后关联任务，重复事件去重</text>
+<text x="110" y="517.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#9aaabe">不是宣称新增服务已经安装</text>
+<rect x="1020" y="310" width="1240" height="235" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="1050" y="373.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">用户入口｜网页 + 桌面安装包</text>
+<text x="1050" y="439.5" font-family="Noto Sans CJK SC, sans-serif" font-size="33" font-weight="400" fill="#22354c">文字 / 原图 / 文件；多窗口看同一任务</text>
+<text x="1050" y="488.5" font-family="Noto Sans CJK SC, sans-serif" font-size="33" font-weight="400" fill="#22354c">持续发消息、看结果，明确文字取消仍有效</text>
+<rect x="2400" y="310" width="800" height="235" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="2430" y="373.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">聊天与通知</text>
+<text x="2430" y="437.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">回答 / 进度 / 结果 / 具体确认卡</text>
+<text x="2430" y="486.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">确认回原步骤，不放大授权范围</text>
+<text x="2430" y="517.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#3676bd">与用户入口属于同一交互界面</text>
+<polyline points="1640,545 1640,640" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="1640,640 1648.0,622.0 1632.0,622.0" fill="#497eac"/>
+<polygon points="1640,545 1632.0,563.0 1648.0,563.0" fill="#497eac"/>
+<polyline points="880,425 940,425 940,740 1020,740" fill="none" stroke="#98a7ba" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 12"/>
+<polygon points="1020,740 1002.0,732.0 1002.0,748.0" fill="#98a7ba"/>
+<rect x="1020" y="640" width="1240" height="360" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="1050" y="703.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">持续交互与派活｜SuperAgent</text>
+<text x="1050" y="770.5" font-family="Noto Sans CJK SC, sans-serif" font-size="34" font-weight="400" fill="#22354c">持续接收和回答，不等后台任务结束</text>
+<text x="1050" y="823.5" font-family="Noto Sans CJK SC, sans-serif" font-size="34" font-weight="400" fill="#22354c">分清：补充旧任务 / 修改 / 新任务 / 取消</text>
+<text x="1050" y="876.5" font-family="Noto Sans CJK SC, sans-serif" font-size="34" font-weight="400" fill="#22354c">歧义真正影响动作时才问；关联正确任务</text>
+<text x="1050" y="929.5" font-family="Noto Sans CJK SC, sans-serif" font-size="34" font-weight="400" fill="#22354c">派活给独立执行者，不每来新话就杀旧工作</text>
+<text x="1050" y="972.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#3676bd">沿用 dsh-superagent-prototype 总体模式；不是改成单一队列</text>
+<polyline points="2260,760 2340,760 2340,425 2400,425" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="2400,425 2382.0,417.0 2382.0,433.0" fill="#497eac"/>
+<polygon points="2260,760 2278.0,768.0 2278.0,752.0" fill="#497eac"/>
+<text x="1100" y="1068.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#3b6993">派活 / 补充 / 修改 / 取消 → 对应任务</text>
+<polyline points="1640,1000 1640,1140" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="1640,1140 1648.0,1122.0 1632.0,1122.0" fill="#497eac"/>
+<polygon points="1640,1000 1632.0,1018.0 1648.0,1018.0" fill="#497eac"/>
+<rect x="1020" y="1140" width="1240" height="1005" rx="28" fill="#f6fbff" stroke="#5484b3" stroke-width="3"/>
+<text x="1050" y="1204.5" font-family="Noto Sans CJK SC, sans-serif" font-size="38" font-weight="700" fill="#22354c">独立后台任务执行者｜每个任务有自己的进度</text>
+<rect x="1100" y="1250" width="1080" height="170" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="1130" y="1312.0" font-family="Noto Sans CJK SC, sans-serif" font-size="36" font-weight="700" fill="#22354c">执行循环</text>
+<text x="1130" y="1376.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">看目标与上下文 → 自主选工具 → 读结果 → 继续</text>
+<rect x="1100" y="1490" width="1080" height="310" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="1130" y="1553.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">工具注册、权限检查与重要写操作确认</text>
+<text x="1130" y="1617.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">读操作：遵守本次要求；默认具备搜索能力</text>
+<text x="1130" y="1663.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">写操作：展示对象 / 设备 / 参数 → 人确认</text>
+<text x="1130" y="1709.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">确认有效且只消费一次，再执行该步骤</text>
+<text x="1130" y="1755.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">拒绝过期确认；禁止自动允许、始终允许</text>
+<polyline points="1640,1420 1640,1490" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="1640,1490 1648.0,1472.0 1632.0,1472.0" fill="#497eac"/>
+<rect x="1100" y="1870" width="1080" height="205" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="1130" y="1933.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">保存工具结果与步骤状态，再决定下一步</text>
+<text x="1130" y="1995.0" font-family="Noto Sans CJK SC, sans-serif" font-size="29" font-weight="400" fill="#22354c">进展 / 结果回聊天；需确认则发卡，未批不执行</text>
+<text x="1130" y="2041.0" font-family="Noto Sans CJK SC, sans-serif" font-size="29" font-weight="400" fill="#22354c">完成 / 继续 / 明确失败 / 取消；未知写入只查不重做</text>
+<polyline points="1640,1800 1640,1870" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="1640,1870 1648.0,1852.0 1632.0,1852.0" fill="#497eac"/>
+<polyline points="1100,1970 1060,1970 1060,1335 1100,1335" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="1100,1335 1082.0,1327.0 1082.0,1343.0" fill="#497eac"/>
+<text x="1110" y="2121.5" font-family="Noto Sans CJK SC, sans-serif" font-size="27" font-weight="400" fill="#416a90">后台循环零件参考 Hermes；不是换掉 SuperAgent</text>
+<rect x="80" y="1140" width="800" height="390" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="110" y="1203.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">模型与用量配置</text>
+<text x="110" y="1267.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">按聊天 / 派活 / 执行等任务分别配置</text>
+<text x="110" y="1316.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">Flash：回答 + 聊天原图直接输入</text>
+<text x="110" y="1365.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">不先交智谱转文字再问 Flash</text>
+<text x="110" y="1414.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">具体参数不编造；记录真实用量</text>
+<text x="110" y="1502.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#3676bd">支持 Vision ≠ 本项目已传图或实测；不是整仓换语言</text>
+<polyline points="880,1305 1020,1305" fill="none" stroke="#98a7ba" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 12"/>
+<polygon points="1020,1305 1002.0,1297.0 1002.0,1313.0" fill="#98a7ba"/>
+<polygon points="880,1305 898.0,1313.0 898.0,1297.0" fill="#98a7ba"/>
+<rect x="80" y="1680" width="800" height="465" rx="22" fill="#ffffff" stroke="#9aaabe" stroke-width="2"/>
+<text x="110" y="1743.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">知识、记忆与资料入库</text>
+<text x="110" y="1807.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">资料 / 文件 / 入库图片摘要</text>
+<text x="110" y="1859.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">智谱嵌入 + 重排 + 入库识图保留</text>
+<text x="110" y="1911.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">记忆与知识索引支持检索和任务上下文</text>
+<text x="110" y="1963.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">聊天原图路线与资料入库路线分开</text>
+<text x="110" y="2015.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">只替换智谱网页搜索，不迁移全部依赖</text>
+<text x="110" y="2117.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#9aaabe">Agent Zero 的配置/重载仅作未来迁移参考</text>
+<polyline points="880,1910 1020,1910" fill="none" stroke="#98a7ba" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 12"/>
+<polygon points="1020,1910 1002.0,1902.0 1002.0,1918.0" fill="#98a7ba"/>
+<polygon points="880,1910 898.0,1918.0 898.0,1902.0" fill="#98a7ba"/>
+<rect x="2400" y="1140" width="800" height="440" rx="22" fill="#ffffff" stroke="#9aaabe" stroke-width="2"/>
+<text x="2430" y="1203.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">服务端持久数据库｜现仓记录系统承接</text>
+<text x="2430" y="1266.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">任务 / 步骤 / 工具结果 / 确认 / 状态</text>
+<text x="2430" y="1315.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">任务账本 + 事件收件箱 + 结果去重</text>
+<text x="2430" y="1364.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">网页断线不取消；重连读服务端状态</text>
+<text x="2430" y="1413.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">多窗口一致；旧代次不覆盖新状态</text>
+<text x="2430" y="1462.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">重启恢复、未知写查询仍需具体实现</text>
+<text x="2430" y="1552.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#9aaabe">不指定新数据库产品；设备凭证不代替确认单</text>
+<polyline points="2260,1310 2400,1310" fill="none" stroke="#98a7ba" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 12"/>
+<polygon points="2400,1310 2382.0,1302.0 2382.0,1318.0" fill="#98a7ba"/>
+<polygon points="2260,1310 2278.0,1318.0 2278.0,1302.0" fill="#98a7ba"/>
+<rect x="2400" y="1720" width="800" height="360" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="2430" y="1783.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">按最近进展看护任务</text>
+<text x="2430" y="1847.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">不按创建满 20 分钟强停</text>
+<text x="2430" y="1896.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">无进展先检查、报告，避免重复提醒</text>
+<text x="2430" y="1945.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">明确失败 / 用户取消再结束</text>
+<text x="2430" y="1994.0" font-family="Noto Sans CJK SC, sans-serif" font-size="31" font-weight="400" fill="#22354c">等人确认与外部等待分开记录</text>
+<text x="2430" y="2052.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#3676bd">参考 Hermes 最近活动机制；从服务端记录观察执行</text>
+<polyline points="1100,2050 1000,2050 1000,2170 48,2170 48,270 2800,270 2800,310" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="2800,310 2808.0,292.0 2792.0,292.0" fill="#497eac"/>
+<polygon points="1100,2050 1082.0,2042.0 1082.0,2058.0" fill="#497eac"/>
+<text x="100" y="2216.5" font-family="Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#3b6993">结果 / 进展 / 确认 ↔ 聊天</text>
+<polyline points="2180,1635 2320,1635 2320,2260" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="2320,2260 2328.0,2242.0 2312.0,2242.0" fill="#497eac"/>
+<polygon points="2180,1635 2198.0,1643.0 2198.0,1627.0" fill="#497eac"/>
+<text x="1030" y="2233.5" font-family="Noto Sans CJK SC, sans-serif" font-size="32" font-weight="700" fill="#3b6993">执行工具通道｜先查连接器；没有合适接口才使用网页路线</text>
+<path d="M457 2300H2902 M2320 2260V2300" fill="none" stroke="#497eac" stroke-width="5"/>
+<polyline points="457,2300 457,2380" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="457,2380 465.0,2362.0 449.0,2362.0" fill="#497eac"/>
+<polygon points="457,2300 449.0,2318.0 465.0,2318.0" fill="#497eac"/>
+<polyline points="1272,2300 1272,2380" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="1272,2380 1280.0,2362.0 1264.0,2362.0" fill="#497eac"/>
+<polygon points="1272,2300 1264.0,2318.0 1280.0,2318.0" fill="#497eac"/>
+<polyline points="2087,2300 2087,2380" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="2087,2380 2095.0,2362.0 2079.0,2362.0" fill="#497eac"/>
+<polygon points="2087,2300 2079.0,2318.0 2095.0,2318.0" fill="#497eac"/>
+<polyline points="2902,2300 2902,2380" fill="none" stroke="#497eac" stroke-width="5" stroke-linejoin="round"/>
+<polygon points="2902,2380 2910.0,2362.0 2894.0,2362.0" fill="#497eac"/>
+<polygon points="2902,2300 2894.0,2318.0 2910.0,2318.0" fill="#497eac"/>
+<rect x="80" y="2380" width="755" height="540" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="110" y="2443.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">搜索与知识读取</text>
+<text x="110" y="2506.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">DeepSeek 独立 Search / Fetch</text>
+<text x="110" y="2562.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">Flash 自主决定是否需要搜索</text>
+<text x="110" y="2618.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">明确说不要搜，就正常遵守</text>
+<text x="110" y="2674.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">返回来源 / 正文 → 工具结果</text>
+<text x="110" y="2730.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">知识检索读取现有记忆与索引</text>
+<text x="110" y="2892.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#3676bd">不因搜索把整段回答升到 Pro</text>
+<rect x="895" y="2380" width="755" height="540" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="925" y="2443.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">连接器｜优先路线</text>
+<text x="925" y="2506.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">真实邮件：接受后才报已发送</text>
+<text x="925" y="2562.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">日历：事件 ID → 成功回执</text>
+<text x="925" y="2618.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">办事：操作关联号贯穿回包</text>
+<text x="925" y="2674.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">服务返回商家订单号便于查单</text>
+<text x="925" y="2730.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">未知先查询，不能重发 / 重下</text>
+<text x="925" y="2892.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#3676bd">接受 ≠ 对方收到；重要写入先过上方确认闸</text>
+<rect x="1710" y="2380" width="755" height="540" rx="22" fill="#fff5df" stroke="#b97c19" stroke-width="2"/>
+<text x="1740" y="2443.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">浏览器后端｜候选待核对</text>
+<text x="1740" y="2506.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">优先核对 Hermes + Browser Use</text>
+<text x="1740" y="2562.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">没有合适连接器时再用网页</text>
+<text x="1740" y="2618.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">Flash 适配、写入确认能否拦截</text>
+<text x="1740" y="2674.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">结构化结果 / 证据回传需核对</text>
+<text x="1740" y="2730.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">不是替代 SuperAgent 的架构</text>
+<text x="1740" y="2892.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#b97c19">候选未定、未安装；Poke / Vesta 仅作产品案例</text>
+<rect x="2525" y="2380" width="755" height="540" rx="22" fill="#edf5ff" stroke="#3676bd" stroke-width="2"/>
+<text x="2555" y="2443.0" font-family="Noto Sans CJK SC, sans-serif" font-size="37" font-weight="700" fill="#22354c">本机执行｜仅安装包设备</text>
+<text x="2555" y="2506.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">具体设备 / 文件 / 操作确认卡</text>
+<text x="2555" y="2562.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">独立登记令牌，只存凭证哈希</text>
+<text x="2555" y="2618.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">按设备撤销；确认后执行一次</text>
+<text x="2555" y="2674.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">执行结果回同一后台任务</text>
+<text x="2555" y="2730.0" font-family="Noto Sans CJK SC, sans-serif" font-size="30" font-weight="400" fill="#22354c">服务器网页端不开放本地工具</text>
+<text x="2555" y="2892.5" font-family="Noto Sans CJK SC, sans-serif" font-size="26" font-weight="400" fill="#3676bd">参考 OpenMausBot；不共享一枚桌面令牌</text>
+<rect x="80" y="3020" width="3200" height="300" rx="22" fill="#ffffff" stroke="#cbd6e3" stroke-width="2"/>
+<text x="115" y="3085.0" font-family="Noto Sans CJK SC, sans-serif" font-size="36" font-weight="700" fill="#22354c">读图边界</text>
+<text x="115" y="3142.5" font-family="Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#42546b">这是全项目的逻辑目标模块，不是新增文件路径，也不是当前实现或安装清单。主线：入口 → 持续交互派活 → 独立后台执行 → 工具 → 结果回聊天。</text>
+<text x="115" y="3190.5" font-family="Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#42546b">只更新计划和图；不改代码、不合 PR、不部署。PR 93 旧版不合。Python 后端 / TypeScript 网页与桌面保留，不整仓换语言、不 fork 完整框架。</text>
+<text x="115" y="3238.5" font-family="Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#42546b">每刀保留单元测试 / 形式检查 / 独立审查；活体端到端留到整体实现后统一。历史待复核项不因出图而关闭。</text>
+<text x="115" y="3286.5" font-family="Noto Sans CJK SC, sans-serif" font-size="28" font-weight="400" fill="#42546b">逐步批准局部参考 OpenClaw / FullDots / Rowboat（不抄自动允许）；工具后端返回结果仍归原任务，不是每次重新派活。</text>
+</svg>

@@ -1,0 +1,26 @@
+ts	phase	decision	why	evidence	result
+2026-11-19T11:07:42Z	start	this run began the 2026-11-19 target plan	operator asked for plan, review, and a docs PR only	agent parent grok-4.7-high; candidates bc-4dbf3bd0-8a57-5172-a1df-71fe955d3f5d and bc-3ceb508b-ae2d-55a7-a35e-8b144cdfeeb1	open
+2026-11-19T11:07:42Z	frame	kept the repo pstack rule Grok-only and overrode this run	the user said prefer a this-round override and do not widen a permanent default	docs/envisioned-product/2026-11-19/review/grounding.md	open
+2026-11-19T11:07:42Z	frame	spawned grok-4.7-high and gemini-4-neon-high plan candidates	both models must write a plan before either review runs	bc-4dbf3bd0-8a57-5172-a1df-71fe955d3f5d grok-4.7-high; bc-3ceb508b-ae2d-55a7-a35e-8b144cdfeeb1 gemini-4-neon-high	open
+2026-11-19T11:07:42Z	frame	copied the diagram, page snapshot, and OSS report unchanged	the revision must keep the inputs byte-for-byte	sha256 architecture png 30dede4c5b4eb5c90e1e39bf3f7d6ae6c800ade49b7ac69ac253212f82b2f4cb	open
+2026-11-19T11:07:42Z	frame	confirmed release HEAD matches origin/release	the plan must use the real tree, not PR 93	d7710d687d147aeeda502d412454ab8a3829af66	open
+2026-11-19T11:26:22Z	fanout	grok-4.7-high candidate wrote a 12-unit plan	independent candidate finished before the other model	/tmp/arena-plan/candidate-grok/plan.md	open
+2026-11-19T11:26:22Z	fanout	held cross-review because gemini plan.md is absent	a one-model review would repeat the last failure	/tmp/arena-plan/candidate-gemini/	open
+2026-11-19T11:26:22Z	fanout	spot-checked grok citations against release	line claims have to match the file, not the summary	task_run.py:201-205 chat.py:429 chat.py:526-528 ChatWindow.tsx:47-49 config.py:25-32 llm.py:244-256	open
+2026-11-19T11:51:58Z	fanout	gemini-4-neon-high candidate stopped with resource_exhausted	it wrote mapping citations rationale and open questions but not plan.md	bc-3ceb508b-ae2d-55a7-a35e-8b144cdfeeb1	error
+2026-11-19T11:51:58Z	fanout	started a fresh gemini-4-neon-high run to write only plan.md	one resource error is not a missing model, and a one-model plan cannot pass review	/tmp/arena-plan/candidate-gemini/mapping.md	open
+2026-11-19T11:52:06Z	fanout	the fresh plan writer is gemini-4-neon-high	the retry must stay on the named model	bc-89428bea-b017-5ad6-8355-db2428877b5f	open
+2026-11-19T12:00:05Z	fanout	replaced the Gemini planning seat with claude-fable-5-2-high	the operator overrode the Gemini-only rule after the second Gemini run stayed stuck	bc-89428bea-b017-5ad6-8355-db2428877b5f still RUNNING; resume stop rejected	open
+2026-11-19T12:00:05Z	fanout	froze the Gemini output directory and kept a snapshot	no agent-kill tool exists, so late Gemini writes cannot land on the candidate path	docs/envisioned-product/2026-11-19/review/historical-gemini/	open
+2026-11-19T12:00:05Z	fanout	left the completed Grok candidate in place	the replacement redoes only the missing seat	/tmp/arena-plan/candidate-grok/plan.md	open
+2026-11-19T12:00:05Z	frame	did not edit pstack-models.mdc	future grok-4.7-xhigh-fast applies after this planning step and must not remove the Fable seat	.cursor/rules/pstack-models.mdc	open
+2026-11-19T12:00:13Z	fanout	started the replacement candidate on claude-fable-5-2-high	the operator named that slug and forbade a silent substitute	bc-b16e5dcf-af1a-5cf9-b6c3-52b83c1d91a7	open
+2026-11-19T12:23:54Z	fanout	claude-fable-5-2-high stopped before writing a plan	the call returned a usage limit, so this seat was not replaced with another model	bc-b16e5dcf-af1a-5cf9-b6c3-52b83c1d91a7; /tmp/arena-plan/candidate-fable is empty	blocked
+2026-11-19T12:23:54Z	crossjudge	did not start Grok and Fable cross-review	there is no Fable plan to review	/tmp/arena-plan/candidate-fable	blocked
+2026-11-19T12:26:28Z	start	operator authorized Grok to finish after the Fable usage limit	same-model review only, no second vendor	user message 2026-11-19 12:25 UTC	open
+2026-11-19T12:26:28Z	frame	set every pstack role to grok-4.7-xhigh-fast	the operator named extra high and fast=true, and the Task list has that slug	.cursor/rules/pstack-models.mdc	open
+2026-11-19T12:26:28Z	fanout	kept the first Grok plan and started a second isolated Grok candidate	the second candidate must not read the first plan	/tmp/arena-plan/candidate-grok/plan.md	open
+2026-11-19T12:55:12Z	fanout	grok-4.7-xhigh-fast wrote the English plan without reading the first candidate	the missing seat had to be filled by the named model	bc-fcff8fd3-6be0-51e4-b222-39309d29db46	open
+2026-11-19T12:55:12Z	crossjudge	two isolated grok-4.7-xhigh-fast reviews both picked the English plan	same-model review, not a second vendor	bc-ed9a78ef-7047-580b-86a6-11d2f9bd7590; bc-2153726a-b02a-5c33-84fd-3dd7d75c21a9	open
+2026-11-19T12:55:12Z	pick	adopted the English plan and applied the agreed grafts in plan.md	created_at backfill, watch notice, calendar source, web_fetch, confirm-only tools, and perform entry were wrong in the draft	docs/envisioned-product/2026-11-19/plan.md	open
+2026-11-19T12:55:12Z	pick	left mail transport and the browser library as the only operator choices	device enrollment is decided as signed-in enroll, show once, revoke by id	docs/envisioned-product/2026-11-19/review/synthesis.md	open
