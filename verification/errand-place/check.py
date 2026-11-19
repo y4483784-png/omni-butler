@@ -13,6 +13,7 @@ from typing import NoReturn
 ROOT = Path(__file__).resolve().parents[2]
 SPEC_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
+from verification.calendar.check import require_create_receipt
 from verification.tlc_jar import jar_path
 
 HELD = (
@@ -104,8 +105,7 @@ def anchors() -> None:
     require("确认下单" in card, "the confirm button label is gone")
     require("password" not in card.lower(), "the errand card mentions a password")
 
-    calendar = read("backend/app/api/calendar.py")
-    require("note_external_success" not in calendar, "calendar confirm notes external success")
+    require_create_receipt()
 
     detail = read("backend/app/services/schedule_confirm.py")
     require("请先核对日历" in detail, "the unknown sentence was rewritten")
