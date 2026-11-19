@@ -140,9 +140,19 @@ def fake_llm(monkeypatch):
         }
 
     def _complete_json_object(messages, result_model, *args, **kwargs):
+        from app.agents.dispatch import TalkReply
         from app.agents.harness.critique import CritiqueVerdict
         from app.agents.router import RouterDecision, RouterReply
 
+        if result_model is TalkReply:
+            return result_model.model_validate(
+                {
+                    "relation": "ask",
+                    "target_generation": None,
+                    "web": "allow",
+                    "ask": "",
+                }
+            )
         if result_model in (RouterDecision, RouterReply):
             return result_model.model_validate(
                 {
@@ -178,6 +188,7 @@ def fake_llm(monkeypatch):
     monkeypatch.setattr("app.core.llm.complete_json", _complete_json)
     monkeypatch.setattr("app.core.llm.complete_json_object", _complete_json_object)
     monkeypatch.setattr("app.agents.router.complete_json_object", _complete_json_object)
+    monkeypatch.setattr("app.agents.dispatch.complete_json_object", _complete_json_object, raising=False)
     monkeypatch.setattr("app.agents.workflow.complete_text", _complete_text)
     monkeypatch.setattr("app.api.chat.stream_chat", _stream)
     # Seams bound at import time: patching app.core.llm alone leaves these pointing at

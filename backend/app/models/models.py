@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     text,
 )
 
@@ -82,6 +84,7 @@ class ScheduleConfirmClaim(Base):
     scope = Column(String, nullable=False, default="")
     generation_ids = Column(Text, nullable=False, default="[]")
     remote_request_id = Column(String, nullable=False, default="")
+    intent_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
 
 
 TASK_RUN_STATUSES = (
@@ -92,6 +95,10 @@ TASK_RUN_STATUSES = (
     "stopped",
 )
 
+TASK_RUN_KINDS = ("turn", "job")
+
+WEB_CONSTRAINTS = ("allow", "forbid")
+
 
 class TaskRun(Base):
     __tablename__ = "task_runs"
@@ -99,6 +106,14 @@ class TaskRun(Base):
         CheckConstraint(
             "status IN ({})".format(", ".join(repr(status) for status in TASK_RUN_STATUSES)),
             name="ck_task_runs_status",
+        ),
+        CheckConstraint(
+            "kind IN ({})".format(", ".join(repr(kind) for kind in TASK_RUN_KINDS)),
+            name="ck_task_runs_kind",
+        ),
+        CheckConstraint(
+            "web_constraint IN ({})".format(", ".join(repr(item) for item in WEB_CONSTRAINTS)),
+            name="ck_task_runs_web",
         ),
         UniqueConstraint("user_id", "generation", name="uq_task_runs_user_generation"),
         Index("ix_task_runs_session_status", "user_id", "session_id", "status"),
@@ -110,6 +125,19 @@ class TaskRun(Base):
     status = Column(String, nullable=False)
     allowed_tools = Column(Text, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+    kind = Column(String, nullable=False, default="turn", server_default=text("'turn'"))
+    goal = Column(Text, nullable=False, default="", server_default=text("''"))
+    web_constraint = Column(String, nullable=False, default="allow", server_default=text("'allow'"))
+    web_constraint_message_id = Column(Integer, nullable=True)
+    intent_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    last_progress_at = Column(DateTime, nullable=True)
+    dispatch_token = Column(String, nullable=True)
+    dispatch_epoch = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    dispatch_until = Column(DateTime, nullable=True)
+    exec_token = Column(String, nullable=True)
+    exec_epoch = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    hold_until = Column(DateTime, nullable=True)
+    continuation_due = Column(Boolean, nullable=False, default=False, server_default=false())
 
 
 class Document(Base):

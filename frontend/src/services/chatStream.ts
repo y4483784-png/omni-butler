@@ -68,7 +68,7 @@ function patchSession(sessionId: number, patch: Partial<SessionChatState>) {
 function voidOpenDrafts(messages: SessionChatState["messages"]) {
   return messages.map((message) => {
     const card = message.scheduleCard;
-    if (!card || card.phase !== "draft" || card.mode === "suggest") return message;
+    if (!card || card.phase !== "draft" || card.mode === "suggest" || card.task_kind === "job") return message;
     return { ...message, scheduleCard: { ...card, phase: "cancelled" } };
   });
 }

@@ -393,3 +393,41 @@ def init_db():
     _ensure_calendar_external_unique_index()
     _ensure_schedule_confirm_fingerprint()
     _ensure_task_image_tombstone()
+    _sqlite_add_column_if_missing("task_runs", "kind", "TEXT NOT NULL DEFAULT 'turn'")
+    _sqlite_add_column_if_missing("task_runs", "goal", "TEXT NOT NULL DEFAULT ''")
+    _sqlite_add_column_if_missing("task_runs", "web_constraint", "TEXT NOT NULL DEFAULT 'allow'")
+    _sqlite_add_column_if_missing("task_runs", "web_constraint_message_id", "INTEGER")
+    _sqlite_add_column_if_missing("task_runs", "intent_version", "INTEGER NOT NULL DEFAULT 1")
+    _sqlite_add_column_if_missing("task_runs", "last_progress_at", "DATETIME")
+    _sqlite_add_column_if_missing("task_runs", "dispatch_token", "TEXT")
+    _sqlite_add_column_if_missing("task_runs", "dispatch_epoch", "INTEGER NOT NULL DEFAULT 0")
+    _sqlite_add_column_if_missing("task_runs", "dispatch_until", "DATETIME")
+    _sqlite_add_column_if_missing("task_runs", "exec_token", "TEXT")
+    _sqlite_add_column_if_missing("task_runs", "exec_epoch", "INTEGER NOT NULL DEFAULT 0")
+    _sqlite_add_column_if_missing("task_runs", "hold_until", "DATETIME")
+    _sqlite_add_column_if_missing(
+        "task_runs", "continuation_due", "INTEGER NOT NULL DEFAULT 0"
+    )
+    _sqlite_add_column_if_missing(
+        "schedule_confirm_claims", "intent_version", "INTEGER NOT NULL DEFAULT 1"
+    )
+    _postgres_add_column_if_missing("task_runs", "kind", "VARCHAR NOT NULL DEFAULT 'turn'")
+    _postgres_add_column_if_missing("task_runs", "goal", "TEXT NOT NULL DEFAULT ''")
+    _postgres_add_column_if_missing(
+        "task_runs", "web_constraint", "VARCHAR NOT NULL DEFAULT 'allow'"
+    )
+    _postgres_add_column_if_missing("task_runs", "web_constraint_message_id", "INTEGER")
+    _postgres_add_column_if_missing("task_runs", "intent_version", "INTEGER NOT NULL DEFAULT 1")
+    _postgres_add_column_if_missing("task_runs", "last_progress_at", "TIMESTAMP")
+    _postgres_add_column_if_missing("task_runs", "dispatch_token", "VARCHAR")
+    _postgres_add_column_if_missing("task_runs", "dispatch_epoch", "INTEGER NOT NULL DEFAULT 0")
+    _postgres_add_column_if_missing("task_runs", "dispatch_until", "TIMESTAMP")
+    _postgres_add_column_if_missing("task_runs", "exec_token", "VARCHAR")
+    _postgres_add_column_if_missing("task_runs", "exec_epoch", "INTEGER NOT NULL DEFAULT 0")
+    _postgres_add_column_if_missing("task_runs", "hold_until", "TIMESTAMP")
+    _postgres_add_column_if_missing(
+        "task_runs", "continuation_due", "BOOLEAN NOT NULL DEFAULT false"
+    )
+    _postgres_add_column_if_missing(
+        "schedule_confirm_claims", "intent_version", "INTEGER NOT NULL DEFAULT 1"
+    )

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
 
 from app.agents.context import ContextBundle
 from app.agents.router import Intent, plan_tools
@@ -107,3 +110,86 @@ def assign_turn(
         context_line=context_line,
     )
     return TurnAssignment.from_plan(planned, forced=bool(use_kb))
+
+
+class TalkReply(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    relation: Literal["supplement", "redirect", "new", "cancel", "ask"]
+    target_generation: int | None = None
+    web: Literal["allow", "forbid"] = "allow"
+    ask: str = ""
+
+
+@dataclass(frozen=True)
+class OpenJob:
+    generation: int
+    kind: str
+    status: str
+    goal: str
+    web_constraint: str
+
+
+def _ask(text: str = "") -> TalkReply:
+    return TalkReply(relation="ask", target_generation=None, web="allow", ask=text or "")
+
+
+def _resolve(parsed: TalkReply, jobs: list[OpenJob]) -> TalkReply:
+    web = "forbid" if parsed.web == "forbid" else "allow"
+    if parsed.relation == "new":
+        return TalkReply(relation="new", target_generation=None, web=web, ask="")
+    if parsed.relation == "ask":
+        return TalkReply(relation="ask", target_generation=None, web="allow", ask=parsed.ask or "")
+    open_rows = [job for job in jobs if job.kind == "job"]
+    by_generation = {job.generation: job for job in open_rows}
+    target = parsed.target_generation
+    if target in by_generation:
+        chosen = target
+    elif target is None and len(open_rows) == 1:
+        chosen = open_rows[0].generation
+    else:
+        return _ask(parsed.ask or "")
+    return TalkReply(relation=parsed.relation, target_generation=chosen, web=web, ask="")
+
+
+def classify_message(message: str, jobs: list[OpenJob]) -> TalkReply:
+    from app.core.llm import Role, complete_json_object
+
+    listed = [
+        {
+            "generation": job.generation,
+            "kind": job.kind,
+            "status": job.status,
+            "goal": (job.goal or "")[:120],
+            "web_constraint": job.web_constraint,
+        }
+        for job in jobs
+    ]
+    try:
+        parsed = complete_json_object(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Return one JSON object with relation, target_generation, web, and ask. "
+                        "relation is supplement, redirect, new, cancel, or ask. "
+                        "target_generation is an integer from open_jobs or null. "
+                        "web is allow or forbid. "
+                        "ask is a short question when relation is ask, otherwise empty."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"message": message, "open_jobs": listed},
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            TalkReply,
+            role=Role.ROUTER,
+        )
+    except Exception:
+        return _ask()
+    if not isinstance(parsed, TalkReply):
+        return _ask()
+    return _resolve(parsed, jobs)

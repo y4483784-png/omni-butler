@@ -170,13 +170,6 @@ body {
   padding: 12px 20px; border-radius: 10px; cursor: pointer; font-size: 14px;
 }
 .composer button:disabled { background: #aac4e0; cursor: not-allowed; }
-.composer button.stop-btn {
-  background: #fff;
-  color: #a8071a;
-  border: 1px solid #ffa39e;
-  white-space: nowrap;
-}
-.composer button.stop-btn:hover { background: #fff1f0; }
 .composer button.attach-btn {
   background: #fff; color: #185fa5; border: 1px solid #d8dce0;
 }

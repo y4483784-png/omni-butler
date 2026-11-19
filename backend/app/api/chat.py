@@ -158,6 +158,8 @@ def _prepare_session_context(
     load_kb_flags: bool = True,
     user_message: str | None = None,
     history_override: list[dict] | None = None,
+    void_drafts: bool = True,
+    skip_message_id: int | None = None,
 ) -> tuple[ChatSession | None, list[dict], str | None, int, bool, bool, dict | None]:
     """Load session, history, KB flags. Returns session or None."""
     try:
@@ -170,10 +172,11 @@ def _prepare_session_context(
     if history_override is not None:
         history = history_override
     else:
-        history = [
-            model_turn(m)
-            for m in db.query(Message).filter(Message.session_id == req.session_id).order_by(Message.id).all()
-        ]
+        history = []
+        for row in db.query(Message).filter(Message.session_id == req.session_id).order_by(Message.id).all():
+            if skip_message_id is not None and row.id == skip_message_id:
+                continue
+            history.append(model_turn(row))
 
     new_title: str | None = None
     if (
@@ -190,7 +193,7 @@ def _prepare_session_context(
     if session.pending_calendar:
         session.pending_calendar = ""
         db.commit()
-    if history_override is None:
+    if void_drafts and history_override is None:
         from app.services.calendar import void_draft_schedule_cards
 
         void_draft_schedule_cards(db, session.id)
@@ -230,10 +233,13 @@ def _replace_session_title(session_id: int, expected: str, title: str, user_id: 
         db.close()
 
 
-def _commit_user_turn(db: DbSession, session: ChatSession, message: str) -> None:
-    db.add(Message(session_id=session.id, role="user", content=message))
+def _commit_user_turn(db: DbSession, session: ChatSession, message: str) -> Message:
+    row = Message(session_id=session.id, role="user", content=message)
+    db.add(row)
     session.updated_at = datetime.now(timezone.utc)
     db.commit()
+    db.refresh(row)
+    return row
 
 
 def _save_assistant_turn(
@@ -308,6 +314,63 @@ def _run_workflow_sync(**kwargs) -> dict:
         return run_agent_workflow(db, assignment=assignment, **kwargs)
     finally:
         db.close()
+
+
+def _classify_talk(db: DbSession, *, user_id: int, session_id: int, message: str):
+    from app.agents.dispatch import OpenJob, classify_message
+
+    set_rls_context(db, user_id)
+    listed = task_run.open_jobs(db, user_id=user_id, session_id=session_id)
+    return classify_message(
+        message,
+        [
+            OpenJob(
+                generation=row.generation,
+                kind=row.kind,
+                status=row.status,
+                goal=row.goal,
+                web_constraint=row.web_constraint,
+            )
+            for row in listed
+        ],
+    )
+
+
+def _apply_talk(
+    db: DbSession,
+    *,
+    user_id: int,
+    session_id: int,
+    relation,
+    message: str,
+    message_id: int | None,
+):
+    from app.agents.dispatch import TalkReply
+
+    if relation.relation == "new":
+        from app.tasks.job import run_job
+
+        run_job.delay(user_id, session_id, message, relation.web, message_id)
+        return relation, None
+    if relation.relation in {"supplement", "redirect"} and relation.target_generation is not None:
+        applied = task_run.apply_intent(
+            db,
+            user_id=user_id,
+            generation=relation.target_generation,
+            text=message,
+            web=relation.web,
+            web_constraint_message_id=message_id,
+        )
+        if not applied.applied:
+            return TalkReply(relation="ask", target_generation=None, web="allow", ask=relation.ask or ""), None
+        return relation, applied.task_run_id
+    if relation.relation == "cancel" and relation.target_generation is not None:
+        try:
+            task_run.stop(user_id=user_id, generation=relation.target_generation)
+        except task_run.MissingTurn:
+            return TalkReply(relation="ask", target_generation=None, web="allow", ask=""), None
+        return relation, None
+    return relation, None
 
 
 async def _run_workflow_with_heartbeat(**kwargs) -> dict:
@@ -424,7 +487,7 @@ async def chat(
         )
         _, history, new_title, uid, _, _, pending_calendar = ctx
     else:
-        ctx = _prepare_session_context(db, req, user_id=uid, load_kb_flags=False)
+        ctx = _prepare_session_context(db, req, user_id=uid, load_kb_flags=False, void_drafts=False)
         session, history, new_title, uid, _, _, pending_calendar = ctx
 
     if session is None:
@@ -445,7 +508,26 @@ async def chat(
     except ImageRejected as exc:
         return JSONResponse({"detail": exc.code}, status_code=400)
 
+    saved_user_id: int | None = None
+    talk = None
+    if not is_regenerate:
+        talk = _classify_talk(db, user_id=uid, session_id=session.id, message=user_message)
+        saved_user_id = _commit_user_turn(db, session, user_message).id
+
     turn = task_run.begin_turn(user_id=uid, session_id=session.id)
+    if not is_regenerate and talk is not None:
+        talk, keep_job_id = _apply_talk(
+            db,
+            user_id=uid,
+            session_id=session.id,
+            relation=talk,
+            message=user_message,
+            message_id=saved_user_id,
+        )
+        from app.services.calendar import void_draft_schedule_cards
+
+        void_draft_schedule_cards(db, session.id, keep_task_run_id=keep_job_id)
+    talk_ask = talk.ask if talk is not None and talk.relation == "ask" else ""
 
     def _finish_persist(
         assistant_content: str,
@@ -467,6 +549,17 @@ async def chat(
                 schedule_card=schedule_card,
                 artifact_stored=artifact_stored,
                 pending_calendar_json=pending_calendar_json,
+            )
+        elif saved_user_id is not None:
+            session.pending_calendar = pending_calendar_json
+            _save_assistant_turn(
+                db,
+                req.session_id,
+                assistant_content,
+                reasoning=reasoning,
+                citations_payload=citations_payload,
+                schedule_card=schedule_card,
+                artifact_stored=artifact_stored,
             )
         else:
             _persist_turn(
@@ -494,7 +587,12 @@ async def chat(
         )
     else:
         _, history, _, uid, has_kb_docs, tabular, pending_calendar = _prepare_session_context(
-            db, req, user_id=current_user.id, load_kb_flags=True
+            db,
+            req,
+            user_id=current_user.id,
+            load_kb_flags=True,
+            void_drafts=False,
+            skip_message_id=saved_user_id,
         )
 
     memory_block = load_memory_prompt(db, uid)
@@ -541,6 +639,7 @@ async def chat(
                         generation=turn.generation,
                         surface=surface_for_login(),
                         images=images,
+                        talk_ask=talk_ask,
                     )
                 )
                 while not wf_task.done():
@@ -753,6 +852,12 @@ async def chat(
                         task_run.stop(user_id=uid, generation=turn.generation)
                     except task_run.LateResult:
                         pass
+                    if saved_user_id is not None:
+                        set_rls_context(db, uid)
+                        saved = db.get(Message, saved_user_id)
+                        if saved is not None:
+                            db.delete(saved)
+                            db.commit()
                     yield _sse({"type": "done"})
                 else:
                     assistant_content = redact_text("".join(acc))
@@ -783,7 +888,7 @@ async def chat(
                             artifact_stored=extra_artifact,
                         )
                         persisted = True
-                    elif not is_regenerate:
+                    elif not is_regenerate and saved_user_id is None:
                         set_rls_context(db, uid)
                         _commit_user_turn(db, session, user_message)
                     if persisted and not is_stopped():
