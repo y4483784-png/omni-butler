@@ -63,8 +63,7 @@ def _install(conn: sqlite3.Connection) -> None:
             minted_by TEXT NOT NULL,
             started_at TEXT NOT NULL,
             exited_at TEXT,
-            exitcode TEXT,
-            UNIQUE (incarnation, request_id, child_pid)
+            exitcode TEXT
         );
         CREATE TABLE IF NOT EXISTS attempts (
             call_id TEXT NOT NULL,
@@ -151,7 +150,12 @@ def _meta(key: str) -> str | None:
         conn.close()
 
 
-def _mint_delivery(request_id: str, pid: int) -> None:
+def _bind_path(pid: int) -> Path:
+    return ROOT / "bind" / f"{_incarnation()}-{int(pid)}"
+
+
+def _mint_delivery(request, pid: int) -> str:
+    delivery_id = uuid.uuid4().hex
     conn = _connect(DELIVERY_DB)
     try:
         _install(conn)
@@ -160,18 +164,24 @@ def _mint_delivery(request_id: str, pid: int) -> None:
             INSERT INTO deliveries (
                 delivery_id, incarnation, request_id, child_pid, minted_by, started_at
             ) VALUES (?, ?, ?, ?, 'parent', ?)
-            ON CONFLICT (incarnation, request_id, child_pid) DO NOTHING
             """,
-            (uuid.uuid4().hex, _incarnation(), str(request_id), int(pid), _now()),
+            (delivery_id, _incarnation(), str(request.id), int(pid), _now()),
         )
         conn.commit()
     finally:
         conn.close()
+    request._omni_delivery_id = delivery_id
+    path = _bind_path(pid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{delivery_id} {request.id}\n")
+    return delivery_id
 
 
-def _record_exit(request_id: str, pid: int | None, detail: str) -> None:
-    if pid is None:
-        raise OSError("parent reap did not name the child pid")
+def _record_exit(request, detail: str) -> None:
+    delivery_id = getattr(request, "_omni_delivery_id", None)
+    if not delivery_id:
+        raise OSError("exit has no bound delivery")
     conn = _connect(DELIVERY_DB)
     try:
         _install(conn)
@@ -179,9 +189,9 @@ def _record_exit(request_id: str, pid: int | None, detail: str) -> None:
             """
             UPDATE deliveries
             SET exited_at = ?, exitcode = ?
-            WHERE incarnation = ? AND request_id = ? AND child_pid = ? AND exited_at IS NULL
+            WHERE delivery_id = ? AND exited_at IS NULL
             """,
-            (_now(), detail, _incarnation(), str(request_id), int(pid)),
+            (_now(), detail, str(delivery_id)),
         )
         if updated.rowcount != 1:
             raise OSError(f"exit matched {updated.rowcount} deliveries")
@@ -203,7 +213,7 @@ def _register_hook(**_kwargs) -> None:
 
     def accept(self, pid, time_accepted):
         result = original_accept(self, pid, time_accepted)
-        _mint_delivery(self.id, int(pid))
+        _mint_delivery(self, int(pid))
         return result
 
     def failed(self, exc_info, send_failed_event=True, return_ok=False):
@@ -215,7 +225,7 @@ def _register_hook(**_kwargs) -> None:
             with (ROOT / "hook-trace.txt").open("a", encoding="utf-8") as handle:
                 handle.write(f"name={name} pid={self.worker_pid} id={self.id} text={exc}\n")
             if name == "WorkerLostError":
-                _record_exit(self.id, self.worker_pid, str(exc))
+                _record_exit(self, str(exc))
         except Exception as hook_exc:
             with (ROOT / "hook-trace.txt").open("a", encoding="utf-8") as handle:
                 handle.write(f"hook_error {type(hook_exc).__name__}: {hook_exc}\n")
@@ -236,20 +246,37 @@ def _register_hook(**_kwargs) -> None:
 def _lookup_delivery(request_id: str, pid: int) -> sqlite3.Row | None:
     deadline = time.time() + 5
     while time.time() < deadline:
-        conn = _connect(DELIVERY_DB)
-        try:
-            _install(conn)
-            row = conn.execute(
-                """
-                SELECT * FROM deliveries
-                WHERE incarnation = ? AND request_id = ? AND child_pid = ?
-                """,
-                (_incarnation(), str(request_id), int(pid)),
-            ).fetchone()
-        finally:
-            conn.close()
-        if row is not None:
-            return row
+        path = _bind_path(pid)
+        consumed_path = ROOT / "bind" / f"{_incarnation()}-{int(pid)}.consumed"
+        consumed = set()
+        if consumed_path.exists():
+            consumed = {line.strip() for line in consumed_path.read_text(encoding="utf-8").splitlines() if line.strip()}
+        if path.exists():
+            chosen = None
+            conn = _connect(DELIVERY_DB)
+            try:
+                _install(conn)
+                for line in reversed(path.read_text(encoding="utf-8").splitlines()):
+                    parts = line.split()
+                    if len(parts) != 2 or parts[1] != str(request_id) or parts[0] in consumed:
+                        continue
+                    row = conn.execute(
+                        "SELECT * FROM deliveries WHERE delivery_id = ?",
+                        (parts[0],),
+                    ).fetchone()
+                    if row is None or row["exited_at"] is not None:
+                        continue
+                    if row["incarnation"] != _incarnation() or row["request_id"] != str(request_id):
+                        continue
+                    chosen = row
+                    break
+            finally:
+                conn.close()
+            if chosen is not None:
+                consumed_path.parent.mkdir(parents=True, exist_ok=True)
+                with consumed_path.open("a", encoding="utf-8") as handle:
+                    handle.write(str(chosen["delivery_id"]) + "\n")
+                return chosen
         time.sleep(0.05)
     return None
 
@@ -741,6 +768,7 @@ def _synthetic() -> dict:
             INSERT INTO deliveries (
                 delivery_id, incarnation, request_id, child_pid, minted_by, started_at
             ) VALUES ('del-a', 'inc-a', 'req', 100, 'parent', '1'),
+                     ('del-a2', 'inc-a', 'req', 100, 'parent', '1b'),
                      ('del-b', 'inc-b', 'req', 100, 'parent', '2'),
                      ('del-c', 'inc-a', 'req-2', 7, 'parent', '3')
             """
@@ -748,18 +776,20 @@ def _synthetic() -> dict:
         both = conn.execute(
             "SELECT delivery_id FROM deliveries WHERE request_id = 'req' AND child_pid = 100"
         ).fetchall()
-        assert {row["delivery_id"] for row in both} == {"del-a", "del-b"}
+        assert {row["delivery_id"] for row in both} == {"del-a", "del-a2", "del-b"}
         updated = conn.execute(
             """
             UPDATE deliveries SET exited_at = '9', exitcode = 'signal 9 (SIGKILL)'
-            WHERE incarnation = 'inc-a' AND request_id = 'req' AND child_pid = 100 AND exited_at IS NULL
+            WHERE delivery_id = 'del-a' AND exited_at IS NULL
             """
         )
         assert updated.rowcount == 1
         conn.commit()
         dead = conn.execute("SELECT exited_at FROM deliveries WHERE delivery_id = 'del-a'").fetchone()
+        same = conn.execute("SELECT exited_at FROM deliveries WHERE delivery_id = 'del-a2'").fetchone()
         live = conn.execute("SELECT exited_at FROM deliveries WHERE delivery_id = 'del-b'").fetchone()
         assert dead["exited_at"] == "9"
+        assert same["exited_at"] is None
         assert live["exited_at"] is None
         forged = False
         try:
@@ -833,8 +863,9 @@ def _synthetic() -> dict:
         conn.commit()
         return {
             "case": "synthetic_identity",
-            "request_pid_rows": 2,
+            "request_pid_rows": 3,
             "exact_delivery_marked": "del-a",
+            "same_incarnation_left_live": "del-a2",
             "reused_pid_left_live": "del-b",
             "child_mint_rejected": True,
             "unknown_delivery_rejected": True,

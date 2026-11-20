@@ -110,6 +110,7 @@ _EDGES: dict[tuple[CallState, LoopEvent], CallState] = {
     (CallState.PENDING, LoopEvent.DENY): CallState.REJECTED,
     (CallState.PENDING, LoopEvent.OPEN_CARDS): CallState.AWAITING_CONFIRM,
     (CallState.RUNNING, LoopEvent.SAVE_RESULT): CallState.RESULT,
+    (CallState.RUNNING, LoopEvent.NOTE_UNKNOWN): CallState.UNKNOWN,
     (CallState.RUNNING, LoopEvent.DENY): CallState.REJECTED,
     (CallState.RUNNING, LoopEvent.OPEN_CARDS): CallState.AWAITING_CONFIRM,
     (CallState.AWAITING_CONFIRM, LoopEvent.CONFIRM): CallState.RESULT,
@@ -344,8 +345,8 @@ def save_turn(
     return step
 
 
-def begin_read(db: Session, *, hold: Hold, tool_call_id: str) -> Literal["invoke", "denied", "stale"]:
-    job = _lock_holder(db, hold)
+def begin_read(db: Session, *, hold: Hold, tool_call_id: str) -> Literal["invoke", "denied", "stale", "busy"]:
+    job = _lock_execution(db, hold)
     if job is None:
         db.rollback()
         return "stale"
@@ -357,12 +358,11 @@ def begin_read(db: Session, *, hold: Hold, tool_call_id: str) -> Literal["invoke
     if claim_call(call_row.name, _load_json(call_row.arguments)):
         db.rollback()
         return "stale"
+    if call_row.state == CallState.RUNNING.value:
+        db.rollback()
+        return "busy"
     if call_row.name in _WEB and job.web_constraint != "allow":
         return _deny_web(db, job=job, hold=hold, step_row=step_row, call_row=call_row, memory=memory)
-    if call_row.state == CallState.RUNNING.value:
-        if not _commit_job(db, job):
-            return "stale"
-        return "invoke"
     if call_row.name in _WEB:
         changed = _cas_running(db, call_row, hold, require_allow=True)
     else:
@@ -370,6 +370,27 @@ def begin_read(db: Session, *, hold: Hold, tool_call_id: str) -> Literal["invoke
     if changed != 1:
         db.rollback()
         return "stale"
+    from uuid import uuid4
+
+    from app.models.models import ToolCallAttempt
+    from app.services.delivery_bind import ensure_delivery
+
+    delivery_id = ensure_delivery(db, task_run_id=int(job.id))
+    if delivery_id is None:
+        db.rollback()
+        return "stale"
+    owner = uuid4().hex
+    attempt_no = int(call_row.attempt or 0) + 1
+    call_row.owner_token = owner
+    call_row.attempt = attempt_no
+    db.add(
+        ToolCallAttempt(
+            tool_call_pk=int(call_row.id),
+            owner_token=owner,
+            attempt=attempt_no,
+            delivery_id=delivery_id,
+        )
+    )
     try:
         step = apply(memory, LoopEvent.START_READ, call_id=tool_call_id)
     except IllegalPhase:
@@ -390,15 +411,49 @@ def save_read_result(
     result: str,
     rejected: bool = False,
 ) -> tuple[Step | None, bool]:
-    job = _lock_holder(db, hold)
+    job = _lock_job_row(db, hold)
     if job is None:
         db.rollback()
         return None, False
+    db.refresh(job)
     found = _find_call(db, job.id, tool_call_id)
     if found is None:
         db.rollback()
         return None, False
     step_row, call_row, memory = found
+    db.refresh(call_row)
+    memory = _as_step(step_row, _call_rows(db, step_row.id))
+    if call_row.owner_token is None and call_row.unresolved_at is not None:
+        from app.services.call_owner import audit_unattributed
+
+        audit_unattributed(db, tool_call_pk=int(call_row.id), body=result)
+        return None, False
+    if call_row.owner_token:
+        from app.services.call_owner import delivery_matches, insert_effect
+
+        if not delivery_matches(db, call_row):
+            db.rollback()
+            return None, False
+        effect = insert_effect(
+            db,
+            tool_call_pk=int(call_row.id),
+            owner_token=call_row.owner_token,
+            attempt=int(call_row.attempt or 0),
+            body=result,
+        )
+        if effect == "conflict":
+            db.commit()
+            return None, False
+        terminal = CallState(call_row.state) in TERMINAL
+        if job.status == "stopped" or call_row.state == CallState.CANCELLED.value or terminal:
+            db.commit()
+            return None, False
+        if effect == "same" and call_row.result:
+            db.commit()
+            return None, False
+    elif not _execution_holds(job, hold) or int(job.intent_version or 1) != int(hold.intent_version):
+        db.rollback()
+        return None, False
     event = LoopEvent.DENY if rejected else LoopEvent.SAVE_RESULT
     try:
         step = apply(memory, event, call_id=tool_call_id)
@@ -408,6 +463,8 @@ def save_read_result(
     target = _call_by_id(step, tool_call_id)
     call_row.state = target.state.value
     call_row.result = redact_result(result)
+    if job.status == "waiting_person":
+        call_row.unresolved_at = None
     entered = _store_phase(db, step_row, step.phase)
     _assistant_message(db, job.session_id, call_row.result or "")
     _note(db, job, "message", call_row.result or "")
@@ -1058,6 +1115,38 @@ def _lock_holder(db: Session, hold: Hold) -> TaskRun | None:
     )
 
 
+def _lock_execution(db: Session, hold: Hold) -> TaskRun | None:
+    return (
+        db.query(TaskRun)
+        .filter(
+            TaskRun.user_id == hold.user_id,
+            TaskRun.generation == hold.generation,
+            TaskRun.status == "running",
+            TaskRun.exec_token == hold.exec_token,
+            TaskRun.exec_epoch == hold.exec_epoch,
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+
+
+def _lock_job_row(db: Session, hold: Hold) -> TaskRun | None:
+    return (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == hold.user_id, TaskRun.generation == hold.generation)
+        .with_for_update()
+        .one_or_none()
+    )
+
+
+def _execution_holds(job: TaskRun, hold: Hold) -> bool:
+    return (
+        job.status == "running"
+        and job.exec_token == hold.exec_token
+        and int(job.exec_epoch or 0) == int(hold.exec_epoch)
+    )
+
+
 def _job_for(db: Session, hold: Hold) -> TaskRun | None:
     return (
         db.query(TaskRun)
@@ -1152,7 +1241,6 @@ def _deny_web(db, *, job, hold, step_row, call_row, memory) -> Literal["denied",
         update(ToolCall)
         .where(ToolCall.id == call_row.id)
         .where(ToolCall.state.in_((CallState.PENDING.value, CallState.RUNNING.value)))
-        .where(ToolCall.intent_version == int(hold.intent_version))
         .where(exists().where(_holder_match(hold, web="forbid")))
         .values(state=CallState.REJECTED.value, result=WEB_DENIAL)
     )
@@ -1181,7 +1269,6 @@ def _holder_match(hold: Hold, *, web: str | None = None):
         TaskRun.status == "running",
         TaskRun.exec_token == hold.exec_token,
         TaskRun.exec_epoch == hold.exec_epoch,
-        TaskRun.intent_version == hold.intent_version,
     ]
     if web is not None:
         clauses.append(TaskRun.web_constraint == web)
@@ -1194,7 +1281,6 @@ def _cas_running(db, call_row, hold: Hold, *, require_allow: bool) -> int:
         update(ToolCall)
         .where(ToolCall.id == call_row.id)
         .where(ToolCall.state == CallState.PENDING.value)
-        .where(ToolCall.intent_version == int(hold.intent_version))
         .where(exists().where(_holder_match(hold, web=web)))
         .values(state=CallState.RUNNING.value)
     )

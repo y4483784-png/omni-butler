@@ -57,6 +57,30 @@ def between(text: str, start: str, end: str) -> str:
     return text[at:stop]
 
 
+def owner_predicates() -> None:
+    import importlib.util
+
+    path = ROOT / "backend" / "app" / "services" / "call_policy.py"
+    spec = importlib.util.spec_from_file_location("call_policy_check", path)
+    if spec is None or spec.loader is None:
+        fail_model("call policy module is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    parked = "call-parked"
+    require(module.acknowledgement_authorizes(False, None, parked) is False, "ordinary message authorizes")
+    require(module.acknowledgement_authorizes(False, parked, parked) is False, "id without control authorizes")
+    require(module.acknowledgement_authorizes(True, "call-other", parked) is False, "other id authorizes")
+    require(module.acknowledgement_authorizes(True, parked, parked) is True, "explicit control does not authorize")
+    require(module.recovery_decision(name="web", handed_off=True, exited=False, handed_count=1) == "park", "lease parks")
+    require(module.recovery_decision(name="web", handed_off=False, exited=True, handed_count=0) == "replace", "no handoff replaces")
+    require(module.recovery_decision(name="web", handed_off=True, exited=True, handed_count=1) == "unknown", "web exit is unknown")
+    require(module.recovery_decision(name="kb", handed_off=True, exited=True, handed_count=1) == "replace", "kb may try once")
+    require(module.recovery_decision(name="kb", handed_off=True, exited=True, handed_count=2) == "park", "kb stops after one")
+    require("default" not in module.worker_queues(consume_loop=False), "default queue is consumed")
+    require("default" not in module.worker_queues(consume_loop=True), "enabled loop still consumes default")
+    require(module.worker_queues(consume_loop=True)[-1] == "loop", "loop queue missing")
+
+
 def anchors() -> None:
     loop = read("backend/app/services/loop_round.py")
     cards = between(loop, "def open_cards(", "def observe_ready(")
@@ -127,6 +151,7 @@ def main() -> None:
     chosen = [name for name, enabled in flags.items() if enabled]
     if len(chosen) > 1:
         fail_model("pass only one break flag")
+    owner_predicates()
     anchors()
     try:
         result = run_tlc(flags)

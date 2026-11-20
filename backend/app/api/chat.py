@@ -1021,3 +1021,29 @@ async def chat(
             reset(stop_token)
 
     return StreamingResponse(agent_event_gen(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+class AcknowledgeBody(BaseModel):
+    generation: int
+    call_id: str
+    control: str = ""
+
+
+@router.post("/acknowledge")
+def acknowledge_unknown(
+    body: AcknowledgeBody,
+    user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db_scoped),
+):
+    from app.services.call_owner import acknowledge
+    from app.services.call_policy import ACK_CONTROL
+
+    set_rls_context(db, int(user.id))
+    accepted = acknowledge(
+        db,
+        user_id=int(user.id),
+        generation=int(body.generation),
+        call_id=body.call_id,
+        submitted_control=body.control == ACK_CONTROL,
+    )
+    return {"accepted": bool(accepted)}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -143,13 +144,23 @@ def _start(
     )
 
 
-@celery_app.task(name="app.tasks.job.run_job", queue="default")
+@celery_app.task(name="app.tasks.job.run_job", queue="loop")
 def run_job(
     task_run_id: int,
     dispatch_token: str,
     dispatch_epoch: int,
     intent_version: int,
 ) -> None:
+    if not settings.celery_task_always_eager:
+        from app.services.delivery_bind import claim_mailbox
+
+        claim_db = SessionLocal()
+        try:
+            claimed = claim_mailbox(claim_db, str(run_job.request.id), os.getpid())
+        finally:
+            claim_db.close()
+        if claimed is None:
+            return
     user_id = _task_user_id(int(task_run_id))
     if user_id is None:
         return
@@ -289,8 +300,11 @@ def _drive(
     exec_epoch: int,
     intent_version: int,
 ) -> None:
+    from app.services.delivery_bind import reset_delivery
     from app.services.loop_round import Hold
 
+    if settings.celery_task_always_eager:
+        reset_delivery()
     job = db.get(TaskRun, task_id)
     db.refresh(job)
     if str(job.exec_token or "") != worker or int(job.exec_epoch or 0) != int(exec_epoch):
@@ -330,6 +344,11 @@ def _drive_held(db, job: TaskRun, hold, pulse: "_HoldPulse") -> None:
             _complete_saved_answer(db, hold)
             return
         if step is None or step.phase == Phase.RESULTS_READY.value:
+            db.refresh(job)
+            if int(job.intent_version or 1) != int(hold.intent_version):
+                if not _execution_open(db, int(job.id)):
+                    _yield_stale_intent(db, hold)
+                return
             asked = None if step is None else int(step.seq)
             produced, message_id = _request(db, job, hold, pulse)
             if produced is None or is_stopped():
@@ -372,6 +391,41 @@ def _complete_saved_answer(db, hold) -> None:
         .values(continuation_due=False)
     )
     if int(matched.rowcount or 0) != 1 or _leave(db, hold, status="completed") != 1:
+        db.rollback()
+        return
+    db.commit()
+
+
+def _execution_open(db, task_run_id: int) -> bool:
+    return (
+        db.query(ToolCall)
+        .join(TaskStep, ToolCall.task_step_id == TaskStep.id)
+        .filter(TaskStep.task_run_id == int(task_run_id), ToolCall.state.in_(("pending", "running")))
+        .first()
+        is not None
+    )
+
+
+def _yield_stale_intent(db, hold) -> None:
+    from sqlalchemy import update
+
+    matched = db.execute(
+        update(TaskRun)
+        .where(TaskRun.user_id == hold.user_id)
+        .where(TaskRun.generation == hold.generation)
+        .where(TaskRun.status == "running")
+        .where(TaskRun.exec_token == hold.exec_token)
+        .where(TaskRun.exec_epoch == hold.exec_epoch)
+        .values(
+            exec_token=None,
+            hold_until=None,
+            dispatch_token=None,
+            dispatch_until=None,
+            continuation_due=True,
+            exec_epoch=TaskRun.exec_epoch + 1,
+        )
+    )
+    if int(matched.rowcount or 0) != 1:
         db.rollback()
         return
     db.commit()
@@ -617,21 +671,24 @@ def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict], pulse: 
         outcome = begin_read(db, hold=hold, tool_call_id=row.tool_call_id)
         if outcome == "stale":
             return "leave"
+        if outcome == "busy":
+            continue
         if outcome == "denied":
             fresh = db.get(TaskStep, step.id)
             db.refresh(fresh)
             if fresh.phase == Phase.RESULTS_READY.value:
                 return "model"
             return "again"
-        db.commit()
+        from app.services.call_owner import mark_handoff
+
+        if not mark_handoff(db, tool_call_pk=int(row.id)):
+            return "leave"
         try:
             result = _invoke(db, job, row)
         except Exception as exc:
             if pulse.lost():
                 return "leave"
             return _stored(db, hold, row.tool_call_id, f"{type(exc).__name__}: {exc}", rejected=True)
-        if pulse.lost():
-            return "leave"
         card = result.schedule_card if isinstance(result.schedule_card, dict) else None
         if card is not None:
             from app.services.schedule_confirm import schedule_card_needs_claim

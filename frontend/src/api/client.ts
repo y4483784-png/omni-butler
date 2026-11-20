@@ -291,6 +291,16 @@ export interface DesktopDevice {
   created_at: string;
 }
 
+export async function acknowledgeUnknown(generation: number, callId: string): Promise<{ accepted: boolean }> {
+  const r = await apiFetch("/api/chat/acknowledge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ generation, call_id: callId, control: "acknowledge-unknown" }),
+  });
+  if (!r.ok) throw new Error(await parseError(r, "Could not acknowledge the unresolved call"));
+  return r.json();
+}
+
 export async function listDevices(): Promise<DesktopDevice[]> {
   const r = await apiFetch("/api/desktop/devices");
   if (!r.ok) throw new Error(await parseError(r, "加载设备失败"));
@@ -443,6 +453,7 @@ export interface SessionJobRow {
   goal: string;
   generation: number;
   kind: string;
+  unresolved_call_id?: string | null;
 }
 
 export interface SessionClaimRow {

@@ -105,7 +105,41 @@ jobs:
           CELERY_TASK_ALWAYS_EAGER: "true"
           SECRET_KEY: test-secret-key
           ADMIN_PASSWORD: test-admin-pass
-        run: python -m pytest tests/test_resume_lock_order.py -q
+        run: python -m pytest tests/test_resume_lock_order.py tests/test_call_owner_locks.py -q
+
+  prefork-delivery:
+    name: celery prefork delivery identity
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install the prefork probe stack
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install 'kombu==5.3.7'
+
+      - name: Prefork reap and same-incarnation delivery identity
+        env:
+          PROBE_BROKER: redis://127.0.0.1:6379/15
+          PREFORK_REQUIRED: "1"
+        run: python ../verification/loop-owner/prefork_reap_probe.py
 
   rls:
     name: postgres row-level security

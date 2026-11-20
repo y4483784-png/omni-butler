@@ -21,6 +21,7 @@ import { FollowupCard } from "./FollowupCard";
 import { ErrandCard } from "./ErrandCard";
 import { MailSendCard } from "./MailSendCard";
 import { MeetingBriefCard } from "./MeetingBriefCard";
+import { AcknowledgeCard } from "./AcknowledgeCard";
 import { ScheduleCard } from "./ScheduleCard";
 import { UpcomingEvents } from "./UpcomingEvents";
 import { MessageActions } from "./MessageActions";
@@ -360,7 +361,9 @@ function MessageRow({
                 ) : null}
               </div>
             ) : null}
-            {m.scheduleCard?.mode === "list" ? (
+            {m.scheduleCard?.mode === "acknowledge" ? (
+              <AcknowledgeCard card={m.scheduleCard} />
+            ) : m.scheduleCard?.mode === "list" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} onAsk={onAsk} sessionId={sessionId} messageId={m.id} />
             ) : m.scheduleCard?.mode === "brief" ? (
               <MeetingBriefCard card={m.scheduleCard as MeetingBrief} onAsk={onAsk} />
@@ -400,7 +403,7 @@ function MessageRow({
                 {artifactButtonLabel(m.artifact)}
               </button>
             ) : null}
-            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "followup" && m.scheduleCard.mode !== "send" && m.scheduleCard.mode !== "desktop" && m.scheduleCard.mode !== "brief" && m.scheduleCard.mode !== "errand" ? (
+            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "followup" && m.scheduleCard.mode !== "send" && m.scheduleCard.mode !== "desktop" && m.scheduleCard.mode !== "brief" && m.scheduleCard.mode !== "errand" && m.scheduleCard.mode !== "acknowledge" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} sessionId={sessionId} messageId={m.id} />
             ) : null}
             <MessageActions
