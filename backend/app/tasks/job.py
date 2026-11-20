@@ -600,7 +600,7 @@ def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict], pulse: 
 
                 return lookup_desktop_write(db, hold=hold, tool_call_id=row.tool_call_id)
             return _lookup_armed(db, hold, row)
-        rejection = _reject_uninvoked(row)
+        rejection = _reject_uninvoked(db, row, int(job.user_id))
         if rejection is not None:
             return _stored(db, hold, row.tool_call_id, rejection, rejected=True)
         arguments = _load(row.arguments)
@@ -672,13 +672,14 @@ def _stored(db, hold, tool_call_id: str, result: str, *, rejected: bool) -> str:
     return "model" if entered else "again"
 
 
-def _reject_uninvoked(row: ToolCall) -> str | None:
-    from app.services.loop_round import claim_call
+def _reject_uninvoked(db, row: ToolCall, user_id: int) -> str | None:
+    from app.services.loop_round import claim_call, desktop_device_label
 
     if row.name in {"desktop.open", "desktop.run"}:
         if (row.claim_token or "").strip():
             return None
-        if type(_load(row.arguments).get("device_id")) is not int:
+        device_id = _load(row.arguments).get("device_id")
+        if type(device_id) is not int or desktop_device_label(db, user_id, device_id) is None:
             return "缺少设备，未打开。"
         return None
     if row.name == "errand.place" and (row.arguments or "").strip() in {"", "{}"}:

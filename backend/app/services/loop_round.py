@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.llm import ModelTurn, ToolCallSpec
 from app.models.models import (
+    DesktopDevice,
     Message,
     ScheduleConfirmClaim,
     TaskRun,
@@ -487,7 +488,7 @@ def open_cards(
                 task_run_ids=[job.id],
                 expires_at=expires_at,
             )
-            card = _card_body(action, raw, token, expiry)
+            card = _card_body(action, raw, token, expiry, db, job.user_id)
             _assistant_message(db, job.session_id, _visible(card), json.dumps(card, ensure_ascii=False))
             memory = apply(memory, LoopEvent.OPEN_CARDS, call_id=row.tool_call_id)
             row.state = CallState.AWAITING_CONFIRM.value
@@ -1349,11 +1350,42 @@ def _claim_action(name: str, raw: dict) -> str:
     return canonical_action(raw.get("action"))
 
 
-def _card_body(action: str, raw: dict, token: str, expires_at: datetime | None) -> dict:
-    from app.services.schedule_confirm import write_parts
+def desktop_device_label(db: Session, user_id: int, device_id: int) -> str | None:
+    row = db.get(DesktopDevice, device_id)
+    if row is None or int(row.user_id) != int(user_id) or row.revoked_at is not None:
+        return None
+    return str(row.label)
+
+
+def _card_body(
+    action: str,
+    raw: dict,
+    token: str,
+    expires_at: datetime | None,
+    db: Session | None = None,
+    user_id: int | None = None,
+) -> dict:
+    from app.services.schedule_confirm import ScheduleConfirmClosed, write_parts
 
     parts = write_parts(action, raw)
-    if action.startswith("calendar."):
+    if action in {"desktop.open", "desktop.run"}:
+        device_id = parts.get("device_id")
+        label = None
+        if db is not None and user_id is not None and type(device_id) is int:
+            label = desktop_device_label(db, user_id, device_id)
+        if label is None:
+            raise ScheduleConfirmClosed("closed")
+        card = {
+            "mode": "desktop",
+            "phase": "draft",
+            "action": action,
+            "confirm_token": token,
+            "device_id": device_id,
+            "device_label": label,
+            "local_target": parts["local_target"],
+            "local_args": list(parts["local_args"]),
+        }
+    elif action.startswith("calendar."):
         mode = {
             "calendar.create": "create",
             "calendar.update": "update",

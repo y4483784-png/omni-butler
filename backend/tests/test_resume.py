@@ -1550,6 +1550,27 @@ def test_an_old_adopter_does_not_borrow_the_replacement_hold():
     assert "borrowed" not in text
 
 
+def _enrolled_device(user_id: int, label: str = "desk") -> int:
+    import hashlib
+    import secrets
+
+    from app.models.models import DesktopDevice
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        device = DesktopDevice(
+            user_id=user_id,
+            token_hash=hashlib.sha256(secrets.token_urlsafe(16).encode()).hexdigest(),
+            label=label,
+        )
+        db.add(device)
+        db.commit()
+        return int(device.id)
+    finally:
+        db.close()
+
+
 def _parked_job(user_id: int, session_id: int, specs: list[tuple[str, str, dict]]):
     from app.services import task_run
     from app.services.loop_round import Hold, open_cards, save_turn
@@ -1614,7 +1635,7 @@ def test_a_parked_lost_write_is_recovered_without_sending(name, raw, claim_statu
     session_id = _session(user_id)
     spec = dict(raw)
     if name in {"desktop.open", "desktop.run"}:
-        spec["device_id"] = 7
+        spec["device_id"] = _enrolled_device(user_id)
     db, task_id, tokens = _parked_job(user_id, session_id, [("call-a", name, spec)])
     try:
         set_rls_context(db, user_id)
@@ -1664,8 +1685,9 @@ def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():
     specs = [
         ("call-old", "mail.send", {"mail_to": ["old@example.com"], "subject": "old", "body": "old"}),
         ("call-live", "mail.send", {"mail_to": ["live@example.com"], "subject": "live", "body": "live"}),
-        ("call-open", "desktop.open", {"device_id": 7, "local_target": "notes"}),
+        ("call-open", "desktop.open", {"local_target": "notes"}),
     ]
+    specs[2][2]["device_id"] = _enrolled_device(user_id)
     db, task_id, tokens = _parked_job(user_id, session_id, specs)
     db.close()
     plain_db, plain_id, _plain_tokens = _parked_job(

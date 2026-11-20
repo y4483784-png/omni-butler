@@ -825,6 +825,14 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
             assert needle not in text, path
     window = (REPO / "frontend" / "src" / "components" / "ChatWindow.tsx").read_text(encoding="utf-8")
     assert 'mode !== "desktop"' in window
+    assert 'data-mode="desktop"' in window
+    assert "data-confirm-token" in window
+    assert "data-local-target" in window
+    assert "data-local-args" in window
+    assert "data-device-id" in window
+    assert "perform(" not in window
+    assert "desktop-confirm" not in window
+    assert "/api/desktop/commit" not in window
     for path in (REPO / "desktop").rglob("*"):
         if path.suffix not in {".py", ".js"}:
             continue
@@ -846,6 +854,8 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
     assert "process.env.DESKTOP_PACKAGE_TOKEN" not in main
     assert "DESKTOP_PACKAGE_TOKEN:" in main
     assert "package-token" in main
+    assert "package-device" in main
+    assert "DESKTOP_DEVICE_ID:" in main
     assert "0o600" in main
     assert "shell: false" in main
     assert "desktop-propose" in main
@@ -855,6 +865,8 @@ def test_web_sources_do_not_carry_the_package_buttons() -> None:
     assert "运行测试程序" in preload
     assert "desktop-propose" in preload
     assert "desktop-confirm" in preload
+    assert "data-mode" in preload
+    assert "data-desktop-confirm" in preload
     assert "DESKTOP_PACKAGE_TOKEN" not in preload
     panel = (REPO / "frontend" / "src" / "components" / "DevicesPanel.tsx").read_text(encoding="utf-8")
     client = (REPO / "frontend" / "src" / "api" / "client.ts").read_text(encoding="utf-8")

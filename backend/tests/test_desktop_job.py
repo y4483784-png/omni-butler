@@ -152,6 +152,21 @@ def _claim(token: str) -> ScheduleConfirmClaim:
         db.close()
 
 
+def _job_card(session_id: int) -> dict:
+    from app.models.models import Message
+
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(Message)
+            .filter(Message.session_id == session_id, Message.schedule_card != "")
+            .one()
+        )
+        return json.loads(row.schedule_card)
+    finally:
+        db.close()
+
+
 def _call_result(task_id: int) -> tuple[str, str | None]:
     from app.models.models import ToolCall
 
@@ -173,6 +188,14 @@ def test_a_job_opens_the_named_file_once_and_continues(plain_client: TestClient)
     assert proof is not None
     assert proof.device_id == 7
     task_id, generation, claim_token = _open_job(user_id, session_id)
+    card = _job_card(session_id)
+    assert card["mode"] == "desktop"
+    assert card["device_id"] == 7
+    assert card["device_label"] == LABEL
+    assert card["action"] == "desktop.open"
+    assert card["local_target"] == PATH
+    assert card["local_args"] == []
+    assert card["confirm_token"] == claim_token
     assert _load(task_id).status == "waiting_person"
     assert _load(task_id).generation == generation
     action = _action()
@@ -557,6 +580,89 @@ def test_a_desktop_call_without_a_device_is_rejected_once(plain_client: TestClie
         )
         assert call.claim_token in {None, ""}
         assert call.state == "rejected"
+    finally:
+        check.close()
+
+
+def test_a_revoked_device_is_not_opened(plain_client: TestClient) -> None:
+    import hashlib
+    import secrets
+
+    from app.models.models import DesktopDevice, ToolCall
+    from app.services.resume import dispatch_task
+
+    assert plain_client is not None
+    user_id = _user()
+    session_id = _session(user_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        device = DesktopDevice(
+            user_id=user_id,
+            token_hash=hashlib.sha256(secrets.token_urlsafe(16).encode()).hexdigest(),
+            label="gone",
+            revoked_at=datetime(2020, 1, 1),
+        )
+        db.add(device)
+        db.flush()
+        device_id = int(device.id)
+        turn = task_run.open_alongside(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            kind="job",
+            goal="open",
+        )
+        step = TaskStep(
+            user_id=user_id,
+            task_run_id=turn.id,
+            seq=1,
+            phase="calls_saved",
+            content="",
+            reasoning_content="",
+        )
+        db.add(step)
+        db.flush()
+        db.add(
+            ToolCall(
+                user_id=user_id,
+                task_step_id=step.id,
+                tool_call_id="call-open",
+                position=0,
+                name="desktop.open",
+                arguments=json.dumps({"device_id": device_id, "local_target": PATH, "local_args": []}),
+                state="pending",
+                claim_token=None,
+                intent_version=1,
+            )
+        )
+        db.commit()
+        task_id = int(turn.id)
+    finally:
+        db.close()
+    seen = {"model": 0}
+
+    def executor(_messages, _tools):
+        seen["model"] += 1
+        return ModelTurn("stopped asking", "", (), "stop")
+
+    set_executor(executor)
+    try:
+        owned = SessionLocal()
+        try:
+            set_rls_context(owned, user_id)
+            assert dispatch_task(owned, task_id) == 1
+        finally:
+            owned.close()
+    finally:
+        set_executor(None)
+    state, result = _call_result(task_id)
+    assert state == "rejected"
+    assert result == "缺少设备，未打开。"
+    assert seen["model"] == 1
+    check = SessionLocal()
+    try:
+        assert check.query(ScheduleConfirmClaim).filter(ScheduleConfirmClaim.session_id == session_id).count() == 0
     finally:
         check.close()
 
