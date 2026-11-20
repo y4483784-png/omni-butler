@@ -179,7 +179,14 @@ def test_crash_before_handoff_can_be_replaced_and_after_handoff_cannot():
         delivery.exited_at = datetime(2026, 1, 1)
         job = db.get(TaskRun, _job(session_id).id)
         job.hold_until = datetime(2000, 1, 1)
+        from app.services.call_owner import recover_expired
+
+        assert recover_expired(db, job, now=datetime(2001, 1, 1)) == "replace"
         db.commit()
+        replaced = db.query(ToolCall).filter(ToolCall.id == row.id).one()
+        step = db.get(TaskStep, replaced.task_step_id)
+        assert replaced.state == "pending"
+        assert step.phase == "calls_saved"
     finally:
         db.close()
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
@@ -464,6 +471,246 @@ def test_worker_queue_does_not_consume_the_default_backlog():
     assert "loop" not in text
     compose = Path(__file__).resolve().parents[2] / "docker-compose.yml"
     assert "loop" not in compose.read_text(encoding="utf-8")
+
+
+def _connected(user_id: int, session_id: int):
+    from app.models.models import Message, SessionEvent
+    from app.services.message_format import serialize_message
+    from app.services.resume import read_snapshot
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        snapshot = read_snapshot(db, user_id=user_id, session_id=session_id)
+        messages = [
+            serialize_message(row)
+            for row in db.query(Message).filter(Message.session_id == session_id).order_by(Message.id.asc()).all()
+        ]
+        events = [
+            (row.kind, row.body)
+            for row in db.query(SessionEvent)
+            .filter(SessionEvent.session_id == session_id)
+            .order_by(SessionEvent.seq.asc())
+            .all()
+        ]
+        return snapshot, messages, events
+    finally:
+        db.close()
+
+
+def test_unobserved_park_publishes_the_acknowledgement_and_keeps_the_owner():
+    from app.services.call_policy import unresolved_sentence
+
+    user_id, session_id = _pair()
+    invokes: list[str] = []
+    started = threading.Event()
+    release = threading.Event()
+
+    def executor(messages, _tools):
+        return _turn(ToolCallSpec("call-a", "web", "{}"))
+
+    def fake_invoke(name, _ctx, _args):
+        invokes.append(name)
+        started.set()
+        assert release.wait(5)
+        return ToolResult(direct_answer="late-body")
+
+    def run():
+        set_executor(executor)
+        with patch("app.agents.harness.gateway.invoke", fake_invoke):
+            _deliver(user_id, session_id, "alpha")
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert started.wait(5)
+    job = _job(session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        row = db.get(TaskRun, job.id)
+        row.hold_until = datetime(2000, 1, 1)
+        db.commit()
+    finally:
+        db.close()
+    _dispatch(user_id, session_id, expire=True)
+    sentence = unresolved_sentence("call-a")
+    snapshot, messages, events = _connected(user_id, session_id)
+    parked = snapshot["jobs"][-1]
+    assert parked["status"] == "waiting_person"
+    assert parked["unresolved_call_id"] == "call-a"
+    assert parked["unresolved_sentence"] == sentence
+    cards = [item["scheduleCard"] for item in messages if item["scheduleCard"] and item["scheduleCard"].get("mode") == "acknowledge"]
+    assert len(cards) == 1
+    assert cards[0]["call_id"] == "call-a"
+    assert cards[0]["sentence"] == sentence
+    assert ("status", "waiting_person") in events
+    assert ("message", sentence) in events
+    _intent(user_id, int(job.generation), " call-a please continue", "allow")
+    assert invokes == ["web"]
+    assert len(_calls(job.id)) == 1
+    release.set()
+    worker.join(5)
+    assert invokes == ["web"]
+    finished = _calls(job.id)[0]
+    assert finished.state == "result"
+    assert finished.result == "late-body"
+
+
+def _observed_exit_after_handoff(name: str) -> None:
+    from app.services.call_policy import UNKNOWN_SENTENCE
+
+    user_id, session_id = _pair()
+    invokes: list[str] = []
+
+    def executor(messages, _tools):
+        return _turn(ToolCallSpec("call-a", name, "{}"))
+
+    def fake_invoke(tool_name, _ctx, _args):
+        invokes.append(tool_name)
+        raise SystemExit(7)
+
+    set_executor(executor)
+    import pytest
+
+    with patch("app.agents.harness.gateway.invoke", fake_invoke):
+        with pytest.raises(SystemExit):
+            _deliver(user_id, session_id, "alpha")
+    assert invokes == [name]
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        call = _calls(_job(session_id).id)[0]
+        attempt = db.query(ToolCallAttempt).filter(ToolCallAttempt.tool_call_pk == call.id).one()
+        delivery = db.get(TaskDelivery, attempt.delivery_id)
+        delivery.exited_at = datetime(2026, 1, 1)
+        job = db.get(TaskRun, _job(session_id).id)
+        job.hold_until = datetime(2000, 1, 1)
+        db.commit()
+        delivery_id = attempt.delivery_id
+    finally:
+        db.close()
+    _dispatch(user_id, session_id, expire=True)
+    job = _job(session_id)
+    call = _calls(job.id)[0]
+    assert call.state == "unknown"
+    assert call.result == UNKNOWN_SENTENCE
+    assert job.status == "waiting_person"
+    assert job.continuation_due is False
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        step = db.get(TaskStep, call.task_step_id)
+        assert step.phase == "results_ready"
+        attempts = db.query(ToolCallAttempt).filter(ToolCallAttempt.tool_call_pk == call.id).all()
+        assert [row.delivery_id for row in attempts] == [delivery_id]
+    finally:
+        db.close()
+    snapshot, messages, events = _connected(user_id, session_id)
+    visible = snapshot["jobs"][-1]
+    assert visible["status"] == "waiting_person"
+    assert visible["unresolved_call_id"] == "call-a"
+    assert visible["unresolved_sentence"] == UNKNOWN_SENTENCE
+    assert any(UNKNOWN_SENTENCE in (item["content"] or "") for item in messages)
+    assert ("status", "waiting_person") in events
+    assert ("message", UNKNOWN_SENTENCE) in events
+    assert not any(item["scheduleCard"] and item["scheduleCard"].get("mode") == "acknowledge" for item in messages)
+    _intent(user_id, int(job.generation), " try again", "allow")
+
+    def later(messages, _tools):
+        return _turn(content="noted", finish="stop")
+
+    set_executor(later)
+    with patch("app.agents.harness.gateway.invoke", fake_invoke):
+        _dispatch(user_id, session_id)
+    assert invokes == [name]
+    fresh = _calls(job.id)[0]
+    assert fresh.state == "unknown"
+    assert fresh.result == UNKNOWN_SENTENCE
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        attempts = db.query(ToolCallAttempt).filter(ToolCallAttempt.delivery_id == delivery_id).all()
+        assert len(attempts) == 1
+    finally:
+        db.close()
+
+
+def test_observed_exit_after_handoff_shows_unknown_and_does_not_replay():
+    for name in ("web", "web_fetch", "sandbox"):
+        _observed_exit_after_handoff(name)
+
+
+def test_migration_upgrade_does_not_stamp_running_calls(tmp_path):
+    import subprocess
+    import sys
+
+    from sqlalchemy import create_engine, text
+
+    database = tmp_path / "owner.db"
+    env = os.environ.copy()
+    env["DATABASE_URL"] = f"sqlite:///{database}"
+    env["DATABASE_MIGRATE_URL"] = ""
+    env["REDIS_ENABLED"] = "false"
+    backend = Path(__file__).resolve().parents[1]
+
+    def alembic(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", *args],
+            cwd=backend,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    before = alembic("upgrade", "0025_confirm_until")
+    assert before.returncode == 0, before.stderr
+    engine = create_engine(env["DATABASE_URL"])
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (external_id, name, password_hash, is_active, is_admin) "
+                "VALUES ('legacy-user', 'legacy', '', 1, 0)"
+            )
+        )
+        user_id = conn.execute(text("SELECT id FROM users")).scalar_one()
+        conn.execute(text("INSERT INTO sessions (user_id, title) VALUES (:user_id, 'legacy')"), {"user_id": user_id})
+        session_id = conn.execute(text("SELECT id FROM sessions")).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO task_runs (user_id, session_id, generation, status, allowed_tools, kind, goal, "
+                "web_constraint, intent_version, dispatch_epoch, exec_epoch, continuation_due) "
+                "VALUES (:user_id, :session_id, 1, 'running', '[]', 'job', 'legacy', 'allow', 1, 0, 1, 0)"
+            ),
+            {"user_id": user_id, "session_id": session_id},
+        )
+        task_id = conn.execute(text("SELECT id FROM task_runs")).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO task_steps (user_id, task_run_id, seq, phase, content, reasoning_content) "
+                "VALUES (:user_id, :task_id, 1, 'awaiting_results', '', '')"
+            ),
+            {"user_id": user_id, "task_id": task_id},
+        )
+        step_id = conn.execute(text("SELECT id FROM task_steps")).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO tool_calls (user_id, task_step_id, tool_call_id, position, name, arguments, state, intent_version) "
+                "VALUES (:user_id, :step_id, 'legacy-call', 0, 'web', '{}', 'running', 1)"
+            ),
+            {"user_id": user_id, "step_id": step_id},
+        )
+    upgraded = alembic("upgrade", "0026_call_owner")
+    assert upgraded.returncode == 0, upgraded.stderr
+    with engine.connect() as conn:
+        call = conn.execute(text("SELECT state, owner_token, unresolved_at FROM tool_calls")).one()
+        job = conn.execute(text("SELECT status, continuation_due FROM task_runs")).one()
+    assert call.state == "running"
+    assert call.owner_token is None
+    assert call.unresolved_at is None
+    assert job.status == "running"
+    assert not job.continuation_due
+    engine.dispose()
 
 
 def test_preflight_reports_without_writing():
