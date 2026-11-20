@@ -9,6 +9,7 @@ and checks it against the row.
 from __future__ import annotations
 
 import os
+import time
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,15 +22,47 @@ from app.core.config import settings
 from app.models.models import TaskDelivery
 
 _current: ContextVar[str | None] = ContextVar("omni_delivery", default=None)
-_incarnation: str | None = None
 _installed = False
 
 
+class IncarnationMissing(RuntimeError):
+    """The parent has not published an incarnation file for this worker."""
+
+
+def _incarnation_file() -> Path:
+    return _root() / "incarnation"
+
+
+def publish_incarnation() -> str:
+    """Write the parent incarnation once. A later caller, including a forked child, reads it."""
+    path = _incarnation_file()
+    if path.is_file():
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    value = uuid4().hex
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        existing = path.read_text(encoding="utf-8").strip()
+        if not existing:
+            raise IncarnationMissing()
+        return existing
+    try:
+        os.write(fd, value.encode("utf-8"))
+    finally:
+        os.close(fd)
+    return value
+
+
 def incarnation() -> str:
-    global _incarnation
-    if _incarnation is None:
-        _incarnation = uuid4().hex
-    return _incarnation
+    path = _incarnation_file()
+    if not path.is_file():
+        raise IncarnationMissing()
+    existing = path.read_text(encoding="utf-8").strip()
+    if not existing:
+        raise IncarnationMissing()
+    return existing
 
 
 def current_delivery() -> str | None:
@@ -92,6 +125,7 @@ def ensure_delivery(db: Session, *, task_run_id: int) -> str | None:
         return found
     if not settings.celery_task_always_eager:
         return None
+    publish_incarnation()
     return insert_delivery(
         db,
         request_id=f"eager-{uuid4().hex}",
@@ -101,6 +135,7 @@ def ensure_delivery(db: Session, *, task_run_id: int) -> str | None:
 
 
 def mint_for_request(db: Session, request, pid: int, task_run_id: int | None) -> str:
+    publish_incarnation()
     delivery_id = insert_delivery(
         db,
         request_id=str(request.id),
@@ -133,8 +168,30 @@ def exit_request(db: Session, request, exitcode: str) -> int:
     return mark_exit(db, str(delivery_id), exitcode)
 
 
-def claim_mailbox(db: Session, request_id: str, pid: int) -> str | None:
-    path = _mailbox(pid)
+def claim_mailbox(db: Session, request_id: str, pid: int, *, wait_seconds: float = 2.0) -> str | None:
+    """Bind the parent delivery for this request and pid.
+
+    The pool can enter the child before ``on_accepted`` returns, so the
+    mailbox line and its committed row can appear a moment later. A miss
+    after the wait returns None. The caller rejects the task instead of
+    treating that as a completed consume.
+    """
+    deadline = time.monotonic() + max(0.0, wait_seconds)
+    while True:
+        chosen = _claim_once(db, request_id, pid)
+        if chosen is not None:
+            return chosen
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.02)
+
+
+def _claim_once(db: Session, request_id: str, pid: int) -> str | None:
+    db.rollback()
+    try:
+        path = _mailbox(pid)
+    except IncarnationMissing:
+        return None
     if not path.exists():
         return None
     consumed: set[str] = set()
@@ -166,6 +223,7 @@ def claim_mailbox(db: Session, request_id: str, pid: int) -> str | None:
 
 def install_parent_hooks() -> None:
     global _installed
+    publish_incarnation()
     if _installed:
         return
     from celery.worker.request import Request

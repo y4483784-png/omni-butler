@@ -404,12 +404,20 @@ def mark_legacy_unresolved(db: Session, *, dry_run: bool) -> dict:
         db.rollback()
         return report
     stamp = _now()
+    jobs_by_id = {int(job.id): job for job in jobs}
+    sentences: dict[int, list[str]] = {}
     for call in calls:
         call.unresolved_at = stamp
+        step = db.get(TaskStep, call.task_step_id)
+        job = None if step is None else jobs_by_id.get(int(step.task_run_id))
+        if job is None:
+            continue
+        _publish_ack_card(db, job, call)
+        sentences.setdefault(int(job.id), []).append(unresolved_sentence(call.tool_call_id))
     for job in jobs:
         job.status = "waiting_person"
         job.continuation_due = False
-    db.flush()
+        _publish_visible(db, job, sentences.get(int(job.id), []))
     report["applied"] = True
     return report
 

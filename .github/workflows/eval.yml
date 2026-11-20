@@ -141,6 +141,12 @@ jobs:
           PREFORK_REQUIRED: "1"
         run: python ../verification/loop-owner/prefork_reap_probe.py
 
+      - name: Production prefork mailbox claim
+        env:
+          PROBE_BROKER: redis://127.0.0.1:6379/14
+          PREFORK_REQUIRED: "1"
+        run: python ../verification/loop-owner/prefork_claim.py
+
   rls:
     name: postgres row-level security
     runs-on: ubuntu-latest

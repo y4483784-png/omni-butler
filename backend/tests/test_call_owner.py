@@ -457,6 +457,56 @@ def test_legacy_mark_is_dry_run_safe_and_does_not_mint_an_owner():
         assert call.state == "running"
         assert job.status == "waiting_person"
         assert job.continuation_due is False
+        again = mark_legacy_unresolved(db, dry_run=False)
+        db.commit()
+        assert again["calls"] == 0
+    finally:
+        db.close()
+    from app.services.call_policy import unresolved_sentence
+
+    sentence = unresolved_sentence("legacy")
+    snapshot, messages, events = _connected(user_id, session_id)
+    visible = snapshot["jobs"][-1]
+    assert visible["status"] == "waiting_person"
+    assert visible["unresolved_call_id"] == "legacy"
+    assert visible["unresolved_sentence"] == sentence
+    cards = [
+        item["scheduleCard"]
+        for item in messages
+        if item["scheduleCard"] and item["scheduleCard"].get("mode") == "acknowledge"
+    ]
+    assert len(cards) == 1
+    assert cards[0]["call_id"] == "legacy"
+    assert cards[0]["sentence"] == sentence
+    assert ("status", "waiting_person") in events
+    assert ("message", sentence) in events
+
+
+def test_a_missed_claim_rejects_instead_of_acking(monkeypatch):
+    import pytest
+    from celery.exceptions import Reject
+
+    from app.tasks.job import run_job
+
+    monkeypatch.setattr("app.core.config.settings.celery_task_always_eager", False)
+    monkeypatch.setattr("app.tasks.job.settings.celery_task_always_eager", False)
+    run_job.push_request(id="req-miss")
+    try:
+        with patch("app.services.delivery_bind.claim_mailbox", return_value=None):
+            with pytest.raises(Reject) as caught:
+                run_job.run(1, "token", 1, 1)
+    finally:
+        run_job.pop_request()
+    assert caught.value.requeue is True
+
+
+def test_claim_does_not_mint_an_incarnation(tmp_path, monkeypatch):
+    monkeypatch.setenv("OMNI_DELIVERY_DIR", str(tmp_path))
+    db = SessionLocal()
+    try:
+        set_rls_context(db, 1)
+        assert claim_mailbox(db, "req-missing", os.getpid(), wait_seconds=0) is None
+        assert not (tmp_path / "incarnation").exists()
     finally:
         db.close()
 

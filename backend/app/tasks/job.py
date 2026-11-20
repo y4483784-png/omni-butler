@@ -160,7 +160,9 @@ def run_job(
         finally:
             claim_db.close()
         if claimed is None:
-            return
+            from celery.exceptions import Reject
+
+            raise Reject("delivery mailbox was not claimed", requeue=True)
     user_id = _task_user_id(int(task_run_id))
     if user_id is None:
         return
