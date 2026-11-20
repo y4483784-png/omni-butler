@@ -854,7 +854,7 @@ def _assert_staged_cleanup(image, session_id, turn, store) -> None:
     try:
         missed_row = db.get(TaskImage, missed[0].id)
         assert missed_row is not None
-        assert missed_row.purge_state == "tombstone"
+        assert missed_row.purge_state == "staged"
     finally:
         db.close()
 
@@ -894,12 +894,13 @@ def _assert_staged_cleanup(image, session_id, turn, store) -> None:
     assert store.objects == {}
 
 
-def test_late_put_after_terminal_or_expiry_is_deleted_by_the_next_sweep():
+def test_running_staged_row_survives_the_hold_and_a_terminal_row_is_tombstoned():
     from app.services import task_run
 
     image = decode_chat_image("image/png", _b64(PNG), max_upload_mb=20)
     kept_session = _session_for(7)
-    abandoned_session = _session_for(7)
+    terminal_session = _session_for(7)
+    running_session = _session_for(7)
     kept = task_run.begin_turn(user_id=7, session_id=kept_session)
     store = _MemoryStore()
     from app.storage import factory as blob_factory
@@ -907,16 +908,18 @@ def test_late_put_after_terminal_or_expiry_is_deleted_by_the_next_sweep():
     previous = blob_factory._store
     blob_factory._store = store
     try:
-        _assert_late_put_is_still_discoverable(image, abandoned_session, kept, store)
+        _assert_hold_keeps_a_running_staged_row(image, terminal_session, running_session, kept, store)
     finally:
         blob_factory._store = previous
 
 
-def _assert_late_put_is_still_discoverable(image, abandoned_session, kept, store) -> None:
+def _assert_hold_keeps_a_running_staged_row(image, terminal_session, running_session, kept, store) -> None:
     from datetime import timedelta
 
+    from sqlalchemy import update
+
     from app.core.db import SessionLocal
-    from app.models.models import TaskImage
+    from app.models.models import TaskImage, TaskRun
     from app.services import task_images, task_run
     from app.services.task_images import STAGED_HOLD
 
@@ -935,35 +938,7 @@ def _assert_late_put_is_still_discoverable(image, abandoned_session, kept, store
     finally:
         db.close()
 
-    def abandoned(mode: str) -> None:
-        turn = task_run.begin_turn(user_id=7, session_id=abandoned_session)
-        reserved = task_images.reserve_images(user_id=7, task_run_id=turn.id, images=(image,))
-        key = reserved[0].storage_key
-        if mode == "terminal":
-            task_run.stop(user_id=7, generation=turn.generation)
-        else:
-            db = SessionLocal()
-            try:
-                row = db.get(TaskImage, reserved[0].id)
-                when = row.created_at
-            finally:
-                db.close()
-            task_images.reconcile_task_images(
-                now=when + STAGED_HOLD + timedelta(seconds=1),
-                store=store,
-            )
-        db = SessionLocal()
-        try:
-            found = (
-                db.query(TaskImage).filter(TaskImage.storage_key == key).one_or_none()
-            )
-            assert found is not None
-            assert found.purge_state != "ready"
-        finally:
-            db.close()
-        store.put(key, PNG)
-        task_images.reconcile_task_images(store=store)
-        assert key not in store.objects
+    def kept_ready() -> None:
         db = SessionLocal()
         try:
             survivor = db.get(TaskImage, ready_id)
@@ -973,8 +948,71 @@ def _assert_late_put_is_still_discoverable(image, abandoned_session, kept, store
             db.close()
         assert store.objects[ready_key] == PNG
 
-    abandoned("terminal")
-    abandoned("expiry")
+    turn = task_run.begin_turn(user_id=7, session_id=terminal_session)
+    reserved = task_images.reserve_images(user_id=7, task_run_id=turn.id, images=(image,))
+    key = reserved[0].storage_key
+    task_run.stop(user_id=7, generation=turn.generation)
+    db = SessionLocal()
+    try:
+        found = db.query(TaskImage).filter(TaskImage.storage_key == key).one()
+        assert found.purge_state == "tombstone"
+    finally:
+        db.close()
+    store.put(key, PNG)
+    task_images.reconcile_task_images(store=store)
+    assert key not in store.objects
+    kept_ready()
+
+    fenced = task_run.begin_turn(user_id=7, session_id=terminal_session)
+    fenced_row = task_images.reserve_images(user_id=7, task_run_id=fenced.id, images=(image,))
+    fenced_key = fenced_row[0].storage_key
+    db = SessionLocal()
+    try:
+        when = db.get(TaskImage, fenced_row[0].id).created_at
+        db.execute(update(TaskRun).where(TaskRun.id == fenced.id).values(status="stopped"))
+        db.commit()
+    finally:
+        db.close()
+    task_images.reconcile_task_images(now=when + STAGED_HOLD + timedelta(seconds=1), store=store)
+    db = SessionLocal()
+    try:
+        found = db.query(TaskImage).filter(TaskImage.storage_key == fenced_key).one()
+        assert found.purge_state == "tombstone"
+    finally:
+        db.close()
+    store.put(fenced_key, PNG)
+    task_images.reconcile_task_images(store=store)
+    assert fenced_key not in store.objects
+    kept_ready()
+
+    running = task_run.begin_turn(user_id=7, session_id=running_session)
+    missed = task_images.reserve_images(user_id=7, task_run_id=running.id, images=(image,))
+    missed_key = missed[0].storage_key
+    db = SessionLocal()
+    try:
+        when = db.get(TaskImage, missed[0].id).created_at
+    finally:
+        db.close()
+    later = when + STAGED_HOLD + timedelta(seconds=1)
+    task_images.reconcile_task_images(now=later, store=store)
+    db = SessionLocal()
+    try:
+        found = db.query(TaskImage).filter(TaskImage.storage_key == missed_key).one()
+        assert found.purge_state == "staged"
+        missed_id = found.id
+    finally:
+        db.close()
+    store.put(missed_key, PNG)
+    task_images.reconcile_task_images(now=later, store=store)
+    db = SessionLocal()
+    try:
+        found = db.get(TaskImage, missed_id)
+        assert found is not None
+        assert found.purge_state == "ready"
+    finally:
+        db.close()
+    assert store.objects[missed_key] == PNG
+    kept_ready()
 
 
 def test_absent_pending_blob_still_drops_the_row():
