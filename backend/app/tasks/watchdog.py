@@ -101,8 +101,11 @@ def run_sweep() -> None:
             if row is None or row.kind != "job":
                 continue
             try:
+                from app.services.loop_round import reconcile_parked_writes
                 from app.services.resume import dispatch_task
 
+                if row.status == "waiting_person" and not row.continuation_due:
+                    reconcile_parked_writes(db, int(task_run_id))
                 dispatch_task(db, int(task_run_id))
             except Exception:
                 logger.exception("dispatch failed task_run_id=%s", task_run_id)

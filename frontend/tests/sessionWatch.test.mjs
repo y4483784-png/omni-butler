@@ -90,8 +90,11 @@ function ok(body) {
 
 test("a status event patches that session's jobs once and a repeat does not", async () => {
   const harness = depsFor({
-    next: async () =>
-      ok('data: {"seq":1,"kind":"status","body":"running"}\n\ndata: {"seq":1,"kind":"status","body":"running"}\n\n'),
+    next: async () => {
+      const row = harness.jobs.get(7);
+      harness.jobs.set(7, { cursor: 1, jobs: row.jobs });
+      return ok('data: {"seq":1,"kind":"status","body":"running"}\n\ndata: {"seq":1,"kind":"status","body":"running"}\n\n');
+    },
   });
   harness.jobs.set(7, {
     cursor: 0,
@@ -135,7 +138,11 @@ test("EOF and a failed fetch reconnect from the last applied seq", async () => {
   const harness = depsFor({
     next: async (_sessionId, after) => {
       calls += 1;
-      if (calls === 1) return ok('data: {"seq":1,"kind":"status","body":"running"}\n\n');
+      if (calls === 1) {
+        const row = harness.jobs.get(4);
+        harness.jobs.set(4, { cursor: 1, jobs: row.jobs });
+        return ok('data: {"seq":1,"kind":"status","body":"running"}\n\n');
+      }
       if (calls === 2) throw new Error("network");
       if (after === 1) return ok('data: {"seq":2,"kind":"status","body":"waiting_person"}\n\n');
       return new Response(hangingStream(), { status: 200 });
@@ -214,4 +221,112 @@ test("a gap reloads the snapshot and continues after the snapshot cursor", async
   assert.ok(harness.fetches.some((row) => row.after === 3));
   assert.ok(harness.patches.some((row) => row.jobs[0] && row.jobs[0].goal === "gap"));
   stop();
+});
+
+test("a failed job load does not consume the seq and the stream reconnects", async () => {
+  let jobs = 0;
+  let fetches = 0;
+  const harness = depsFor({
+    next: async (_sessionId, after) => {
+      fetches += 1;
+      if (after === 0) return ok('data: {"seq":1,"kind":"status","body":"running"}\n\n');
+      return new Response(hangingStream(), { status: 200 });
+    },
+  });
+  harness.io.loadJobs = async () => {
+    jobs += 1;
+    if (jobs === 2) throw new Error("jobs down");
+    return { cursor: jobs === 1 ? 0 : 1, jobs: [{ id: 3, status: "completed", goal: "done", generation: 1, kind: "job" }] };
+  };
+  harness.io.reloadMessages = async () => {
+    throw new Error("messages down");
+  };
+  const stop = watchSession(9, harness.io);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    harness.io.reloadMessages = async () => {};
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.ok(fetches >= 2);
+    assert.ok(harness.patches.some((row) => row.jobs[0] && row.jobs[0].status === "completed"));
+  } finally {
+    stop();
+  }
+});
+
+test("a delayed older snapshot does not rewind a newer status", async () => {
+  let releaseOld;
+  const oldGate = new Promise((resolve) => {
+    releaseOld = resolve;
+  });
+  let loads = 0;
+  const harness = depsFor({
+    next: async (_sessionId, after) => {
+      if (after >= 1) return new Response(hangingStream(), { status: 200 });
+      return ok('data: {"seq":1,"kind":"status","body":"completed"}\n\n');
+    },
+  });
+  harness.io.loadJobs = async () => {
+    loads += 1;
+    if (loads === 1) return { cursor: 0, jobs: [{ id: 4, status: "running", goal: "late", generation: 1, kind: "job" }] };
+    if (loads === 2) {
+      await oldGate;
+      return { cursor: 0, jobs: [{ id: 4, status: "running", goal: "stale", generation: 1, kind: "job" }] };
+    }
+    return { cursor: 1, jobs: [{ id: 4, status: "completed", goal: "fresh", generation: 1, kind: "job" }] };
+  };
+  const stop = watchSession(10, harness.io);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    harness.show();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    releaseOld();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const last = harness.patches.at(-1);
+    assert.equal(last.jobs[0].status, "completed");
+    assert.equal(last.jobs[0].goal, "fresh");
+  } finally {
+    stop();
+  }
+});
+
+test("a failed gap reload reconnects without skipping the seq", async () => {
+  let loads = 0;
+  const harness = depsFor({
+    next: async (_sessionId, after) => {
+      if (after === 0) return ok('data: {"seq":4,"kind":"status","body":"running"}\n\n');
+      if (after === 4) return new Response(hangingStream(), { status: 200 });
+      return ok("");
+    },
+  });
+  harness.io.loadJobs = async () => {
+    loads += 1;
+    if (loads === 1) return { cursor: 0, jobs: [{ id: 5, status: "running", goal: "a", generation: 1, kind: "job" }] };
+    if (loads === 2) throw new Error("gap down");
+    return { cursor: 4, jobs: [{ id: 5, status: "completed", goal: "back", generation: 1, kind: "job" }] };
+  };
+  const stop = watchSession(11, harness.io);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.ok(harness.fetches.some((row) => row.after === 4));
+    assert.ok(harness.patches.some((row) => row.jobs[0] && row.jobs[0].goal === "back"));
+  } finally {
+    stop();
+  }
+});
+
+test("stop during a pending load does not open a stream", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const harness = depsFor({
+    next: async () => ok('data: {"seq":1,"kind":"status","body":"running"}\n\n'),
+  });
+  harness.io.loadJobs = () => gate.then(() => ({ cursor: 1, jobs: [{ id: 6, status: "running", goal: "x", generation: 1, kind: "job" }] }));
+  const stop = watchSession(12, harness.io);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  stop();
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(harness.fetches.length, 0);
 });

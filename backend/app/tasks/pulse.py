@@ -224,6 +224,15 @@ def push_pulse(matter: PulseMatter) -> Shown | Suppressed:
         if not token:
             return Suppressed(fingerprint)
         _stamp(target, token)
+        from app.services.resume import publish_event
+
+        publish_event(
+            db,
+            user_id=user_id,
+            session_id=int(session.id),
+            kind="message",
+            body=token,
+        )
         db.commit()
         return Shown(fingerprint)
     finally:

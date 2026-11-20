@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Literal
 
@@ -599,6 +599,14 @@ def note_confirmed(db: Session, *, user_id: int, token: str) -> None:
     key = str(token or "").strip()
     if not key:
         return
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == key)
+        .with_for_update()
+        .one_or_none()
+    )
+    if claim is None or claim.user_id != user_id:
+        return
     call_row = (
         db.query(ToolCall)
         .filter(ToolCall.user_id == user_id, ToolCall.claim_token == key)
@@ -617,6 +625,9 @@ def note_confirmed(db: Session, *, user_id: int, token: str) -> None:
     )
     if job is None or job.status not in {"running", "waiting_person", "waiting_resource"}:
         return
+    db.refresh(call_row)
+    if call_row.state != CallState.AWAITING_CONFIRM.value:
+        return
     try:
         _record_outcome(db, job=job, step_row=step_row, call_row=call_row, outcome="confirm")
     except IllegalPhase:
@@ -624,6 +635,22 @@ def note_confirmed(db: Session, *, user_id: int, token: str) -> None:
 
 
 def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
+    preview = (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == hold.user_id, TaskRun.generation == hold.generation)
+        .one_or_none()
+    )
+    if preview is None:
+        db.rollback()
+        return None
+    peeked = _find_call(db, preview.id, tool_call_id)
+    if peeked is not None and peeked[1].claim_token:
+        (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == peeked[1].claim_token)
+            .with_for_update()
+            .one_or_none()
+        )
     job = _lock_holder(db, hold)
     if job is None:
         db.rollback()
@@ -671,6 +698,127 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
     if not _commit_job(db, job, kind="step", body=step.phase.value):
         return None
     return step
+
+
+def _armed_expired(claim: ScheduleConfirmClaim) -> bool:
+    from app.core.config import settings
+
+    armed_at = claim.armed_at
+    if armed_at is None:
+        return True
+    if armed_at.tzinfo is not None:
+        armed_at = armed_at.astimezone(timezone.utc).replace(tzinfo=None)
+    deadline = armed_at + timedelta(seconds=float(settings.llm_timeout))
+    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0) >= deadline
+
+
+def reconcile_parked_writes(db: Session, task_run_id: int) -> int:
+    """Repair a parked card whose write already committed and whose tool result did not.
+
+    An untouched waiting card, a waiting_resource row, and a confirmation that is
+    still inside llm_timeout of its arm are left alone. This does not reserve,
+    adopt, or send.
+    """
+    job = db.get(TaskRun, int(task_run_id))
+    if (
+        job is None
+        or job.kind != "job"
+        or job.status != "waiting_person"
+        or job.continuation_due
+        or job.exec_token
+    ):
+        db.rollback()
+        return 0
+    candidates: list[tuple[TaskStep, ToolCall, str]] = []
+    steps = (
+        db.query(TaskStep)
+        .filter(TaskStep.task_run_id == job.id)
+        .order_by(TaskStep.seq.asc())
+        .all()
+    )
+    for step_row in steps:
+        for call_row in _call_rows(db, step_row.id):
+            if call_row.state != CallState.AWAITING_CONFIRM.value or call_row.name not in _LOOKUP_WRITES:
+                continue
+            token = str(call_row.claim_token or "").strip()
+            if not token:
+                continue
+            candidates.append((step_row, call_row, token))
+    locked: list[tuple[TaskStep, ToolCall, ScheduleConfirmClaim]] = []
+    for step_row, call_row, token in sorted(candidates, key=lambda item: str(item[2])):
+        claim = (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == token)
+            .with_for_update()
+            .one_or_none()
+        )
+        marker = "" if claim is None else (claim.remote_request_id or "").strip()
+        if claim is None or not marker or claim.status not in {"unknown", "written"}:
+            continue
+        if claim.status == "unknown" and not _armed_expired(claim):
+            continue
+        locked.append((step_row, call_row, claim))
+    if not locked:
+        db.rollback()
+        return 0
+    job = (
+        db.query(TaskRun)
+        .filter(TaskRun.id == int(task_run_id), TaskRun.user_id == job.user_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if (
+        job is None
+        or job.status != "waiting_person"
+        or job.continuation_due
+        or job.exec_token
+    ):
+        db.rollback()
+        return 0
+    changed = 0
+    for step_row, call_row, claim in locked:
+        db.refresh(call_row)
+        if call_row.state != CallState.AWAITING_CONFIRM.value:
+            continue
+        memory = _as_step(step_row, _call_rows(db, step_row.id))
+        written = claim.status == "written"
+        try:
+            step = apply(
+                memory,
+                LoopEvent.CONFIRM if written else LoopEvent.NOTE_UNKNOWN,
+                call_id=call_row.tool_call_id,
+            )
+        except IllegalPhase:
+            db.rollback()
+            return 0
+        target = _call_by_id(step, call_row.tool_call_id)
+        call_row.state = target.state.value
+        marker = (claim.remote_request_id or "").strip()
+        call_row.result = f"已写入：{marker}" if written else "结果未知"
+        _store_phase(db, step_row, step.phase)
+        changed += 1
+    if changed == 0:
+        db.rollback()
+        return 0
+    calls = []
+    for step_row in db.query(TaskStep).filter(TaskStep.task_run_id == job.id).all():
+        calls.extend(_call_rows(db, step_row.id))
+    ready = bool(calls) and all(CallState(row.state) in TERMINAL for row in calls)
+    if ready:
+        result = db.execute(
+            update(TaskRun)
+            .where(TaskRun.id == job.id)
+            .where(TaskRun.status == "waiting_person")
+            .where(TaskRun.exec_token.is_(None))
+            .where(TaskRun.continuation_due == False)  # noqa: E712
+            .values(continuation_due=True)
+        )
+        if int(result.rowcount or 0) != 1:
+            db.rollback()
+            return 0
+    if not _commit_job(db, job, kind="step", body=Phase.RESULTS_READY.value if ready else Phase.AWAITING_RESULTS.value):
+        return 0
+    return changed
 
 
 def cancel_open_calls(db: Session, *, user_id: int, generation: int) -> int:

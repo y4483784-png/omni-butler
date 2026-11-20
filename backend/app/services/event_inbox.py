@@ -375,10 +375,10 @@ def _reissue(
         raise EventRejected(422, "这张卡片的动作不能签发")
     raw = _card_raw(card)
     parts = write_parts(action_name, raw)
-    for claim in _open_claims(db, user_id, session_id):
+    cancelled = list(_open_claims(db, user_id, session_id))
+    for claim in cancelled:
         claim.status = "cancelled"
         _stamp_claim_phase(db, session_id, claim.token, "cancelled")
-        _emit_claim(db, claim)
     db.flush()
     expires_at = draft_expires_at()
     try:
@@ -418,6 +418,11 @@ def _reissue(
         )
     )
     db.flush()
+    for claim in cancelled:
+        _emit_claim(db, claim)
+    issued = db.get(ScheduleConfirmClaim, token)
+    if issued is not None:
+        _emit_claim(db, issued)
     return token
 
 

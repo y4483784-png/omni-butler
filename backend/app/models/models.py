@@ -112,6 +112,7 @@ class ScheduleConfirmClaim(Base):
     generation_ids = Column(Text, nullable=False, default="[]")
     remote_request_id = Column(String, nullable=False, default="")
     intent_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    armed_at = Column(DateTime, nullable=True)
 
 
 TASK_RUN_STATUSES = (

@@ -274,6 +274,7 @@ def _insert_running(
     rows = (
         db.query(TaskRun)
         .filter(TaskRun.user_id == user_id)
+        .order_by(TaskRun.id.asc())
         .with_for_update()
         .all()
     )
@@ -332,6 +333,7 @@ def insert_card_action(db, *, user_id: int, session_id: int, message_id: int) ->
     rows = (
         db.query(TaskRun)
         .filter(TaskRun.user_id == user_id)
+        .order_by(TaskRun.id.asc())
         .with_for_update()
         .all()
     )
@@ -519,6 +521,21 @@ def apply_intent(
 ) -> IntentApply:
     from app.models.models import ScheduleConfirmClaim
 
+    preview = (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == user_id, TaskRun.generation == generation)
+        .one_or_none()
+    )
+    if preview is None or preview.kind != "job" or preview.status not in _OPEN:
+        db.rollback()
+        return IntentApply(applied=False)
+    claims = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.user_id == user_id)
+        .order_by(ScheduleConfirmClaim.token.asc())
+        .with_for_update()
+        .all()
+    )
     row = (
         db.query(TaskRun)
         .filter(TaskRun.user_id == user_id, TaskRun.generation == generation)
@@ -540,12 +557,6 @@ def apply_intent(
     row.exec_epoch = int(row.exec_epoch or 0) + 1
     row.goal = f"{row.goal or ''}{text or ''}"
     row.continuation_due = True
-    claims = (
-        db.query(ScheduleConfirmClaim)
-        .filter(ScheduleConfirmClaim.user_id == user_id)
-        .with_for_update()
-        .all()
-    )
     changed: list[str] = []
     for claim in claims:
         if row.id not in _claim_ids(claim.generation_ids):

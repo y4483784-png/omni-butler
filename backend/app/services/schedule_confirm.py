@@ -314,6 +314,7 @@ def continue_from_card(
                 task_run_ids=[turn.id],
                 expires_at=expires_at,
             )
+            _emit_claim_token(db, user_id=user_id, session_id=session_id, token=token)
             db.commit()
             return token, expiry
         except IntegrityError:
@@ -495,6 +496,18 @@ def arm_remote_claim(
         is not None
     )
     if job_linked:
+        if exec_token is None and exec_epoch is None:
+            holder_match = and_(
+                TaskRun.status == "waiting_person",
+                TaskRun.exec_token.is_(None),
+                TaskRun.intent_version == int(claim.intent_version or 1),
+            )
+        else:
+            holder_match = and_(
+                TaskRun.intent_version == intent_version,
+                TaskRun.exec_token == exec_token,
+                TaskRun.exec_epoch == exec_epoch,
+            )
         result = db.execute(
             update(ScheduleConfirmClaim)
             .where(ScheduleConfirmClaim.token == key)
@@ -506,13 +519,11 @@ def arm_remote_claim(
                         TaskRun.user_id == claim.user_id,
                         TaskRun.id.in_(ids),
                         TaskRun.kind == "job",
-                        TaskRun.intent_version == intent_version,
-                        TaskRun.exec_token == exec_token,
-                        TaskRun.exec_epoch == exec_epoch,
+                        holder_match,
                     )
                 )
             )
-            .values(status="unknown", remote_request_id=marker)
+            .values(status="unknown", remote_request_id=marker, armed_at=_now())
         )
         if int(result.rowcount or 0) != 1:
             db.rollback()
@@ -524,6 +535,7 @@ def arm_remote_claim(
         return True
     claim.status = "unknown"
     claim.remote_request_id = marker
+    claim.armed_at = _now()
     _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
     _emit_claim(db, claim)
     db.commit()
@@ -550,6 +562,7 @@ def reopen_known_rejection(db: Session, token: str) -> None:
         return
     claim.status = "open"
     claim.remote_request_id = ""
+    claim.armed_at = None
     _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
     _emit_claim(db, claim)
     db.commit()
@@ -863,9 +876,10 @@ def _bind_open_claim(
         db.flush()
         _stamp_bound_jobs(db, key.user_id, task_run_ids)
         return existing.token, existing.expires_at
+    cancelled = None
     if existing is not None:
         existing.status = "cancelled"
-        _emit_claim(db, existing)
+        cancelled = existing
         db.flush()
     token = str(uuid4())
     row = ScheduleConfirmClaim(
@@ -883,6 +897,8 @@ def _bind_open_claim(
     db.add(row)
     db.flush()
     _stamp_bound_jobs(db, key.user_id, task_run_ids)
+    if cancelled is not None:
+        _emit_claim(db, cancelled)
     return token, expires_at
 
 
@@ -916,6 +932,7 @@ def _locked_runs(db: Session, user_id: int, task_run_ids: list[int]) -> list[Tas
     return (
         db.query(TaskRun)
         .filter(TaskRun.user_id == user_id, TaskRun.id.in_(task_run_ids))
+        .order_by(TaskRun.id.asc())
         .with_for_update()
         .all()
     )
@@ -943,6 +960,10 @@ def _load_ids(raw: str | None) -> list[int]:
 
 def _dump_ids(ids: list[int]) -> str:
     return json.dumps(sorted(set(ids)), separators=(",", ":"))
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
 
 def _expired(expires_at: datetime | None, now: datetime) -> bool:
@@ -1014,14 +1035,23 @@ def _people(value: object) -> list[dict[str, str]]:
 
 
 def _emit_claim(db: Session, claim: ScheduleConfirmClaim) -> None:
+    _emit_claim_token(
+        db,
+        user_id=int(claim.user_id),
+        session_id=int(claim.session_id),
+        token=str(claim.token),
+    )
+
+
+def _emit_claim_token(db: Session, *, user_id: int, session_id: int, token: str) -> None:
     from app.services.resume import publish_event
 
     publish_event(
         db,
-        user_id=int(claim.user_id),
-        session_id=int(claim.session_id),
+        user_id=int(user_id),
+        session_id=int(session_id),
         kind="confirm",
-        body=str(claim.token),
+        body=str(token),
     )
 
 

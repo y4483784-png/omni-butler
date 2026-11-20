@@ -1443,3 +1443,244 @@ def test_a_lost_write_is_reconstructed_without_sending(
         assert stored.remote_request_id == "req-1"
     finally:
         claim.close()
+
+
+def test_an_old_adopter_does_not_borrow_the_replacement_hold():
+    from sqlalchemy.orm import Session as OrmSession
+
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        job = db.get(TaskRun, task_id)
+        job.dispatch_token = "dispatch-1"
+        job.dispatch_epoch = 1
+        job.intent_version = 1
+        job.dispatch_until = datetime(2030, 1, 1)
+        job.exec_token = None
+        job.exec_epoch = 0
+        job.hold_until = None
+        db.add(
+            TaskStep(
+                user_id=user_id,
+                task_run_id=task_id,
+                seq=1,
+                phase="calls_saved",
+                content="",
+                reasoning_content="",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    seen = {"model": 0, "renewed": []}
+    state = {"phase": "watch"}
+    real_commit = OrmSession.commit
+
+    def wrapped(self):
+        real_commit(self)
+        if state["phase"] != "watch":
+            return
+        state["phase"] = "took"
+        other = SessionLocal()
+        try:
+            set_rls_context(other, user_id)
+            row = other.get(TaskRun, task_id)
+            row.exec_token = "wb"
+            row.exec_epoch = int(row.exec_epoch or 0) + 1
+            row.hold_until = datetime(2030, 1, 1)
+            row.dispatch_token = None
+            other.commit()
+        finally:
+            other.close()
+
+    def executor(*_args, **_kwargs):
+        seen["model"] += 1
+        return ModelTurn("borrowed", "", (), "stop")
+
+    from app.services import task_run
+
+    real_renew = task_run.renew_hold
+
+    def renew(*args, **kwargs):
+        seen["renewed"].append(kwargs.get("exec_token"))
+        return real_renew(*args, **kwargs)
+
+    set_executor(executor)
+    with (
+        patch.object(OrmSession, "commit", wrapped),
+        patch("app.tasks.job._loop_enabled", return_value=True),
+        patch("app.services.task_run.renew_hold", renew),
+        patch("app.services.loop_round.task_run.renew_hold", renew),
+    ):
+        run_job(task_id, "dispatch-1", 1, 1)
+    set_executor(None)
+    stored = _load(task_id)
+    assert stored.exec_token == "wb"
+    assert seen["model"] == 0
+    assert seen["renewed"] == []
+    check = SessionLocal()
+    try:
+        text = " ".join(
+            row.content or ""
+            for row in check.query(Message).filter(Message.session_id == session_id)
+        )
+    finally:
+        check.close()
+    assert "borrowed" not in text
+
+
+def _parked_job(user_id: int, session_id: int, specs: list[tuple[str, str, dict]]):
+    from app.services import task_run
+    from app.services.loop_round import Hold, open_cards, save_turn
+
+    db = SessionLocal()
+    set_rls_context(db, user_id)
+    turn = task_run.open_alongside(db, user_id=user_id, session_id=session_id, kind="job", goal="parked")
+    row = db.get(TaskRun, turn.id)
+    row.exec_token = "worker"
+    row.exec_epoch = 1
+    row.hold_until = datetime(2030, 1, 1)
+    db.commit()
+    hold = Hold(
+        user_id=user_id,
+        generation=turn.generation,
+        exec_token="worker",
+        exec_epoch=1,
+        intent_version=1,
+    )
+    save_turn(
+        db,
+        hold=hold,
+        turn=ModelTurn(
+            "",
+            "",
+            tuple(ToolCallSpec(call_id, name, json.dumps(raw)) for call_id, name, raw in specs),
+            "tool_calls",
+        ),
+    )
+    step = db.query(TaskStep).filter(TaskStep.task_run_id == turn.id).one()
+    tokens = open_cards(db, hold=hold, step_id=step.id)
+    return db, int(turn.id), tokens
+
+
+_ERRAND = {
+    "merchant_key": "shop",
+    "lines": [{"sku": "tea", "qty": 1, "query": "tea"}],
+    "ship_to": {"name": "Ada", "phone": "1", "region": "HZ", "address": "1 Road"},
+    "pay_method": "card",
+    "amount_cap": 10,
+}
+
+
+@pytest.mark.parametrize(
+    ("name", "raw", "claim_status", "expect_state", "expect_result"),
+    [
+        ("desktop.open", {"local_target": "notes"}, "unknown", "unknown", "结果未知"),
+        ("calendar", {"action": "create", "title": "parked", "start_at": "2026-11-20T10:00:00", "end_at": "2026-11-20T11:00:00"}, "unknown", "unknown", "结果未知"),
+        ("mail.send", {"mail_to": ["one@example.com"], "subject": "parked", "body": "hello"}, "unknown", "unknown", "结果未知"),
+        ("errand.place", _ERRAND, "unknown", "unknown", "结果未知"),
+        ("desktop.open", {"local_target": "notes"}, "written", "result", "已写入：req-1"),
+        ("calendar", {"action": "create", "title": "parked-w", "start_at": "2026-11-20T12:00:00", "end_at": "2026-11-20T13:00:00"}, "written", "result", "已写入：req-1"),
+        ("mail.send", {"mail_to": ["one@example.com"], "subject": "parked-w", "body": "hello"}, "written", "result", "已写入：req-1"),
+        ("errand.place", _ERRAND, "written", "result", "已写入：req-1"),
+    ],
+)
+def test_a_parked_lost_write_is_recovered_without_sending(name, raw, claim_status, expect_state, expect_result):
+    from app.services.schedule_confirm import arm_remote_claim
+    from app.tasks.watchdog import run_sweep
+
+    user_id = _user()
+    session_id = _session(user_id)
+    db, task_id, tokens = _parked_job(user_id, session_id, [("call-a", name, raw)])
+    try:
+        set_rls_context(db, user_id)
+        assert arm_remote_claim(db, tokens[0], "req-1") is True
+        claim = db.get(ScheduleConfirmClaim, tokens[0])
+        if claim_status == "unknown":
+            claim.armed_at = datetime(2000, 1, 1)
+        else:
+            claim.status = "written"
+        db.commit()
+        assert db.query(ToolCall).filter(ToolCall.claim_token == tokens[0]).one().state == "awaiting_confirm"
+        assert db.get(TaskRun, task_id).status == "waiting_person"
+        assert db.get(TaskRun, task_id).continuation_due is False
+    finally:
+        db.close()
+    sent: list[str] = []
+    set_executor(lambda *_args, **_kwargs: ModelTurn("done", "", (), "stop"))
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id,)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+        patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+    ):
+        run_sweep()
+    assert sent == []
+    call = _calls(task_id)[0]
+    assert call.state == expect_state
+    assert call.result == expect_result
+    stored = _load(task_id)
+    assert stored.exec_token != "worker"
+
+
+def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():
+    from app.services.schedule_confirm import arm_remote_claim
+    from app.tasks.watchdog import run_sweep
+
+    user_id = _user()
+    session_id = _session(user_id)
+    specs = [
+        ("call-old", "mail.send", {"mail_to": ["old@example.com"], "subject": "old", "body": "old"}),
+        ("call-live", "mail.send", {"mail_to": ["live@example.com"], "subject": "live", "body": "live"}),
+        ("call-open", "desktop.open", {"local_target": "notes"}),
+    ]
+    db, task_id, tokens = _parked_job(user_id, session_id, specs)
+    db.close()
+    plain_db, plain_id, _plain_tokens = _parked_job(
+        user_id,
+        session_id,
+        [("call-plain", "mail.send", {"mail_to": ["plain@example.com"], "subject": "plain", "body": "plain"})],
+    )
+    plain_db.close()
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        assert arm_remote_claim(db, tokens[0], "req-old") is True
+        assert arm_remote_claim(db, tokens[1], "req-live") is True
+        old = db.get(ScheduleConfirmClaim, tokens[0])
+        old.armed_at = datetime(2000, 1, 1)
+        db.commit()
+    finally:
+        db.close()
+    sent: list[str] = []
+    calls = {"model": 0}
+
+    def executor(*_args, **_kwargs):
+        calls["model"] += 1
+        return ModelTurn("done", "", (), "stop")
+
+    set_executor(executor)
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id, plain_id)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+    ):
+        run_sweep()
+    by_token = {row.claim_token: row for row in _calls(task_id)}
+    assert by_token[tokens[0]].state == "unknown"
+    assert by_token[tokens[0]].result == "结果未知"
+    assert by_token[tokens[1]].state == "awaiting_confirm"
+    assert by_token[tokens[2]].state == "awaiting_confirm"
+    mixed = _load(task_id)
+    assert mixed.status == "waiting_person"
+    assert mixed.continuation_due is False
+    assert mixed.exec_token is None
+    untouched = _load(plain_id)
+    assert untouched.status == "waiting_person"
+    assert untouched.continuation_due is False
+    assert _calls(plain_id)[0].state == "awaiting_confirm"
+    assert sent == []
+    assert calls["model"] == 0

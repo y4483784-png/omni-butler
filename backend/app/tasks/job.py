@@ -174,22 +174,29 @@ def run_job(
         if taken != 1:
             db.rollback()
             return
-        db.commit()
-        job = db.get(TaskRun, int(task_run_id))
-        if job is None:
+        prior_epoch = int(pre.exec_epoch or 0)
+        db.refresh(pre)
+        held_token = str(pre.exec_token or "")
+        held_epoch = int(pre.exec_epoch or 0)
+        held_intent = int(pre.intent_version or 1)
+        if held_token != worker or held_epoch <= prior_epoch:
+            db.rollback()
             return
-        token = bind(user_id=int(user_id), generation=int(job.generation))
-        held_token = str(job.exec_token or worker)
-        held_epoch = int(job.exec_epoch or 0)
-        held_intent = int(job.intent_version or 1)
+        goal = pre.goal or ""
+        session_id = int(pre.session_id)
+        generation = int(pre.generation)
+        task_id = int(pre.id)
+        last_progress_at = pre.last_progress_at
+        db.commit()
+        token = bind(user_id=int(user_id), generation=generation)
         try:
-            if _latest_step(db, int(job.id)) is None and job.last_progress_at is None:
+            if _latest_step(db, task_id) is None and last_progress_at is None:
                 started = _start(
                     db,
                     user_id=int(user_id),
-                    session_id=int(job.session_id),
-                    generation=int(job.generation),
-                    goal=job.goal or "",
+                    session_id=session_id,
+                    generation=generation,
+                    goal=goal,
                     exec_token=held_token,
                     exec_epoch=held_epoch,
                     intent_version=held_intent,
@@ -201,7 +208,7 @@ def run_job(
             _drive(
                 db,
                 user_id=int(user_id),
-                task_id=int(job.id),
+                task_id=task_id,
                 worker=held_token,
                 exec_epoch=held_epoch,
                 intent_version=held_intent,

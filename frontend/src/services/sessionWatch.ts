@@ -53,6 +53,7 @@ export function watchSession(sessionId: number, deps?: WatchDeps): () => void {
   let cursor = 0;
   let events: AbortController | null = null;
   let failures = 0;
+  let loadEpoch = 0;
   const stopVisibility = io.listenVisibility(onVisible);
 
   const stop = () => {
@@ -66,17 +67,33 @@ export function watchSession(sessionId: number, deps?: WatchDeps): () => void {
     if (io.visibility() === "visible") void load();
   }
 
+  async function hydrate(ticket: number) {
+    const snapshot = await io.loadJobs(sessionId, controller.signal);
+    await io.reloadMessages(sessionId);
+    return { ticket, snapshot };
+  }
+
+  function takeSnapshot(ticket: number, snapshot: { cursor: number; jobs: Parameters<WatchDeps["patchJobs"]>[1] }) {
+    if (controller.signal.aborted) return false;
+    if (snapshot.cursor < cursor) return false;
+    if (ticket !== loadEpoch && snapshot.cursor <= cursor) return false;
+    io.patchJobs(sessionId, snapshot.jobs);
+    cursor = Math.max(cursor, snapshot.cursor);
+    return true;
+  }
+
   async function load() {
     if (controller.signal.aborted) return;
+    const ticket = ++loadEpoch;
     try {
-      const snapshot = await io.loadJobs(sessionId, controller.signal);
-      io.patchJobs(sessionId, snapshot.jobs);
-      await io.reloadMessages(sessionId);
-      if (snapshot.cursor === cursor && events !== null) return;
-      cursor = snapshot.cursor;
+      const loaded = await hydrate(ticket);
+      if (!takeSnapshot(loaded.ticket, loaded.snapshot)) return;
+      if (loaded.snapshot.cursor === cursor && events !== null && loaded.ticket !== loadEpoch) return;
+      if (events !== null && loaded.snapshot.cursor === cursor) return;
       openEvents();
     } catch {
       if (controller.signal.aborted) return;
+      void recover();
     }
   }
 
@@ -89,34 +106,43 @@ export function watchSession(sessionId: number, deps?: WatchDeps): () => void {
     void readEvents(sessionId, cursor, next.signal, io, async (seq) => {
       if (applied.has(seq)) return true;
       if (seq > cursor + 1) {
+        const ticket = ++loadEpoch;
+        const loaded = await hydrate(ticket);
+        if (controller.signal.aborted) return false;
         next.abort();
         if (events === next) events = null;
-        try {
-          const snapshot = await io.loadJobs(sessionId, controller.signal);
-          io.patchJobs(sessionId, snapshot.jobs);
-          await io.reloadMessages(sessionId);
-          if (snapshot.cursor > cursor) {
-            cursor = snapshot.cursor;
-            openEvents();
-          }
-        } catch {
-          return false;
-        }
+        if (loaded.snapshot.cursor < cursor) return false;
+        if (!takeSnapshot(loaded.ticket, loaded.snapshot)) return false;
+        openEvents();
         return false;
       }
+      const ticket = ++loadEpoch;
+      const loaded = await hydrate(ticket);
+      if (controller.signal.aborted) return false;
+      if (loaded.snapshot.cursor < seq && cursor < seq) return false;
+      if (cursor >= seq && loaded.snapshot.cursor < cursor) {
+        applied.add(seq);
+        failures = 0;
+        return true;
+      }
+      if (!takeSnapshot(loaded.ticket, loaded.snapshot)) return cursor >= seq;
       applied.add(seq);
-      cursor = seq;
+      cursor = Math.max(cursor, seq);
       failures = 0;
-      const snapshot = await io.loadJobs(sessionId, controller.signal);
-      io.patchJobs(sessionId, snapshot.jobs);
-      await io.reloadMessages(sessionId);
       return true;
-    }).then((ended) => {
-      if (events !== next) return;
-      events = null;
-      if (ended === "abort" || controller.signal.aborted) return;
-      void recover();
-    });
+    })
+      .then((ended) => {
+        if (events !== next) return;
+        events = null;
+        if (ended === "abort" || controller.signal.aborted) return;
+        void recover();
+      })
+      .catch(() => {
+        if (events !== next) return;
+        events = null;
+        if (controller.signal.aborted) return;
+        void recover();
+      });
   }
 
   async function recover() {
@@ -174,7 +200,12 @@ async function readEvents(
         continue;
       }
       if (typeof payload.seq !== "number") continue;
-      const keep = await accept(payload.seq);
+      let keep = false;
+      try {
+        keep = await accept(payload.seq);
+      } catch {
+        return signal.aborted ? "abort" : "error";
+      }
       if (!keep) return "gap";
     }
   }

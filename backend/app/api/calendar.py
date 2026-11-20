@@ -501,7 +501,14 @@ def _seal_schedule_write(db: Session, token: str | None) -> None:
     from app.services.schedule_confirm import finish_confirm
 
     key = str(token or "").strip()
-    claim = db.get(ScheduleConfirmClaim, key) if key else None
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == key)
+        .with_for_update()
+        .one_or_none()
+        if key
+        else None
+    )
     if claim is not None:
         note_confirmed(db, user_id=int(claim.user_id), token=key)
     finish_confirm(db, token)
@@ -533,6 +540,7 @@ def record_create_success(db: Session, user_id: int, token: str | None, event_ro
     armed = (claim.remote_request_id or "").strip()
     if not armed or not event_id:
         return
+    note_confirmed(db, user_id=user_id, token=key)
     finish_confirm(db, token, commit=False)
     receipt = _existing(db, user_id, "internal", f"cal:{key}")
     if receipt is None:
@@ -556,7 +564,6 @@ def record_create_success(db: Session, user_id: int, token: str | None, event_ro
                 raise
     if not (receipt.body or "").strip():
         receipt.body = event_id
-    note_confirmed(db, user_id=user_id, token=key)
     note_external_success(
         db,
         user_id=user_id,
