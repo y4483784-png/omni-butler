@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from sqlalchemy import and_, exists, or_, update
@@ -191,6 +193,96 @@ def followup_create_raw(action: dict) -> dict:
     }
 
 
+def lock_open_claims(
+    db: Session,
+    user_id: int,
+    fingerprints: list[tuple[str, str]] | None = None,
+) -> None:
+    """Lock the claims this transaction will touch, in token order, before any job lock.
+
+    ``None`` locks every open or unknown claim for the user. A list locks the
+    matching action and fingerprint rows. Callers that already hold one of
+    these rows re-lock it. Callers must not hold a job row yet.
+    """
+    query = db.query(ScheduleConfirmClaim).filter(
+        ScheduleConfirmClaim.user_id == int(user_id),
+        ScheduleConfirmClaim.status.in_(("open", "unknown")),
+    )
+    if fingerprints is not None:
+        if not fingerprints:
+            return
+        query = query.filter(
+            or_(
+                *[
+                    and_(
+                        ScheduleConfirmClaim.action == action,
+                        ScheduleConfirmClaim.fingerprint == fingerprint,
+                    )
+                    for action, fingerprint in fingerprints
+                ]
+            )
+        )
+    query.order_by(ScheduleConfirmClaim.token.asc()).with_for_update().all()
+
+
+def _lease_deadline() -> datetime:
+    from app.core.config import settings
+
+    return _now() + timedelta(seconds=float(settings.llm_timeout))
+
+
+def renew_live_confirm(token: str) -> bool:
+    """Extend the in-process provider lease and commit it. A dead process stops renewing."""
+    from app.core.db import MaintenanceSessionLocal
+
+    key = str(token or "").strip()
+    if not key:
+        return False
+    db = MaintenanceSessionLocal()
+    try:
+        claim = (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == key)
+            .with_for_update()
+            .one_or_none()
+        )
+        if claim is None or claim.status != "unknown" or not (claim.remote_request_id or "").strip():
+            db.rollback()
+            return False
+        claim.confirm_until = _lease_deadline()
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
+@contextmanager
+def live_provider_call(token: str):
+    """Renew a confirm lease while this process is inside the provider call.
+
+    The lease is a separate short transaction. The provider call is not inside it.
+    """
+    if not renew_live_confirm(token):
+        yield
+        return
+    from app.core.config import settings
+
+    stop = threading.Event()
+
+    def pulse() -> None:
+        interval = max(0.05, float(settings.llm_timeout) / 2)
+        while not stop.wait(interval):
+            renew_live_confirm(token)
+
+    thread = threading.Thread(target=pulse, name="confirm-lease", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
 def issue_schedule_claim(
     db: Session,
     *,
@@ -205,6 +297,7 @@ def issue_schedule_claim(
     parts = write_parts(action, raw)
     fingerprint = write_fingerprint(parts)
     scope = write_scope(user_id, parts)
+    lock_open_claims(db, user_id, [(action, fingerprint)])
     ids = _owned_live_ids(db, user_id, task_run_ids)
     if not ids:
         raise ScheduleConfirmClosed("no-generation")
@@ -247,6 +340,7 @@ def bind_claim(
     parts = write_parts(action_name, raw)
     fingerprint = write_fingerprint(parts)
     scope = write_scope(user_id, parts)
+    lock_open_claims(db, user_id, [(action_name, fingerprint)])
     ids = _owned_live_ids(db, user_id, task_run_ids)
     if not ids:
         raise ScheduleConfirmClosed("no-generation")
@@ -298,6 +392,7 @@ def continue_from_card(
     expires_at = parse_card_expiry(draft_expires_at())
     for _ in range(2):
         try:
+            lock_open_claims(db, user_id, [(action_name, key.fingerprint)])
             turn = task_run.insert_card_action(
                 db,
                 user_id=user_id,
@@ -715,6 +810,10 @@ def _reissue_linked(
         .one_or_none()
     )
     if claim is None or claim.user_id != user_id or claim.session_id != session_id or claim.status != "open":
+        raise ScheduleConfirmClosed("source")
+    lock_open_claims(db, user_id, [(claim.action, claim.fingerprint)])
+    db.refresh(claim)
+    if claim.user_id != user_id or claim.session_id != session_id or claim.status != "open":
         raise ScheduleConfirmClosed("source")
     ids = _owned_live_ids(db, user_id, _load_ids(claim.generation_ids))
     if not ids:

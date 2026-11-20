@@ -61,8 +61,51 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Offset-less expiry is UTC
-        run: TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs tests/scheduleCard.test.mjs tests/briefingCard.test.mjs tests/chatImage.test.mjs tests/composerImages.test.mjs tests/composerLifecycle.test.mjs
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend behavioral tests
+        run: npm test
+
+  resume-locks:
+    name: postgres resume lock order
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: omni
+          POSTGRES_PASSWORD: omni
+          POSTGRES_DB: omni_butler
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U omni -d omni_butler"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Resume lock order
+        env:
+          RESUME_LOCK_DATABASE_URL: postgresql+psycopg://omni:omni@localhost:5432/omni_butler
+          RESUME_LOCK_REQUIRED: "1"
+          REDIS_ENABLED: "false"
+          CELERY_TASK_ALWAYS_EAGER: "true"
+          SECRET_KEY: test-secret-key
+          ADMIN_PASSWORD: test-admin-pass
+        run: python -m pytest tests/test_resume_lock_order.py -q
 
   rls:
     name: postgres row-level security

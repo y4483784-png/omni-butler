@@ -1,12 +1,13 @@
-import { loadSessionJobs, type SessionJobRow } from "../api/client";
+import { loadSessionJobs, type ChatMsg, type SessionJobRow } from "../api/client";
 import { useStore } from "../store/useStore";
-import { reloadSessionMessages } from "./chatStream";
+import { applySessionMessages, readSessionMessages } from "./chatStream";
 
 const controllers = new Map<number, AbortController>();
 
 export type WatchDeps = {
   loadJobs: (sessionId: number, signal: AbortSignal) => Promise<{ cursor: number; jobs: SessionJobRow[] }>;
-  reloadMessages: (sessionId: number) => Promise<void>;
+  readMessages: (sessionId: number) => Promise<ChatMsg[]>;
+  applyMessages: (sessionId: number, messages: ChatMsg[]) => void;
   patchJobs: (sessionId: number, jobs: SessionJobRow[]) => void;
   fetchEvents: (sessionId: number, after: number, signal: AbortSignal) => Promise<Response>;
   visibility: () => string;
@@ -17,7 +18,8 @@ export type WatchDeps = {
 function defaultDeps(): WatchDeps {
   return {
     loadJobs: (sessionId, signal) => loadSessionJobs(sessionId, signal),
-    reloadMessages: (sessionId) => reloadSessionMessages(sessionId),
+    readMessages: (sessionId) => readSessionMessages(sessionId),
+    applyMessages: (sessionId, messages) => applySessionMessages(sessionId, messages),
     patchJobs: (sessionId, jobs) => {
       useStore.getState().patchSessionChat(sessionId, { jobs });
     },
@@ -69,15 +71,20 @@ export function watchSession(sessionId: number, deps?: WatchDeps): () => void {
 
   async function hydrate(ticket: number) {
     const snapshot = await io.loadJobs(sessionId, controller.signal);
-    await io.reloadMessages(sessionId);
-    return { ticket, snapshot };
+    const messages = await io.readMessages(sessionId);
+    return { ticket, snapshot, messages };
   }
 
-  function takeSnapshot(ticket: number, snapshot: { cursor: number; jobs: Parameters<WatchDeps["patchJobs"]>[1] }) {
+  function takeSnapshot(
+    ticket: number,
+    snapshot: { cursor: number; jobs: Parameters<WatchDeps["patchJobs"]>[1] },
+    messages: ChatMsg[],
+  ) {
     if (controller.signal.aborted) return false;
     if (snapshot.cursor < cursor) return false;
     if (ticket !== loadEpoch && snapshot.cursor <= cursor) return false;
     io.patchJobs(sessionId, snapshot.jobs);
+    io.applyMessages(sessionId, messages);
     cursor = Math.max(cursor, snapshot.cursor);
     return true;
   }
@@ -87,7 +94,7 @@ export function watchSession(sessionId: number, deps?: WatchDeps): () => void {
     const ticket = ++loadEpoch;
     try {
       const loaded = await hydrate(ticket);
-      if (!takeSnapshot(loaded.ticket, loaded.snapshot)) return;
+      if (!takeSnapshot(loaded.ticket, loaded.snapshot, loaded.messages)) return;
       if (loaded.snapshot.cursor === cursor && events !== null && loaded.ticket !== loadEpoch) return;
       if (events !== null && loaded.snapshot.cursor === cursor) return;
       openEvents();
@@ -112,7 +119,7 @@ export function watchSession(sessionId: number, deps?: WatchDeps): () => void {
         next.abort();
         if (events === next) events = null;
         if (loaded.snapshot.cursor < cursor) return false;
-        if (!takeSnapshot(loaded.ticket, loaded.snapshot)) return false;
+        if (!takeSnapshot(loaded.ticket, loaded.snapshot, loaded.messages)) return false;
         openEvents();
         return false;
       }
@@ -125,7 +132,7 @@ export function watchSession(sessionId: number, deps?: WatchDeps): () => void {
         failures = 0;
         return true;
       }
-      if (!takeSnapshot(loaded.ticket, loaded.snapshot)) return cursor >= seq;
+      if (!takeSnapshot(loaded.ticket, loaded.snapshot, loaded.messages)) return cursor >= seq;
       applied.add(seq);
       cursor = Math.max(cursor, seq);
       failures = 0;

@@ -44,9 +44,11 @@ function depsFor(handlers) {
         const row = jobs.get(sessionId) ?? { cursor: 0, jobs: [] };
         return { cursor: row.cursor, jobs: row.jobs.map((job) => ({ ...job })) };
       },
-      reloadMessages: async (sessionId) => {
+      readMessages: async (sessionId) => {
         messages.push(sessionId);
+        return [];
       },
+      applyMessages: () => {},
       patchJobs: (sessionId, next) => {
         patches.push({ sessionId, jobs: next });
       },
@@ -238,13 +240,13 @@ test("a failed job load does not consume the seq and the stream reconnects", asy
     if (jobs === 2) throw new Error("jobs down");
     return { cursor: jobs === 1 ? 0 : 1, jobs: [{ id: 3, status: "completed", goal: "done", generation: 1, kind: "job" }] };
   };
-  harness.io.reloadMessages = async () => {
+  harness.io.readMessages = async () => {
     throw new Error("messages down");
   };
   const stop = watchSession(9, harness.io);
   try {
     await new Promise((resolve) => setTimeout(resolve, 30));
-    harness.io.reloadMessages = async () => {};
+    harness.io.readMessages = async () => [];
     await new Promise((resolve) => setTimeout(resolve, 250));
     assert.ok(fetches >= 2);
     assert.ok(harness.patches.some((row) => row.jobs[0] && row.jobs[0].status === "completed"));

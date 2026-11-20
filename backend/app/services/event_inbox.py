@@ -26,6 +26,7 @@ from app.services.schedule_confirm import (
     _emit_claim,
     _stamp_claim_phase,
     canonical_action,
+    lock_open_claims,
     parse_card_expiry,
     write_fingerprint,
     write_parts,
@@ -292,6 +293,7 @@ def _while_waiting(
     action: str,
     card: dict | None,
 ) -> EventReceipt:
+    lock_open_claims(db, user_id)
     locked = (
         db.query(TaskRun)
         .filter(TaskRun.id == target.id, TaskRun.user_id == user_id)

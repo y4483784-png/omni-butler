@@ -1598,10 +1598,15 @@ def test_a_parked_lost_write_is_recovered_without_sending(name, raw, claim_statu
     try:
         set_rls_context(db, user_id)
         assert arm_remote_claim(db, tokens[0], "req-1") is True
-        claim = db.get(ScheduleConfirmClaim, tokens[0])
         if claim_status == "unknown":
-            claim.armed_at = datetime(2000, 1, 1)
+            from app.services.schedule_confirm import renew_live_confirm
+
+            assert renew_live_confirm(tokens[0]) is True
+            db.expire_all()
+            claim = db.get(ScheduleConfirmClaim, tokens[0])
+            claim.confirm_until = datetime(2000, 1, 1)
         else:
+            claim = db.get(ScheduleConfirmClaim, tokens[0])
             claim.status = "written"
         db.commit()
         assert db.query(ToolCall).filter(ToolCall.claim_token == tokens[0]).one().state == "awaiting_confirm"
@@ -1648,10 +1653,15 @@ def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)
+        from app.services.schedule_confirm import renew_live_confirm
+
         assert arm_remote_claim(db, tokens[0], "req-old") is True
         assert arm_remote_claim(db, tokens[1], "req-live") is True
+        assert renew_live_confirm(tokens[0]) is True
+        assert renew_live_confirm(tokens[1]) is True
+        db.expire_all()
         old = db.get(ScheduleConfirmClaim, tokens[0])
-        old.armed_at = datetime(2000, 1, 1)
+        old.confirm_until = datetime(2000, 1, 1)
         db.commit()
     finally:
         db.close()
@@ -1684,3 +1694,190 @@ def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():
     assert _calls(plain_id)[0].state == "awaiting_confirm"
     assert sent == []
     assert calls["model"] == 0
+
+
+def test_a_desktop_license_stays_waiting_until_the_real_finish():
+    import hashlib
+    import secrets
+
+    from app.agents.harness.desktop_channel import recognize_package
+    from app.models.models import DesktopDevice
+    from app.services.local_action import LocalAction, commit_local, finish_local
+    from app.tasks.watchdog import run_sweep
+
+    user_id = _user()
+    session_id = _session(user_id)
+    db, task_id, tokens = _parked_job(user_id, session_id, [("call-desk", "desktop.open", {"local_target": "notes"})])
+    presented = secrets.token_urlsafe(32)
+    try:
+        set_rls_context(db, user_id)
+        db.add(
+            DesktopDevice(
+                user_id=user_id,
+                token_hash=hashlib.sha256(presented.encode("utf-8")).hexdigest(),
+                label="late",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    proof = recognize_package(presented)
+    assert proof is not None
+    owned = SessionLocal()
+    try:
+        set_rls_context(owned, user_id)
+        license_row = commit_local(
+            owned,
+            user_id=user_id,
+            token=tokens[0],
+            action=LocalAction("desktop.open", "notes", ()),
+            proof=proof,
+        )
+    finally:
+        owned.close()
+    assert license_row["kind"] == "armed"
+    sent: list[str] = []
+    set_executor(lambda *_args, **_kwargs: ModelTurn("done", "", (), "stop"))
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id,)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+    ):
+        run_sweep()
+    assert _calls(task_id)[0].state == "awaiting_confirm"
+    assert _load(task_id).continuation_due is False
+    finisher = SessionLocal()
+    try:
+        set_rls_context(finisher, user_id)
+        finish_local(
+            finisher,
+            user_id=user_id,
+            token=tokens[0],
+            request_id=license_row["request_id"],
+            proof=proof,
+        )
+    finally:
+        finisher.close()
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id,)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+    ):
+        run_sweep()
+    finished = _calls(task_id)[0]
+    assert finished.state == "result"
+    assert finished.result == f"已写入：{license_row['request_id']}"
+    assert sent == []
+
+
+def test_a_slow_mail_send_outlives_the_first_lease_without_becoming_unknown(monkeypatch):
+    from app.core.config import settings
+    from app.models.models import EventReceipt
+    from app.services.mail_entry import OutboundMail, SendAccepted, bind_mail_transport, commit_send
+    from app.services.schedule_confirm import write_fingerprint, write_parts
+    from app.tasks.watchdog import run_sweep
+
+    user_id = _user()
+    session_id = _session(user_id)
+    raw = {"mail_to": ["slow@example.com"], "subject": "slow", "body": "body"}
+    db, task_id, tokens = _parked_job(user_id, session_id, [("call-mail", "mail.send", raw)])
+    parts = write_parts("mail.send", raw)
+    fingerprint = write_fingerprint(parts)
+    try:
+        set_rls_context(db, user_id)
+        db.add(
+            EventReceipt(
+                user_id=user_id,
+                session_id=session_id,
+                source="mail",
+                delivery_id=f"out:{fingerprint}",
+                fingerprint=fingerprint,
+                state="received",
+                route="filed",
+                claim_token=tokens[0],
+                body="body",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    monkeypatch.setattr(settings, "llm_timeout", 0.4)
+    monkeypatch.setattr(settings, "mail_transport", "slow")
+    started = threading.Event()
+    release = threading.Event()
+    errors: list[BaseException] = []
+
+    class Slow:
+        def send(self, _draft):
+            started.set()
+            assert release.wait(5)
+            return SendAccepted("provider-slow")
+
+        def lookup(self, _provider_id):
+            return "accepted"
+
+    bind_mail_transport(Slow())
+
+    def send() -> None:
+        owned = SessionLocal()
+        try:
+            set_rls_context(owned, user_id)
+            commit_send(
+                owned,
+                user_id=user_id,
+                token=tokens[0],
+                draft=OutboundMail(("slow@example.com",), "slow", "body"),
+            )
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            owned.close()
+
+    worker = threading.Thread(target=send)
+    worker.start()
+    assert started.wait(5)
+    deadline = time.time() + 4
+    renewed = False
+    first = None
+    while time.time() < deadline:
+        check = SessionLocal()
+        try:
+            set_rls_context(check, user_id)
+            claim = check.get(ScheduleConfirmClaim, tokens[0])
+            until = None if claim is None else claim.confirm_until
+        finally:
+            check.close()
+        if first is None:
+            first = until
+        elif until is not None and first is not None and until > first and datetime.now(timezone.utc).replace(tzinfo=None) >= first:
+            renewed = True
+            break
+        time.sleep(0.05)
+    sent: list[str] = []
+    set_executor(lambda *_args, **_kwargs: ModelTurn("done", "", (), "stop"))
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id,)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+    ):
+        run_sweep()
+    during = _calls(task_id)[0]
+    release.set()
+    worker.join(5)
+    bind_mail_transport(None)
+    assert renewed
+    assert not worker.is_alive()
+    assert errors == []
+    assert during.state == "awaiting_confirm"
+    assert _load(task_id).continuation_due is False
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id,)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+    ):
+        run_sweep()
+    after = _calls(task_id)[0]
+    assert after.state == "result"
+    assert after.result.startswith("已写入：")
+    assert "结果未知" not in (after.result or "")
+    assert sent == []

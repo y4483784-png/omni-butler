@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 
@@ -425,11 +425,11 @@ def open_cards(
     step_id: int,
     drafts: dict[str, dict] | None = None,
 ) -> tuple[str, ...]:
-    job = _lock_holder(db, hold)
-    if job is None:
+    preview = _job_for(db, hold)
+    if preview is None:
         return _cards_already_open(db, hold, step_id)
     step_row = db.get(TaskStep, step_id)
-    if step_row is None or step_row.task_run_id != job.id:
+    if step_row is None or step_row.task_run_id != preview.id:
         db.rollback()
         return ()
     rows = _call_rows(db, step_row.id)
@@ -443,8 +443,34 @@ def open_cards(
         db.rollback()
         return ()
     from app.services.calendar import draft_expires_at
-    from app.services.schedule_confirm import ScheduleConfirmClosed, bind_claim, parse_card_expiry
+    from app.services.schedule_confirm import (
+        ScheduleConfirmClosed,
+        bind_claim,
+        lock_open_claims,
+        parse_card_expiry,
+        write_fingerprint,
+        write_parts,
+    )
 
+    try:
+        keys = []
+        for row in opening:
+            raw = drafts.get(row.tool_call_id) or _load_json(row.arguments)
+            action = _claim_action(row.name, raw)
+            keys.append((action, write_fingerprint(write_parts(action, raw))))
+        lock_open_claims(db, preview.user_id, keys)
+    except ScheduleConfirmClosed:
+        db.rollback()
+        return ()
+    job = _lock_holder(db, hold)
+    if job is None:
+        return _cards_already_open(db, hold, step_id)
+    step_row = db.get(TaskStep, step_id)
+    rows = _call_rows(db, step_row.id)
+    opening = [row for row in rows if _should_open(row, drafts)]
+    if {row.tool_call_id for row in opening} != opening_ids:
+        db.rollback()
+        return ()
     memory = _as_step(step_row, rows)
     tokens: list[str] = []
     try:
@@ -468,7 +494,6 @@ def open_cards(
             row.claim_token = token
             row.intent_version = int(hold.intent_version)
             tokens.append(token)
-            _note(db, job, "confirm", token)
         _store_phase(db, step_row, memory.phase)
     except (IllegalPhase, ScheduleConfirmClosed):
         db.rollback()
@@ -488,6 +513,8 @@ def open_cards(
     if _leave(db, hold, status="waiting_person") != 1:
         db.rollback()
         return ()
+    for token in tokens:
+        _note(db, job, "confirm", token)
     if not _commit_job(db, job):
         return ()
     return tuple(tokens)
@@ -700,24 +727,22 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
     return step
 
 
-def _armed_expired(claim: ScheduleConfirmClaim) -> bool:
-    from app.core.config import settings
-
-    armed_at = claim.armed_at
-    if armed_at is None:
-        return True
-    if armed_at.tzinfo is not None:
-        armed_at = armed_at.astimezone(timezone.utc).replace(tzinfo=None)
-    deadline = armed_at + timedelta(seconds=float(settings.llm_timeout))
-    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0) >= deadline
+def _owner_gone(claim: ScheduleConfirmClaim) -> bool:
+    """A live provider renews confirm_until. No lease is not proof the caller died."""
+    until = claim.confirm_until
+    if until is None:
+        return False
+    if until.tzinfo is not None:
+        until = until.astimezone(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0) >= until
 
 
 def reconcile_parked_writes(db: Session, task_run_id: int) -> int:
     """Repair a parked card whose write already committed and whose tool result did not.
 
-    An untouched waiting card, a waiting_resource row, and a confirmation that is
-    still inside llm_timeout of its arm are left alone. This does not reserve,
-    adopt, or send.
+    An untouched waiting card, a waiting_resource row, an armed claim with no
+    live-confirm lease, and a lease that is still in the future are left alone.
+    This does not reserve, adopt, or send.
     """
     job = db.get(TaskRun, int(task_run_id))
     if (
@@ -755,7 +780,7 @@ def reconcile_parked_writes(db: Session, task_run_id: int) -> int:
         marker = "" if claim is None else (claim.remote_request_id or "").strip()
         if claim is None or not marker or claim.status not in {"unknown", "written"}:
             continue
-        if claim.status == "unknown" and not _armed_expired(claim):
+        if claim.status == "unknown" and not _owner_gone(claim):
             continue
         locked.append((step_row, call_row, claim))
     if not locked:

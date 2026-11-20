@@ -414,6 +414,7 @@ def init_db():
         "schedule_confirm_claims", "intent_version", "INTEGER NOT NULL DEFAULT 1"
     )
     _sqlite_add_column_if_missing("schedule_confirm_claims", "armed_at", "DATETIME")
+    _sqlite_add_column_if_missing("schedule_confirm_claims", "confirm_until", "DATETIME")
     _postgres_add_column_if_missing("task_runs", "kind", "VARCHAR NOT NULL DEFAULT 'turn'")
     _postgres_add_column_if_missing("task_runs", "goal", "TEXT NOT NULL DEFAULT ''")
     _postgres_add_column_if_missing(
@@ -437,3 +438,4 @@ def init_db():
         "schedule_confirm_claims", "intent_version", "INTEGER NOT NULL DEFAULT 1"
     )
     _postgres_add_column_if_missing("schedule_confirm_claims", "armed_at", "TIMESTAMP")
+    _postgres_add_column_if_missing("schedule_confirm_claims", "confirm_until", "TIMESTAMP")
