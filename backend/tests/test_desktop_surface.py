@@ -591,6 +591,38 @@ def test_run_starts_the_program_once(plain_client: TestClient) -> None:
     assert runs == [("/usr/bin/true", ())]
 
 
+def test_blank_device_label_is_rejected_and_a_hostname_enrolls(plain_client: TestClient) -> None:
+    before = {row["id"] for row in _devices()}
+    listed_before = plain_client.get("/api/desktop/devices")
+    assert listed_before.status_code == 200, listed_before.text
+    listed_ids = {item["id"] for item in listed_before.json()}
+    for label in ("", " ", "\t", "\n", " \t\n ", "\u00a0"):
+        saved = plain_client.post("/api/desktop/devices", json={"label": label})
+        assert saved.status_code == 422, saved.text
+        assert {row["id"] for row in _devices()} == before
+    listed_after = plain_client.get("/api/desktop/devices")
+    assert listed_after.status_code == 200, listed_after.text
+    assert {item["id"] for item in listed_after.json()} == listed_ids
+
+    hostname = "desk-host"
+    saved = plain_client.post("/api/desktop/devices", json={"label": hostname})
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["label"] == hostname
+    assert body["token"]
+    assert _device(body["id"])["label"] == hostname
+    listed = plain_client.get("/api/desktop/devices")
+    assert listed.status_code == 200, listed.text
+    match = next(item for item in listed.json() if item["id"] == body["id"])
+    assert match["label"] == hostname
+
+    padded = "  desk-host  "
+    kept = plain_client.post("/api/desktop/devices", json={"label": padded})
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["label"] == padded
+    assert _device(kept.json()["id"])["label"] == padded
+
+
 def test_two_devices_revoke_independently(
     plain_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
