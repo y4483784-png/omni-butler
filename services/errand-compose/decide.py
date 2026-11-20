@@ -36,7 +36,8 @@ def decide(
     if price is not None and amount_cap is not None and price > amount_cap:
         return _result("rejected", "", 0)
     key = (armed or "").strip()
-    if "已下单" in text and key and key in text:
+    order_id = order_id.strip()
+    if "已下单" in text and key and key in text and order_id:
         return _result("already", order_id, clicks_after_wall)
     if order_id and pay_clicked:
         return _result("placed", order_id, clicks_after_wall)

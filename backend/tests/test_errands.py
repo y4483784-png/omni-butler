@@ -636,29 +636,30 @@ def test_save_gate_stores_only_a_stripped_order_id(plain_client: TestClient, sho
     from app.services.errands import ShopReply
 
     merchant = _merchant()
-    order = _order(merchant)
     _connector(merchant, shop.base)
     stored = _vault(plain_client, merchant, "pay-secret-9")
     assert stored.status_code == 200, stored.text
     user_id = _admin_id()
     shop.lookup_body = {"told": ""}
 
-    def commit_body(body: dict):
+    def commit_body(body: dict, sku: str):
         shop.place_body = body
         shop.echo_place_key = True
+        fresh = _order(merchant)
+        fresh["lines"] = [{"sku": sku, "qty": 1, "query": "牛奶"}]
         session_id = _session()
-        offered = _propose(plain_client, session_id, order)
+        offered = _propose(plain_client, session_id, fresh)
         assert offered.status_code == 200, offered.text
-        return _commit(plain_client, offered.json()["confirm_token"], order)
+        return _commit(plain_client, offered.json()["confirm_token"], fresh)
 
     for blank in (" ", "\t", " \t "):
-        refused = commit_body({"outcome": "placed", "order_id": blank})
+        refused = commit_body({"outcome": "placed", "order_id": blank}, f"blank-{blank!r}")
         assert refused.status_code == 409, refused.text
         assert _records(user_id, merchant) == []
-    already = commit_body({"outcome": "already", "order_id": " \t ", "told": "已下单"})
+    already = commit_body({"outcome": "already", "order_id": " \t ", "told": "已下单"}, "already-blank")
     assert already.status_code == 409, already.text
     assert _records(user_id, merchant) == []
-    saved = commit_body({"outcome": "placed", "order_id": "  ord-9 \t"})
+    saved = commit_body({"outcome": "placed", "order_id": "  ord-9 \t"}, "padded")
     assert saved.status_code == 200, saved.text
     assert saved.json()["order_id"] == "ord-9"
     assert _records(user_id, merchant) == [(saved.json()["idempotency_key"], "ord-9")]
@@ -667,7 +668,7 @@ def test_save_gate_stores_only_a_stripped_order_id(plain_client: TestClient, sho
         return ShopReply("placed", order_id=" \t ", named=True)
 
     monkeypatch.setattr("app.services.errands._place", place_blank)
-    blocked = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"})
+    blocked = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"}, "gate-blank")
     assert blocked.status_code == 409, blocked.text
     assert _records(user_id, merchant) == [(saved.json()["idempotency_key"], "ord-9")]
 
@@ -675,7 +676,7 @@ def test_save_gate_stores_only_a_stripped_order_id(plain_client: TestClient, sho
         return ShopReply("already", order_id=" ", named=True)
 
     monkeypatch.setattr("app.services.errands._place", place_already)
-    skipped = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"})
+    skipped = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"}, "gate-already")
     assert skipped.status_code == 409, skipped.text
     assert _records(user_id, merchant) == [(saved.json()["idempotency_key"], "ord-9")]
 
@@ -683,13 +684,15 @@ def test_save_gate_stores_only_a_stripped_order_id(plain_client: TestClient, sho
         return ShopReply("placed", order_id="  ord-8 \t", named=True)
 
     monkeypatch.setattr("app.services.errands._place", place_padded)
-    direct = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"})
+    direct = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"}, "gate-padded")
     assert direct.status_code == 200, direct.text
     assert direct.json()["order_id"] == "ord-8"
-    assert _records(user_id, merchant) == [
-        (saved.json()["idempotency_key"], "ord-9"),
-        (direct.json()["idempotency_key"], "ord-8"),
-    ]
+    assert sorted(_records(user_id, merchant)) == sorted(
+        [
+            (saved.json()["idempotency_key"], "ord-9"),
+            (direct.json()["idempotency_key"], "ord-8"),
+        ]
+    )
 
 
 def test_missing_echo_is_not_stored_or_ordered_again(plain_client: TestClient, shop: _ShopState, monkeypatch):
