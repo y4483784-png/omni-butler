@@ -24,7 +24,15 @@ from app.models.models import (
 )
 from app.services.call_owner import acknowledge, audit_unattributed, insert_effect, mark_legacy_unresolved
 from app.services.call_policy import worker_queues
-from app.services.delivery_bind import claim_mailbox, exit_request, incarnation, mark_exit, mint_for_request
+from app.services.delivery_bind import (
+    IncarnationMissing,
+    claim_mailbox,
+    exit_request,
+    incarnation,
+    mark_exit,
+    mint_for_request,
+    publish_incarnation,
+)
 from app.services.task_run import apply_intent
 from app.tasks.job import set_executor
 from test_loop_job import _calls, _deliver, _dispatch, _drive_held, _job, _pair, _turn
@@ -229,6 +237,9 @@ def test_duplicate_delivery_does_not_invoke_the_handed_off_call(monkeypatch):
 
 def test_same_incarnation_pid_reuse_exits_only_the_bound_delivery(tmp_path, monkeypatch):
     monkeypatch.setenv("OMNI_DELIVERY_DIR", str(tmp_path))
+    (tmp_path / "incarnation").write_text("prior-parent\n", encoding="utf-8")
+    published = publish_incarnation()
+    assert published != "prior-parent"
     db = SessionLocal()
     try:
         set_rls_context(db, 1)
@@ -498,6 +509,31 @@ def test_a_missed_claim_rejects_instead_of_acking(monkeypatch):
     finally:
         run_job.pop_request()
     assert caught.value.requeue is True
+
+
+def test_mint_does_not_adopt_a_leftover_incarnation(tmp_path, monkeypatch):
+    import pytest
+
+    monkeypatch.setenv("OMNI_DELIVERY_DIR", str(tmp_path))
+    (tmp_path / "incarnation").write_text("prior-parent\n", encoding="utf-8")
+    db = SessionLocal()
+    try:
+        set_rls_context(db, 1)
+        before = db.query(TaskDelivery).filter(TaskDelivery.celery_request_id == "req-prior").count()
+        with pytest.raises(IncarnationMissing):
+            mint_for_request(db, SimpleNamespace(id="req-prior"), 100, None)
+        assert (tmp_path / "incarnation").read_text(encoding="utf-8").strip() == "prior-parent"
+        assert db.query(TaskDelivery).filter(TaskDelivery.celery_request_id == "req-prior").count() == before
+        published = publish_incarnation()
+        assert published != "prior-parent"
+        assert publish_incarnation() == published
+        request = SimpleNamespace(id="req-prior")
+        mint_for_request(db, request, 100, None)
+        row = db.get(TaskDelivery, request._omni_delivery_id)
+        assert row is not None
+        assert row.worker_incarnation == published == incarnation()
+    finally:
+        db.close()
 
 
 def test_claim_does_not_mint_an_incarnation(tmp_path, monkeypatch):

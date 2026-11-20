@@ -23,10 +23,12 @@ from app.models.models import TaskDelivery
 
 _current: ContextVar[str | None] = ContextVar("omni_delivery", default=None)
 _installed = False
+_published_dir: str | None = None
+_published_value: str | None = None
 
 
 class IncarnationMissing(RuntimeError):
-    """The parent has not published an incarnation file for this worker."""
+    """This parent has not published an incarnation, or the file is not that value."""
 
 
 def _incarnation_file() -> Path:
@@ -34,24 +36,23 @@ def _incarnation_file() -> Path:
 
 
 def publish_incarnation() -> str:
-    """Write the parent incarnation once. A later caller, including a forked child, reads it."""
-    path = _incarnation_file()
-    if path.is_file():
-        existing = path.read_text(encoding="utf-8").strip()
-        if existing:
-            return existing
+    """Mint the incarnation for this parent lifetime and replace any leftover file.
+
+    A second call for the same directory in this process returns the value it
+    already wrote. A prefork child must not call this. A new process does not
+    keep a file left by the previous parent.
+    """
+    global _published_dir, _published_value
+    directory = str(_root())
+    if _published_dir == directory and _published_value:
+        return _published_value
     value = uuid4().hex
-    try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    except FileExistsError:
-        existing = path.read_text(encoding="utf-8").strip()
-        if not existing:
-            raise IncarnationMissing()
-        return existing
-    try:
-        os.write(fd, value.encode("utf-8"))
-    finally:
-        os.close(fd)
+    path = _incarnation_file()
+    temporary = path.with_name(f".incarnation-{os.getpid()}-{uuid4().hex}.tmp")
+    temporary.write_text(value, encoding="utf-8")
+    os.replace(temporary, path)
+    _published_dir = directory
+    _published_value = value
     return value
 
 
@@ -63,6 +64,16 @@ def incarnation() -> str:
     if not existing:
         raise IncarnationMissing()
     return existing
+
+
+def _require_published() -> str:
+    directory = str(_root())
+    if _published_dir != directory or not _published_value:
+        raise IncarnationMissing()
+    current = incarnation()
+    if current != _published_value:
+        raise IncarnationMissing()
+    return current
 
 
 def current_delivery() -> str | None:
@@ -135,7 +146,7 @@ def ensure_delivery(db: Session, *, task_run_id: int) -> str | None:
 
 
 def mint_for_request(db: Session, request, pid: int, task_run_id: int | None) -> str:
-    publish_incarnation()
+    _require_published()
     delivery_id = insert_delivery(
         db,
         request_id=str(request.id),
