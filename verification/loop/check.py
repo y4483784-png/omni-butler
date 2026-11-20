@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import shutil
 import subprocess
 import sys
@@ -81,12 +82,159 @@ def owner_predicates() -> None:
     require(module.worker_queues(consume_loop=True)[-1] == "loop", "loop queue missing")
 
 
+def _call_name(node: ast.Call) -> str:
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _function(tree: ast.AST, name: str) -> ast.FunctionDef:
+    for node in getattr(tree, "body", []):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    fail_model(f"missing {name}")
+
+
+def _calls(fn: ast.FunctionDef, name: str) -> list[ast.Call]:
+    return [
+        node
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Call) and _call_name(node) == name
+    ]
+
+
+def _results_ready_waiting(test: ast.AST) -> bool:
+    ready = False
+    waiting = False
+    for node in ast.walk(test):
+        if isinstance(node, ast.Attribute) and node.attr == "RESULTS_READY":
+            ready = True
+        if isinstance(node, ast.Constant) and node.value == "waiting_person":
+            waiting = True
+    return ready and waiting
+
+
+def _waiting_without_token(test: ast.AST) -> bool:
+    waiting = False
+    missing_token = False
+    for node in ast.walk(test):
+        if isinstance(node, ast.Constant) and node.value == "waiting_person":
+            waiting = True
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, ast.Not)
+            and isinstance(node.operand, ast.Attribute)
+            and node.operand.attr == "exec_token"
+        ):
+            missing_token = True
+    return waiting and missing_token
+
+
+def _effect_due(call: ast.Call) -> bool:
+    if len(call.args) < 3:
+        return False
+    arg = call.args[2]
+    if isinstance(arg, ast.Call) and _call_name(arg) == "bool" and arg.args:
+        arg = arg.args[0]
+    return (
+        isinstance(arg, ast.Attribute)
+        and arg.attr == "continuation_due"
+        and isinstance(arg.value, ast.Name)
+        and arg.value.id == "effect"
+    )
+
+
+def require_confirm_assignment(source: str) -> None:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        fail_model(f"loop_round.py did not parse: {exc}")
+    confirm = _function(tree, "confirm_call")
+    record = _function(tree, "_record_outcome")
+    apply_due = _function(tree, "_apply_confirm_due")
+    effect = _function(tree, "job_effect")
+    setter = _function(tree, "_set_due")
+    require(_calls(confirm, "_record_outcome"), "confirm_call does not record the outcome")
+    require(_calls(record, "_apply_confirm_due"), "confirm does not apply continuation_due")
+    waiting = [
+        node
+        for node in ast.walk(apply_due)
+        if isinstance(node, ast.If) and _waiting_without_token(node.test)
+    ]
+    require(waiting, "confirm does not assign continuation_due while waiting")
+    require(
+        any(_effect_due(call) for node in waiting for call in _calls_in(node.body)),
+        "confirm assignment does not store the waiting continuation_due",
+    )
+    ready = [
+        node
+        for node in ast.walk(effect)
+        if isinstance(node, ast.If) and _results_ready_waiting(node.test)
+    ]
+    require(ready, "job_effect has no waiting confirm result")
+    for node in ready:
+        returned = False
+        for stmt in node.body:
+            if not isinstance(stmt, ast.Return) or not isinstance(stmt.value, ast.Call):
+                continue
+            if _call_name(stmt.value) != "JobEffect":
+                continue
+            returned = True
+            due = next(
+                (keyword.value for keyword in stmt.value.keywords if keyword.arg == "continuation_due"),
+                None,
+            )
+            require(
+                isinstance(due, ast.Constant) and due.value is True,
+                "confirm assignment is not continuation_due True",
+            )
+        require(returned, "confirm assignment is not continuation_due True")
+    stored = [
+        keyword
+        for keyword in ast.walk(setter)
+        if isinstance(keyword, ast.keyword) and keyword.arg == "continuation_due"
+    ]
+    require(stored, "_set_due does not assign continuation_due")
+    for keyword in stored:
+        require(
+            isinstance(keyword.value, ast.Name) and keyword.value.id == "value",
+            "confirm assignment does not store continuation_due",
+        )
+
+
+def _calls_in(statements: list[ast.stmt]) -> list[ast.Call]:
+    found: list[ast.Call] = []
+    for node in statements:
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call) and _call_name(child) == "_set_due":
+                found.append(child)
+    return found
+
+
+def require_save_before_execute(source: str) -> None:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        fail_model(f"job.py did not parse: {exc}")
+    fn = _function(tree, "_drive_held")
+    saves = [call.lineno for call in _calls(fn, "save_turn")]
+    executes = [call.lineno for call in _calls(fn, "_one_pass")]
+    executes.extend(call.lineno for call in _calls(fn, "_invoke"))
+    require(saves, "_drive_held does not call save_turn")
+    require(executes, "_drive_held does not execute a saved call")
+    require(min(saves) < min(executes), "save_turn is not before execute")
+
+
 def anchors() -> None:
     loop = read("backend/app/services/loop_round.py")
     cards = between(loop, "def open_cards(", "def observe_ready(")
-    require("continuation_due" in cards, "open_cards does not assign continuation_due")
     for banned in ("release_hold", "issue_schedule_claim", "publish_schedule_claim"):
         require(banned not in cards, f"open_cards calls {banned}")
+    require_confirm_assignment(loop)
+    require_save_before_execute(read("backend/app/tasks/job.py"))
 
     llm = read("backend/app/core/llm.py")
     stream = between(llm, "async def stream_chat(", "def complete_text(")
