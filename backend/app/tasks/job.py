@@ -595,6 +595,10 @@ def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict], pulse: 
         if CallState(row.state) in TERMINAL:
             continue
         if _remote_marker(db, row):
+            if row.name in {"desktop.open", "desktop.run"}:
+                from app.services.loop_round import lookup_desktop_write
+
+                return lookup_desktop_write(db, hold=hold, tool_call_id=row.tool_call_id)
             return _lookup_armed(db, hold, row)
         rejection = _reject_uninvoked(row)
         if rejection is not None:
@@ -671,6 +675,12 @@ def _stored(db, hold, tool_call_id: str, result: str, *, rejected: bool) -> str:
 def _reject_uninvoked(row: ToolCall) -> str | None:
     from app.services.loop_round import claim_call
 
+    if row.name in {"desktop.open", "desktop.run"}:
+        if (row.claim_token or "").strip():
+            return None
+        if type(_load(row.arguments).get("device_id")) is not int:
+            return "缺少设备，未打开。"
+        return None
     if row.name == "errand.place" and (row.arguments or "").strip() in {"", "{}"}:
         return "订单无效，未执行。"
     if row.name != "calendar":

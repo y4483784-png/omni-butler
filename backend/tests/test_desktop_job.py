@@ -482,6 +482,85 @@ def test_finish_does_not_continue_a_different_generation(plain_client: TestClien
     assert _load(other_id).generation == other_generation
 
 
+def test_a_desktop_call_without_a_device_is_rejected_once(plain_client: TestClient) -> None:
+    assert plain_client is not None
+    from app.models.models import ToolCall
+    from app.services.resume import dispatch_task
+
+    user_id = _user()
+    session_id = _session(user_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        turn = task_run.open_alongside(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            kind="job",
+            goal="open",
+        )
+        step = TaskStep(
+            user_id=user_id,
+            task_run_id=turn.id,
+            seq=1,
+            phase="calls_saved",
+            content="",
+            reasoning_content="",
+        )
+        db.add(step)
+        db.flush()
+        db.add(
+            ToolCall(
+                user_id=user_id,
+                task_step_id=step.id,
+                tool_call_id="call-open",
+                position=0,
+                name="desktop.open",
+                arguments=json.dumps({"local_target": PATH}),
+                state="pending",
+                claim_token=None,
+                intent_version=1,
+            )
+        )
+        db.commit()
+        task_id = int(turn.id)
+    finally:
+        db.close()
+    seen = {"model": 0}
+
+    def executor(_messages, _tools):
+        seen["model"] += 1
+        return ModelTurn("stopped asking", "", (), "stop")
+
+    set_executor(executor)
+    try:
+        owned = SessionLocal()
+        try:
+            set_rls_context(owned, user_id)
+            assert dispatch_task(owned, task_id) == 1
+        finally:
+            owned.close()
+    finally:
+        set_executor(None)
+    state, result = _call_result(task_id)
+    assert state == "rejected"
+    assert result == "缺少设备，未打开。"
+    assert seen["model"] == 1
+    assert _load(task_id).status == "completed"
+    check = SessionLocal()
+    try:
+        assert check.query(ScheduleConfirmClaim).filter(ScheduleConfirmClaim.session_id == session_id).count() == 0
+        call = (
+            check.query(ToolCall)
+            .filter(ToolCall.user_id == user_id, ToolCall.tool_call_id == "call-open")
+            .one()
+        )
+        assert call.claim_token in {None, ""}
+        assert call.state == "rejected"
+    finally:
+        check.close()
+
+
 def test_web_invoke_still_denies_a_local_tool(plain_client: TestClient, tmp_path) -> None:
     assert plain_client is not None
     calls = [0]

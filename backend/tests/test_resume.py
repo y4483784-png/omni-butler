@@ -591,8 +591,10 @@ def test_an_armed_desktop_write_is_looked_up_and_not_sent():
     finally:
         db.close()
 
+    seen = {"model": 0}
+
     def executor(_messages, _tools):
-        assert _calls(task_id)[0].state == "unknown"
+        seen["model"] += 1
         return ModelTurn("done", "", (), "stop")
 
     sent: list[str] = []
@@ -601,12 +603,17 @@ def test_an_armed_desktop_write_is_looked_up_and_not_sent():
         patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
         patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
         patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+        patch("desktop.executor.perform", side_effect=lambda *args, **kwargs: sent.append("perform")),
     ):
         _dispatch(user_id, task_id)
     assert sent == []
+    assert seen["model"] == 0
     call = _calls(task_id)[0]
-    assert call.state == "unknown"
-    assert call.result == "结果未知"
+    assert call.state == "awaiting_confirm"
+    parked = _load(task_id)
+    assert parked.status == "waiting_person"
+    assert parked.continuation_due is False
+    assert parked.exec_token is None
     claim = SessionLocal()
     try:
         stored = claim.get(ScheduleConfirmClaim, token)
@@ -1353,7 +1360,7 @@ def test_a_long_tool_renews_the_hold_and_a_live_holder_is_not_reclaimed():
 @pytest.mark.parametrize(
     ("name", "action", "claim_status", "expect_state", "expect_result"),
     [
-        ("desktop.open", "desktop.open", "unknown", "unknown", "结果未知"),
+        ("desktop.open", "desktop.open", "unknown", "awaiting_confirm", None),
         ("calendar", "calendar.create", "unknown", "unknown", "结果未知"),
         ("mail.send", "mail.send", "unknown", "unknown", "结果未知"),
         ("errand.place", "errand.place", "unknown", "unknown", "结果未知"),
@@ -1419,7 +1426,10 @@ def test_a_lost_write_is_reconstructed_without_sending(
     finally:
         db.close()
 
+    seen = {"model": 0}
+
     def executor(_messages, _tools):
+        seen["model"] += 1
         call = _calls(task_id)[0]
         assert call.state == expect_state
         assert call.result == expect_result
@@ -1431,12 +1441,19 @@ def test_a_lost_write_is_reconstructed_without_sending(
         patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
         patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
         patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+        patch("desktop.executor.perform", side_effect=lambda *args, **kwargs: sent.append("perform")),
     ):
         _dispatch(user_id, task_id)
     assert sent == []
     call = _calls(task_id)[0]
     assert call.state == expect_state
     assert call.result == expect_result
+    if name == "desktop.open" and claim_status != "written":
+        assert seen["model"] == 0
+        waiting = _load(task_id)
+        assert waiting.status == "waiting_person"
+        assert waiting.continuation_due is False
+        assert waiting.exec_token is None
     claim = SessionLocal()
     try:
         stored = claim.get(ScheduleConfirmClaim, token)
@@ -1579,7 +1596,7 @@ _ERRAND = {
 @pytest.mark.parametrize(
     ("name", "raw", "claim_status", "expect_state", "expect_result"),
     [
-        ("desktop.open", {"local_target": "notes"}, "unknown", "unknown", "结果未知"),
+        ("desktop.open", {"local_target": "notes"}, "unknown", "awaiting_confirm", None),
         ("calendar", {"action": "create", "title": "parked", "start_at": "2026-11-20T10:00:00", "end_at": "2026-11-20T11:00:00"}, "unknown", "unknown", "结果未知"),
         ("mail.send", {"mail_to": ["one@example.com"], "subject": "parked", "body": "hello"}, "unknown", "unknown", "结果未知"),
         ("errand.place", _ERRAND, "unknown", "unknown", "结果未知"),
@@ -1633,6 +1650,9 @@ def test_a_parked_lost_write_is_recovered_without_sending(name, raw, claim_statu
     assert call.result == expect_result
     stored = _load(task_id)
     assert stored.exec_token != "worker"
+    if name == "desktop.open" and claim_status != "written":
+        assert stored.status == "waiting_person"
+        assert stored.continuation_due is False
 
 
 def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():

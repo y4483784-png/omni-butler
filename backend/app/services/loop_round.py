@@ -629,7 +629,7 @@ def store_desktop_result(
     step_row: TaskStep,
     call_row: ToolCall,
     request_id: str,
-) -> None:
+) -> bool:
     text = f"已写入：{request_id}"
     if job.status != "stopped" and call_row.state == CallState.AWAITING_CONFIRM.value:
         memory = _as_step(step_row, _call_rows(db, step_row.id))
@@ -637,11 +637,109 @@ def store_desktop_result(
         target = _call_by_id(step, call_row.tool_call_id)
         call_row.state = target.state.value
         call_row.result = text
-        _store_phase(db, step_row, step.phase)
+        entered = _store_phase(db, step_row, step.phase)
         task_run.touch_progress(db, user_id=job.user_id, generation=int(job.generation))
         _apply_confirm_due(db, job, step)
-        return
+        return entered
     call_row.result = text
+    return False
+
+
+def lookup_desktop_write(db: Session, *, hold: Hold, tool_call_id: str) -> str:
+    preview = (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == hold.user_id, TaskRun.generation == hold.generation)
+        .one_or_none()
+    )
+    if preview is None:
+        db.rollback()
+        return "leave"
+    peeked = _find_call(db, preview.id, tool_call_id)
+    if peeked is not None and peeked[1].claim_token:
+        (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == peeked[1].claim_token)
+            .with_for_update()
+            .one_or_none()
+        )
+    job = _lock_holder(db, hold)
+    if job is None:
+        db.rollback()
+        return "leave"
+    found = _find_call(db, job.id, tool_call_id)
+    if found is None:
+        db.rollback()
+        return "leave"
+    step_row, call_row, _memory = found
+    claim = None
+    if call_row.claim_token:
+        claim = (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == call_row.claim_token)
+            .with_for_update()
+            .one_or_none()
+        )
+    marker = "" if claim is None else (claim.remote_request_id or "").strip()
+    written = claim is not None and claim.status == "written" and bool(marker)
+    if not written:
+        db.execute(
+            update(TaskRun)
+            .where(TaskRun.id == job.id)
+            .where(TaskRun.user_id == hold.user_id)
+            .where(TaskRun.status == "running")
+            .where(TaskRun.exec_token == hold.exec_token)
+            .values(continuation_due=False)
+        )
+        if _leave(db, hold, status="waiting_person") != 1:
+            db.rollback()
+            return "leave"
+        if not _commit_job(db, job, kind="status", body="waiting_person"):
+            return "leave"
+        return "leave"
+    if call_row.state == CallState.AWAITING_CONFIRM.value:
+        entered = store_desktop_result(
+            db,
+            job=job,
+            step_row=step_row,
+            call_row=call_row,
+            request_id=marker,
+        )
+        if entered:
+            _clear_due_if_set(db, hold)
+        if not _commit_job(db, job, kind="step", body=Phase.RESULTS_READY.value):
+            return "leave"
+    else:
+        db.rollback()
+    if _desktop_result_ready(db, hold):
+        return "model"
+    return "leave"
+
+
+def _desktop_result_ready(db: Session, hold: Hold) -> bool:
+    job = (
+        db.query(TaskRun)
+        .filter(
+            TaskRun.user_id == hold.user_id,
+            TaskRun.generation == hold.generation,
+            TaskRun.status == "running",
+            TaskRun.exec_token == hold.exec_token,
+            TaskRun.exec_epoch == hold.exec_epoch,
+            TaskRun.intent_version == hold.intent_version,
+        )
+        .one_or_none()
+    )
+    if job is None:
+        return False
+    rows: list[ToolCall] = []
+    ready = False
+    for step_row in db.query(TaskStep).filter(TaskStep.task_run_id == job.id).all():
+        calls = _call_rows(db, step_row.id)
+        rows.extend(calls)
+        if calls and step_row.phase == Phase.RESULTS_READY.value and all(
+            CallState(row.state) in TERMINAL for row in calls
+        ):
+            ready = True
+    return bool(rows) and ready and all(CallState(row.state) in TERMINAL for row in rows)
 
 
 def note_confirmed(db: Session, *, user_id: int, token: str) -> None:
@@ -710,6 +808,9 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
         return None
     step_row, call_row, memory = found
     if call_row.state == CallState.UNKNOWN.value:
+        db.rollback()
+        return memory
+    if call_row.name in {"desktop.open", "desktop.run"}:
         db.rollback()
         return memory
     if call_row.name not in _LOOKUP_WRITES:
@@ -801,6 +902,8 @@ def reconcile_parked_writes(db: Session, task_run_id: int) -> int:
         )
         marker = "" if claim is None else (claim.remote_request_id or "").strip()
         if claim is None or not marker or claim.status not in {"unknown", "written"}:
+            continue
+        if call_row.name in {"desktop.open", "desktop.run"} and claim.status != "written":
             continue
         if claim.status == "unknown" and not _owner_gone(claim):
             continue
