@@ -116,6 +116,9 @@ test("a mixed-phase follow-up card posts only the draft action and disables the 
   };
 
   const outfile = join(mkdtempSync(join(tmpdir(), "followup-mixed-")), "mount.mjs");
+  let mounted;
+  let root;
+  try {
   await esbuild.build({
     stdin: {
       contents: `
@@ -143,12 +146,11 @@ test("a mixed-phase follow-up card posts only the draft action and disables the 
     jsx: "automatic",
   });
 
-  try {
     const host = window.document.createElement("div");
     host.id = "root";
     window.document.body.appendChild(host);
-    const mounted = await import(pathToFileURL(outfile).href);
-    mounted.mount(mixedCard());
+    mounted = await import(pathToFileURL(outfile).href);
+    root = mounted.mount(mixedCard());
     const boxes = [...window.document.querySelectorAll('input[type="checkbox"]')];
     assert.equal(boxes.length, 2);
     assert.equal(boxes[0].disabled, false);
@@ -171,7 +173,18 @@ test("a mixed-phase follow-up card posts only the draft action and disables the 
     );
     assert.equal(window.document.body.textContent.includes("有待办没有加进日历。"), false);
   } finally {
+    if (root && mounted) {
+      await mounted.act(() => {
+        root.unmount();
+      });
+    }
+    await window.happyDOM.abort();
     window.close();
+    await esbuild.stop();
+    // React's browser scheduler keeps a referenced port when window exists.
+    for (const handle of process._getActiveHandles()) {
+      if (handle.constructor?.name === "MessagePort") handle.unref();
+    }
     for (const [key, value] of previous) {
       const desc = Object.getOwnPropertyDescriptor(globalThis, key);
       if (desc && desc.writable === false && desc.set == null) continue;

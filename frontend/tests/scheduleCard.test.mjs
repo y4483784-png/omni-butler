@@ -137,9 +137,10 @@ test("formatFollowUtterance matches the pointed minutes sentence", async () => {
     "帮我整理这场会的纪要：客户会，2026-10-22 全天",
   );
   const inflight = { current: false };
-  assert.deepEqual(claimFollowRows(["a1", "a2"], new Set(["a1"]), inflight), ["a2"]);
+  const phases = { a1: "draft", a2: "draft" };
+  assert.deepEqual(claimFollowRows(["a1", "a2"], new Set(["a1"]), inflight, phases), ["a2"]);
   assert.equal(inflight.current, true);
-  assert.deepEqual(claimFollowRows(["a2"], new Set(), inflight), []);
+  assert.deepEqual(claimFollowRows(["a2"], new Set(), inflight, phases), []);
   const href = mailtoHref({
     to: [{ email: "a@b.com", name: "张三" }],
     subject: "跟进：客户会",

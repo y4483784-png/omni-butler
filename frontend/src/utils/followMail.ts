@@ -22,9 +22,10 @@ export function claimFollowRows(
   ids: readonly string[],
   done: ReadonlySet<string>,
   inflight: { current: boolean },
+  phases: Readonly<Record<string, string | undefined>>,
 ): string[] {
   if (inflight.current) return [];
-  const pending = ids.filter((id) => !done.has(id));
+  const pending = ids.filter((id) => !done.has(id) && phases[id] === "draft");
   if (!pending.length) return [];
   inflight.current = true;
   return pending;

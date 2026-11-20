@@ -122,8 +122,12 @@ export function FollowupCard({
 
   async function confirm() {
     if (expired) return;
-    const picked = actions.filter((action) => ticked.has(action.id) && action.start_at).map((action) => action.id);
-    const ids = claimFollowRows(picked, done.current, inflight);
+    const phases: Record<string, string | undefined> = {};
+    for (const action of actions) phases[action.id] = action.phase;
+    const picked = actions
+      .filter((action) => ticked.has(action.id) && action.start_at && confirmActionIsDraft(action))
+      .map((action) => action.id);
+    const ids = claimFollowRows(picked, done.current, inflight, phases);
     if (!ids.length) return;
     setPosting(true);
     let failed = false;
@@ -164,7 +168,7 @@ export function FollowupCard({
                 <input
                   type="checkbox"
                   checked={ticked.has(action.id)}
-                  disabled={posting}
+                  disabled={posting || !confirmActionIsDraft(action)}
                   onChange={() => toggle(action.id)}
                 />
               ) : null}
