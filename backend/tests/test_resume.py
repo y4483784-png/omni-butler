@@ -22,6 +22,7 @@ from app.models.models import (
     ToolCall,
     User,
 )
+from app.services.local_action import LocalAction, commit_local, finish_local
 from app.services.resume import dispatch_task, enqueue_job, events_after, publish_event, read_snapshot
 from app.tasks.job import run_job, set_executor
 
@@ -1702,7 +1703,6 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
 
     from app.agents.harness.desktop_channel import recognize_package
     from app.models.models import DesktopDevice
-    from app.services.local_action import LocalAction, commit_local, finish_local
     from app.tasks.watchdog import run_sweep
 
     user_id = _user()
@@ -1881,3 +1881,88 @@ def test_a_slow_mail_send_outlives_the_first_lease_without_becoming_unknown(monk
     assert after.result.startswith("已写入：")
     assert "结果未知" not in (after.result or "")
     assert sent == []
+
+
+def test_a_rejected_claim_can_be_armed_again_without_a_dead_lease():
+    from app.services.schedule_confirm import arm_remote_claim, finish_confirm, reopen_known_rejection
+    from app.tasks.watchdog import run_sweep
+
+    user_id = _user()
+    session_id = _session(user_id)
+    raw = {"mail_to": ["retry@example.com"], "subject": "retry", "body": "body"}
+    db, task_id, tokens = _parked_job(user_id, session_id, [("call-retry", "mail.send", raw)])
+    try:
+        set_rls_context(db, user_id)
+        assert arm_remote_claim(db, tokens[0], "req-old") is True
+        claim = db.get(ScheduleConfirmClaim, tokens[0])
+        claim.confirm_until = datetime(2000, 1, 1)
+        db.commit()
+        reopen_known_rejection(db, tokens[0])
+        db.expire_all()
+        assert arm_remote_claim(db, tokens[0], "req-new") is True
+    finally:
+        db.close()
+    sent: list[str] = []
+    set_executor(lambda *_args, **_kwargs: ModelTurn("done", "", (), "stop"))
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id,)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+        patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+    ):
+        run_sweep()
+    waiting = _calls(task_id)[0]
+    assert waiting.state == "awaiting_confirm"
+    assert waiting.result != "结果未知"
+    assert _load(task_id).continuation_due is False
+    finisher = SessionLocal()
+    try:
+        set_rls_context(finisher, user_id)
+        finish_confirm(finisher, tokens[0])
+    finally:
+        finisher.close()
+    with (
+        patch("app.tasks.watchdog.load_open_ids", return_value=(task_id,)),
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+        patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+    ):
+        run_sweep()
+    finished = _calls(task_id)[0]
+    assert finished.state == "result"
+    assert finished.result == "已写入：req-new"
+    assert "结果未知" not in (finished.result or "")
+    assert sent == []
+
+
+def test_one_failed_lease_renew_does_not_stop_the_next(monkeypatch):
+    from app.core.config import settings
+    from app.services import schedule_confirm
+    from app.services.schedule_confirm import arm_remote_claim, live_provider_call
+
+    user_id = _user()
+    session_id = _session(user_id)
+    raw = {"mail_to": ["pulse@example.com"], "subject": "pulse", "body": "body"}
+    db, _task_id, tokens = _parked_job(user_id, session_id, [("call-pulse", "mail.send", raw)])
+    try:
+        set_rls_context(db, user_id)
+        assert arm_remote_claim(db, tokens[0], "req-pulse") is True
+    finally:
+        db.close()
+    monkeypatch.setattr(settings, "llm_timeout", 0.12)
+    calls = {"n": 0}
+    recovered = threading.Event()
+    real = schedule_confirm.renew_live_confirm
+
+    def flaky(token: str) -> bool:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("renew down")
+        if calls["n"] >= 3:
+            recovered.set()
+        return real(token)
+
+    monkeypatch.setattr(schedule_confirm, "renew_live_confirm", flaky)
+    with live_provider_call(tokens[0]):
+        assert recovered.wait(2)
+    assert calls["n"] >= 3
