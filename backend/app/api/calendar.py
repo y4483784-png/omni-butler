@@ -584,6 +584,8 @@ def _release_unsent(db: Session) -> None:
 def _answer_remote_failure(db: Session, exc: CalendarRemoteWriteError) -> None:
     from app.services.schedule_confirm import reopen_known_rejection
 
+    if exc.closed:
+        raise HTTPException(status_code=409, detail=str(exc))
     if not exc.unknown:
         reopen_known_rejection(db, db.info.get("confirm_token"))
         raise HTTPException(status_code=502, detail=str(exc))
