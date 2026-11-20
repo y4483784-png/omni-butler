@@ -1391,3 +1391,319 @@ def test_picture_revision_upgrades_sqlite(tmp_path):
     )
     assert again.returncode == 0, again.stderr
     engine.dispose()
+
+
+def _talk_relation(relation: str):
+    def router(_messages, result_model, *_args, **_kwargs):
+        return result_model.model_validate(
+            {
+                "relation": relation,
+                "target_generation": None,
+                "web": "allow",
+                "ask": "" if relation != "ask" else "which job",
+            }
+        )
+
+    return router
+
+
+_QUIET_WORKFLOW = {
+    "intent": "chat",
+    "forced": False,
+    "citations": [],
+    "thinking_steps": [],
+    "llm_messages": [],
+    "schedule_card": None,
+    "artifact": None,
+    "direct_answer": "ok",
+    "answer_reasoning": "",
+    "pending_calendar": None,
+}
+
+
+def _picture_session() -> int:
+    from app.core.db import SessionLocal
+    from app.models.models import Session as ChatSession
+
+    db = SessionLocal()
+    try:
+        session = ChatSession(user_id=1, title="picture-job")
+        db.add(session)
+        db.commit()
+        return int(session.id)
+    finally:
+        db.close()
+
+
+def _post_picture(client, session_id: int, message: str, relation: str, *, hold_worker: bool):
+    from contextlib import ExitStack
+    from unittest.mock import patch
+
+    published: list = []
+
+    def delay(*args, **_kwargs):
+        published.append(args)
+        return None
+
+    with ExitStack() as stack:
+        stack.enter_context(patch("app.core.llm.complete_json_object", _talk_relation(relation)))
+        stack.enter_context(patch("app.api.chat._run_workflow_sync", return_value=dict(_QUIET_WORKFLOW)))
+        if hold_worker:
+            stack.enter_context(patch("app.tasks.job.run_job.delay", side_effect=delay))
+        response = client.post(
+            "/api/chat",
+            json={
+                "session_id": session_id,
+                "message": message,
+                "images": [{"media_type": "image/png", "data_base64": _b64(PNG)}],
+            },
+        )
+    assert response.status_code == 200, response.text
+    return published
+
+
+def _ready_images(task_run_id: int) -> list[tuple]:
+    from app.core.db import SessionLocal
+    from app.models.models import TaskImage
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(TaskImage)
+            .filter(TaskImage.task_run_id == int(task_run_id), TaskImage.purge_state == "ready")
+            .order_by(TaskImage.id.asc())
+            .all()
+        )
+        return [(row.media_type, row.byte_length, row.sha256, row.purge_state) for row in rows]
+    finally:
+        db.close()
+
+
+def _job_id(session_id: int) -> int:
+    from app.core.db import SessionLocal
+    from app.models.models import TaskRun
+
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(TaskRun)
+            .filter(TaskRun.session_id == int(session_id), TaskRun.kind == "job")
+            .one()
+        )
+        return int(row.id)
+    finally:
+        db.close()
+
+
+def _image_urls(messages: list) -> list[str]:
+    content = messages[0]["content"]
+    if not isinstance(content, list):
+        return []
+    found = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "image_url":
+            found.append(block["image_url"]["url"])
+    return found
+
+
+def test_a_message_bound_to_a_new_job_keeps_png_bytes_for_a_later_run(auth_client):
+    import hashlib
+    from unittest.mock import patch
+
+    from app.core.llm import ModelTurn
+    from app.storage import factory as blob_factory
+    from app.tasks.job import run_job, set_executor
+
+    session_id = _picture_session()
+    store = _MemoryStore()
+    previous = blob_factory._store
+    blob_factory._store = store
+    seen: list = []
+    ocr: list = []
+
+    def executor(messages, _tools):
+        seen.append(messages)
+        return ModelTurn(content="saw", reasoning="", tool_calls=(), finish="stop")
+
+    set_executor(None)
+    try:
+        published = _post_picture(
+            auth_client,
+            session_id,
+            "start the tea search",
+            "new",
+            hold_worker=True,
+        )
+        ready = _ready_images(_job_id(session_id))
+        stored = list(store.objects.values())
+        set_executor(executor)
+        with patch("app.rag.vision_ocr.ocr_image_bytes", side_effect=ocr.append):
+            run_job(*published[0])
+        urls = _image_urls(seen[0]) if seen else []
+        digest = hashlib.sha256(PNG).hexdigest()
+        assert (ready, stored, urls, ocr) == (
+            [("image/png", len(PNG), digest, "ready")],
+            [PNG],
+            [f"data:image/png;base64,{_b64(PNG)}"],
+            [],
+        )
+    finally:
+        set_executor(None)
+        blob_factory._store = previous
+
+
+@pytest.mark.parametrize("relation", ["supplement", "redirect"])
+def test_a_message_bound_to_an_open_job_keeps_png_bytes_for_a_later_run(auth_client, relation):
+    import hashlib
+
+    from app.core.db import SessionLocal, set_rls_context
+    from app.core.llm import ModelTurn
+    from app.services import task_run
+    from app.services.resume import dispatch_task
+    from app.storage import factory as blob_factory
+    from app.tasks.job import set_executor
+
+    session_id = _picture_session()
+    db = SessionLocal()
+    try:
+        set_rls_context(db, 1)
+        task_run.open_alongside(
+            db,
+            user_id=1,
+            session_id=session_id,
+            kind="job",
+            goal="alpha",
+            web_constraint="allow",
+        )
+        db.commit()
+    finally:
+        db.close()
+    store = _MemoryStore()
+    previous = blob_factory._store
+    blob_factory._store = store
+    seen: list = []
+
+    def executor(messages, _tools):
+        seen.append(messages)
+        return ModelTurn(content="saw", reasoning="", tool_calls=(), finish="stop")
+
+    set_executor(None)
+    try:
+        _post_picture(auth_client, session_id, "add the photo", relation, hold_worker=False)
+        job_id = _job_id(session_id)
+        ready = _ready_images(job_id)
+        stored = [blob for blob in store.objects.values() if blob == PNG]
+        set_executor(executor)
+        db = SessionLocal()
+        try:
+            set_rls_context(db, 1)
+            dispatched = dispatch_task(db, job_id)
+        finally:
+            db.close()
+        urls = _image_urls(seen[0]) if seen else []
+        digest = hashlib.sha256(PNG).hexdigest()
+        assert dispatched == 1
+        assert (ready, stored, urls) == (
+            [("image/png", len(PNG), digest, "ready")],
+            [PNG],
+            [f"data:image/png;base64,{_b64(PNG)}"],
+        )
+    finally:
+        set_executor(None)
+        blob_factory._store = previous
+
+
+def test_a_chat_image_that_does_not_bind_a_job_is_dropped(auth_client):
+    from app.core.db import SessionLocal
+    from app.models.models import Document, TaskImage, TaskRun
+    from app.storage import factory as blob_factory
+
+    session_id = _picture_session()
+    store = _MemoryStore()
+    previous = blob_factory._store
+    blob_factory._store = store
+    db = SessionLocal()
+    try:
+        before_images = db.query(TaskImage).count()
+        before_docs = db.query(Document).filter(Document.stored_path.startswith("task-image/")).count()
+    finally:
+        db.close()
+    carried: dict = {}
+
+    def workflow(**kwargs):
+        carried["images"] = kwargs.get("images")
+        return dict(_QUIET_WORKFLOW)
+
+    from unittest.mock import patch
+
+    with (
+        patch("app.core.llm.complete_json_object", _talk_relation("ask")),
+        patch("app.api.chat._run_workflow_sync", side_effect=workflow),
+    ):
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "session_id": session_id,
+                "message": "what is this",
+                "images": [{"media_type": "image/png", "data_base64": _b64(PNG)}],
+            },
+        )
+    assert response.status_code == 200, response.text
+    assert carried["images"][0].data == PNG
+    db = SessionLocal()
+    try:
+        assert db.query(TaskImage).count() == before_images
+        assert db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").count() == 0
+        assert (
+            db.query(Document).filter(Document.stored_path.startswith("task-image/")).count() == before_docs
+        )
+        assert PNG not in store.objects.values()
+    finally:
+        db.close()
+        blob_factory._store = previous
+
+
+def test_a_cancel_message_does_not_store_the_chat_image(auth_client):
+    from app.core.db import SessionLocal, set_rls_context
+    from app.models.models import TaskImage, TaskRun
+    from app.services import task_run
+    from app.storage import factory as blob_factory
+
+    session_id = _picture_session()
+    db = SessionLocal()
+    try:
+        set_rls_context(db, 1)
+        opened = task_run.open_alongside(
+            db,
+            user_id=1,
+            session_id=session_id,
+            kind="job",
+            goal="alpha",
+            web_constraint="allow",
+        )
+        db.commit()
+        generation = opened.generation
+        job_id = opened.id
+    finally:
+        db.close()
+    store = _MemoryStore()
+    previous = blob_factory._store
+    blob_factory._store = store
+    try:
+        _post_picture(auth_client, session_id, "stop the budget job", "cancel", hold_worker=False)
+        db = SessionLocal()
+        try:
+            ready = (
+                db.query(TaskImage)
+                .filter(TaskImage.task_run_id == job_id, TaskImage.purge_state == "ready")
+                .count()
+            )
+            status = db.get(TaskRun, job_id).status
+        finally:
+            db.close()
+        assert ready == 0
+        assert status == "stopped"
+        assert PNG not in store.objects.values()
+        assert task_run.get(user_id=1, generation=generation).status == "stopped"
+    finally:
+        blob_factory._store = previous
