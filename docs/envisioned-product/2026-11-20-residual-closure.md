@@ -12,7 +12,8 @@ Each item has one status.
 - Verification gap. The behavior may hold, and the check that should fail when it breaks is missing or only matches a string.
 - Demonstrably already fixed. The current code or an executed counterexample closes the old claim.
 - Genuinely needs live acceptance. The automated seam cannot see a real provider, mailbox, or enrolled package.
-- Architectural decision requiring parent design review. The next change needs a product or lifecycle choice. This round does not implement it.
+- Architectural decision requiring parent design review. The next change needs a product or lifecycle choice. This round does not implement it. The write-up is a proposal. It is not an accepted limitation.
+- Fixed in this branch, pending parent acceptance. The change is on this pull request. It is not closed on `release` until the parent accepts it.
 
 Evidence is named separately.
 
@@ -23,7 +24,7 @@ Evidence is named separately.
 
 ## Execution order
 
-This pull request closes CAL-01 only. Later units branch from the release after the parent merges. They do not stack on this branch.
+This pull request implements CAL-01. That item is fixed in this branch, pending parent acceptance. It is not closed on `release`. Later units branch from the release after the parent merges. They do not stack on this branch, and this pull request does not start them.
 
 | Order | Ids | Why this order |
 | --- | --- | --- |
@@ -42,9 +43,9 @@ This pull request closes CAL-01 only. Later units branch from the release after 
 | 13 | WATCH-01, PIC-07 | Put the existing break flags on the workflows. |
 | 14 | MAIL-01, CAL-03, LOOP-02 | Point checkers at the branch that can regress. |
 
-Parent review before any code:
+Parent review before any code. Each item below is a proposal, not an accepted limitation:
 
-- DESK-06. Local execution recovery. The design is below.
+- DESK-06. Local execution recovery. The revised design is below. It is not approved.
 - DEV-06. Whether every package 403 deletes the token file.
 - LOOP-05. What a keyless job tells the person.
 - SEARCH-01. How a chat web query longer than 128 characters is shortened or refused.
@@ -56,7 +57,7 @@ Live acceptance, after the code units. PIC-08, MAIL-02, DESK-07.
 
 ## First unit
 
-CAL-01 is the first change. A confirm token is present, `arm_remote_claim` returns false, and insert, patch, and delete still call Google. Mail already returns before the send when that boolean is false. `contracts.md` says an arm that matches zero rows does not send the provider call.
+CAL-01 is the first change. On `1f28d4fd`, a confirm token was present, `arm_remote_claim` returned false, and insert, patch, and delete still called Google. Mail already returns before the send when that boolean is false. `contracts.md` says an arm that matches zero rows does not send the provider call. This branch stops those three writes. Acceptance is still with the parent.
 
 The data shape stays the claim row. No new column and no new protocol.
 
@@ -68,23 +69,51 @@ The change:
 - The compensate delete and the compensate patch do not arm. `_restore_patch` patches with arming turned off, so a local commit failure can still undo a patch that already succeeded.
 - The HTTP handler answers that closed error with 409 and the existing closed sentence. It does not mark the result unknown, and it does not reopen a claim the arm already rolled back.
 
-The regression posts one create whose claim is linked to a job in `running` with an exec token. The arm update matches zero rows. The test expects no Google insert, no stored event, an open claim with an empty remote id, and 409.
+The regressions post create, patch, and delete. Each claim is linked to a job in `running` with an exec token, so `arm_remote_claim` matches zero rows. The handler is the public HTTP route. The test expects 409 with the closed sentence, no Google insert, patch, or delete, no local change, and a claim that stays `open` with an empty remote id. A focused private-method stub is not the proof.
 
-LOOP-03 is the next safety item, not this one. `adopt` already stops a second `run_job` from entering `_drive`. The remaining hole is `begin_read` on a `running` call, and fixing it has to keep crash recovery. DESK-06 needs the protocol below, so it is not implemented here.
+A local commit that fails after Google has already accepted a patch still sends the restore patch. A local commit that fails after an insert still sends the compensate delete. A connected update with a claim the arm does commit still patches Google.
+
+LOOP-03 is the next safety item. It is not implemented here. A missing holder or an expired lease does not prove the earlier call has stopped. The next unit needs its own mini-plan and a failing behavior reproduction. DESK-06 stays a design proposal. The design below is not approved, and this pull request does not implement it.
 
 ## Desktop recovery design
 
-A package can run `perform` and then fail `finish_local`. The job stays `waiting_person`. A second commit returns `unknown` and does not run again. Nothing posts finish on its own. A timeout that marks the action failed, or a retry that calls `perform` again, is the wrong repair.
+This section is a proposal for parent review. It is not approved. This pull request does not implement it. It does not close the gap between the operating-system call and the durable executed marker, and it does not prove that an external side effect happens exactly once.
 
-Proposed local record, reviewed before any protocol change:
+What the code does now. `confirm_local` calls `perform`, then posts finish. If finish fails, a second commit of the same claim returns `unknown` and does not call `perform` again. The job stays `waiting_person` until the claim is `written`. The package stores the device token and the device id. It does not store whether this claim was armed or executed. A crash after the operating-system call and before a durable marker leaves no local way to tell those two moments apart.
 
-1. Before `perform`, store the armed request id, device id, path, args, and confirm token. The record state is `armed`.
-2. After `perform` returns, set the state to `executed`, then call `finish_local` with those same values.
-3. On restart, an `executed` record calls `finish_local` only. It does not call `perform`.
-4. An `armed` record with no `executed` mark does not run by itself. The person confirms again, or the job stays waiting. A crash between the operating-system call and the mark cannot be distinguished from a crash before that call.
-5. `finish_local` already rejects a mismatched marker. A second finish does not enqueue the job again.
+The record. One durable record per confirm token, on the enrolled device. The write is atomic. Write a temporary file in the same directory, fsync it, then rename it over the record. A reader sees the previous record or the new record, never a partial one. The record binds the confirm token, the device id, the server request id when the server has one, the path, the args, the job generation, and the intent version. The state is `armed`, `executed`, or left absent when this device has not started the claim.
 
-Keep the current denials. The web surface does not gain a local tool. There is no always-allow. The device, path, and args stay bound to the claim. The action runs once. Continuation stays on the same job generation.
+Crash boundaries.
+
+- No record yet. This device has not started `perform` for that token. The first confirm may create the `armed` record and then call `perform` once. A second process that loses the exclusive create does not call `perform`.
+- The record is `armed`. The operating-system call may or may not have happened. Restart, a new click, and confirm on that same claim do not call `perform`. The package shows an explicit unknown outcome for that claim. It does not show success, and it does not show failure.
+- The record is `executed`. `perform` returned to this process. Reconnect and process restart call finish only, with the stored device, request, path, and args. They do not call `perform`. If finish fails, the record stays `executed` and the next restart calls finish again.
+
+Same claim. While the result is ambiguous, the same confirm token is not a second chance to run the action. Confirm, click, and restart all read the record first. An `armed` record stops them before `perform`. An `executed` record stops them before `perform` and sends them to finish.
+
+Visible unknown. An `armed` record is shown as unknown. The sentence has to say that the action may already have happened. Safe resolution does not invent a result. It does not call `finish_local`, because that continues the job as a success. It does not mark the action failed, because that invents a failure. It does not call `perform` again. Until a later protocol has a server state for a local outcome that stays unknown, the job remains `waiting_person` and the package keeps showing unknown. That later protocol is not this pull request.
+
+A new action. If the person authorizes a separate action, that action gets a new confirm token and its own record. The package says the earlier claim's outcome is unknown. The new action is not labeled a retry, and it is not described as running the original claim again. The new claim is bound to its own device, path, and args. Performing it is a new side effect the person accepted with that warning.
+
+Concurrent confirms. Creating the record uses an exclusive create. One confirm wins and may call `perform` once from the no-record state. The other confirm sees `armed` or `executed` and does not call `perform`. Two confirms cannot both pass the create.
+
+Binding. Finish sends the device id, path, and args stored in the record. A record whose device id is not this enrollment is not finished and is not performed. The package shows unknown, because the action may have run on the enrolled device. A confirm whose path or args differ from the stored record is a different request. It does not reuse the record, and it does not perform under the old token.
+
+Finish. Finish is idempotent. A second finish does not enqueue the job again. A mismatched marker is rejected. A failed finish leaves the record `executed`.
+
+Stopped or superseded generation. A stopped generation, or a generation that a newer one has replaced, is not a reason to call `perform`. An `armed` record on that generation stays unknown and is not performed. An `executed` record may still call finish. If the server rejects finish for that generation, the record stays `executed`, the package says finish was not accepted, and `perform` is not called.
+
+Tests and model counterexamples for the unit that implements this design, after the parent approves it.
+
+- An `armed` record, then process restart. `perform` is not called. The visible outcome is unknown.
+- An `armed` record, then another click or confirm of the same token. `perform` is not called.
+- An `executed` record and a failing finish, then restart. Finish is called again. `perform` is not called.
+- Finish succeeds twice. The job is enqueued once.
+- Two concurrent confirms of a token with no record. `perform` is called once.
+- A new token while an older token is `armed`. The new token can perform only as its own claim, and the package has already said the older outcome is unknown.
+- The model disables `perform` from `armed` and from `executed`. `executed` enables finish only. The model does not claim the operating-system call happened once, because `armed` covers both "not called yet" and "called, marker not stored".
+
+Keep the current denials. The web surface does not gain a local tool. There is no always-allow. The device, path, and args stay bound to the claim. Continuation stays on the same job generation when finish is accepted.
 
 ## Picture
 
@@ -289,8 +318,8 @@ Keep the current denials. The web surface does not gain a local tool. There is n
 - Impact. A second `run_job` does not enter `_drive` while the first holder is still adopted. A later holder can. That happens when the hold expires during `_invoke`, or when TALK-04 clears the token. `begin_read` then returns `invoke` again, so a web call can POST twice. The first holder may already be inside the provider call.
 - Reproduction. Executed two `_one_pass` calls with the same token and state `running`. The result was `["call-a", "call-a"]`. Two sequential `begin_read` calls both returned `invoke`. Two `_one_pass` calls on one pending row invoked once. The adopt SQL was read and not re-run.
 - Evidence. Behavior test of `begin_read` and `_one_pass`. The adopt fence is a source anchor.
-- Close. A second driver gets `stale` while the first driver is inside the call, and invokes only after that holder is gone. A pending call still invokes once.
-- Unit. The running branch of `begin_read`, using the same compare-and-swap shape as pending. Order 2. This does not add a protocol. It must keep the crash recovery in LOOP-01.
+- Close. The next unit has to prove current execution ownership with a behavior test. A second driver must not enter the provider call while the first call can still be executing. A missing holder, or an expired lease, does not prove the earlier call has stopped. The unit has to prevent that overlap and still recover a call whose process died. A compare-and-swap that only sets `running` back to `pending` is not a demonstrated solution. A repeated read and a repeated write are different, and the unit has to name which tool semantics it covers. A pending call still invokes once.
+- Unit. Not this pull request. Order 2. The next unit starts with a mini-plan and a failing behavior reproduction. It keeps the crash recovery in LOOP-01.
 
 ### LOOP-04. A missing key writes 已开始 without owning the token
 
@@ -392,14 +421,14 @@ Create receipt tests exist for a stored event id and for a lookup miss. They wer
 
 ### CAL-01. A failed arm still calls Google
 
-- Origin. `contracts.md` line 270. Mail honors the same boolean. Calendar does not.
-- Status. Reproduced defect.
-- Source. `_arm_user_write` at `backend/app/services/calendar_google.py` lines 1217-1223 discards `arm_remote_claim`. Insert calls it and then POSTs at lines 1359-1361. Patch does the same at lines 1191-1193. Delete does the same at lines 1444-1446. A job-linked mismatch rolls back and returns false at `backend/app/services/schedule_confirm.py` lines 631-633. `record_create_success` returns without a receipt when the claim is not `unknown` or `written`, at `backend/app/api/calendar.py` lines 534-535. `_create_connected_event` still returns the event card at lines 284-285.
-- Impact. The provider call is issued after the arm commit is rolled back. The response can be the event card with the claim still `open` and no receipt. A later confirm can insert again.
-- Reproduction. Before the fix, `test_a_running_job_does_not_insert_when_the_arm_matches_zero_rows` returned 200 and the event card `external_id` `evt-should-not-exist`. `test_patch_and_delete_skip_google_when_the_arm_returns_false` did not raise. After the fix, `tests/test_calendar_create_receipt.py` passed, 9 tests.
-- Evidence. Behavior test.
-- Close. When `arm_remote_claim` returns false, insert, patch, and delete make no provider call and the handler does not return the event card. A request with no confirm token still writes. Compensate patch and compensate delete still run.
-- Unit. This pull request. See First unit.
+- Origin. `contracts.md` line 270. Mail honors the same boolean. Calendar did not, on `1f28d4fd`.
+- Status. Fixed in this branch, pending parent acceptance.
+- Source. `_arm_user_write` at `backend/app/services/calendar_google.py` line 1225 returns false when a confirm token is set and `arm_remote_claim` does not commit, and it rolls the session back. `_refuse_unarmed` at line 1240 raises the closed write error. Insert, `_patch_google_event` at line 1187, and `_delete_google_event_required` at line 1458 stop before the Google call. `_restore_patch` at line 1214 patches with arming turned off. The handler answers that closed error with 409 and does not reopen the claim. A job-linked mismatch still rolls back and returns false at `backend/app/services/schedule_confirm.py` lines 631-633.
+- Impact. On the unfixed tree, the provider call is issued after the arm commit is rolled back. The response can be the event card with the claim still `open` and no receipt. A later confirm can write again.
+- Reproduction. With `backend/app/api/calendar.py` and `backend/app/services/calendar_google.py` restored from `1f28d4fd`, the create, patch, and delete tests returned 200. The patch card title was the new title. The delete card status was `cancelled`. The create card `external_id` was `evt-should-not-exist`. `test_local_patch_commit_failure_restores_the_google_event` passed on that tree. After those two files were restored to this branch, `tests/test_calendar_create_receipt.py` plus `test_local_insert_failure_deletes_google_event`, `test_duplicate_external_id_deletes_google_event_and_fails_confirm`, and `test_update_patches_google_before_local_and_failure_keeps_row` passed, 14 tests.
+- Evidence. Behavior test. The patch and delete cases go through `PATCH /api/calendar/{id}` and `DELETE /api/calendar/{id}` with a real job-linked claim. The arm helper is the production function. The test records its false result so a fingerprint rejection cannot pass in its place.
+- Close. When `arm_remote_claim` returns false, insert, patch, and delete make no provider call and the handler returns 409 with the closed sentence. The claim stays `open` with an empty remote id, and the local row does not change. A connected update whose arm commits still patches. Compensate patch and compensate delete still run after a local commit failure.
+- Unit. This pull request. See First unit. Not closed on `release` until the parent accepts it.
 
 ### CAL-02. Patch, delete, and RSVP have no receipt repair
 
@@ -620,7 +649,7 @@ These contracts are still in the code and are not residuals. Web login denies a 
 - Impact. A completed local action leaves the job waiting. The next click does not report it and does not run it again.
 - Reproduction. Executed a fake transport. The first finish raised. The second commit returned `kind` `unknown`. `opened` stayed `["/tmp/fixture.txt"]`, the second call returned false, and finish was posted once. `xdg-open` was not run.
 - Evidence. Behavior test.
-- Close. The design in Desktop recovery design. No timeout and no second `perform`.
+- Close. The parent accepts a design, then a later unit implements it. The proposal in Desktop recovery design replaces the earlier step that let the person confirm the same claim again. An `armed` record is unknown. The same claim does not call `perform` again. An `executed` record retries finish only. A new action uses a new claim and says the original outcome is unknown. That design does not close the operating-system call gap and does not prove exactly-once side effects.
 - Unit. Parent review. No code in this pull request.
 
 ### DESK-07. No live enrolled package
