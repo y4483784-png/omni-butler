@@ -10,19 +10,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.core.db import SessionLocal, init_db
+from app.core.db import SessionLocal, init_db, set_rls_context
 from app.models.models import (
     CalendarEvent,
     EventReceipt,
     Message,
     ScheduleConfirmClaim,
     Session as ChatSession,
+    SessionEvent,
+    TaskRun,
 )
 from app.services import task_run
 from app.services.calendar_secrets import sign_oauth_state
 from app.services.message_format import serialize_message
 from app.services.schedule_confirm import phase_for_stored_card
-from tests.test_calendar_google import CLIENT_SECRET, CODE, FERNET_KEY, FakeGoogle, _cleanup, _insert_calls
+from tests.test_calendar_google import (
+    CLIENT_SECRET,
+    CODE,
+    FERNET_KEY,
+    FakeGoogle,
+    _cleanup,
+    _delete_calls,
+    _insert_calls,
+    _patch_calls,
+)
 
 
 @pytest.fixture
@@ -529,5 +540,279 @@ def test_written_create_stays_incomplete_until_the_receipt_is_filed(
     finally:
         db.rollback()
         db.close()
+        _drop_receipts(user_id)
+        _cleanup(user_id)
+
+
+def _link_running_job(token: str, session_id: int, user_id: int) -> None:
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        claim = db.get(ScheduleConfirmClaim, token)
+        assert claim is not None
+        generation = (
+            db.query(TaskRun.generation)
+            .filter(TaskRun.user_id == user_id)
+            .order_by(TaskRun.generation.desc())
+            .limit(1)
+            .scalar()
+        )
+        job = TaskRun(
+            user_id=user_id,
+            session_id=session_id,
+            generation=int(generation or 0) + 1,
+            status="running",
+            allowed_tools="[]",
+            kind="job",
+            goal="arm fence",
+            web_constraint="allow",
+            intent_version=int(claim.intent_version or 1),
+            exec_token="held-worker",
+            exec_epoch=1,
+        )
+        db.add(job)
+        db.flush()
+        claim.generation_ids = json.dumps([job.id])
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_a_running_job_does_not_insert_when_the_arm_matches_zero_rows(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    init_db()
+    title = f"臂门-{uuid4().hex[:8]}"
+    body = _create_body(title, start="2031-03-02T09:00:00", end="2031-03-02T10:00:00")
+    token, session_id, user_id = _open(auth_client, body)
+    try:
+        _connect(auth_client, user_id)
+        _link_running_job(token, session_id, user_id)
+        fake_google.insert_id = "evt-should-not-exist"
+        created = _post(auth_client, body, token)
+        assert created.status_code == 409, created.text
+        assert created.json()["detail"] == "这张确认已经失效，未写入。"
+        assert _titles(user_id, title) == []
+        assert _insert_calls(fake_google) == []
+        claim = _claim(token)
+        assert claim == {"status": "open", "remote_request_id": ""}
+    finally:
+        _drop_receipts(user_id)
+        _cleanup(user_id)
+
+
+_CLOSED = "这张确认已经失效，未写入。"
+_UNKNOWN = "结果未知，未再次写入。请先核对日历。"
+
+
+def _session(client: TestClient) -> tuple[int, int]:
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200, me.text
+    user_id = me.json()["id"]
+    db = SessionLocal()
+    try:
+        row = ChatSession(user_id=user_id, title="创建回执")
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        session_id = row.id
+    finally:
+        db.close()
+    task_run.begin_turn(user_id=user_id, session_id=session_id)
+    return session_id, user_id
+
+
+def _issue(client: TestClient, session_id: int, action: str, **fields: object) -> str:
+    opened = client.post(
+        "/api/calendar/confirm-claims",
+        json={"session_id": session_id, "action": action, **fields},
+    )
+    assert opened.status_code == 200, opened.text
+    return opened.json()["confirm_token"]
+
+
+def _linked_event(user_id: int, *, title: str, external_id: str) -> int:
+    db = SessionLocal()
+    try:
+        row = CalendarEvent(
+            user_id=user_id,
+            title=title,
+            start_at=datetime(2031, 4, 2, 9, 0),
+            end_at=datetime(2031, 4, 2, 10, 0),
+            status="active",
+            timezone="Asia/Shanghai",
+            location="",
+            description="",
+            participants="[]",
+            provider="google",
+            external_id=external_id,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return int(row.id)
+    finally:
+        db.close()
+
+
+def _event_state(event_id: int) -> dict:
+    db = SessionLocal()
+    try:
+        row = db.get(CalendarEvent, event_id)
+        assert row is not None
+        return {
+            "title": row.title,
+            "status": row.status,
+            "external_id": row.external_id or "",
+            "provider": row.provider or "",
+            "start_at": row.start_at.isoformat() if row.start_at else "",
+            "end_at": row.end_at.isoformat() if row.end_at else "",
+        }
+    finally:
+        db.close()
+
+
+def _confirm_count(session_id: int, token: str) -> int:
+    db = SessionLocal()
+    try:
+        return (
+            db.query(SessionEvent)
+            .filter(
+                SessionEvent.session_id == session_id,
+                SessionEvent.kind == "confirm",
+                SessionEvent.body == token,
+            )
+            .count()
+        )
+    finally:
+        db.close()
+
+
+def _watch_arm(monkeypatch) -> list[bool]:
+    from app.services import schedule_confirm
+
+    seen: list[bool] = []
+    real = schedule_confirm.arm_remote_claim
+
+    def watch(*args, **kwargs):
+        result = real(*args, **kwargs)
+        seen.append(bool(result))
+        return result
+
+    monkeypatch.setattr(schedule_confirm, "arm_remote_claim", watch)
+    return seen
+
+
+def _assert_closed(response, seen: list[bool]) -> None:
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail == _CLOSED
+    assert detail != _UNKNOWN
+    assert seen == [False]
+
+
+def test_a_running_job_does_not_patch_when_the_arm_matches_zero_rows(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    old_title = f"原标题-{uuid4().hex[:8]}"
+    new_title = f"改后-{uuid4().hex[:8]}"
+    user_id = 0
+    try:
+        session_id, user_id = _session(auth_client)
+        _connect(auth_client, user_id)
+        event_id = _linked_event(user_id, title=old_title, external_id=f"evt-{uuid4().hex[:8]}")
+        token = _issue(auth_client, session_id, "update", title=new_title, event_id=event_id)
+        _link_running_job(token, session_id, user_id)
+        seen = _watch_arm(monkeypatch)
+        before = _event_state(event_id)
+        confirms = _confirm_count(session_id, token)
+        fake_google.calls.clear()
+        patched = auth_client.patch(
+            f"/api/calendar/{event_id}",
+            json={"title": new_title, "confirm_token": token},
+        )
+        _assert_closed(patched, seen)
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert _insert_calls(fake_google) == []
+        assert _event_state(event_id) == before
+        assert _claim(token) == {"status": "open", "remote_request_id": ""}
+        assert _confirm_count(session_id, token) == confirms
+    finally:
+        _drop_receipts(user_id)
+        _cleanup(user_id)
+
+
+def test_a_running_job_does_not_delete_when_the_arm_matches_zero_rows(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    title = f"原标题-{uuid4().hex[:8]}"
+    user_id = 0
+    try:
+        session_id, user_id = _session(auth_client)
+        _connect(auth_client, user_id)
+        event_id = _linked_event(user_id, title=title, external_id=f"evt-{uuid4().hex[:8]}")
+        token = _issue(auth_client, session_id, "cancel", event_id=event_id)
+        _link_running_job(token, session_id, user_id)
+        seen = _watch_arm(monkeypatch)
+        before = _event_state(event_id)
+        confirms = _confirm_count(session_id, token)
+        fake_google.calls.clear()
+        deleted = auth_client.delete(f"/api/calendar/{event_id}?confirm_token={token}")
+        _assert_closed(deleted, seen)
+        assert _patch_calls(fake_google) == []
+        assert _delete_calls(fake_google) == []
+        assert _insert_calls(fake_google) == []
+        assert _event_state(event_id) == before
+        assert before["status"] == "active"
+        assert _claim(token) == {"status": "open", "remote_request_id": ""}
+        assert _confirm_count(session_id, token) == confirms
+    finally:
+        _drop_receipts(user_id)
+        _cleanup(user_id)
+
+
+def test_local_patch_commit_failure_restores_the_google_event(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    from sqlalchemy.orm import Session as OrmSession
+
+    init_db()
+    old_title = f"原标题-{uuid4().hex[:8]}"
+    new_title = f"改后-{uuid4().hex[:8]}"
+    user_id = 0
+    original = OrmSession.commit
+
+    def fail_changed_title(self):
+        pending = [
+            obj
+            for obj in self.dirty
+            if isinstance(obj, CalendarEvent) and obj.title == new_title
+        ]
+        if pending:
+            raise RuntimeError("local update failed")
+        return original(self)
+
+    try:
+        _session_id, user_id = _session(auth_client)
+        _connect(auth_client, user_id)
+        event_id = _linked_event(user_id, title=old_title, external_id=f"evt-{uuid4().hex[:8]}")
+        before = _event_state(event_id)
+        monkeypatch.setattr(OrmSession, "commit", fail_changed_title)
+        fake_google.calls.clear()
+        patched = auth_client.patch(f"/api/calendar/{event_id}", json={"title": new_title})
+        assert patched.status_code == 502, patched.text
+        assert patched.json()["detail"] == "本地保存失败，未完成修改。"
+        patches = _patch_calls(fake_google)
+        assert [call["json"] for call in patches] == [
+            {"summary": new_title},
+            {"summary": old_title},
+        ]
+        assert _delete_calls(fake_google) == []
+        assert _insert_calls(fake_google) == []
+        assert _event_state(event_id) == before
+    finally:
         _drop_receipts(user_id)
         _cleanup(user_id)

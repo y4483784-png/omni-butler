@@ -87,9 +87,16 @@ class CalendarRemoteReadError(CalendarRemoteError):
 
 
 class CalendarRemoteWriteError(CalendarRemoteError):
-    def __init__(self, message: str = _WRITE_FAILED, *, unknown: bool = False) -> None:
+    def __init__(
+        self,
+        message: str = _WRITE_FAILED,
+        *,
+        unknown: bool = False,
+        closed: bool = False,
+    ) -> None:
         super().__init__(message)
         self.unknown = unknown
+        self.closed = closed
 
 
 _DEFINITE_REJECTION = frozenset({400, 401, 403, 404})
@@ -327,7 +334,7 @@ class GoogleCalendarProvider:
             self._reopen_unsent()
             raise
         except CalendarRemoteWriteError as exc:
-            if not exc.unknown:
+            if not exc.unknown and not exc.closed:
                 self._reopen_known()
             raise
         except (CalendarRemoteReadError, CalendarTokenError, CalendarTransientError):
@@ -1177,7 +1184,7 @@ class GoogleCalendarProvider:
             raise CalendarRemoteReadError(_READ_FAILED)
         return body
 
-    def _patch_google_event(self, event_id: str, body: dict) -> dict:
+    def _patch_google_event(self, event_id: str, body: dict, *, arm: bool = True) -> dict:
         """PATCH one primary event. ``sendUpdates=all`` only when attendees are present."""
         if not event_id or not body:
             return {}
@@ -1188,7 +1195,8 @@ class GoogleCalendarProvider:
         if "conferenceData" in body:
             params["conferenceDataVersion"] = "1"
         self._access_token()
-        self._arm_user_write(event_id)
+        if arm and not self._arm_user_write(event_id):
+            self._refuse_unarmed()
         try:
             response = self._call_while_live("PATCH", url, json=body, params=params or None)
         except CalendarRemoteReadError:
@@ -1203,7 +1211,7 @@ class GoogleCalendarProvider:
     def _restore_patch(self, event_id: str, body: dict) -> None:
         """Best-effort undo of a patch when the local commit fails. Log only the event id."""
         try:
-            self._patch_google_event(event_id, body)
+            self._patch_google_event(event_id, body, arm=False)
         except CalendarRemoteError:
             logger.error("google calendar compensate patch failed event_id=%s", event_id)
 
@@ -1214,13 +1222,25 @@ class GoogleCalendarProvider:
         with live_provider_call(token):
             return self._call(method, url, **kwargs)
 
-    def _arm_user_write(self, key: str) -> None:
+    def _arm_user_write(self, key: str) -> bool:
         token = self.db.info.get("confirm_token")
-        if not token or not str(key or "").strip():
-            return
+        if not token:
+            return True
+        marker = str(key or "").strip()
+        if not marker:
+            self.db.rollback()
+            return False
         from app.services.schedule_confirm import arm_remote_claim
 
-        arm_remote_claim(self.db, str(token), str(key).strip())
+        if arm_remote_claim(self.db, str(token), marker):
+            return True
+        self.db.rollback()
+        return False
+
+    def _refuse_unarmed(self) -> None:
+        from app.services.schedule_confirm import CONFIRM_DETAIL
+
+        raise CalendarRemoteWriteError(CONFIRM_DETAIL["closed"], closed=True)
 
     def _reopen_unsent(self) -> None:
         token = self.db.info.get("confirm_token")
@@ -1356,7 +1376,8 @@ class GoogleCalendarProvider:
             body["conferenceData"] = _meet_request(request_id)
             params["conferenceDataVersion"] = "1"
         self._access_token()
-        self._arm_user_write(request_id)
+        if not self._arm_user_write(request_id):
+            self._refuse_unarmed()
         try:
             response = self._call_while_live("POST", _EVENTS_URL, json=body, params=params or None)
         except CalendarRemoteReadError:
@@ -1441,7 +1462,8 @@ class GoogleCalendarProvider:
         """
         url = f"{_EVENTS_URL}/{quote(event_id, safe='')}"
         self._access_token()
-        self._arm_user_write(event_id)
+        if not self._arm_user_write(event_id):
+            self._refuse_unarmed()
         try:
             response = self._call_while_live("DELETE", url)
         except CalendarRemoteReadError:
