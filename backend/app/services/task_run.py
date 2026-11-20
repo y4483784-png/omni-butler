@@ -183,6 +183,16 @@ def _apply_event(db, row: TaskRun, event: str) -> Turn:
                 from app.services.task_images import mark_pending_delete
 
                 mark_pending_delete(db, user_id=row.user_id, task_run_id=row.id)
+            if row.kind == "job":
+                from app.services.resume import publish_event
+
+                publish_event(
+                    db,
+                    user_id=int(row.user_id),
+                    session_id=int(row.session_id),
+                    kind="status",
+                    body=target,
+                )
             return _to_turn(row)
         db.expire(row)
         fresh = _load_row(db, user_id=row.user_id, generation=row.generation)
@@ -298,6 +308,16 @@ def _insert_running(
     )
     db.add(created)
     db.flush()
+    if created.kind == "job":
+        from app.services.resume import publish_event
+
+        publish_event(
+            db,
+            user_id=int(created.user_id),
+            session_id=int(created.session_id),
+            kind="status",
+            body="running",
+        )
     return _to_turn(created)
 
 
@@ -526,15 +546,35 @@ def apply_intent(
         .with_for_update()
         .all()
     )
+    changed: list[str] = []
     for claim in claims:
         if row.id not in _claim_ids(claim.generation_ids):
             continue
+        before = claim.status
         if (claim.remote_request_id or "").strip():
             if claim.status not in {"unknown", "written"}:
                 claim.status = "unknown"
-            continue
-        if claim.status == "open":
+        elif claim.status == "open":
             claim.status = "cancelled"
+        if claim.status != before:
+            changed.append(str(claim.token))
+    from app.services.resume import publish_event
+
+    publish_event(
+        db,
+        user_id=int(row.user_id),
+        session_id=int(row.session_id),
+        kind="status",
+        body=str(row.status),
+    )
+    for token in changed:
+        publish_event(
+            db,
+            user_id=int(row.user_id),
+            session_id=int(row.session_id),
+            kind="confirm",
+            body=token,
+        )
     task_run_id = row.id
     db.commit()
     return IntentApply(applied=True, task_run_id=task_run_id)

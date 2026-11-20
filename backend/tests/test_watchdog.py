@@ -408,6 +408,8 @@ def test_output_commit_gap():
     empty_session = _session(user_id)
     empty_job = _job(user_id, empty_session, goal="empty")
     start = datetime(2026, 11, 19, 12, 0, 0)
+    _patch(user_id, job.generation, exec_token="holder", exec_epoch=1, intent_version=1)
+    _patch(user_id, empty_job.generation, exec_token="holder", exec_epoch=1, intent_version=1)
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)
@@ -422,6 +424,9 @@ def test_output_commit_gap():
             previous_commit_at=None,
             newer=True,
             call_ended=False,
+            exec_token="holder",
+            exec_epoch=1,
+            intent_version=1,
         )
         assert message_id is not None
         assert committed == start
@@ -439,6 +444,9 @@ def test_output_commit_gap():
             previous_commit_at=committed,
             newer=True,
             call_ended=False,
+            exec_token="holder",
+            exec_epoch=1,
+            intent_version=1,
         )
         assert same_id == message_id
         assert same_at == committed
@@ -457,6 +465,9 @@ def test_output_commit_gap():
             previous_commit_at=start,
             newer=True,
             call_ended=False,
+            exec_token="holder",
+            exec_epoch=1,
+            intent_version=1,
         )
         assert updated_id == message_id
         assert updated_at == five
@@ -475,6 +486,9 @@ def test_output_commit_gap():
             previous_commit_at=updated_at,
             newer=True,
             call_ended=True,
+            exec_token="holder",
+            exec_epoch=1,
+            intent_version=1,
         )
         assert ended_id == message_id
         assert ended_at == ended
@@ -493,6 +507,9 @@ def test_output_commit_gap():
             previous_commit_at=None,
             newer=True,
             call_ended=True,
+            exec_token="holder",
+            exec_epoch=1,
+            intent_version=1,
         )
         assert skipped_id is None
         assert skipped_at is None

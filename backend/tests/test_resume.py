@@ -819,7 +819,11 @@ def test_a_client_at_cursor_100_receives_101_and_closing_the_stream_leaves_the_j
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)
-        db.add(SessionCursor(session_id=session_id, user_id=user_id, published_seq=99))
+        cursor = db.get(SessionCursor, session_id)
+        if cursor is None:
+            db.add(SessionCursor(session_id=session_id, user_id=user_id, published_seq=99))
+        else:
+            cursor.published_seq = 99
         db.commit()
         first = publish_event(db, user_id=user_id, session_id=session_id, kind="status", body="running")
         second = publish_event(db, user_id=user_id, session_id=session_id, kind="status", body="still")
@@ -920,9 +924,522 @@ def test_a_second_job_event_is_not_hidden_by_the_first_jobs_step_seq():
         db.commit()
     finally:
         db.close()
-    assert published == 1
-    assert [row["seq"] for row in delivered] == [1]
-    assert delivered[0]["body"] == str(second)
-    assert first_window["cursor"] == 1
+    assert published == 3
+    assert [row["seq"] for row in delivered] == [1, 2, 3]
+    assert delivered[-1]["body"] == str(second)
+    assert first_window["cursor"] == 3
     assert second_window == first_window
     assert {row["id"]: row["status"] for row in first_window["jobs"]} == {first: "running", second: "running"}
+
+
+def test_an_event_published_after_the_stream_opens_is_delivered(plain_client):
+    user_id = _admin()
+    session_id = plain_client.post("/api/sessions").json()["id"]
+    task_id = _open_job(user_id, session_id)
+
+    async def one_event() -> bytes:
+        import anyio
+
+        from app.main import app
+
+        chunks: list[bytes] = []
+        started = anyio.Event()
+        got_body = anyio.Event()
+        requested = False
+        cookie = "; ".join(f"{key}={value}" for key, value in plain_client.cookies.items())
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": f"/api/sessions/{session_id}/events",
+            "raw_path": f"/api/sessions/{session_id}/events".encode(),
+            "query_string": b"after=0",
+            "headers": [(b"cookie", cookie.encode())],
+            "client": ("127.0.0.1", 123),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+
+        def publish() -> None:
+            db = SessionLocal()
+            try:
+                set_rls_context(db, user_id)
+                publish_event(db, user_id=user_id, session_id=session_id, kind="status", body="later")
+                db.commit()
+            finally:
+                db.close()
+
+        async def receive():
+            nonlocal requested
+            if not requested:
+                requested = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await got_body.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                assert message["status"] == 200
+                started.set()
+            elif message["type"] == "http.response.body" and message.get("body"):
+                chunks.append(message["body"])
+                if b"later" in message["body"]:
+                    got_body.set()
+
+        async def publish_after_open() -> None:
+            await started.wait()
+            await anyio.to_thread.run_sync(publish)
+
+        with anyio.fail_after(5):
+            async with anyio.create_task_group() as group:
+                group.start_soon(publish_after_open)
+                await app(scope, receive, send)
+        return b"".join(chunks)
+
+    with patch("app.services.task_run.stop") as stop:
+        import anyio
+
+        seen = anyio.run(one_event).decode()
+    assert "later" in seen
+    assert stop.call_count == 0
+    assert _load(task_id).status == "running"
+
+
+def test_a_snapshot_waits_for_the_status_commit():
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    first = SessionLocal()
+    set_rls_context(first, user_id)
+    row = first.get(TaskRun, task_id)
+    row.status = "waiting_person"
+    allocated = publish_event(
+        first,
+        user_id=user_id,
+        session_id=session_id,
+        kind="status",
+        body="waiting_person",
+    )
+    started = threading.Event()
+    finished = threading.Event()
+    box: dict = {}
+
+    def reader() -> None:
+        other = SessionLocal()
+        try:
+            set_rls_context(other, user_id)
+            started.set()
+            box["snapshot"] = read_snapshot(other, user_id=user_id, session_id=session_id)
+            other.commit()
+        except Exception as exc:
+            box["error"] = exc
+            other.rollback()
+        finally:
+            other.close()
+            finished.set()
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    assert started.wait(2)
+    time.sleep(0.4)
+    assert not finished.is_set()
+    first.commit()
+    first.close()
+    assert finished.wait(5)
+    thread.join(timeout=5)
+    assert "error" not in box
+    snapshot = box["snapshot"]
+    assert snapshot["cursor"] == allocated
+    assert snapshot["jobs"][0]["status"] == "waiting_person"
+    assert snapshot["jobs"][0]["id"] == task_id
+
+
+def test_arming_a_claim_is_in_the_same_cursor_as_the_snapshot():
+    from app.services.schedule_confirm import arm_remote_claim
+
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    token = f"arm-{uuid4().hex}"
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        job = db.get(TaskRun, task_id)
+        job.exec_token = "worker"
+        job.exec_epoch = 2
+        job.intent_version = 1
+        db.add(
+            ScheduleConfirmClaim(
+                token=token,
+                user_id=user_id,
+                session_id=session_id,
+                status="open",
+                action="calendar.create",
+                fingerprint=token,
+                scope="",
+                generation_ids=json.dumps([task_id]),
+                remote_request_id="",
+                intent_version=1,
+            )
+        )
+        db.commit()
+        armed = arm_remote_claim(
+            db,
+            token,
+            "req-9",
+            exec_token="worker",
+            exec_epoch=2,
+            intent_version=1,
+        )
+        claim = db.get(ScheduleConfirmClaim, token)
+        status = claim.status
+        marker = claim.remote_request_id
+        seqs = [
+            int(row.seq)
+            for row in db.query(SessionEvent)
+            .filter(SessionEvent.session_id == session_id, SessionEvent.kind == "confirm", SessionEvent.body == token)
+            .all()
+        ]
+        snapshot = read_snapshot(db, user_id=user_id, session_id=session_id)
+        db.commit()
+        cursor = snapshot["cursor"]
+        job_status = snapshot["jobs"][0]["status"]
+    finally:
+        db.close()
+    assert armed is True
+    assert status == "unknown"
+    assert marker == "req-9"
+    assert seqs
+    assert cursor == max(seqs)
+    assert job_status == "running"
+
+
+def test_a_sweep_does_not_publish_a_foreground_turn():
+    from app.services import task_run
+    from app.tasks.watchdog import run_sweep
+
+    user_id = _user()
+    session_id = _session(user_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        turn = task_run.open_alongside(db, user_id=user_id, session_id=session_id, kind="turn", goal="talk")
+        turn_id = int(turn.id)
+        db.commit()
+    finally:
+        db.close()
+    with patch("app.tasks.job.run_job.delay") as delay:
+        run_sweep()
+        probe = SessionLocal()
+        try:
+            set_rls_context(probe, user_id)
+            assert dispatch_task(probe, turn_id) == 0
+        finally:
+            probe.close()
+    assert all(call.args[0] != turn_id for call in delay.call_args_list)
+    stored = _load(turn_id)
+    assert stored.kind == "turn"
+    assert stored.exec_token is None
+    assert stored.dispatch_token is None
+    assert stored.status == "running"
+
+
+def test_a_stale_stream_holder_does_not_keep_the_later_text():
+    import asyncio
+
+    from app.core.llm import AnswerDelta
+    from app.services.loop_round import Hold
+    from app.tasks.job import _stream_turn
+
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        job = db.get(TaskRun, task_id)
+        job.exec_token = "holder"
+        job.exec_epoch = 4
+        job.intent_version = 1
+        db.commit()
+    finally:
+        db.close()
+
+    async def fake_stream(*_args, **_kwargs):
+        yield AnswerDelta("kept")
+        other = SessionLocal()
+        try:
+            set_rls_context(other, user_id)
+            row = other.get(TaskRun, task_id)
+            row.exec_token = "newer"
+            row.exec_epoch = 5
+            row.intent_version = 2
+            other.commit()
+        finally:
+            other.close()
+        yield AnswerDelta("beta")
+
+    class Pulse:
+        def lost(self) -> bool:
+            return False
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        job = db.get(TaskRun, task_id)
+        hold = Hold(
+            user_id=user_id,
+            generation=int(job.generation),
+            exec_token="holder",
+            exec_epoch=4,
+            intent_version=1,
+        )
+        with patch("app.core.llm.stream_chat", fake_stream):
+            streamed = asyncio.run(_stream_turn(db, job, [], [], hold, Pulse()))
+    finally:
+        db.close()
+    assert streamed is None
+    stored = SessionLocal()
+    try:
+        rows = stored.query(Message).filter(Message.session_id == session_id).all()
+        text = " ".join(row.content or "" for row in rows)
+    finally:
+        stored.close()
+    assert "kept" in text
+    assert "beta" not in text
+
+
+def test_a_quiet_stream_renews_the_hold_and_a_dead_holder_is_reclaimed():
+    import asyncio
+
+    from app.core.config import settings
+
+    user_id = _user()
+    session_id = _session(user_id)
+    seen: dict = {}
+    previous = settings.llm_timeout
+    settings.llm_timeout = 3
+
+    async def quiet(*_args, **_kwargs):
+        from app.core.llm import AnswerDelta
+
+        other = SessionLocal()
+        try:
+            set_rls_context(other, user_id)
+            row = other.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").one()
+            seen["id"] = int(row.id)
+            seen["first"] = row.hold_until
+        finally:
+            other.close()
+        await asyncio.sleep(2.0)
+        seen["second"] = _load(seen["id"]).hold_until
+        probe = SessionLocal()
+        try:
+            set_rls_context(probe, user_id)
+            seen["live"] = dispatch_task(probe, seen["id"])
+        finally:
+            probe.close()
+        if False:
+            yield AnswerDelta("unused")
+        raise RuntimeError("drop the holder")
+
+    try:
+        set_executor(None)
+        with (
+            patch("app.tasks.job._loop_enabled", return_value=True),
+            patch("app.core.llm.stream_chat", quiet),
+            pytest.raises(RuntimeError, match="drop the holder"),
+        ):
+            db = SessionLocal()
+            try:
+                set_rls_context(db, user_id)
+                enqueue_job(db, user_id=user_id, session_id=session_id, goal="quiet")
+            finally:
+                db.close()
+        assert seen["second"] > seen["first"]
+        assert seen["live"] == 0
+        held = _load(seen["id"])
+        old_token = held.exec_token
+        assert old_token
+        db = SessionLocal()
+        try:
+            set_rls_context(db, user_id)
+            row = db.get(TaskRun, seen["id"])
+            row.hold_until = datetime(2000, 1, 1)
+            row.dispatch_until = datetime(2000, 1, 1)
+            db.commit()
+        finally:
+            db.close()
+        set_executor(lambda _messages, _tools: ModelTurn("done", "", (), "stop"))
+        db = SessionLocal()
+        try:
+            set_rls_context(db, user_id)
+            assert dispatch_task(db, seen["id"]) == 1
+        finally:
+            db.close()
+        reclaimed = _load(seen["id"])
+        assert reclaimed.exec_token != old_token
+        assert reclaimed.status == "completed"
+    finally:
+        settings.llm_timeout = previous
+        set_executor(None)
+
+
+def test_a_long_tool_renews_the_hold_and_a_live_holder_is_not_reclaimed():
+    from app.agents.harness.types import ToolResult
+    from app.core.config import settings
+
+    user_id = _user()
+    session_id = _session(user_id)
+    seen: dict = {}
+    previous = settings.llm_timeout
+    settings.llm_timeout = 3
+
+    def executor(messages, _tools):
+        if "id" not in seen:
+            found = SessionLocal()
+            try:
+                set_rls_context(found, user_id)
+                seen["id"] = int(
+                    found.query(TaskRun)
+                    .filter(TaskRun.session_id == session_id, TaskRun.kind == "job")
+                    .one()
+                    .id
+                )
+            finally:
+                found.close()
+        if any(item.get("role") == "tool" for item in messages):
+            return ModelTurn("done", "", (), "stop")
+        return ModelTurn("", "", (ToolCallSpec("call-long", "kb", "{}"),), "tool_calls")
+
+    def fake_invoke(_name, _ctx, _args):
+        task_id = seen["id"]
+        first = _load(task_id).hold_until
+        time.sleep(2.0)
+        second = _load(task_id).hold_until
+        probe = SessionLocal()
+        try:
+            set_rls_context(probe, user_id)
+            seen["live"] = dispatch_task(probe, task_id)
+        finally:
+            probe.close()
+        seen["renewed"] = second > first
+        seen["token"] = _load(task_id).exec_token
+        return ToolResult(direct_answer="slept")
+
+    try:
+        set_executor(executor)
+        with patch("app.agents.harness.gateway.invoke", fake_invoke):
+            db = SessionLocal()
+            try:
+                set_rls_context(db, user_id)
+                task_id = enqueue_job(db, user_id=user_id, session_id=session_id, goal="tool")
+            finally:
+                db.close()
+        task_id = seen["id"]
+        assert seen["renewed"] is True
+        assert seen["live"] == 0
+        assert seen["token"]
+        assert _load(task_id).status == "completed"
+        assert _calls(task_id)[0].state == "result"
+    finally:
+        settings.llm_timeout = previous
+        set_executor(None)
+
+
+@pytest.mark.parametrize(
+    ("name", "action", "claim_status", "expect_state", "expect_result"),
+    [
+        ("desktop.open", "desktop.open", "unknown", "unknown", "结果未知"),
+        ("calendar", "calendar.create", "unknown", "unknown", "结果未知"),
+        ("mail.send", "mail.send", "unknown", "unknown", "结果未知"),
+        ("errand.place", "errand.place", "unknown", "unknown", "结果未知"),
+        ("desktop.open", "desktop.open", "written", "result", "已写入：req-1"),
+        ("calendar", "calendar.create", "written", "result", "已写入：req-1"),
+        ("mail.send", "mail.send", "written", "result", "已写入：req-1"),
+        ("errand.place", "errand.place", "written", "result", "已写入：req-1"),
+    ],
+)
+def test_a_lost_write_is_reconstructed_without_sending(
+    name: str,
+    action: str,
+    claim_status: str,
+    expect_state: str,
+    expect_result: str,
+):
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    token = f"recover-{uuid4().hex}"
+    arguments = json.dumps({"action": "create"}) if name == "calendar" else "{}"
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        step = TaskStep(
+            user_id=user_id,
+            task_run_id=task_id,
+            seq=1,
+            phase="awaiting_results",
+            content="",
+            reasoning_content="",
+        )
+        db.add(step)
+        db.flush()
+        db.add(
+            ToolCall(
+                user_id=user_id,
+                task_step_id=step.id,
+                tool_call_id="call-recover",
+                position=0,
+                name=name,
+                arguments=arguments,
+                state="awaiting_confirm",
+                claim_token=token,
+                intent_version=1,
+            )
+        )
+        db.add(
+            ScheduleConfirmClaim(
+                token=token,
+                user_id=user_id,
+                session_id=session_id,
+                status=claim_status,
+                action=action,
+                fingerprint=token,
+                scope="",
+                generation_ids=json.dumps([task_id]),
+                remote_request_id="req-1",
+                intent_version=1,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    def executor(_messages, _tools):
+        call = _calls(task_id)[0]
+        assert call.state == expect_state
+        assert call.result == expect_result
+        return ModelTurn("done", "", (), "stop")
+
+    sent: list[str] = []
+    set_executor(executor)
+    with (
+        patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
+        patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
+        patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+    ):
+        _dispatch(user_id, task_id)
+    assert sent == []
+    call = _calls(task_id)[0]
+    assert call.state == expect_state
+    assert call.result == expect_result
+    claim = SessionLocal()
+    try:
+        stored = claim.get(ScheduleConfirmClaim, token)
+        assert stored.status == claim_status
+        assert stored.remote_request_id == "req-1"
+    finally:
+        claim.close()

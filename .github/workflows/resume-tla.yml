@@ -22,4 +22,14 @@ jobs:
           java-version: "21"
 
       - name: Check the resume model
-        run: python3 verification/resume/check.py
+        run: |
+          python3 verification/resume/check.py
+          python3 verification/resume/check.py --stop-on-disconnect
+          python3 verification/resume/check.py --hold-without-reserve
+          python3 verification/resume/check.py --publish-during-crash
+          python3 verification/resume/check.py --reclaim-live
+          python3 verification/resume/check.py --model-before-calls
+          python3 verification/resume/check.py --allow-resend
+          python3 verification/resume/check.py --allow-stale
+          python3 verification/resume/check.py --allow-dirty
+          python3 verification/resume/check.py --drop-recover

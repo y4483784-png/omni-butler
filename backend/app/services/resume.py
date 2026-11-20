@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -42,6 +44,7 @@ SET dispatch_token = :token,
     dispatch_epoch = dispatch_epoch + 1,
     dispatch_until = :until
 WHERE id = :id
+  AND kind = 'job'
   AND status = 'running'
   AND exec_token IS NULL
   AND (dispatch_token IS NULL OR dispatch_until < :now)
@@ -55,6 +58,7 @@ SET exec_token = NULL,
     dispatch_epoch = dispatch_epoch + 1,
     dispatch_until = :until
 WHERE id = :id
+  AND kind = 'job'
   AND status = 'running'
   AND exec_token IS NOT NULL
   AND hold_until < :now
@@ -67,6 +71,7 @@ SET status = 'running',
     dispatch_epoch = dispatch_epoch + 1,
     dispatch_until = :until
 WHERE id = :id
+  AND kind = 'job'
   AND status = 'waiting_person'
   AND continuation_due = true
   AND exec_token IS NULL
@@ -82,6 +87,7 @@ SET exec_token = :worker,
     dispatch_until = NULL,
     continuation_due = false
 WHERE id = :id
+  AND kind = 'job'
   AND status = 'running'
   AND dispatch_token = :token
   AND dispatch_epoch = :epoch
@@ -89,6 +95,12 @@ WHERE id = :id
   AND dispatch_until >= :now
   AND exec_token IS NULL
 """
+
+_STREAM_WAIT_SECONDS = 0.25
+_waiters: dict[int, set[asyncio.Event]] = {}
+_waiter_guard = threading.Lock()
+_listener_guard = threading.Lock()
+_listener_installed = False
 
 
 def _clock(now: datetime | None) -> datetime:
@@ -118,13 +130,55 @@ def _begin_publication(db: Session) -> None:
     raw.isolation_level = None
     connection.exec_driver_sql("BEGIN IMMEDIATE")
 
-    def _restore(session, transaction) -> None:
-        if transaction.parent is not None:
-            event.listen(session, "after_transaction_end", _restore, once=True)
-            return
+    def _restore(_session) -> None:
         raw.isolation_level = ""
 
-    event.listen(db, "after_transaction_end", _restore, once=True)
+    event.listen(db, "after_commit", _restore, once=True)
+    event.listen(db, "after_rollback", _restore, once=True)
+
+
+def _install_listener() -> None:
+    global _listener_installed
+    with _listener_guard:
+        if _listener_installed:
+            return
+
+        def _after_commit(session: Session) -> None:
+            waiting = session.info.pop("resume_wake", ())
+            for session_id in waiting:
+                _wake(int(session_id))
+
+        def _after_rollback(session: Session) -> None:
+            session.info.pop("resume_wake", None)
+
+        event.listen(Session, "after_commit", _after_commit)
+        event.listen(Session, "after_rollback", _after_rollback)
+        _listener_installed = True
+
+
+def _wake(session_id: int) -> None:
+    with _waiter_guard:
+        waiting = tuple(_waiters.get(int(session_id), ()))
+    for waiter in waiting:
+        waiter.set()
+
+
+def register_waiter(session_id: int) -> asyncio.Event:
+    _install_listener()
+    waiter = asyncio.Event()
+    with _waiter_guard:
+        _waiters.setdefault(int(session_id), set()).add(waiter)
+    return waiter
+
+
+def discard_waiter(session_id: int, waiter: asyncio.Event) -> None:
+    with _waiter_guard:
+        waiting = _waiters.get(int(session_id))
+        if waiting is None:
+            return
+        waiting.discard(waiter)
+        if not waiting:
+            _waiters.pop(int(session_id), None)
 
 
 def _ensure_cursor(db: Session, *, user_id: int, session_id: int) -> None:
@@ -152,6 +206,8 @@ def publish_event(
         raise ValueError(kind)
     _begin_publication(db)
     _ensure_cursor(db, user_id=int(user_id), session_id=int(session_id))
+    _install_listener()
+    db.info.setdefault("resume_wake", set()).add(int(session_id))
     current = _locked_seq(db, session_id=int(session_id))
     seq = current + 1
     db.add(
@@ -289,6 +345,16 @@ def dispatch_task(db: Session, task_run_id: int, *, now: datetime | None = None)
         if matched != 1:
             db.rollback()
             continue
+        if attempt is reserve_waiting:
+            row = db.get(TaskRun, int(task_run_id))
+            if row is not None:
+                publish_event(
+                    db,
+                    user_id=int(row.user_id),
+                    session_id=int(row.session_id),
+                    kind="status",
+                    body="running",
+                )
         db.commit()
         _publish_run(db, int(task_run_id), token)
         return 1

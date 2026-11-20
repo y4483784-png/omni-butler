@@ -11,7 +11,13 @@ from app.core.deps import get_db_scoped
 from app.core.ownership import require_owned_session
 from app.models.models import Message, Session as ChatSession, SessionCursor, SessionEvent, User
 from app.services.message_format import serialize_message
-from app.services.resume import events_after, read_snapshot
+from app.services.resume import (
+    _STREAM_WAIT_SECONDS,
+    discard_waiter,
+    events_after,
+    read_snapshot,
+    register_waiter,
+)
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -81,16 +87,46 @@ def get_events(
     current_user: User = Depends(get_current_user),
 ):
     require_owned_session(db, session_id, current_user.id)
-    payload = events_after(db, session_id=int(session_id), after=int(after))
     db.commit()
+    user_id = int(current_user.id)
+    owned_session = int(session_id)
+    cursor = int(after)
+
+    def _load(after_seq: int) -> list[dict]:
+        from app.core.db import SessionLocal, set_rls_context
+
+        owned = SessionLocal()
+        try:
+            set_rls_context(owned, user_id)
+            rows = events_after(owned, session_id=owned_session, after=int(after_seq))
+            owned.rollback()
+            return rows
+        finally:
+            owned.close()
 
     async def stream():
-        for item in payload:
-            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+        applied = cursor
+        waiter = None
         try:
-            await asyncio.Future()
+            waiter = register_waiter(owned_session)
+            while True:
+                waiter.clear()
+                rows = await asyncio.to_thread(_load, applied)
+                for item in rows:
+                    seq = int(item["seq"])
+                    if seq <= applied:
+                        continue
+                    applied = seq
+                    yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+                try:
+                    await asyncio.wait_for(waiter.wait(), timeout=_STREAM_WAIT_SECONDS)
+                except TimeoutError:
+                    continue
         except asyncio.CancelledError:
             return
+        finally:
+            if waiter is not None:
+                discard_waiter(owned_session, waiter)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 

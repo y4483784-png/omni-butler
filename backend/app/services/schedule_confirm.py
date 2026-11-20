@@ -420,6 +420,8 @@ def consume_schedule_claim(
     live_ids = [row.id for row in rows if row.status in _LIVE]
     if not live_ids:
         claim.status = "cancelled"
+        _stamp_claim_phase(db, claim.session_id, claim.token, "cancelled")
+        _emit_claim(db, claim)
         db.commit()
         raise ScheduleConfirmClosed("closed")
     result = db.execute(
@@ -517,11 +519,13 @@ def arm_remote_claim(
             return False
         db.expire(claim)
         _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
+        _emit_claim(db, claim)
         db.commit()
         return True
     claim.status = "unknown"
     claim.remote_request_id = marker
     _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
+    _emit_claim(db, claim)
     db.commit()
     return True
 
@@ -535,6 +539,7 @@ def reopen_unsent_claim(db: Session, token: str) -> None:
         return
     claim.status = "open"
     _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
+    _emit_claim(db, claim)
     db.commit()
 
 
@@ -546,6 +551,7 @@ def reopen_known_rejection(db: Session, token: str) -> None:
     claim.status = "open"
     claim.remote_request_id = ""
     _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
+    _emit_claim(db, claim)
     db.commit()
 
 
@@ -556,6 +562,7 @@ def finish_confirm(db: Session, token: str | None, *, commit: bool = True) -> No
         return
     claim.status = "written"
     _stamp_claim_phase(db, claim.session_id, claim.token, "confirmed")
+    _emit_claim(db, claim)
     if commit:
         db.commit()
 
@@ -591,6 +598,7 @@ def release_schedule_claim(db: Session, user_id: int, token: str) -> None:
         raise ScheduleConfirmClosed()
     claim.status = "cancelled"
     _stamp_claim_phase(db, claim.session_id, claim.token, "cancelled")
+    _emit_claim(db, claim)
     db.commit()
 
 
@@ -628,6 +636,7 @@ def cancel_open_schedule_claims(
         if keep and set(_load_ids(claim.generation_ids)).intersection(keep):
             continue
         claim.status = "cancelled"
+        _emit_claim(db, claim)
         changed += 1
     return changed
 
@@ -856,6 +865,7 @@ def _bind_open_claim(
         return existing.token, existing.expires_at
     if existing is not None:
         existing.status = "cancelled"
+        _emit_claim(db, existing)
         db.flush()
     token = str(uuid4())
     row = ScheduleConfirmClaim(
@@ -1001,6 +1011,18 @@ def _people(value: object) -> list[dict[str, str]]:
     rows = [invitee_wire(item) for item in parse_invitees(value)]
     rows.sort(key=lambda item: (item["email"].casefold(), item["name"]))
     return rows
+
+
+def _emit_claim(db: Session, claim: ScheduleConfirmClaim) -> None:
+    from app.services.resume import publish_event
+
+    publish_event(
+        db,
+        user_id=int(claim.user_id),
+        session_id=int(claim.session_id),
+        kind="confirm",
+        body=str(claim.token),
+    )
 
 
 def _stamp_claim_phase(db: Session, session_id: int, token: str, phase: str) -> None:

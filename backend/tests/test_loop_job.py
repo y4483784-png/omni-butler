@@ -451,7 +451,14 @@ def _drive_held(user_id: int, session_id: int) -> None:
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)
-        _drive(db, user_id=user_id, task_id=job.id, worker=job.exec_token)
+        _drive(
+            db,
+            user_id=user_id,
+            task_id=job.id,
+            worker=job.exec_token,
+            exec_epoch=int(job.exec_epoch or 0),
+            intent_version=int(job.intent_version or 1),
+        )
     finally:
         db.close()
 
@@ -531,7 +538,7 @@ def test_a_later_drive_sends_one_request_from_stored_results():
 
     real_request = job_module._request
 
-    def stop_before_results(db, task):
+    def stop_before_results(db, task, *rest):
         step = (
             db.query(TaskStep)
             .filter(TaskStep.task_run_id == task.id)
@@ -540,7 +547,7 @@ def test_a_later_drive_sends_one_request_from_stored_results():
         )
         if step is not None and step.phase == "results_ready":
             raise SystemExit(7)
-        return real_request(db, task)
+        return real_request(db, task, *rest)
 
     set_executor(executor)
     with patch("app.agents.harness.gateway.invoke", fake_invoke), patch.object(job_module, "_request", stop_before_results):
@@ -830,7 +837,7 @@ def test_a_saved_web_result_is_not_searched_again(monkeypatch):
 
     real_request = job_module._request
 
-    def stop_before_results(db, task):
+    def stop_before_results(db, task, *rest):
         step = (
             db.query(TaskStep)
             .filter(TaskStep.task_run_id == task.id)
@@ -839,7 +846,7 @@ def test_a_saved_web_result_is_not_searched_again(monkeypatch):
         )
         if step is not None and step.phase == "results_ready":
             raise SystemExit(7)
-        return real_request(db, task)
+        return real_request(db, task, *rest)
 
     set_executor(executor)
     with patch.object(job_module, "_request", stop_before_results):

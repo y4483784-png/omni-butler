@@ -97,6 +97,9 @@ def run_sweep() -> None:
                 logger.exception("watchdog notice failed task_run_id=%s", task_run_id)
                 db.rollback()
         for task_run_id in ids:
+            row = db.get(TaskRun, int(task_run_id))
+            if row is None or row.kind != "job":
+                continue
             try:
                 from app.services.resume import dispatch_task
 

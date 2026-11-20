@@ -66,23 +66,57 @@ def anchors() -> None:
     require("max(" not in snapshot, "jobs cursor uses a max id")
 
 
-def write_cfg(directory: Path) -> Path:
-    lines = ["SPECIFICATION Spec"]
+FLAGS = {
+    "--stop-on-disconnect": ("allowDisconnectStop", "DisconnectDoesNotStopJob"),
+    "--hold-without-reserve": ("allowHoldEarly", "ReservationThenAdopt"),
+    "--publish-during-crash": ("allowPublishCrash", "PublishCrashRecovers"),
+    "--reclaim-live": ("allowReclaim", "LiveHolderNotReclaimed"),
+    "--model-before-calls": ("allowEarlyModel", "CallsSavedBeforeModel"),
+    "--allow-resend": ("allowResend", "ArmedWriteNotSent"),
+    "--allow-stale": ("allowStale", "StaleEpochDropped"),
+    "--allow-dirty": ("allowDirty", "CommitOrderedCursor"),
+    "--drop-recover": ("allowRecover", "LiveRecovery"),
+}
+
+CONSTANTS = (
+    "allowDisconnectStop",
+    "allowHoldEarly",
+    "allowPublishCrash",
+    "allowReclaim",
+    "allowEarlyModel",
+    "allowResend",
+    "allowStale",
+    "allowDirty",
+    "allowRecover",
+)
+
+
+def write_cfg(directory: Path, broken: str | None) -> Path:
+    values = {name: "FALSE" for name in CONSTANTS}
+    values["allowRecover"] = "TRUE"
+    if broken is not None:
+        name, _expected = FLAGS[broken]
+        values[name] = "FALSE" if name == "allowRecover" else "TRUE"
+    lines = ["CONSTANTS"]
+    for name in CONSTANTS:
+        lines.append(f"{name} = {values[name]}")
+    lines.append("SPECIFICATION Spec")
     for name in HELD:
         lines.append(f"INVARIANT {name}")
+    lines.append("PROPERTY LiveRecovery")
     lines.append("")
     path = directory / "Resume.cfg"
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
 
-def run_tlc() -> subprocess.CompletedProcess[str]:
+def run_tlc(broken: str | None) -> subprocess.CompletedProcess[str]:
     if shutil.which("java") is None:
         fail_model("java is not on PATH")
     with tempfile.TemporaryDirectory(prefix="resume-tlc-") as tmp:
         meta = Path(tmp)
         shutil.copy(SPEC_DIR / "Resume.tla", meta / "Resume.tla")
-        cfg = write_cfg(meta)
+        cfg = write_cfg(meta, broken)
         return subprocess.run(
             [
                 "java",
@@ -107,27 +141,45 @@ def run_tlc() -> subprocess.CompletedProcess[str]:
         )
 
 
-def main() -> None:
+def violated_names(output: str) -> list[str]:
     import re
 
+    found = re.findall(r"Invariant (\w+) is violated", output)
+    if re.search(r"Temporal property LiveRecovery was violated", output):
+        found.append("LiveRecovery")
+    return found
+
+
+def main() -> None:
+    chosen = [arg for arg in sys.argv[1:] if arg in FLAGS]
+    if len(chosen) > 1:
+        fail_model("pass one break flag")
+    broken = chosen[0] if chosen else None
     anchors()
     try:
-        result = run_tlc()
+        result = run_tlc(broken)
     except subprocess.TimeoutExpired:
         fail_model("TLC timed out")
     output = f"{result.stdout}\n{result.stderr}"
     if "Deadlock reached" in output:
         print(output)
         fail_model("TLC deadlocked.")
-    broken = re.findall(r"Invariant (\w+) is violated", output)
-    if result.returncode != 0 and not broken and "No error has been found" not in output:
+    names = violated_names(output)
+    if broken is None:
+        if result.returncode != 0 and not names and "No error has been found" not in output:
+            print(output)
+            fail_model(f"TLC exited {result.returncode} without a property violation.")
+        if names:
+            print(output)
+            print("violated: " + ", ".join(names))
+            raise SystemExit(1)
+        print("Resume holds " + ", ".join(HELD) + " and LiveRecovery.")
+        raise SystemExit(0)
+    expected = FLAGS[broken][1]
+    if expected not in names:
         print(output)
-        fail_model(f"TLC exited {result.returncode} without a property violation.")
-    if broken:
-        print(output)
-        print("violated: " + ", ".join(broken))
-        raise SystemExit(1)
-    print("Resume holds " + ", ".join(HELD) + ".")
+        fail_model(f"{broken} did not violate {expected}.")
+    print(f"{broken} violates {expected}.")
     raise SystemExit(0)
 
 

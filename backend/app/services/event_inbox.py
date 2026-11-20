@@ -23,6 +23,7 @@ from app.services.calendar import draft_expires_at
 from app.services.schedule_confirm import (
     ScheduleConfirmClosed,
     _bind_open_claim,
+    _emit_claim,
     _stamp_claim_phase,
     canonical_action,
     parse_card_expiry,
@@ -377,6 +378,7 @@ def _reissue(
     for claim in _open_claims(db, user_id, session_id):
         claim.status = "cancelled"
         _stamp_claim_phase(db, session_id, claim.token, "cancelled")
+        _emit_claim(db, claim)
     db.flush()
     expires_at = draft_expires_at()
     try:

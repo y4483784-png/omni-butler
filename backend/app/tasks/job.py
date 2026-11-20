@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 from uuid import uuid4
+
+from sqlalchemy import update
 
 from app.core.config import settings
 from app.core.db import SessionLocal, maintenance_session, set_rls_context
@@ -45,7 +48,10 @@ def commit_job_output(
     previous_commit_at: datetime | None,
     newer: bool,
     call_ended: bool,
-) -> tuple[int | None, datetime | None]:
+    exec_token: str,
+    exec_epoch: int,
+    intent_version: int,
+) -> tuple[int | None, datetime | None] | None:
     due = task_run.output_commit_due(
         have_output=bool(content),
         newer=newer,
@@ -55,6 +61,20 @@ def commit_job_output(
     )
     if not due:
         return message_id, previous_commit_at
+    held = db.execute(
+        update(TaskRun)
+        .where(TaskRun.user_id == int(user_id))
+        .where(TaskRun.generation == int(generation))
+        .where(TaskRun.kind == "job")
+        .where(TaskRun.status == "running")
+        .where(TaskRun.exec_token == exec_token)
+        .where(TaskRun.exec_epoch == int(exec_epoch))
+        .where(TaskRun.intent_version == int(intent_version))
+        .values(exec_token=exec_token)
+    )
+    if int(held.rowcount or 0) != 1:
+        db.rollback()
+        return None
     if message_id is None:
         row = Message(
             session_id=int(session_id),
@@ -94,9 +114,19 @@ def _loop_enabled() -> bool:
     return _executor is not None or bool(settings.llm_api_key)
 
 
-def _start(db, *, user_id: int, session_id: int, generation: int, goal: str) -> None:
+def _start(
+    db,
+    *,
+    user_id: int,
+    session_id: int,
+    generation: int,
+    goal: str,
+    exec_token: str,
+    exec_epoch: int,
+    intent_version: int,
+) -> tuple[int | None, datetime | None] | None:
     text = (goal or "").strip()
-    commit_job_output(
+    return commit_job_output(
         db,
         user_id=int(user_id),
         session_id=int(session_id),
@@ -107,6 +137,9 @@ def _start(db, *, user_id: int, session_id: int, generation: int, goal: str) -> 
         previous_commit_at=None,
         newer=True,
         call_ended=True,
+        exec_token=exec_token,
+        exec_epoch=exec_epoch,
+        intent_version=intent_version,
     )
 
 
@@ -125,6 +158,10 @@ def run_job(
         set_rls_context(db, user_id)
         from app.services.resume import adopt
 
+        pre = db.get(TaskRun, int(task_run_id))
+        if pre is None or pre.kind != "job":
+            db.rollback()
+            return
         worker = uuid4().hex
         taken = adopt(
             db,
@@ -142,19 +179,33 @@ def run_job(
         if job is None:
             return
         token = bind(user_id=int(user_id), generation=int(job.generation))
+        held_token = str(job.exec_token or worker)
+        held_epoch = int(job.exec_epoch or 0)
+        held_intent = int(job.intent_version or 1)
         try:
             if _latest_step(db, int(job.id)) is None and job.last_progress_at is None:
-                _start(
+                started = _start(
                     db,
                     user_id=int(user_id),
                     session_id=int(job.session_id),
                     generation=int(job.generation),
                     goal=job.goal or "",
+                    exec_token=held_token,
+                    exec_epoch=held_epoch,
+                    intent_version=held_intent,
                 )
-                db.refresh(job)
+                if started is None:
+                    return
             if not _loop_enabled():
                 return
-            _drive(db, user_id=int(user_id), task_id=int(job.id), worker=str(job.exec_token or worker))
+            _drive(
+                db,
+                user_id=int(user_id),
+                task_id=int(job.id),
+                worker=held_token,
+                exec_epoch=held_epoch,
+                intent_version=held_intent,
+            )
         finally:
             reset(token)
     finally:
@@ -181,22 +232,86 @@ def _latest_step(db, task_id: int):
     )
 
 
-def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
-    from app.services.loop_round import Hold, Phase, save_turn
+class _HoldPulse:
+    def __init__(self, hold) -> None:
+        self._hold = hold
+        self._stop = threading.Event()
+        self._lost = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="hold-pulse", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=1)
+
+    def lost(self) -> bool:
+        return self._lost.is_set()
+
+    def _run(self) -> None:
+        interval = float(settings.llm_timeout) / 2
+        while not self._stop.wait(interval):
+            db = SessionLocal()
+            try:
+                set_rls_context(db, int(self._hold.user_id))
+                taken = task_run.renew_hold(
+                    db,
+                    user_id=int(self._hold.user_id),
+                    generation=int(self._hold.generation),
+                    exec_token=str(self._hold.exec_token),
+                    exec_epoch=int(self._hold.exec_epoch),
+                    intent_version=int(self._hold.intent_version),
+                )
+            except Exception:
+                db.rollback()
+                continue
+            finally:
+                db.close()
+            if taken != 1:
+                self._lost.set()
+                return
+
+
+def _drive(
+    db,
+    *,
+    user_id: int,
+    task_id: int,
+    worker: str,
+    exec_epoch: int,
+    intent_version: int,
+) -> None:
+    from app.services.loop_round import Hold
 
     job = db.get(TaskRun, task_id)
     db.refresh(job)
+    if str(job.exec_token or "") != worker or int(job.exec_epoch or 0) != int(exec_epoch):
+        return
+    if int(job.intent_version or 1) != int(intent_version):
+        return
     if _leave_before_model(job):
         return
     hold = Hold(
         user_id=int(user_id),
         generation=int(job.generation),
         exec_token=worker,
-        exec_epoch=int(job.exec_epoch or 0),
-        intent_version=int(job.intent_version or 1),
+        exec_epoch=int(exec_epoch),
+        intent_version=int(intent_version),
     )
+    pulse = _HoldPulse(hold)
+    pulse.start()
+    try:
+        _drive_held(db, job, hold, pulse)
+    finally:
+        pulse.stop()
+
+
+def _drive_held(db, job: TaskRun, hold, pulse: "_HoldPulse") -> None:
+    from app.services.loop_round import Phase, save_turn
+
     while True:
-        if is_stopped():
+        if is_stopped() or pulse.lost():
             return
         if _renew(db, hold) != 1:
             return
@@ -209,7 +324,7 @@ def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
             return
         if step is None or step.phase == Phase.RESULTS_READY.value:
             asked = None if step is None else int(step.seq)
-            produced, message_id = _request(db, job)
+            produced, message_id = _request(db, job, hold, pulse)
             if produced is None or is_stopped():
                 return
             saved = save_turn(db, hold=hold, turn=produced, message_id=message_id)
@@ -220,7 +335,7 @@ def _drive(db, *, user_id: int, task_id: int, worker: str) -> None:
             continue
         drafts: dict[str, dict] = {}
         while True:
-            action = _one_pass(db, hold, step.seq, job, drafts)
+            action = _one_pass(db, hold, step.seq, job, drafts, pulse)
             if action == "again":
                 continue
             if action == "model":
@@ -266,7 +381,7 @@ def _renew(db, hold) -> int:
     )
 
 
-def _request(db, job: TaskRun):
+def _request(db, job: TaskRun, hold, pulse: "_HoldPulse"):
     from app.agents.harness.constitution import load_constitution
     from app.core.llm import _build_job_request, assert_body_within_limit, resolve_executor
     from app.services.loop_round import job_tools
@@ -283,9 +398,12 @@ def _request(db, job: TaskRun):
     messages = _transcript(db, job, loaded.blocks if loaded.kind != "hidden" else ())
     tools = job_tools(constitution=load_constitution(), web_constraint=job.web_constraint or "allow")
     assert_body_within_limit(_build_job_request(resolve_executor(), messages, stream=False, tools=tools))
+    db.commit()
+    if pulse.lost():
+        return None, None
     if _executor is not None:
         return _executor(messages, tools), None
-    streamed = asyncio.run(_stream_turn(db, job, messages, tools))
+    streamed = asyncio.run(_stream_turn(db, job, messages, tools, hold, pulse))
     if streamed is None:
         return None, None
     return streamed
@@ -342,20 +460,7 @@ def _transcript(db, job: TaskRun, blocks) -> list[dict]:
     return messages
 
 
-def _renew_current(db, job: TaskRun) -> int:
-    if not job.exec_token:
-        return 0
-    return task_run.renew_hold(
-        db,
-        user_id=int(job.user_id),
-        generation=int(job.generation),
-        exec_token=str(job.exec_token),
-        exec_epoch=int(job.exec_epoch or 0),
-        intent_version=int(job.intent_version or 1),
-    )
-
-
-async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]):
+async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict], hold, pulse: "_HoldPulse"):
     from app.core.llm import (
         AnswerDelta,
         ModelTurn,
@@ -373,21 +478,16 @@ async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]
     finish = "stop"
     message_id = None
     previous = None
-    renewed_at = datetime.now(timezone.utc)
-    half = timedelta(seconds=float(settings.llm_timeout) / 2)
 
     async for item in stream_chat(messages, role=Role.CHAT, tools=tools, job=True):
-        now = datetime.now(timezone.utc)
-        if now - renewed_at >= half:
-            if _renew_current(db, job) != 1:
-                return None
-            renewed_at = now
+        if pulse.lost():
+            return None
         if isinstance(item, ReasoningDelta):
             reasoning.append(item.text)
             continue
         if isinstance(item, AnswerDelta):
             content.append(item.text)
-            message_id, previous = commit_job_output(
+            stored = commit_job_output(
                 db,
                 user_id=int(job.user_id),
                 session_id=int(job.session_id),
@@ -398,7 +498,13 @@ async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]
                 previous_commit_at=previous,
                 newer=True,
                 call_ended=False,
+                exec_token=hold.exec_token,
+                exec_epoch=hold.exec_epoch,
+                intent_version=hold.intent_version,
             )
+            if stored is None:
+                return None
+            message_id, previous = stored
             continue
         if isinstance(item, ToolCallDelta):
             slot = fragments.setdefault(item.index, {"id": "", "name": "", "arguments": ""})
@@ -410,10 +516,10 @@ async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]
             continue
         if isinstance(item, ToolRoundEnd):
             finish = item.finish
-    if datetime.now(timezone.utc) - renewed_at >= half and _renew_current(db, job) != 1:
+    if pulse.lost():
         return None
     if content:
-        message_id, _previous = commit_job_output(
+        stored = commit_job_output(
             db,
             user_id=int(job.user_id),
             session_id=int(job.session_id),
@@ -424,7 +530,13 @@ async def _stream_turn(db, job: TaskRun, messages: list[dict], tools: list[dict]
             previous_commit_at=previous,
             newer=True,
             call_ended=True,
+            exec_token=hold.exec_token,
+            exec_epoch=hold.exec_epoch,
+            intent_version=hold.intent_version,
         )
+        if stored is None:
+            return None
+        message_id, _previous = stored
     specs = tuple(
         ToolCallSpec(slot["id"], slot["name"], slot["arguments"])
         for _index, slot in sorted(fragments.items())
@@ -446,8 +558,6 @@ def _remote_marker(db, row: ToolCall) -> str:
 
 def _lookup_armed(db, hold, row: ToolCall) -> str:
     before = row.state
-    if row.name not in {"desktop.open", "desktop.run"}:
-        return "leave"
     from app.services.loop_round import note_unknown
 
     note_unknown(db, hold=hold, tool_call_id=row.tool_call_id)
@@ -460,7 +570,7 @@ def _lookup_armed(db, hold, row: ToolCall) -> str:
     return "again"
 
 
-def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict]) -> str:
+def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict], pulse: "_HoldPulse") -> str:
     from app.services.loop_round import TERMINAL, CallState, Phase, begin_read, claim_call, observe_ready, open_cards, save_read_result
 
     step = (
@@ -489,7 +599,7 @@ def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict]) -> str:
             continue
         if row.state not in {CallState.PENDING.value, CallState.RUNNING.value}:
             continue
-        if is_stopped():
+        if is_stopped() or pulse.lost():
             return "leave"
         if _renew(db, hold) != 1:
             return "leave"
@@ -502,10 +612,15 @@ def _one_pass(db, hold, seq: int, job: TaskRun, drafts: dict[str, dict]) -> str:
             if fresh.phase == Phase.RESULTS_READY.value:
                 return "model"
             return "again"
+        db.commit()
         try:
             result = _invoke(db, job, row)
         except Exception as exc:
+            if pulse.lost():
+                return "leave"
             return _stored(db, hold, row.tool_call_id, f"{type(exc).__name__}: {exc}", rejected=True)
+        if pulse.lost():
+            return "leave"
         card = result.schedule_card if isinstance(result.schedule_card, dict) else None
         if card is not None:
             from app.services.schedule_confirm import schedule_card_needs_claim

@@ -37,6 +37,7 @@ _SECRET_KEYS = frozenset(
     }
 )
 CONFIRM_ONLY = ("mail.send", "errand.place", "desktop.open", "desktop.run")
+_LOOKUP_WRITES = frozenset({*CONFIRM_ONLY, "calendar"})
 _CALENDAR_WRITES = frozenset(
     {
         "create",
@@ -635,7 +636,7 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
     if call_row.state == CallState.UNKNOWN.value:
         db.rollback()
         return memory
-    if call_row.name not in {"desktop.open", "desktop.run"}:
+    if call_row.name not in _LOOKUP_WRITES:
         db.rollback()
         return memory
     claim = None
@@ -646,19 +647,23 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
             .with_for_update()
             .one_or_none()
         )
-    armed = claim is not None and bool((claim.remote_request_id or "").strip())
-    finished = claim is not None and claim.status == "written"
-    if not armed or finished:
+    marker = "" if claim is None else (claim.remote_request_id or "").strip()
+    if claim is None or not marker:
         db.rollback()
         return memory
+    written = claim.status == "written"
     try:
-        step = apply(memory, LoopEvent.NOTE_UNKNOWN, call_id=tool_call_id)
+        step = apply(
+            memory,
+            LoopEvent.CONFIRM if written else LoopEvent.NOTE_UNKNOWN,
+            call_id=tool_call_id,
+        )
     except IllegalPhase:
         db.rollback()
         return None
     target = _call_by_id(step, tool_call_id)
     call_row.state = target.state.value
-    call_row.result = "结果未知"
+    call_row.result = f"已写入：{marker}" if written else "结果未知"
     entered = _store_phase(db, step_row, step.phase)
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     if entered:
