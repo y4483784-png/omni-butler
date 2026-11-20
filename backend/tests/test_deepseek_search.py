@@ -130,13 +130,36 @@ def test_invalid_query_does_not_construct_a_client(monkeypatch):
     assert missing.ok is False
     assert missing.denied is False
     assert missing.direct_answer
-    page = deepseek_search("news", ori_question="   ")
-    result = execute_web(_ctx(), {"query": "news", "ori_question": "   "})
-    assert isinstance(page, ToolError)
-    assert result.ok is False
-    assert result.denied is False
     assert capture.clients == 0
     assert capture.posts == []
+
+
+def test_invalid_ori_question_is_omitted_and_the_query_is_posted(monkeypatch):
+    capture = _Capture()
+    _arm(monkeypatch, capture)
+    query = "weather"
+    for ori in ("x" * 129, "   ", "", 12):
+        capture.queue.append((200, {"results": []}))
+        before = capture.clients
+        page = deepseek_search(query, ori_question=ori)
+        assert not isinstance(page, ToolError)
+        assert page.results == ()
+        assert capture.clients == before + 1
+        body = capture.posts[-1]["json"]
+        assert body["query"] == query
+        assert "ori_question" not in body
+        assert set(body) == {"query", "count", "need_content"}
+
+        capture.queue.append((200, {"results": []}))
+        result = execute_web(_ctx(), {"query": query, "ori_question": ori})
+        assert result.ok is True
+        assert result.denied is False
+        assert result.direct_answer == "没有找到结果。"
+        assert capture.clients == before + 2
+        posted = capture.posts[-1]["json"]
+        assert posted["query"] == query
+        assert "ori_question" not in posted
+        assert set(posted) == {"query", "count", "need_content"}
 
 
 def test_count_uses_five_unless_the_setting_is_in_range(monkeypatch):
