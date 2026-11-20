@@ -109,7 +109,6 @@ def _dialect(db: Session) -> str:
 
 
 def _begin_publication(db: Session) -> None:
-    """SQLite publication starts with BEGIN IMMEDIATE. PostgreSQL locks on FOR UPDATE."""
     if _dialect(db) != "sqlite":
         return
     connection = db.connection()
