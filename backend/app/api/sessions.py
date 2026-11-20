@@ -1,12 +1,17 @@
+import asyncio
+import json
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.deps import get_db_scoped
 from app.core.ownership import require_owned_session
-from app.models.models import Message, Session as ChatSession, User
+from app.models.models import Message, Session as ChatSession, SessionCursor, SessionEvent, User
 from app.services.message_format import serialize_message
+from app.services.resume import events_after, read_snapshot
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -56,6 +61,40 @@ def get_messages(
     return [serialize_message(m) for m in msgs]
 
 
+@router.get("/{session_id}/jobs")
+def get_jobs(
+    session_id: int,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    require_owned_session(db, session_id, current_user.id)
+    snapshot = read_snapshot(db, user_id=int(current_user.id), session_id=int(session_id))
+    db.commit()
+    return snapshot
+
+
+@router.get("/{session_id}/events")
+def get_events(
+    session_id: int,
+    after: int = 0,
+    db: Session = Depends(get_db_scoped),
+    current_user: User = Depends(get_current_user),
+):
+    require_owned_session(db, session_id, current_user.id)
+    payload = events_after(db, session_id=int(session_id), after=int(after))
+    db.commit()
+
+    async def stream():
+        for item in payload:
+            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            return
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 @router.patch("/{session_id}")
 def rename(
     session_id: int,
@@ -76,6 +115,10 @@ def delete(
     current_user: User = Depends(get_current_user),
 ):
     require_owned_session(db, session_id, current_user.id)
+    db.query(SessionEvent).filter(SessionEvent.session_id == session_id).delete()
+    cursor = db.get(SessionCursor, session_id)
+    if cursor is not None:
+        db.delete(cursor)
     db.query(Message).filter(Message.session_id == session_id).delete()
     s = db.get(ChatSession, session_id)
     if s:

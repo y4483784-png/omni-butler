@@ -68,6 +68,7 @@ export interface FollowAction {
   start_at: string;
   end_at: string;
   confirm_token?: string;
+  phase?: "draft" | "confirmed" | "unknown" | "cancelled" | string;
 }
 
 export interface FollowMailDraft {
@@ -429,6 +430,32 @@ export async function renameSession(id: number, title: string): Promise<SessionS
     body: JSON.stringify({ title }),
   });
   if (!r.ok) throw new Error("重命名失败");
+  return r.json();
+}
+
+export interface SessionJobRow {
+  id: number;
+  status: string;
+  goal: string;
+  generation: number;
+  kind: string;
+}
+
+export interface SessionClaimRow {
+  token: string;
+  status: string;
+  action: string;
+}
+
+export interface SessionJobSnapshot {
+  cursor: number;
+  jobs: SessionJobRow[];
+  claims: SessionClaimRow[];
+}
+
+export async function loadSessionJobs(sessionId: number, signal?: AbortSignal): Promise<SessionJobSnapshot> {
+  const r = await apiFetch(`/api/sessions/${sessionId}/jobs`, { signal });
+  if (!r.ok) throw new Error("加载任务失败");
   return r.json();
 }
 

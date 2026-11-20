@@ -815,6 +815,8 @@ async def chat(
                                         yield _sse({"type": "token", "content": piece})
                                 if leave_stream:
                                     break
+                            if is_stopped():
+                                leave_stream = True
                             if not leave_stream:
                                 for piece in reason_buf.finish():
                                     reasoning_parts.append(piece)

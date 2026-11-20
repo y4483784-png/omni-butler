@@ -77,6 +77,15 @@ def commit_job_output(
         generation=int(generation),
         now=now,
     )
+    from app.services.resume import publish_event
+
+    publish_event(
+        db,
+        user_id=int(user_id),
+        session_id=int(session_id),
+        kind="message",
+        body=content or "",
+    )
     db.commit()
     return message_id, now
 

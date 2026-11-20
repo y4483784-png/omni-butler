@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SessionSummary, ChatMsg } from "../api/client";
+import type { SessionSummary, ChatMsg, SessionJobRow } from "../api/client";
 import { previewUrls, releasePreviewUrls } from "../composerImages";
 
 import type { ChartPoint } from "../utils/chartPoints";
@@ -22,6 +22,7 @@ export interface SessionChatState {
   thinkingSteps: string[];
   routeHint: string;
   phaseHint: string;
+  jobs: SessionJobRow[];
   /** true after loadMessages or first send in this tab session */
   hydrated: boolean;
 }
@@ -60,6 +61,7 @@ const emptyChat = (): SessionChatState => ({
   thinkingSteps: [],
   routeHint: "",
   phaseHint: "",
+  jobs: [],
   hydrated: false,
 });
 

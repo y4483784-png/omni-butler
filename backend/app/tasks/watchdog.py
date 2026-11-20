@@ -68,6 +68,15 @@ def notice_running(db, task_run_id: int) -> None:
             )
         )
         row.notice_progress_at = stamp
+        from app.services.resume import publish_event
+
+        publish_event(
+            db,
+            user_id=int(row.user_id),
+            session_id=int(row.session_id),
+            kind="notice",
+            body=f"这一任务自 {shown} 起没有新的进展，仍在运行。generation={row.generation}",
+        )
     row.observed_progress_at = stamp
     db.commit()
 

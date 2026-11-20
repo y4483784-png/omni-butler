@@ -175,7 +175,11 @@ def read_snapshot(db: Session, *, user_id: int, session_id: int) -> dict:
     published_seq = _locked_seq(db, session_id=int(session_id))
     jobs = (
         db.query(TaskRun)
-        .filter(TaskRun.user_id == int(user_id), TaskRun.session_id == int(session_id))
+        .filter(
+            TaskRun.user_id == int(user_id),
+            TaskRun.session_id == int(session_id),
+            TaskRun.kind == "job",
+        )
         .order_by(TaskRun.generation.asc())
         .all()
     )
@@ -206,6 +210,24 @@ def read_snapshot(db: Session, *, user_id: int, session_id: int) -> dict:
             for row in claims
         ],
     }
+
+
+def events_after(db: Session, *, session_id: int, after: int) -> list[dict]:
+    rows = (
+        db.query(SessionEvent)
+        .filter(SessionEvent.session_id == int(session_id), SessionEvent.seq > int(after))
+        .order_by(SessionEvent.seq.asc())
+        .all()
+    )
+    return [
+        {
+            "session_id": int(row.session_id),
+            "seq": int(row.seq),
+            "kind": row.kind,
+            "body": row.body,
+        }
+        for row in rows
+    ]
 
 
 def reserve_idle(db: Session, *, task_run_id: int, token: str, now: datetime | None = None) -> int:

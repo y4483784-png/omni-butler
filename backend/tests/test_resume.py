@@ -120,7 +120,6 @@ def test_seq_100_blocks_the_publisher_of_seq_101():
             .all()
         )
         stored = [int(row.seq) for row in rows]
-        event_ids = [int(row.id) for row in rows]
         cursor = check.get(SessionCursor, session_id)
         published = int(cursor.published_seq)
         snapshot = read_snapshot(check, user_id=user_id, session_id=session_id)
@@ -130,7 +129,10 @@ def test_seq_100_blocks_the_publisher_of_seq_101():
     assert stored == [100, 101]
     assert published == 101
     assert snapshot["cursor"] == published
-    assert snapshot["cursor"] not in event_ids
+    assert snapshot["cursor"] == 101
+    received = [seq for seq in stored if seq > 100]
+    assert received == [101]
+    assert 100 in stored
 
 
 @pytest.fixture(autouse=True)
@@ -725,3 +727,160 @@ def test_waiting_person_without_continuation_returns_before_the_model():
     waiting = _load(task_id)
     assert waiting.status == "waiting_person"
     assert waiting.continuation_due is False
+
+
+def _admin() -> int:
+    db = SessionLocal()
+    try:
+        return int(db.query(User).filter(User.external_id == "admin").one().id)
+    finally:
+        db.close()
+
+
+def test_a_confirm_card_gets_a_seq_when_no_step_is_added():
+    from app.services.schedule_confirm import followup_create_raw, issue_schedule_claim
+
+    user_id = _user()
+    session_id = _session(user_id)
+    task_id = _open_job(user_id, session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        before = db.query(TaskStep).filter(TaskStep.task_run_id == task_id).count()
+        token, _expiry = issue_schedule_claim(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            action="calendar.create",
+            raw=followup_create_raw(
+                {
+                    "id": "act-1",
+                    "text": "send the note",
+                    "start_at": "2026-11-20T09:00:00",
+                    "end_at": "2026-11-20T09:30:00",
+                    "evidence": "",
+                }
+            ),
+            task_run_ids=[task_id],
+            expires_at=None,
+        )
+        steps = db.query(TaskStep).filter(TaskStep.task_run_id == task_id).count()
+        events = (
+            db.query(SessionEvent)
+            .filter(SessionEvent.session_id == session_id, SessionEvent.kind == "confirm")
+            .all()
+        )
+    finally:
+        db.close()
+    assert before == 0
+    assert steps == 0
+    assert [row.body for row in events] == [token]
+    assert int(events[0].seq) > 0
+
+
+def test_aborting_the_chat_fetch_leaves_the_job_running(plain_client):
+    session_id = plain_client.post("/api/sessions").json()["id"]
+
+    def router(_messages, result_model, *_args, **_kwargs):
+        return result_model.model_validate(
+            {"relation": "new", "target_generation": None, "web": "allow", "ask": ""}
+        )
+
+    with (
+        patch("app.core.llm.complete_json_object", router),
+        patch("app.api.chat._run_workflow_sync", return_value={"intent": "chat", "forced": None, "citations": [], "thinking_steps": [], "llm_messages": [], "direct_answer": "", "answer_reasoning": ""}),
+    ):
+        with plain_client.stream(
+            "POST",
+            "/api/chat",
+            json={"session_id": session_id, "message": "start alpha"},
+        ) as response:
+            assert response.status_code == 200
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(TaskRun)
+            .filter(TaskRun.session_id == session_id, TaskRun.kind == "job")
+            .all()
+        )
+        for row in rows:
+            db.expunge(row)
+    finally:
+        db.close()
+    assert len(rows) == 1
+    assert rows[0].status == "running"
+    assert rows[0].kind == "job"
+
+
+def test_a_client_at_cursor_100_receives_101_and_closing_the_stream_leaves_the_job(plain_client):
+    user_id = _admin()
+    session_id = plain_client.post("/api/sessions").json()["id"]
+    task_id = _open_job(user_id, session_id)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        db.add(SessionCursor(session_id=session_id, user_id=user_id, published_seq=99))
+        db.commit()
+        first = publish_event(db, user_id=user_id, session_id=session_id, kind="status", body="running")
+        second = publish_event(db, user_id=user_id, session_id=session_id, kind="status", body="still")
+        db.commit()
+    finally:
+        db.close()
+    assert first == 100
+    assert second == 101
+    snapshot = plain_client.get(f"/api/sessions/{session_id}/jobs").json()
+    assert snapshot["cursor"] == 101
+    assert any(row["id"] == task_id and row["status"] == "running" and row["kind"] == "job" for row in snapshot["jobs"])
+
+    async def one_event() -> bytes:
+        import anyio
+
+        from app.main import app
+
+        chunks: list[bytes] = []
+        got_body = anyio.Event()
+        requested = False
+        cookie = "; ".join(f"{key}={value}" for key, value in plain_client.cookies.items())
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": f"/api/sessions/{session_id}/events",
+            "raw_path": f"/api/sessions/{session_id}/events".encode(),
+            "query_string": b"after=100",
+            "headers": [(b"cookie", cookie.encode())],
+            "client": ("127.0.0.1", 123),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+
+        async def receive():
+            nonlocal requested
+            if not requested:
+                requested = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await got_body.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                assert message["status"] == 200
+            elif message["type"] == "http.response.body" and message.get("body"):
+                chunks.append(message["body"])
+                got_body.set()
+
+        with anyio.fail_after(5):
+            await app(scope, receive, send)
+        return b"".join(chunks)
+
+    with patch("app.services.task_run.stop") as stop:
+        import anyio
+
+        seen = anyio.run(one_event).decode()
+    assert "data:" in seen
+    line = next(part for part in seen.split("\n") if part.startswith("data:"))
+    assert json.loads(line[len("data:") :].strip())["seq"] == 101
+    assert stop.call_count == 0
+    assert _load(task_id).status == "running"

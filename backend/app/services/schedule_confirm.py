@@ -219,6 +219,15 @@ def issue_schedule_claim(
                 task_run_ids=ids,
                 expires_at=expires_at,
             )
+            from app.services.resume import publish_event
+
+            publish_event(
+                db,
+                user_id=int(user_id),
+                session_id=int(session_id),
+                kind="confirm",
+                body=token,
+            )
             db.commit()
             return token, expiry
         except IntegrityError:
@@ -366,7 +375,7 @@ def publish_followup_claims(
                 task_run_ids=[task_run_id],
                 expires_at=expires,
             )
-            actions.append({**item, "confirm_token": token})
+            actions.append({**item, "confirm_token": token, "phase": "draft"})
     finally:
         isolated.close()
     return {**card, "actions": actions}

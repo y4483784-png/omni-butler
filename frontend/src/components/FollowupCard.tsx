@@ -20,6 +20,10 @@ function ownerLabel(owner: string): string {
   return owner || "未指定";
 }
 
+export function confirmActionIsDraft(action: FollowAction): boolean {
+  return Boolean(action.confirm_token) && action.phase === "draft";
+}
+
 export function FollowupCard({
   card,
   onAsk,
@@ -189,7 +193,7 @@ export function FollowupCard({
           </div>
         </div>
       ) : null}
-      {card.phase === "draft" ? (
+      {actions.some(confirmActionIsDraft) ? (
         <div className="schedule-actions">
           <button type="button" className="ghost-btn" disabled={posting || expired} onClick={() => void confirm()}>
             确认加到日历

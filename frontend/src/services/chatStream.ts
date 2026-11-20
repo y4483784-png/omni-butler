@@ -57,6 +57,7 @@ function emptyChatState(): SessionChatState {
     thinkingSteps: [],
     routeHint: "",
     phaseHint: "",
+    jobs: [],
     hydrated: false,
   };
 }

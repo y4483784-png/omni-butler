@@ -335,8 +335,9 @@ def save_turn(
         )
     if (turn.content or "").strip():
         _write_answer(db, job.session_id, message_id, turn.content)
+        _note(db, job, "message", turn.content)
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
-    if not _commit_job(db, job):
+    if not _commit_job(db, job, kind="step", body=step.phase.value):
         return None
     return step
 
@@ -374,7 +375,7 @@ def begin_read(db: Session, *, hold: Hold, tool_call_id: str) -> Literal["invoke
         return "stale"
     _store_phase(db, step_row, step.phase)
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
-    if not _commit_job(db, job):
+    if not _commit_job(db, job, kind="step", body=step.phase.value):
         return "stale"
     return "invoke"
 
@@ -407,10 +408,11 @@ def save_read_result(
     call_row.result = redact_result(result)
     entered = _store_phase(db, step_row, step.phase)
     _assistant_message(db, job.session_id, call_row.result or "")
+    _note(db, job, "message", call_row.result or "")
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     if entered:
         _clear_due_if_set(db, hold)
-    if not _commit_job(db, job):
+    if not _commit_job(db, job, kind="step", body=step.phase.value):
         return None, False
     return step, entered
 
@@ -465,6 +467,7 @@ def open_cards(
             row.claim_token = token
             row.intent_version = int(hold.intent_version)
             tokens.append(token)
+            _note(db, job, "confirm", token)
         _store_phase(db, step_row, memory.phase)
     except (IllegalPhase, ScheduleConfirmClosed):
         db.rollback()
@@ -507,7 +510,7 @@ def observe_ready(db: Session, *, hold: Hold, step_id: int) -> bool:
     if not entered and cleared != 1:
         db.rollback()
         return False
-    return _commit_job(db, job)
+    return _commit_job(db, job, kind="step", body=Phase.RESULTS_READY.value)
 
 
 def confirm_call(
@@ -586,7 +589,7 @@ def confirm_call(
         claim.status = "unknown"
     else:
         claim.status = "cancelled"
-    if not _commit_job(db, job):
+    if not _commit_job(db, job, kind="confirm", body=key):
         raise ScheduleConfirmClosed("closed")
     return step
 
@@ -660,7 +663,7 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     if entered:
         _clear_due_if_set(db, hold)
-    if not _commit_job(db, job):
+    if not _commit_job(db, job, kind="step", body=step.phase.value):
         return None
     return step
 
@@ -710,6 +713,7 @@ def cancel_open_calls(db: Session, *, user_id: int, generation: int) -> int:
 
     mark_pending_delete(db, user_id=user_id, task_run_id=job.id)
     db.expire(job)
+    _note(db, job, "status", "stopped")
     return 1
 
 
@@ -819,6 +823,7 @@ def _save_final(
     )
     db.add(row)
     _write_answer(db, job.session_id, message_id, turn.content or "")
+    _note(db, job, "message", turn.content or "")
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     from app.services.task_images import mark_pending_delete
 
@@ -833,7 +838,7 @@ def _save_final(
     if effect.clear_hold and _leave(db, hold, status=effect.status or "completed") != 1:
         db.rollback()
         return None
-    if not _commit_job(db, job):
+    if not _commit_job(db, job, kind="step", body=step.phase.value):
         return None
     return step
 
@@ -860,7 +865,7 @@ def _deny_web(db, *, job, hold, step_row, call_row, memory) -> Literal["denied",
     task_run.touch_progress(db, user_id=job.user_id, generation=job.generation)
     if step.phase is Phase.RESULTS_READY:
         _clear_due_if_set(db, hold)
-    if not _commit_job(db, job):
+    if not _commit_job(db, job, kind="step", body=step.phase.value):
         return "stale"
     return "denied"
 
@@ -963,7 +968,16 @@ def _leave(db, hold: Hold, *, status: str) -> int:
             exec_epoch=TaskRun.exec_epoch + 1,
         )
     )
-    return int(result.rowcount or 0)
+    count = int(result.rowcount or 0)
+    if count == 1:
+        row = (
+            db.query(TaskRun)
+            .filter(TaskRun.user_id == hold.user_id, TaskRun.generation == hold.generation)
+            .one_or_none()
+        )
+        if row is not None:
+            _note(db, row, "status", status)
+    return count
 
 
 def _store_phase(db, step_row: TaskStep, phase: Phase) -> bool:
@@ -980,7 +994,21 @@ def _store_phase(db, step_row: TaskStep, phase: Phase) -> bool:
     return False
 
 
-def _commit_job(db, job: TaskRun) -> bool:
+def _note(db, job: TaskRun, kind: str, body: str) -> None:
+    from app.services.resume import publish_event
+
+    publish_event(
+        db,
+        user_id=int(job.user_id),
+        session_id=int(job.session_id),
+        kind=kind,
+        body=body,
+    )
+
+
+def _commit_job(db, job: TaskRun, *, kind: str | None = None, body: str = "") -> bool:
+    if kind:
+        _note(db, job, kind, body)
     db.expire(job)
     try:
         db.commit()

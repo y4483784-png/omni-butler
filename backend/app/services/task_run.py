@@ -595,8 +595,25 @@ def release_hold(
             exec_epoch=TaskRun.exec_epoch + 1,
         )
     )
+    changed = int(result.rowcount or 0)
+    if changed == 1:
+        session_id = (
+            db.query(TaskRun.session_id)
+            .filter(TaskRun.user_id == user_id, TaskRun.generation == generation)
+            .scalar()
+        )
+        if session_id is not None:
+            from app.services.resume import publish_event
+
+            publish_event(
+                db,
+                user_id=int(user_id),
+                session_id=int(session_id),
+                kind="status",
+                body=status,
+            )
     db.commit()
-    return int(result.rowcount or 0)
+    return changed
 
 
 def _stored_moment(now: datetime) -> datetime:
