@@ -310,8 +310,6 @@ def _fence_staged(image_id: int, task_run_id: int, *, mode: str) -> None:
                 .where(not_(TaskImage.task_run_id.in_(running)))
                 .values(purge_state="tombstone")
             )
-        else:
-            db.execute(_staged_update(image_id).values(purge_state="tombstone"))
         db.commit()
     except Exception:
         db.rollback()
@@ -370,7 +368,7 @@ def reconcile_task_images(*, now: datetime | None = None, store: BlobStore | Non
         if blob.exists(key):
             _fence_staged(image_id, task_run_id, mode="adopt")
         else:
-            _fence_staged(image_id, task_run_id, mode="abandon")
+            _fence_staged(image_id, task_run_id, mode="terminal")
     _retire_ready_rows()
     return _purge_all(store=blob)
 
