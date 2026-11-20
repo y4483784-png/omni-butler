@@ -1,0 +1,9 @@
+ts	phase	decision	why	evidence	result
+2026-11-20T15:31:53Z	start	opened the design run for LOOP-03 and TALK-04	parent asked for design and a failing reproduction before any production change	base 19867c51ac4e29c1ca16174668925133e4d76f9f	open
+2026-11-20T15:31:53Z	repro	ran the public worker overlap script	need an executed second invoke, not a helper-only note	verification/loop-owner/reproduction-log.txt	exit 1 defect_reproduced
+2026-11-20T15:31:53Z	premise	rejected continuation_due as the publisher	forcing the flag false still invoked twice through the idle reserve	verification/loop-owner/reproduction-log.txt supplement_due_forced_false_then_sweep	invoke_count 2
+2026-11-20T15:31:53Z	design	chose the call-row owner over a queued amendment	the call and the intent should each have one writer	docs/envisioned-product/2026-11-20-loop03-call-owner.md	open
+2026-11-20T15:31:53Z	evidence	left the Postgres race unrun	SQLite showed the blocked-tool overlap and cannot prove the lock order	docs/envisioned-product/2026-11-20-loop03-call-owner.md	INCONCLUSIVE for deadlock
+2026-11-20T15:49:18Z	review	kept the zero-defect branch in the repro script	that branch is how a later run reports the overlap is gone	verification/loop-owner/reproduce_overlap.py main	kept
+2026-11-20T15:49:18Z	review	removed the module banner from the repro script	the exit codes already live in main	verification/loop-owner/reproduce_overlap.py	deleted
+2026-11-20T15:49:18Z	design	corrected Design A after the critic	an intent bump breaks renew before save, and a pending sibling would miss the compare-and-swap	docs/envisioned-product/2026-11-20-loop03-call-owner.md	persist after invoke, renew ignores intent while the step is open, release only when the step is terminal
