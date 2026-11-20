@@ -370,6 +370,17 @@ function MessageRow({
               <MailSendCard card={m.scheduleCard} onChange={onScheduleChange} />
             ) : m.scheduleCard?.mode === "errand" ? (
               <ErrandCard card={m.scheduleCard} onChange={onScheduleChange} />
+            ) : m.scheduleCard?.mode === "desktop" ? (
+              <p
+                data-mode="desktop"
+                data-confirm-token={m.scheduleCard.confirm_token ?? ""}
+                data-action={m.scheduleCard.action ?? ""}
+                data-local-target={m.scheduleCard.local_target ?? ""}
+                data-local-args={JSON.stringify(m.scheduleCard.local_args ?? [])}
+                data-device-id={String(m.scheduleCard.device_id ?? "")}
+              >
+                {m.scheduleCard.device_label} {m.scheduleCard.local_target} {m.scheduleCard.action}
+              </p>
             ) : null}
             {m.content ? (
               <Markdown content={m.content} citations={m.citations} />

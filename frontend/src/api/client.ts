@@ -139,6 +139,10 @@ export interface ScheduleCard {
   consent?: string;
   confirm_token?: string;
   task_kind?: "job" | "turn" | string;
+  device_id?: number;
+  device_label?: string;
+  local_target?: string;
+  local_args?: string[];
 }
 
 export interface CalendarEventList {

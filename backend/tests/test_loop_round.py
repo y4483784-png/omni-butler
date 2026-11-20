@@ -461,9 +461,9 @@ def test_confirm_while_running_keeps_the_token_until_observe_ready():
     assert job.status == "running"
 
 
-def test_an_armed_desktop_open_with_no_finish_becomes_unknown():
+def test_an_armed_desktop_open_with_no_finish_stays_open():
     db, hold, turn = _held()
-    raw = {"local_target": "report", "local_args": []}
+    raw = {"device_id": 7, "local_target": "report", "local_args": []}
     save_turn(db, hold=hold, turn=_model(ToolCallSpec("call-a", "desktop.open", json.dumps(raw))))
     step = _steps(db, turn.id)[0]
     from app.services.calendar import draft_expires_at
@@ -489,10 +489,10 @@ def test_an_armed_desktop_open_with_no_finish_becomes_unknown():
         noted = note_unknown(db, hold=hold, tool_call_id="call-a")
         finish.assert_not_called()
     assert noted is not None
-    assert _call_rows(db, step.id)[0].state == "unknown"
+    assert _call_rows(db, step.id)[0].state == "awaiting_confirm"
     again = note_unknown(db, hold=hold, tool_call_id="call-a")
     assert again is not None
-    assert _call_rows(db, step.id)[0].state == "unknown"
+    assert _call_rows(db, step.id)[0].state == "awaiting_confirm"
 
 
 def test_cancel_open_calls_stops_the_job_and_marks_images():

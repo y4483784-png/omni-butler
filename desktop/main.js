@@ -9,6 +9,7 @@ const API = process.env.DESKTOP_API_URL || "http://127.0.0.1:8001";
 const SESSION_COOKIE = "omni_session";
 
 let packageToken = "";
+let packageDeviceId = "";
 let enrolling = null;
 
 function createWindow() {
@@ -28,6 +29,10 @@ function tokenFile() {
   return path.join(app.getPath("userData"), "package-token");
 }
 
+function deviceFile() {
+  return path.join(app.getPath("userData"), "package-device");
+}
+
 function readTokenFile() {
   try {
     return fs.readFileSync(tokenFile(), "utf8").trim();
@@ -43,9 +48,29 @@ function writeTokenFile(token) {
   fs.chmodSync(file, 0o600);
 }
 
+function writeDeviceFile(id) {
+  const file = deviceFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, String(id), { encoding: "utf8", mode: 0o600 });
+  fs.chmodSync(file, 0o600);
+}
+
+function readDeviceFile() {
+  try {
+    return fs.readFileSync(deviceFile(), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 function loadToken() {
   if (!packageToken) packageToken = readTokenFile();
   return packageToken;
+}
+
+function loadDeviceId() {
+  if (!packageDeviceId) packageDeviceId = readDeviceFile();
+  return packageDeviceId;
 }
 
 async function cookieHeader() {
@@ -85,6 +110,9 @@ async function enrollOnce() {
   if (!response.ok) return;
   const body = await response.json();
   if (!body || typeof body.token !== "string" || !body.token) return;
+  if (typeof body.id !== "number" || !Number.isInteger(body.id)) return;
+  packageDeviceId = String(body.id);
+  writeDeviceFile(body.id);
   packageToken = body.token;
   writeTokenFile(body.token);
 }
@@ -109,6 +137,7 @@ function runPackage(args, cookie, stdin) {
         ...process.env,
         PYTHONPATH: repo,
         DESKTOP_PACKAGE_TOKEN: token,
+        DESKTOP_DEVICE_ID: loadDeviceId(),
         DESKTOP_API_URL: API,
         DESKTOP_COOKIE: cookie,
       },
@@ -147,6 +176,7 @@ ipcMain.handle("desktop-confirm", async (_event, offer) => {
 
 app.whenReady().then(() => {
   loadToken();
+  loadDeviceId();
   session.defaultSession.cookies.on("changed", () => {
     enrollIfNeeded();
   });

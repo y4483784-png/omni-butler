@@ -14,24 +14,49 @@ _PROBES = {
 }
 
 
+def _enrolled_device_id() -> int:
+    raw = os.environ.get("DESKTOP_DEVICE_ID", "").strip()
+    if not raw.isdigit():
+        raise RuntimeError("DESKTOP_DEVICE_ID")
+    return int(raw)
+
+
+def _device_on(offer: dict, enrolled: int) -> int:
+    value = offer.get("device_id")
+    if type(value) is int:
+        return value
+    return enrolled
+
+
+def _action_body(offer: dict, device_id: int, request_id: str | None = None) -> dict:
+    body = {
+        "confirm_token": offer["confirm_token"],
+        "action": offer["action"],
+        "device_id": device_id,
+        "local_target": offer["local_target"],
+        "local_args": list(offer.get("local_args") or ()),
+    }
+    if request_id is not None:
+        body["request_id"] = request_id
+    return body
+
+
 def confirm_local(transport, offer, *, open_file, run_program) -> bool:
-    committed = transport.post(
-        "/api/desktop/commit",
-        {
-            "confirm_token": offer["confirm_token"],
-            "action": offer["action"],
-            "local_target": offer["local_target"],
-            "local_args": list(offer.get("local_args") or ()),
-        },
-    )
-    if not perform(committed, open_file=open_file, run_program=run_program):
+    enrolled = _enrolled_device_id()
+    device_id = _device_on(offer, enrolled)
+    committed = transport.post("/api/desktop/commit", _action_body(offer, device_id))
+    if committed.get("kind") != "armed":
+        return False
+    if not perform(
+        committed,
+        open_file=open_file,
+        run_program=run_program,
+        enrolled_device_id=enrolled,
+    ):
         return False
     transport.post(
         "/api/desktop/finish",
-        {
-            "confirm_token": offer["confirm_token"],
-            "request_id": committed.get("request_id") or "",
-        },
+        _action_body(offer, device_id, committed.get("request_id") or ""),
     )
     return True
 
@@ -85,6 +110,7 @@ def propose_probe(transport: UrllibTransport, action: str) -> dict:
         {
             "session_id": session_id,
             "action": action,
+            "device_id": _enrolled_device_id(),
             "local_target": target,
             "local_args": local_args,
         },

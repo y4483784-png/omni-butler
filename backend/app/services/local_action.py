@@ -11,7 +11,15 @@ from app.agents.harness.audit import write_audit
 from app.agents.harness.desktop_channel import PackageProof
 from app.agents.harness.surface import ServerSurface, local_tool_denial
 from app.core.db import set_rls_context
-from app.models.models import Message, ScheduleConfirmClaim, Session as ChatSession
+from app.models.models import (
+    DesktopDevice,
+    Message,
+    ScheduleConfirmClaim,
+    Session as ChatSession,
+    TaskRun,
+    TaskStep,
+    ToolCall,
+)
 from app.services.calendar import draft_expires_at
 from app.services.schedule_confirm import (
     CONFIRM_DETAIL,
@@ -47,17 +55,23 @@ class LocalClosed(Exception):
 @dataclass(frozen=True)
 class LocalAction:
     action: str
+    device_id: int
     local_target: str
     local_args: tuple[str, ...]
 
     def as_claim(self) -> dict:
-        return {"local_target": self.local_target, "local_args": list(self.local_args)}
+        return {
+            "device_id": self.device_id,
+            "local_target": self.local_target,
+            "local_args": list(self.local_args),
+        }
 
 
 @dataclass(frozen=True)
 class LocalOffer:
     token: str
     action: str
+    device_id: int
     local_target: str
     local_args: tuple[str, ...]
     expires_at: str
@@ -66,16 +80,24 @@ class LocalOffer:
         return {
             "confirm_token": self.token,
             "action": self.action,
+            "device_id": self.device_id,
             "local_target": self.local_target,
             "local_args": list(self.local_args),
             "expires_at": self.expires_at,
         }
 
 
-def parse_local_action(action: object, local_target: object, local_args: object) -> LocalAction:
+def parse_local_action(
+    action: object,
+    local_target: object,
+    local_args: object,
+    device_id: object,
+) -> LocalAction:
     name = str(action or "").strip()
     if name not in LOCAL_ACTIONS:
         raise LocalClosed(422, "本地动作无效")
+    if type(device_id) is not int:
+        raise LocalClosed(422, "缺少设备")
     target = str(local_target or "").strip()
     if not target:
         raise LocalClosed(422, "缺少本地目标")
@@ -83,8 +105,22 @@ def parse_local_action(action: object, local_target: object, local_args: object)
     if name == "desktop.open":
         if args:
             raise LocalClosed(422, "打开文件不接受参数")
-        return LocalAction(name, target, ())
-    return LocalAction(name, target, args)
+        return LocalAction(name, device_id, target, ())
+    return LocalAction(name, device_id, target, args)
+
+
+def _require_proof(proof: PackageProof, device_id: int) -> None:
+    if not isinstance(proof, PackageProof):
+        raise LocalClosed(403, _DENIAL)
+    if proof.device_id != device_id:
+        raise LocalClosed(409, CONFIRM_DETAIL["closed"])
+
+
+def _live_label(db: Session, user_id: int, device_id: int) -> str:
+    row = db.get(DesktopDevice, device_id)
+    if row is None or row.user_id != user_id or row.revoked_at is not None:
+        raise LocalClosed(409, CONFIRM_DETAIL["closed"])
+    return str(row.label)
 
 
 def propose_local(
@@ -95,10 +131,10 @@ def propose_local(
     action: LocalAction,
     proof: PackageProof,
 ) -> LocalOffer:
-    if not isinstance(proof, PackageProof):
-        raise LocalClosed(403, _DENIAL)
+    _require_proof(proof, action.device_id)
     set_rls_context(db, user_id)
     _require_session(db, user_id, session_id)
+    label = _live_label(db, user_id, action.device_id)
     parts = write_parts(action.action, action.as_claim())
     task_ids = live_task_ids_for_session(db, user_id, session_id)
     if not task_ids:
@@ -110,6 +146,7 @@ def propose_local(
             draft_expires_at(),
             "draft",
             proof.audit_word(),
+            label,
         )
         try:
             turn = insert_card_action(
@@ -142,10 +179,11 @@ def propose_local(
     elif claim is not None and claim.status == "unknown":
         phase = "unknown"
     expires_at = _expiry_text(stored_expiry)
-    _ensure_message(db, session_id, action, token, expires_at, phase, proof.audit_word())
+    _ensure_message(db, session_id, action, token, expires_at, phase, proof.audit_word(), label)
     return LocalOffer(
         token=token,
         action=action.action,
+        device_id=action.device_id,
         local_target=action.local_target,
         local_args=action.local_args,
         expires_at=expires_at,
@@ -160,8 +198,7 @@ def commit_local(
     action: LocalAction,
     proof: PackageProof,
 ) -> dict:
-    if not isinstance(proof, PackageProof):
-        raise LocalClosed(403, _DENIAL)
+    _require_proof(proof, action.device_id)
     set_rls_context(db, user_id)
     if token is None or str(token).strip() == "":
         raise LocalClosed(409, CONFIRM_DETAIL["missing"])
@@ -169,6 +206,7 @@ def commit_local(
     parts = write_parts(action.action, action.as_claim())
     fingerprint = write_fingerprint(parts)
     scope = write_scope(user_id, parts)
+    label = _live_label(db, user_id, action.device_id)
     claim = (
         db.query(ScheduleConfirmClaim)
         .filter(ScheduleConfirmClaim.token == key)
@@ -182,7 +220,7 @@ def commit_local(
         kind = "finished" if claim.status == "written" else "unknown"
         request_id = (claim.remote_request_id or "").strip()
         db.rollback()
-        return _license(kind, request_id, action)
+        return _license(kind, request_id, action, label)
     try:
         consume_schedule_claim(db, user_id, key, action=action.action, raw=parts)
     except ScheduleConfirmClosed as exc:
@@ -203,7 +241,7 @@ def commit_local(
             "args": action.as_claim(),
         }
     )
-    return _license("armed", armed, action)
+    return _license("armed", armed, action, label)
 
 
 def finish_local(
@@ -212,15 +250,18 @@ def finish_local(
     user_id: int,
     token: str | None,
     request_id: str | None,
+    action: LocalAction,
     proof: PackageProof,
 ) -> dict:
-    if not isinstance(proof, PackageProof):
-        raise LocalClosed(403, _DENIAL)
+    _require_proof(proof, action.device_id)
     set_rls_context(db, user_id)
     if token is None or str(token).strip() == "":
         raise LocalClosed(409, CONFIRM_DETAIL["missing"])
     key = str(token).strip()
     marker = str(request_id or "").strip()
+    parts = write_parts(action.action, action.as_claim())
+    fingerprint = write_fingerprint(parts)
+    scope = write_scope(user_id, parts)
     claim = (
         db.query(ScheduleConfirmClaim)
         .filter(ScheduleConfirmClaim.token == key, ScheduleConfirmClaim.action.in_(LOCAL_ACTIONS))
@@ -230,11 +271,84 @@ def finish_local(
     if claim is None or claim.user_id != user_id:
         db.rollback()
         raise LocalClosed(409, CONFIRM_DETAIL["closed"])
+    if claim.action != action.action or claim.fingerprint != fingerprint or claim.scope != scope:
+        db.rollback()
+        raise LocalClosed(409, CONFIRM_DETAIL["mismatch"])
     if not marker or (claim.remote_request_id or "").strip() != marker:
         db.rollback()
         raise LocalClosed(409, CONFIRM_DETAIL["mismatch"])
     finish_confirm(db, key)
+    _resume_same_job(db, user_id=user_id, token=key, request_id=marker)
     return {"kind": "finished", "request_id": marker}
+
+
+def _generation_ids(raw: str | None) -> set[int]:
+    try:
+        parsed = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(parsed, list):
+        return set()
+    found: set[int] = set()
+    for item in parsed:
+        if type(item) is int:
+            found.add(item)
+    return found
+
+
+def _resume_same_job(db: Session, *, user_id: int, token: str, request_id: str) -> None:
+    from app.services.loop_round import store_desktop_result
+    from app.services.resume import dispatch_task
+    from app.services.task_run import LateResult, continue_job
+
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == token)
+        .with_for_update()
+        .one_or_none()
+    )
+    if claim is None or claim.user_id != user_id:
+        db.rollback()
+        return
+    call_row = (
+        db.query(ToolCall)
+        .filter(ToolCall.user_id == user_id, ToolCall.claim_token == token)
+        .one_or_none()
+    )
+    if call_row is None:
+        db.rollback()
+        return
+    step_row = db.get(TaskStep, call_row.task_step_id)
+    if step_row is None:
+        db.rollback()
+        return
+    job = (
+        db.query(TaskRun)
+        .filter(TaskRun.id == step_row.task_run_id, TaskRun.user_id == user_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if job is None or job.kind != "job" or job.id not in _generation_ids(claim.generation_ids):
+        db.rollback()
+        return
+    stopped = job.status == "stopped"
+    generation = int(job.generation)
+    task_id = int(job.id)
+    store_desktop_result(
+        db,
+        job=job,
+        step_row=step_row,
+        call_row=call_row,
+        request_id=request_id,
+    )
+    db.commit()
+    if stopped:
+        return
+    try:
+        continue_job(user_id=user_id, generation=generation)
+    except LateResult:
+        return
+    dispatch_task(db, task_id)
 
 
 def _args(value: object) -> tuple[str, ...]:
@@ -245,10 +359,12 @@ def _args(value: object) -> tuple[str, ...]:
     return tuple(str(item).strip() for item in value)
 
 
-def _license(kind: str, request_id: str, action: LocalAction) -> dict:
+def _license(kind: str, request_id: str, action: LocalAction, device_label: str) -> dict:
     return {
         "kind": kind,
         "request_id": request_id,
+        "device_id": action.device_id,
+        "device_label": device_label,
         "action": action.action,
         "local_target": action.local_target,
         "local_args": list(action.local_args),
@@ -265,13 +381,22 @@ def _require_session(db: Session, user_id: int, session_id: int) -> None:
         raise LocalClosed(404, "会话不存在")
 
 
-def _card(action: LocalAction, token: str, expires_at: str, phase: str, surface: str) -> dict:
+def _card(
+    action: LocalAction,
+    token: str,
+    expires_at: str,
+    phase: str,
+    surface: str,
+    device_label: str,
+) -> dict:
     return {
         "mode": "desktop",
         "phase": phase,
         "confirm_token": token,
         "expires_at": expires_at,
         "action": action.action,
+        "device_id": action.device_id,
+        "device_label": device_label,
         "local_target": action.local_target,
         "local_args": list(action.local_args),
         "surface": surface,
@@ -286,12 +411,16 @@ def _add_message(
     expires_at: str,
     phase: str,
     surface: str,
+    device_label: str,
 ) -> Message:
     row = Message(
         session_id=session_id,
         role="assistant",
         content=_SENTENCE[action.action],
-        schedule_card=json.dumps(_card(action, token, expires_at, phase, surface), ensure_ascii=False),
+        schedule_card=json.dumps(
+            _card(action, token, expires_at, phase, surface, device_label),
+            ensure_ascii=False,
+        ),
     )
     db.add(row)
     db.flush()
@@ -306,8 +435,9 @@ def _ensure_message(
     expires_at: str,
     phase: str,
     surface: str,
+    device_label: str,
 ) -> None:
-    card = _card(action, token, expires_at, phase, surface)
+    card = _card(action, token, expires_at, phase, surface, device_label)
     encoded = json.dumps(card, ensure_ascii=False)
     rows = (
         db.query(Message)
@@ -331,7 +461,7 @@ def _ensure_message(
             row.schedule_card = encoded
             db.commit()
             return
-    _add_message(db, session_id, action, token, expires_at, phase, surface)
+    _add_message(db, session_id, action, token, expires_at, phase, surface, device_label)
     db.commit()
 
 
@@ -353,6 +483,7 @@ def _same_action(card: dict, action: LocalAction) -> bool:
         return False
     return (
         card.get("action") == action.action
+        and card.get("device_id") == action.device_id
         and card.get("local_target") == action.local_target
         and stored == list(action.local_args)
     )

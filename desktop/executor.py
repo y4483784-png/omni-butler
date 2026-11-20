@@ -3,8 +3,10 @@ from __future__ import annotations
 import subprocess
 
 
-def perform(license: object, *, open_file, run_program) -> bool:
+def perform(license: object, *, open_file, run_program, enrolled_device_id: int) -> bool:
     if not isinstance(license, dict) or license.get("kind") != "armed":
+        return False
+    if license.get("device_id") != enrolled_device_id:
         return False
     action = license.get("action")
     target = license.get("local_target")

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.llm import ModelTurn, ToolCallSpec
 from app.models.models import (
+    DesktopDevice,
     Message,
     ScheduleConfirmClaim,
     TaskRun,
@@ -459,7 +460,7 @@ def open_cards(
             action = _claim_action(row.name, raw)
             keys.append((action, write_fingerprint(write_parts(action, raw))))
         lock_open_claims(db, preview.user_id, keys)
-    except ScheduleConfirmClosed:
+    except (ScheduleConfirmClosed, ValueError):
         db.rollback()
         return ()
     job = _lock_holder(db, hold)
@@ -487,7 +488,7 @@ def open_cards(
                 task_run_ids=[job.id],
                 expires_at=expires_at,
             )
-            card = _card_body(action, raw, token, expiry)
+            card = _card_body(action, raw, token, expiry, db, job.user_id)
             _assistant_message(db, job.session_id, _visible(card), json.dumps(card, ensure_ascii=False))
             memory = apply(memory, LoopEvent.OPEN_CARDS, call_id=row.tool_call_id)
             row.state = CallState.AWAITING_CONFIRM.value
@@ -495,7 +496,7 @@ def open_cards(
             row.intent_version = int(hold.intent_version)
             tokens.append(token)
         _store_phase(db, step_row, memory.phase)
-    except (IllegalPhase, ScheduleConfirmClosed):
+    except (IllegalPhase, ScheduleConfirmClosed, ValueError):
         db.rollback()
         return ()
     db.execute(
@@ -622,6 +623,126 @@ def confirm_call(
     return step
 
 
+def store_desktop_result(
+    db: Session,
+    *,
+    job: TaskRun,
+    step_row: TaskStep,
+    call_row: ToolCall,
+    request_id: str,
+) -> bool:
+    text = f"已写入：{request_id}"
+    if job.status != "stopped" and call_row.state == CallState.AWAITING_CONFIRM.value:
+        memory = _as_step(step_row, _call_rows(db, step_row.id))
+        step = apply(memory, LoopEvent.CONFIRM, call_id=call_row.tool_call_id)
+        target = _call_by_id(step, call_row.tool_call_id)
+        call_row.state = target.state.value
+        call_row.result = text
+        entered = _store_phase(db, step_row, step.phase)
+        task_run.touch_progress(db, user_id=job.user_id, generation=int(job.generation))
+        _apply_confirm_due(db, job, step)
+        return entered
+    call_row.result = text
+    return False
+
+
+def lookup_desktop_write(db: Session, *, hold: Hold, tool_call_id: str) -> str:
+    preview = (
+        db.query(TaskRun)
+        .filter(TaskRun.user_id == hold.user_id, TaskRun.generation == hold.generation)
+        .one_or_none()
+    )
+    if preview is None:
+        db.rollback()
+        return "leave"
+    peeked = _find_call(db, preview.id, tool_call_id)
+    if peeked is not None and peeked[1].claim_token:
+        (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == peeked[1].claim_token)
+            .with_for_update()
+            .one_or_none()
+        )
+    job = _lock_holder(db, hold)
+    if job is None:
+        db.rollback()
+        return "leave"
+    found = _find_call(db, job.id, tool_call_id)
+    if found is None:
+        db.rollback()
+        return "leave"
+    step_row, call_row, _memory = found
+    claim = None
+    if call_row.claim_token:
+        claim = (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == call_row.claim_token)
+            .with_for_update()
+            .one_or_none()
+        )
+    marker = "" if claim is None else (claim.remote_request_id or "").strip()
+    written = claim is not None and claim.status == "written" and bool(marker)
+    if not written:
+        db.execute(
+            update(TaskRun)
+            .where(TaskRun.id == job.id)
+            .where(TaskRun.user_id == hold.user_id)
+            .where(TaskRun.status == "running")
+            .where(TaskRun.exec_token == hold.exec_token)
+            .values(continuation_due=False)
+        )
+        if _leave(db, hold, status="waiting_person") != 1:
+            db.rollback()
+            return "leave"
+        if not _commit_job(db, job, kind="status", body="waiting_person"):
+            return "leave"
+        return "leave"
+    if call_row.state == CallState.AWAITING_CONFIRM.value:
+        entered = store_desktop_result(
+            db,
+            job=job,
+            step_row=step_row,
+            call_row=call_row,
+            request_id=marker,
+        )
+        if entered:
+            _clear_due_if_set(db, hold)
+        if not _commit_job(db, job, kind="step", body=Phase.RESULTS_READY.value):
+            return "leave"
+    else:
+        db.rollback()
+    if _desktop_result_ready(db, hold):
+        return "model"
+    return "leave"
+
+
+def _desktop_result_ready(db: Session, hold: Hold) -> bool:
+    job = (
+        db.query(TaskRun)
+        .filter(
+            TaskRun.user_id == hold.user_id,
+            TaskRun.generation == hold.generation,
+            TaskRun.status == "running",
+            TaskRun.exec_token == hold.exec_token,
+            TaskRun.exec_epoch == hold.exec_epoch,
+            TaskRun.intent_version == hold.intent_version,
+        )
+        .one_or_none()
+    )
+    if job is None:
+        return False
+    rows: list[ToolCall] = []
+    ready = False
+    for step_row in db.query(TaskStep).filter(TaskStep.task_run_id == job.id).all():
+        calls = _call_rows(db, step_row.id)
+        rows.extend(calls)
+        if calls and step_row.phase == Phase.RESULTS_READY.value and all(
+            CallState(row.state) in TERMINAL for row in calls
+        ):
+            ready = True
+    return bool(rows) and ready and all(CallState(row.state) in TERMINAL for row in rows)
+
+
 def note_confirmed(db: Session, *, user_id: int, token: str) -> None:
     key = str(token or "").strip()
     if not key:
@@ -688,6 +809,9 @@ def note_unknown(db: Session, *, hold: Hold, tool_call_id: str) -> Step | None:
         return None
     step_row, call_row, memory = found
     if call_row.state == CallState.UNKNOWN.value:
+        db.rollback()
+        return memory
+    if call_row.name in {"desktop.open", "desktop.run"}:
         db.rollback()
         return memory
     if call_row.name not in _LOOKUP_WRITES:
@@ -779,6 +903,8 @@ def reconcile_parked_writes(db: Session, task_run_id: int) -> int:
         )
         marker = "" if claim is None else (claim.remote_request_id or "").strip()
         if claim is None or not marker or claim.status not in {"unknown", "written"}:
+            continue
+        if call_row.name in {"desktop.open", "desktop.run"} and claim.status != "written":
             continue
         if claim.status == "unknown" and not _owner_gone(claim):
             continue
@@ -1224,11 +1350,42 @@ def _claim_action(name: str, raw: dict) -> str:
     return canonical_action(raw.get("action"))
 
 
-def _card_body(action: str, raw: dict, token: str, expires_at: datetime | None) -> dict:
-    from app.services.schedule_confirm import write_parts
+def desktop_device_label(db: Session, user_id: int, device_id: int) -> str | None:
+    row = db.get(DesktopDevice, device_id)
+    if row is None or int(row.user_id) != int(user_id) or row.revoked_at is not None:
+        return None
+    return str(row.label)
+
+
+def _card_body(
+    action: str,
+    raw: dict,
+    token: str,
+    expires_at: datetime | None,
+    db: Session | None = None,
+    user_id: int | None = None,
+) -> dict:
+    from app.services.schedule_confirm import ScheduleConfirmClosed, write_parts
 
     parts = write_parts(action, raw)
-    if action.startswith("calendar."):
+    if action in {"desktop.open", "desktop.run"}:
+        device_id = parts.get("device_id")
+        label = None
+        if db is not None and user_id is not None and type(device_id) is int:
+            label = desktop_device_label(db, user_id, device_id)
+        if label is None:
+            raise ScheduleConfirmClosed("closed")
+        card = {
+            "mode": "desktop",
+            "phase": "draft",
+            "action": action,
+            "confirm_token": token,
+            "device_id": device_id,
+            "device_label": label,
+            "local_target": parts["local_target"],
+            "local_args": list(parts["local_args"]),
+        }
+    elif action.startswith("calendar."):
         mode = {
             "calendar.create": "create",
             "calendar.update": "update",
@@ -1299,7 +1456,7 @@ def _stored_arguments(name: str, raw: str) -> str:
         try:
             action = canonical_action(name if name in CONFIRM_ONLY else arguments.get("action"))
             parts = write_parts(action, arguments)
-        except ScheduleConfirmClosed:
+        except (ScheduleConfirmClosed, ValueError):
             return _dump(_strip(arguments))
         if name == "calendar":
             parts = {**parts, "action": action}

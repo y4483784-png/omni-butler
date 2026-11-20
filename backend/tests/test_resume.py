@@ -591,8 +591,10 @@ def test_an_armed_desktop_write_is_looked_up_and_not_sent():
     finally:
         db.close()
 
+    seen = {"model": 0}
+
     def executor(_messages, _tools):
-        assert _calls(task_id)[0].state == "unknown"
+        seen["model"] += 1
         return ModelTurn("done", "", (), "stop")
 
     sent: list[str] = []
@@ -601,12 +603,17 @@ def test_an_armed_desktop_write_is_looked_up_and_not_sent():
         patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
         patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
         patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+        patch("desktop.executor.perform", side_effect=lambda *args, **kwargs: sent.append("perform")),
     ):
         _dispatch(user_id, task_id)
     assert sent == []
+    assert seen["model"] == 0
     call = _calls(task_id)[0]
-    assert call.state == "unknown"
-    assert call.result == "结果未知"
+    assert call.state == "awaiting_confirm"
+    parked = _load(task_id)
+    assert parked.status == "waiting_person"
+    assert parked.continuation_due is False
+    assert parked.exec_token is None
     claim = SessionLocal()
     try:
         stored = claim.get(ScheduleConfirmClaim, token)
@@ -1353,7 +1360,7 @@ def test_a_long_tool_renews_the_hold_and_a_live_holder_is_not_reclaimed():
 @pytest.mark.parametrize(
     ("name", "action", "claim_status", "expect_state", "expect_result"),
     [
-        ("desktop.open", "desktop.open", "unknown", "unknown", "结果未知"),
+        ("desktop.open", "desktop.open", "unknown", "awaiting_confirm", None),
         ("calendar", "calendar.create", "unknown", "unknown", "结果未知"),
         ("mail.send", "mail.send", "unknown", "unknown", "结果未知"),
         ("errand.place", "errand.place", "unknown", "unknown", "结果未知"),
@@ -1419,7 +1426,10 @@ def test_a_lost_write_is_reconstructed_without_sending(
     finally:
         db.close()
 
+    seen = {"model": 0}
+
     def executor(_messages, _tools):
+        seen["model"] += 1
         call = _calls(task_id)[0]
         assert call.state == expect_state
         assert call.result == expect_result
@@ -1431,12 +1441,19 @@ def test_a_lost_write_is_reconstructed_without_sending(
         patch("app.agents.harness.gateway.invoke", side_effect=lambda *args, **kwargs: sent.append("invoke")),
         patch("app.services.schedule_confirm.arm_remote_claim", side_effect=lambda *args, **kwargs: sent.append("arm")),
         patch("app.services.local_action.finish_local", side_effect=lambda *args, **kwargs: sent.append("finish")),
+        patch("desktop.executor.perform", side_effect=lambda *args, **kwargs: sent.append("perform")),
     ):
         _dispatch(user_id, task_id)
     assert sent == []
     call = _calls(task_id)[0]
     assert call.state == expect_state
     assert call.result == expect_result
+    if name == "desktop.open" and claim_status != "written":
+        assert seen["model"] == 0
+        waiting = _load(task_id)
+        assert waiting.status == "waiting_person"
+        assert waiting.continuation_due is False
+        assert waiting.exec_token is None
     claim = SessionLocal()
     try:
         stored = claim.get(ScheduleConfirmClaim, token)
@@ -1533,6 +1550,27 @@ def test_an_old_adopter_does_not_borrow_the_replacement_hold():
     assert "borrowed" not in text
 
 
+def _enrolled_device(user_id: int, label: str = "desk") -> int:
+    import hashlib
+    import secrets
+
+    from app.models.models import DesktopDevice
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        device = DesktopDevice(
+            user_id=user_id,
+            token_hash=hashlib.sha256(secrets.token_urlsafe(16).encode()).hexdigest(),
+            label=label,
+        )
+        db.add(device)
+        db.commit()
+        return int(device.id)
+    finally:
+        db.close()
+
+
 def _parked_job(user_id: int, session_id: int, specs: list[tuple[str, str, dict]]):
     from app.services import task_run
     from app.services.loop_round import Hold, open_cards, save_turn
@@ -1579,7 +1617,7 @@ _ERRAND = {
 @pytest.mark.parametrize(
     ("name", "raw", "claim_status", "expect_state", "expect_result"),
     [
-        ("desktop.open", {"local_target": "notes"}, "unknown", "unknown", "结果未知"),
+        ("desktop.open", {"local_target": "notes"}, "unknown", "awaiting_confirm", None),
         ("calendar", {"action": "create", "title": "parked", "start_at": "2026-11-20T10:00:00", "end_at": "2026-11-20T11:00:00"}, "unknown", "unknown", "结果未知"),
         ("mail.send", {"mail_to": ["one@example.com"], "subject": "parked", "body": "hello"}, "unknown", "unknown", "结果未知"),
         ("errand.place", _ERRAND, "unknown", "unknown", "结果未知"),
@@ -1595,7 +1633,10 @@ def test_a_parked_lost_write_is_recovered_without_sending(name, raw, claim_statu
 
     user_id = _user()
     session_id = _session(user_id)
-    db, task_id, tokens = _parked_job(user_id, session_id, [("call-a", name, raw)])
+    spec = dict(raw)
+    if name in {"desktop.open", "desktop.run"}:
+        spec["device_id"] = _enrolled_device(user_id)
+    db, task_id, tokens = _parked_job(user_id, session_id, [("call-a", name, spec)])
     try:
         set_rls_context(db, user_id)
         assert arm_remote_claim(db, tokens[0], "req-1") is True
@@ -1630,6 +1671,9 @@ def test_a_parked_lost_write_is_recovered_without_sending(name, raw, claim_statu
     assert call.result == expect_result
     stored = _load(task_id)
     assert stored.exec_token != "worker"
+    if name == "desktop.open" and claim_status != "written":
+        assert stored.status == "waiting_person"
+        assert stored.continuation_due is False
 
 
 def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():
@@ -1643,6 +1687,7 @@ def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():
         ("call-live", "mail.send", {"mail_to": ["live@example.com"], "subject": "live", "body": "live"}),
         ("call-open", "desktop.open", {"local_target": "notes"}),
     ]
+    specs[2][2]["device_id"] = _enrolled_device(user_id)
     db, task_id, tokens = _parked_job(user_id, session_id, specs)
     db.close()
     plain_db, plain_id, _plain_tokens = _parked_job(
@@ -1707,22 +1752,29 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
 
     user_id = _user()
     session_id = _session(user_id)
-    db, task_id, tokens = _parked_job(user_id, session_id, [("call-desk", "desktop.open", {"local_target": "notes"})])
     presented = secrets.token_urlsafe(32)
+    seeded = SessionLocal()
     try:
-        set_rls_context(db, user_id)
-        db.add(
-            DesktopDevice(
-                user_id=user_id,
-                token_hash=hashlib.sha256(presented.encode("utf-8")).hexdigest(),
-                label="late",
-            )
+        set_rls_context(seeded, user_id)
+        device = DesktopDevice(
+            user_id=user_id,
+            token_hash=hashlib.sha256(presented.encode("utf-8")).hexdigest(),
+            label="late",
         )
-        db.commit()
+        seeded.add(device)
+        seeded.commit()
+        device_id = int(device.id)
     finally:
-        db.close()
+        seeded.close()
+    db, task_id, tokens = _parked_job(
+        user_id,
+        session_id,
+        [("call-desk", "desktop.open", {"device_id": device_id, "local_target": "notes"})],
+    )
+    db.close()
     proof = recognize_package(presented)
     assert proof is not None
+    action = LocalAction("desktop.open", device_id, "notes", ())
     owned = SessionLocal()
     try:
         set_rls_context(owned, user_id)
@@ -1730,7 +1782,7 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
             owned,
             user_id=user_id,
             token=tokens[0],
-            action=LocalAction("desktop.open", "notes", ()),
+            action=action,
             proof=proof,
         )
     finally:
@@ -1749,13 +1801,15 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
     finisher = SessionLocal()
     try:
         set_rls_context(finisher, user_id)
-        finish_local(
-            finisher,
-            user_id=user_id,
-            token=tokens[0],
-            request_id=license_row["request_id"],
-            proof=proof,
-        )
+        with patch("app.tasks.job.run_job.delay"):
+            finish_local(
+                finisher,
+                user_id=user_id,
+                token=tokens[0],
+                request_id=license_row["request_id"],
+                action=action,
+                proof=proof,
+            )
     finally:
         finisher.close()
     with (
