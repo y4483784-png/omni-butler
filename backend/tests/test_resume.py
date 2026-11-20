@@ -22,7 +22,7 @@ from app.models.models import (
     ToolCall,
     User,
 )
-from app.services.resume import dispatch_task, enqueue_job, publish_event, read_snapshot
+from app.services.resume import dispatch_task, enqueue_job, events_after, publish_event, read_snapshot
 from app.tasks.job import run_job, set_executor
 
 
@@ -884,3 +884,45 @@ def test_a_client_at_cursor_100_receives_101_and_closing_the_stream_leaves_the_j
     assert json.loads(line[len("data:") :].strip())["seq"] == 101
     assert stop.call_count == 0
     assert _load(task_id).status == "running"
+
+
+def test_a_second_job_event_is_not_hidden_by_the_first_jobs_step_seq():
+    user_id = _user()
+    session_id = _session(user_id)
+    first = _open_job(user_id, session_id, goal="one")
+    second = _open_job(user_id, session_id, goal="two")
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        db.add(
+            TaskStep(
+                user_id=user_id,
+                task_run_id=first,
+                seq=50,
+                phase="calls_saved",
+                content="",
+                reasoning_content="",
+            )
+        )
+        db.commit()
+        published = publish_event(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            kind="status",
+            body=str(second),
+        )
+        db.commit()
+        delivered = events_after(db, session_id=session_id, after=0)
+        first_window = read_snapshot(db, user_id=user_id, session_id=session_id)
+        db.commit()
+        second_window = read_snapshot(db, user_id=user_id, session_id=session_id)
+        db.commit()
+    finally:
+        db.close()
+    assert published == 1
+    assert [row["seq"] for row in delivered] == [1]
+    assert delivered[0]["body"] == str(second)
+    assert first_window["cursor"] == 1
+    assert second_window == first_window
+    assert {row["id"]: row["status"] for row in first_window["jobs"]} == {first: "running", second: "running"}
