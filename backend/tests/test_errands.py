@@ -503,6 +503,113 @@ def test_compose_post_returns_the_task_key():
     assert "login-secret" not in text
 
 
+def test_whitespace_order_id_is_unknown():
+    from app.services.errands import interpret
+
+    armed = "armed-1"
+    for blank in ("", " ", "\t", " \t "):
+        placed = interpret(
+            {"outcome": "placed", "order_id": blank, "idempotency_key": armed, "told": f"已下单 {armed}"},
+            armed,
+        )
+        assert placed.kind == "unknown"
+        assert placed.order_id == ""
+        assert placed.named is False
+        already = interpret(
+            {
+                "outcome": "already",
+                "order_id": blank,
+                "idempotency_key": armed,
+                "told": f"已下单 {armed}",
+            },
+            armed,
+        )
+        assert already.kind == "unknown"
+        assert already.order_id == ""
+        assert already.named is False
+    padded = interpret(
+        {"outcome": "placed", "order_id": "  m-1 \t", "idempotency_key": armed},
+        armed,
+    )
+    assert padded.kind == "placed"
+    assert padded.order_id == "m-1"
+    assert padded.named is True
+    kept = interpret(
+        {
+            "outcome": "already",
+            "order_id": "  ord-9 \t",
+            "idempotency_key": armed,
+            "told": f"已下单 {armed}",
+        },
+        armed,
+    )
+    assert kept.kind == "already"
+    assert kept.order_id == "ord-9"
+    assert kept.named is True
+
+
+def test_decide_whitespace_order_id_is_unknown():
+    module = _load(REPO / "services" / "errand-compose" / "decide.py", "errand_compose_decide_blank")
+    armed = "armed-1"
+    for blank in ("", " ", "\t", " \t "):
+        paid = module.decide("checkout", armed=armed, pay_clicked=True, order_id=blank)
+        assert paid["outcome"] == "unknown"
+        assert paid["order_id"] == ""
+        named = module.decide(f"已下单 {armed}", armed=armed, order_id=blank)
+        assert named["outcome"] == "unknown"
+        assert named["order_id"] == ""
+    placed = module.decide("checkout", armed=armed, pay_clicked=True, order_id="  ord-9 \t")
+    assert placed["outcome"] == "placed"
+    assert placed["order_id"] == "ord-9"
+    already = module.decide(f"已下单 {armed}", armed=armed, order_id="  ord-9 \t")
+    assert already["outcome"] == "already"
+    assert already["order_id"] == "ord-9"
+
+
+def test_public_whitespace_order_is_not_placed():
+    from app.services.errands import interpret
+
+    module = _load(REPO / "services" / "errand-compose" / "server.py", "errand_compose_public_blank")
+    armed = "armed-1"
+    public = module._public(
+        {
+            "outcome": "placed",
+            "order_id": " ",
+            "pay": "secret-pay",
+            "login": "secret-login",
+            "told": "",
+            "clicks_after_wall": 0,
+        },
+        {"idempotency_key": armed, "pay": "task-pay", "login": "task-login"},
+    )
+    assert public["idempotency_key"] == armed
+    assert public["order_id"] == " "
+    assert "pay" not in public
+    assert "login" not in public
+    text = json.dumps(public)
+    assert "secret-pay" not in text
+    assert "secret-login" not in text
+    assert "task-pay" not in text
+    assert "task-login" not in text
+    chained = interpret(public, armed)
+    assert chained.kind == "unknown"
+    assert chained.order_id == ""
+    padded = module._public(
+        {
+            "outcome": "placed",
+            "order_id": "  m-1 \t",
+            "pay": "secret-pay",
+            "login": "secret-login",
+        },
+        {"idempotency_key": armed},
+    )
+    assert "pay" not in padded
+    assert "login" not in padded
+    kept = interpret(padded, armed)
+    assert kept.kind == "placed"
+    assert kept.order_id == "m-1"
+
+
 def test_empty_echo_is_not_placed():
     from app.services.errands import interpret
 
@@ -523,6 +630,66 @@ def test_empty_echo_is_not_placed():
     other = interpret({"outcome": "placed", "order_id": "m-1", "idempotency_key": "other-order"}, armed)
     assert other.kind != "placed"
     assert other.named is False
+
+
+def test_save_gate_stores_only_a_stripped_order_id(plain_client: TestClient, shop: _ShopState, monkeypatch):
+    from app.services.errands import ShopReply
+
+    merchant = _merchant()
+    order = _order(merchant)
+    _connector(merchant, shop.base)
+    stored = _vault(plain_client, merchant, "pay-secret-9")
+    assert stored.status_code == 200, stored.text
+    user_id = _admin_id()
+    shop.lookup_body = {"told": ""}
+
+    def commit_body(body: dict):
+        shop.place_body = body
+        shop.echo_place_key = True
+        session_id = _session()
+        offered = _propose(plain_client, session_id, order)
+        assert offered.status_code == 200, offered.text
+        return _commit(plain_client, offered.json()["confirm_token"], order)
+
+    for blank in (" ", "\t", " \t "):
+        refused = commit_body({"outcome": "placed", "order_id": blank})
+        assert refused.status_code == 409, refused.text
+        assert _records(user_id, merchant) == []
+    already = commit_body({"outcome": "already", "order_id": " \t ", "told": "已下单"})
+    assert already.status_code == 409, already.text
+    assert _records(user_id, merchant) == []
+    saved = commit_body({"outcome": "placed", "order_id": "  ord-9 \t"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["order_id"] == "ord-9"
+    assert _records(user_id, merchant) == [(saved.json()["idempotency_key"], "ord-9")]
+
+    def place_blank(*_args, **_kwargs):
+        return ShopReply("placed", order_id=" \t ", named=True)
+
+    monkeypatch.setattr("app.services.errands._place", place_blank)
+    blocked = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"})
+    assert blocked.status_code == 409, blocked.text
+    assert _records(user_id, merchant) == [(saved.json()["idempotency_key"], "ord-9")]
+
+    def place_already(*_args, **_kwargs):
+        return ShopReply("already", order_id=" ", named=True)
+
+    monkeypatch.setattr("app.services.errands._place", place_already)
+    skipped = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"})
+    assert skipped.status_code == 409, skipped.text
+    assert _records(user_id, merchant) == [(saved.json()["idempotency_key"], "ord-9")]
+
+    def place_padded(*_args, **_kwargs):
+        return ShopReply("placed", order_id="  ord-8 \t", named=True)
+
+    monkeypatch.setattr("app.services.errands._place", place_padded)
+    direct = commit_body({"outcome": "placed", "order_id": "shop-should-not-win"})
+    assert direct.status_code == 200, direct.text
+    assert direct.json()["order_id"] == "ord-8"
+    assert _records(user_id, merchant) == [
+        (saved.json()["idempotency_key"], "ord-9"),
+        (direct.json()["idempotency_key"], "ord-8"),
+    ]
 
 
 def test_missing_echo_is_not_stored_or_ordered_again(plain_client: TestClient, shop: _ShopState, monkeypatch):

@@ -140,6 +140,83 @@ def anchors() -> None:
     detail = read("backend/app/services/schedule_confirm.py")
     require("请先核对日历" in detail, "the unknown sentence was rewritten")
     require('"errand.place"' in detail, "errand.place is not a claim action")
+    product_rules()
+
+
+def _load(path: Path, name: str):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        fail_model(f"missing {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def product_rules() -> None:
+    backend = str(ROOT / "backend")
+    if backend not in sys.path:
+        sys.path.insert(0, backend)
+    try:
+        from app.services.errands import interpret
+    except Exception as exc:
+        fail_model(f"interpret could not be loaded: {exc}")
+    decide = _load(ROOT / "services" / "errand-compose" / "decide.py", "errand_decide_check")
+    server = _load(ROOT / "services" / "errand-compose" / "server.py", "errand_server_check")
+    armed = "armed-1"
+    for blank in (" ", "\t", " \t ", ""):
+        placed = interpret(
+            {"outcome": "placed", "order_id": blank, "idempotency_key": armed},
+            armed,
+        )
+        require(placed.kind != "placed", f"interpret places order id {blank!r}")
+        require(placed.kind == "unknown", f"interpret does not return unknown for order id {blank!r}")
+    for blank in ("", " ", "\t", " \t "):
+        paid = decide.decide("checkout", armed=armed, pay_clicked=True, order_id=blank)
+        require(paid["outcome"] != "placed", f"decide places order id {blank!r}")
+        require(paid["outcome"] == "unknown", f"decide does not return unknown for order id {blank!r}")
+        named = decide.decide(f"已下单 {armed}", armed=armed, order_id=blank)
+        require(named["outcome"] == "unknown", f"decide treats order id {blank!r} as already")
+    already = interpret(
+        {
+            "outcome": "already",
+            "order_id": " \t ",
+            "idempotency_key": armed,
+            "told": f"已下单 {armed}",
+        },
+        armed,
+    )
+    require(already.kind == "unknown", "interpret treats a whitespace order id as already")
+    public = server._public(
+        {
+            "outcome": "placed",
+            "order_id": " ",
+            "pay": "secret-pay",
+            "login": "secret-login",
+        },
+        {"idempotency_key": armed, "pay": "task-pay", "login": "task-login"},
+    )
+    require("pay" not in public, "_public leaks pay")
+    require("login" not in public, "_public leaks login")
+    dumped = str(public)
+    require("secret-pay" not in dumped and "secret-login" not in dumped, "_public leaks a secret value")
+    require("task-pay" not in dumped and "task-login" not in dumped, "_public leaks a task secret")
+    chained = interpret(public, armed)
+    require(chained.kind != "placed", "a public whitespace order id is placed")
+    padded = interpret(
+        {"outcome": "placed", "order_id": "  m-1 \t", "idempotency_key": armed},
+        armed,
+    )
+    require(
+        padded.kind == "placed" and padded.order_id == "m-1",
+        "a padded order id is not kept stripped",
+    )
+    kept = decide.decide("checkout", armed=armed, pay_clicked=True, order_id="  m-1 \t")
+    require(
+        kept["outcome"] == "placed" and kept["order_id"] == "m-1",
+        "decide does not keep a padded order id",
+    )
 
 
 def write_cfg(
