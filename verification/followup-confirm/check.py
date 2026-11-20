@@ -176,7 +176,19 @@ def check_anchors() -> tuple[bool, bool]:
         "ticked.has(action.id) && action.start_at" in confirm,
         "confirm no longer limits the claim to ticked rows with start_at.",
     )
-    require('card.phase === "draft"' in card_fn, "the confirm button is no longer gated on phase draft.")
+    gate = brace_slice(card, "export function confirmActionIsDraft")
+    require(
+        'action.phase === "draft"' in gate and "action.confirm_token" in gate,
+        "the confirm button is no longer gated on the action phase draft.",
+    )
+    require(
+        "actions.some(confirmActionIsDraft)" in card_fn,
+        "the confirm button no longer uses the action that owns the token.",
+    )
+    require(
+        'card.phase === "draft"' not in card_fn,
+        "the confirm button is gated on the card root phase.",
+    )
     require("disabled={posting || expired}" in card_fn, "the confirm button no longer disables while posting or expired.")
     require("void confirm()" in card_fn, "the draft button no longer calls confirm.")
     require("phase" not in post, "postFollowAction now mentions phase.")
