@@ -220,8 +220,9 @@ def _apply_reply(
     if reply.kind == "rejected" and reply.clicks_after_wall <= 0:
         reopen_known_rejection(db, token)
         raise ErrandClosed(409, _REJECTED)
-    if reply.order_id and (reply.kind == "placed" or (reply.kind == "already" and reply.named)):
-        return _save(db, user_id, token, order, armed, reply.order_id)
+    order_id = _present_order_id(reply.order_id)
+    if order_id and (reply.kind == "placed" or (reply.kind == "already" and reply.named)):
+        return _save(db, user_id, token, order, armed, order_id)
     return _reconcile(db, user_id, token, order)
 
 
@@ -248,7 +249,9 @@ def _reconcile(db: Session, user_id: int, token: str, order: ErrandOrder) -> dic
     except RemoteDown:
         found = None
     if found is not None and found.named:
-        return _save(db, user_id, token, order, armed, found.order_id)
+        order_id = _present_order_id(found.order_id)
+        if order_id:
+            return _save(db, user_id, token, order, armed, order_id)
     raise ErrandClosed(409, CONFIRM_DETAIL["unknown"])
 
 
@@ -348,6 +351,12 @@ def _headers(armed: str, *, compose: bool) -> dict[str, str]:
     return headers
 
 
+def _present_order_id(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def interpret(body: dict, armed: str) -> ShopReply:
     clicks_raw = body.get("clicks_after_wall", 0)
     try:
@@ -357,7 +366,7 @@ def interpret(body: dict, armed: str) -> ShopReply:
     price_raw = body.get("price")
     price = price_raw if isinstance(price_raw, int) and not isinstance(price_raw, bool) else None
     told = body.get("told") if isinstance(body.get("told"), str) else ""
-    order_id = body.get("order_id") if isinstance(body.get("order_id"), str) else ""
+    order_id = _present_order_id(body.get("order_id"))
     outcome = body.get("outcome") if isinstance(body.get("outcome"), str) else ""
     echoed = body.get("idempotency_key")
     echoed_key = echoed.strip() if isinstance(echoed, str) else ""
@@ -373,10 +382,10 @@ def interpret(body: dict, armed: str) -> ShopReply:
             return ShopReply("placed", order_id=order_id, told=told, clicks_after_wall=clicks, price=price, named=True)
         return ShopReply("unknown", order_id=order_id, told=told, clicks_after_wall=clicks, price=price)
     if outcome == "already":
-        if named:
+        if named and order_id:
             return ShopReply("already", order_id=order_id, told=told, clicks_after_wall=clicks, price=price, named=True)
         return ShopReply("unknown", order_id=order_id, told=told, clicks_after_wall=clicks, price=price)
-    if named:
+    if named and order_id:
         return ShopReply("already", order_id=order_id, told=told, clicks_after_wall=clicks, price=price, named=True)
     if outcome in {"rejected", "need_secret"}:
         return ShopReply(outcome, told=told, clicks_after_wall=clicks, price=price)
