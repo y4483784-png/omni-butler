@@ -10,19 +10,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.core.db import SessionLocal, init_db
+from app.core.db import SessionLocal, init_db, set_rls_context
 from app.models.models import (
     CalendarEvent,
     EventReceipt,
     Message,
     ScheduleConfirmClaim,
     Session as ChatSession,
+    TaskRun,
 )
 from app.services import task_run
+from app.services.calendar_google import CalendarRemoteWriteError, GoogleCalendarProvider
 from app.services.calendar_secrets import sign_oauth_state
 from app.services.message_format import serialize_message
 from app.services.schedule_confirm import phase_for_stored_card
-from tests.test_calendar_google import CLIENT_SECRET, CODE, FERNET_KEY, FakeGoogle, _cleanup, _insert_calls
+from tests.test_calendar_google import (
+    CLIENT_SECRET,
+    CODE,
+    FERNET_KEY,
+    FakeGoogle,
+    _cleanup,
+    _delete_calls,
+    _insert_calls,
+    _patch_calls,
+)
 
 
 @pytest.fixture
@@ -529,5 +540,96 @@ def test_written_create_stays_incomplete_until_the_receipt_is_filed(
     finally:
         db.rollback()
         db.close()
+        _drop_receipts(user_id)
+        _cleanup(user_id)
+
+
+def _link_running_job(token: str, session_id: int, user_id: int) -> None:
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        claim = db.get(ScheduleConfirmClaim, token)
+        assert claim is not None
+        generation = (
+            db.query(TaskRun.generation)
+            .filter(TaskRun.user_id == user_id)
+            .order_by(TaskRun.generation.desc())
+            .limit(1)
+            .scalar()
+        )
+        job = TaskRun(
+            user_id=user_id,
+            session_id=session_id,
+            generation=int(generation or 0) + 1,
+            status="running",
+            allowed_tools="[]",
+            kind="job",
+            goal="arm fence",
+            web_constraint="allow",
+            intent_version=int(claim.intent_version or 1),
+            exec_token="held-worker",
+            exec_epoch=1,
+        )
+        db.add(job)
+        db.flush()
+        claim.generation_ids = json.dumps([job.id])
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_a_running_job_does_not_insert_when_the_arm_matches_zero_rows(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle
+):
+    init_db()
+    title = f"臂门-{uuid4().hex[:8]}"
+    body = _create_body(title, start="2031-03-02T09:00:00", end="2031-03-02T10:00:00")
+    token, session_id, user_id = _open(auth_client, body)
+    try:
+        _connect(auth_client, user_id)
+        _link_running_job(token, session_id, user_id)
+        fake_google.insert_id = "evt-should-not-exist"
+        created = _post(auth_client, body, token)
+        assert created.status_code == 409, created.text
+        assert created.json()["detail"] == "这张确认已经失效，未写入。"
+        assert _titles(user_id, title) == []
+        assert _insert_calls(fake_google) == []
+        claim = _claim(token)
+        assert claim == {"status": "open", "remote_request_id": ""}
+    finally:
+        _drop_receipts(user_id)
+        _cleanup(user_id)
+
+
+def test_patch_and_delete_skip_google_when_the_arm_returns_false(
+    auth_client: TestClient, oauth_ready, fake_google: FakeGoogle, monkeypatch
+):
+    init_db()
+    title = f"臂门补丁-{uuid4().hex[:8]}"
+    body = _create_body(title, start="2031-03-03T09:00:00", end="2031-03-03T10:00:00")
+    token, _session_id, user_id = _open(auth_client, body)
+    try:
+        _connect(auth_client, user_id)
+        monkeypatch.setattr("app.services.schedule_confirm.arm_remote_claim", lambda *args, **kwargs: False)
+        db = SessionLocal()
+        try:
+            set_rls_context(db, user_id)
+            db.info["confirm_token"] = token
+            provider = GoogleCalendarProvider(db, user_id)
+            with pytest.raises(CalendarRemoteWriteError) as patched:
+                provider._patch_google_event("evt-1", {"summary": "x"})
+            assert patched.value.closed is True
+            with pytest.raises(CalendarRemoteWriteError) as deleted:
+                provider._delete_google_event_required("evt-1")
+            assert deleted.value.closed is True
+            assert _patch_calls(fake_google) == []
+            assert _delete_calls(fake_google) == []
+            provider._restore_patch("evt-1", {"summary": "back"})
+            assert len(_patch_calls(fake_google)) == 1
+            assert _delete_calls(fake_google) == []
+        finally:
+            db.rollback()
+            db.close()
+    finally:
         _drop_receipts(user_id)
         _cleanup(user_id)
