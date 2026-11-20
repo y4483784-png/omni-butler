@@ -8,7 +8,6 @@ import httpx
 from app.core.config import settings
 
 _QUERY_ERROR = "检索词需要 1 到 128 个字符，且不能全是空白。"
-_ORI_ERROR = "原问题需要 1 到 128 个字符，且不能全是空白。"
 _URL_ERROR = "链接需要是不带账号的 http 或 https 地址。"
 
 
@@ -110,10 +109,8 @@ def _payload(response: httpx.Response, kind: str) -> dict | ToolError:
 def deepseek_search(query: object, *, ori_question: object = None) -> SearchPage | ToolError:
     if not isinstance(query, str) or not _bounded(query):
         return ToolError(_QUERY_ERROR)
-    if ori_question is not None and not _bounded(ori_question):
-        return ToolError(_ORI_ERROR)
     body: dict[str, object] = {"query": query, "count": _count(), "need_content": True}
-    if isinstance(ori_question, str):
+    if _bounded(ori_question):
         body["ori_question"] = ori_question
     posted = _post("search", body, kind="检索")
     if isinstance(posted, ToolError):
