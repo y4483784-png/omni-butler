@@ -21,11 +21,23 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Check the model, then require the zero break to exit 1
+      - name: Check the model, then require each break flag to exit 1
         run: |
           python3 verification/picture/check.py
           set +e
+          python3 verification/picture/check.py --break-ocr
+          ocr_status=$?
           python3 verification/picture/check.py --break-zero
-          break_status=$?
+          zero_status=$?
+          python3 verification/picture/check.py --break-early-blob
+          early_blob_status=$?
+          python3 verification/picture/check.py --break-revert
+          revert_status=$?
+          python3 verification/picture/check.py --break-leak
+          leak_status=$?
           set -e
-          test "$break_status" -eq 1
+          test "$ocr_status" -eq 1
+          test "$zero_status" -eq 1
+          test "$early_blob_status" -eq 1
+          test "$revert_status" -eq 1
+          test "$leak_status" -eq 1
