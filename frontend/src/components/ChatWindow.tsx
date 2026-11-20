@@ -202,6 +202,8 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
           .map((job) => (
             <p key={job.id} className="schedule-meta">
               {job.status} {job.goal}
+              {job.unresolved_call_id ? ` ${job.unresolved_call_id}` : ""}
+              {job.unresolved_sentence ? ` ${job.unresolved_sentence}` : ""}
             </p>
           ))}
         {messages.map((m, i) => (

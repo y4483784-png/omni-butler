@@ -76,12 +76,6 @@ def upgrade() -> None:
         "tool_call_effect_conflicts",
         ["tool_call_pk"],
     )
-    from sqlalchemy.orm import Session
-
-    from app.services.call_owner import mark_legacy_unresolved
-
-    session = Session(bind=op.get_bind())
-    mark_legacy_unresolved(session, dry_run=False)
 
 
 def downgrade() -> None:

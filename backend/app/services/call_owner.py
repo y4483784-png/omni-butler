@@ -165,6 +165,82 @@ def _publish_ack_card(db: Session, job: TaskRun, call: ToolCall) -> None:
     )
 
 
+def _step_memory(db: Session, step_id: int):
+    from app.services.loop_round import Call, CallState, Phase, Step
+
+    step_row = db.get(TaskStep, int(step_id))
+    rows = (
+        db.query(ToolCall)
+        .filter(ToolCall.task_step_id == int(step_id))
+        .order_by(ToolCall.position.asc(), ToolCall.id.asc())
+        .all()
+    )
+    calls = tuple(
+        Call(
+            tool_call_id=row.tool_call_id,
+            name=row.name,
+            state=CallState(row.state),
+            claim_token=row.claim_token,
+            intent_version=int(row.intent_version or 1),
+        )
+        for row in rows
+    )
+    return step_row, Step(seq=int(step_row.seq), phase=Phase(step_row.phase), calls=calls)
+
+
+def _align_phase(db: Session, step_id: int) -> None:
+    from app.services.loop_round import _store_phase, phase_after
+
+    step_row, memory = _step_memory(db, step_id)
+    _store_phase(db, step_row, phase_after(memory.calls))
+
+
+def _apply_unknown(db: Session, call: ToolCall) -> None:
+    from app.services.loop_round import LoopEvent, apply
+
+    _step_row, memory = _step_memory(db, call.task_step_id)
+    nxt = apply(memory, LoopEvent.NOTE_UNKNOWN, call_id=call.tool_call_id)
+    target = next(item for item in nxt.calls if item.tool_call_id == call.tool_call_id)
+    call.state = target.state.value
+    call.result = UNKNOWN_SENTENCE
+    call.unresolved_at = None
+
+
+def _write_unknown_message(db: Session, job: TaskRun) -> None:
+    db.add(
+        Message(
+            session_id=int(job.session_id),
+            role="assistant",
+            content=UNKNOWN_SENTENCE,
+            reasoning=None,
+            citations="",
+            schedule_card="",
+            artifact="",
+        )
+    )
+
+
+def _publish_visible(db: Session, job: TaskRun, sentences: list[str]) -> None:
+    from app.services.resume import publish_event
+
+    db.flush()
+    publish_event(
+        db,
+        user_id=int(job.user_id),
+        session_id=int(job.session_id),
+        kind="status",
+        body=str(job.status),
+    )
+    for sentence in sentences:
+        publish_event(
+            db,
+            user_id=int(job.user_id),
+            session_id=int(job.session_id),
+            kind="message",
+            body=sentence,
+        )
+
+
 def recover_expired(db: Session, job: TaskRun, *, now: datetime) -> str:
     """Park, mark unknown, or allow one replacement. Park and unknown commit."""
     if job.hold_until is None or job.hold_until >= now or job.status != "running":
@@ -192,30 +268,51 @@ def recover_expired(db: Session, job: TaskRun, *, now: datetime) -> str:
             )
         )
     if any(kind == "park" for _call, kind in decisions):
+        sentences: list[str] = []
         for call, kind in decisions:
             if kind == "park" and call.unresolved_at is None:
                 call.unresolved_at = now
                 _publish_ack_card(db, job, call)
+                sentences.append(unresolved_sentence(call.tool_call_id))
         job.status = "waiting_person"
         job.continuation_due = False
+        _publish_visible(db, job, sentences)
         db.commit()
         return "park"
     replaced = False
+    unknown_steps: set[int] = set()
+    wrote_unknown = False
     for call, kind in decisions:
         if kind == "replace":
             call.state = "pending"
             call.unresolved_at = None
             replaced = True
+            unknown_steps.add(int(call.task_step_id))
             continue
         if kind == "unknown":
-            call.state = "unknown"
-            call.result = UNKNOWN_SENTENCE
-            call.unresolved_at = None
+            _apply_unknown(db, call)
+            if not wrote_unknown:
+                _write_unknown_message(db, job)
+                wrote_unknown = True
+            unknown_steps.add(int(call.task_step_id))
+    for step_id in unknown_steps:
+        _align_phase(db, step_id)
     if replaced:
         db.flush()
+        if wrote_unknown:
+            from app.services.resume import publish_event
+
+            publish_event(
+                db,
+                user_id=int(job.user_id),
+                session_id=int(job.session_id),
+                kind="message",
+                body=UNKNOWN_SENTENCE,
+            )
         return "replace"
     job.status = "waiting_person"
     job.continuation_due = False
+    _publish_visible(db, job, [UNKNOWN_SENTENCE] if wrote_unknown else [])
     db.commit()
     return "unknown"
 

@@ -224,20 +224,32 @@ def publish_event(
     return seq
 
 
-def _unresolved_call_id(db: Session, task_run_id: int) -> str | None:
-    row = (
-        db.query(ToolCall.tool_call_id)
+def _visible_resolution(db: Session, task_run_id: int) -> tuple[str | None, str | None]:
+    from app.services.call_policy import UNKNOWN_SENTENCE, unresolved_sentence
+
+    parked = (
+        db.query(ToolCall)
         .join(TaskStep, ToolCall.task_step_id == TaskStep.id)
         .filter(
             TaskStep.task_run_id == int(task_run_id),
             ToolCall.state == "running",
             ToolCall.unresolved_at.isnot(None),
         )
+        .order_by(ToolCall.id.asc())
         .first()
     )
-    if row is None:
-        return None
-    return str(row[0])
+    if parked is not None:
+        return parked.tool_call_id, unresolved_sentence(parked.tool_call_id)
+    unknown = (
+        db.query(ToolCall)
+        .join(TaskStep, ToolCall.task_step_id == TaskStep.id)
+        .filter(TaskStep.task_run_id == int(task_run_id), ToolCall.state == "unknown")
+        .order_by(ToolCall.id.desc())
+        .first()
+    )
+    if unknown is None:
+        return None, None
+    return unknown.tool_call_id, unknown.result or UNKNOWN_SENTENCE
 
 
 def read_snapshot(db: Session, *, user_id: int, session_id: int) -> dict:
@@ -264,19 +276,23 @@ def read_snapshot(db: Session, *, user_id: int, session_id: int) -> dict:
         .order_by(ScheduleConfirmClaim.created_at.asc())
         .all()
     )
-    return {
-        "cursor": published_seq,
-        "jobs": [
+    job_rows = []
+    for row in jobs:
+        call_id, sentence = _visible_resolution(db, int(row.id))
+        job_rows.append(
             {
                 "id": int(row.id),
                 "status": row.status,
                 "goal": row.goal or "",
                 "generation": int(row.generation),
                 "kind": row.kind,
-                "unresolved_call_id": _unresolved_call_id(db, int(row.id)),
+                "unresolved_call_id": call_id,
+                "unresolved_sentence": sentence,
             }
-            for row in jobs
-        ],
+        )
+    return {
+        "cursor": published_seq,
+        "jobs": job_rows,
         "claims": [
             {"token": row.token, "status": row.status, "action": row.action}
             for row in claims

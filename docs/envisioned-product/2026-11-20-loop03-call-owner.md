@@ -186,7 +186,7 @@ After the compare-and-swap, before the handoff commit. The call is `running`, th
 After the handoff commit. The request may have been accepted. The same owner, attempt, and delivery are never passed to `gateway.invoke` again. Process exit does not change that.
 
 - For `kb`, one new attempt may run after a matching exit on the old delivery. The old attempt remains in the effect audit below.
-- For `web`, `web_fetch`, and `sandbox`, the call takes `(running, note_unknown) -> unknown` only when that delivery has both `handed_off_at` and `exited_at`. The sentence stored as the result says the result is not known. `exited_at` is what says the child was reaped. The job moves to `waiting_person` with `continuation_due` false. The sweep does not start a driver.
+- For `web`, `web_fetch`, and `sandbox`, the call takes `(running, note_unknown) -> unknown` only when that delivery has both `handed_off_at` and `exited_at`. The sentence stored as the result says the result is not known. The sweep writes that sentence on an assistant message and on the jobs read. It flushes those rows, then publishes a status event and a message event in the same commit. `exited_at` is what says the child was reaped. The job moves to `waiting_person` with `continuation_due` false. The sweep does not start a driver.
 - Armed writes do not use this invoke path.
 
 The handoff commit and the external accept are not one atomic step. A kill after the commit and before the syscall is "may have been accepted." That attempt becomes `unknown` for `web`, `web_fetch`, and `sandbox`, and the delivery carries the exit. It is not invoked again.
@@ -195,7 +195,7 @@ No exit row. This is the machine crash, a parent that dies with the child, a hoo
 
 ## Parked live owner
 
-When `hold_until` is past and the current delivery still has no `exited_at`, the sweep parks the job. The job becomes `waiting_person`. `continuation_due` becomes false. The call stays `running` and gains `unresolved_at`. The jobs read shows that sentence: the result is not known, and no exit was observed. The job is not `running`, so nothing is hidden behind a driver. The sweep does not publish. `begin_read` returns `busy`. There is no second invoke of this delivery.
+When `hold_until` is past and the current delivery still has no `exited_at`, the sweep parks the job. The job becomes `waiting_person`. `continuation_due` becomes false. The call stays `running` and gains `unresolved_at`. The jobs read shows that sentence and the call id. The sweep flushes the acknowledgement message and the `waiting_person` status, then publishes a status event and a message event in that same commit. `begin_read` returns `busy`. There is no second invoke of this delivery.
 
 The old process may still be inside the gateway. These are the operations while that is true.
 

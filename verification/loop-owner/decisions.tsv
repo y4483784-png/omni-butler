@@ -18,3 +18,4 @@ ts	phase	decision	why	evidence	result
 2026-11-20T17:08:29Z	design	delivery id is one pool execution	one run_job child can execute two calls, and request id plus pid collide across incarnations	verification/loop-owner/prefork-reap-log.txt siblings and synthetic	parent mints delivery_id; attempts reference it
 2026-11-20T17:08:29Z	design	attributed effect key excludes body	a second body must not overwrite the first	synthetic first_body first and conflict_audited	conflict row, unattributed stays ownerless
 2026-11-20T17:45:00Z	implement	delivery id is stored on the Request	the pid tuple recurs inside one incarnation	prefork synthetic del-a2 stayed live	exit updates delivery_id only
+2026-11-20T18:20:00Z	review	publish park and unknown in the same commit as the rows	a connected client only reloads on a session event, and 0026 must not stamp	tests failed on 3bc7b5c then passed after the flush-then-publish change	migration upgrade leaves running calls unstamped

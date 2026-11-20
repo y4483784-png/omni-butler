@@ -454,6 +454,7 @@ export interface SessionJobRow {
   generation: number;
   kind: string;
   unresolved_call_id?: string | null;
+  unresolved_sentence?: string | null;
 }
 
 export interface SessionClaimRow {
