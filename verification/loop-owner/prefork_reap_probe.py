@@ -3,6 +3,9 @@
 This file is not imported by the application. It talks to Redis database 15
 and a queue named ``probe``. It does not publish to the production ``default``
 queue and it does not start the compose worker.
+
+A delivery is one pool-task execution. The parent mints its id. Call attempts
+reference that id. Exit updates that delivery only.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from celery import Celery
@@ -32,82 +36,102 @@ APP.conf.update(
 
 ROOT = Path(os.environ.get("PROBE_ROOT", "/tmp/loop-owner-prefork"))
 DELIVERY_DB = ROOT / "delivery.sqlite"
-EXIT_DB = ROOT / "exit.sqlite"
 RELEASE_DIR = ROOT / "release"
+INCARNATION_FILE = ROOT / "incarnation"
 
 
-def _connect(path: Path) -> sqlite3.Connection:
+def _connect(path: Path | str) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=5)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
-def _delivery_schema(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS deliveries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            request_id TEXT NOT NULL,
-            owner TEXT NOT NULL,
-            pid INTEGER NOT NULL,
-            handed_off INTEGER NOT NULL,
-            started_at TEXT NOT NULL,
-            policy TEXT,
-            UNIQUE (request_id, pid)
-        )
-        """
-    )
-    conn.execute(
+def _install(conn: sqlite3.Connection) -> None:
+    conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
-        )
+        );
+        CREATE TABLE IF NOT EXISTS deliveries (
+            delivery_id TEXT PRIMARY KEY,
+            incarnation TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            child_pid INTEGER NOT NULL,
+            minted_by TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            exited_at TEXT,
+            exitcode TEXT,
+            UNIQUE (incarnation, request_id, child_pid)
+        );
+        CREATE TABLE IF NOT EXISTS attempts (
+            call_id TEXT NOT NULL,
+            owner_token TEXT NOT NULL,
+            attempt INTEGER NOT NULL,
+            delivery_id TEXT NOT NULL REFERENCES deliveries(delivery_id),
+            handed_off INTEGER NOT NULL,
+            policy TEXT,
+            label TEXT NOT NULL,
+            PRIMARY KEY (call_id, owner_token, attempt)
+        );
+        CREATE TABLE IF NOT EXISTS effects (
+            call_id TEXT NOT NULL,
+            owner_token TEXT,
+            attempt INTEGER,
+            body TEXT NOT NULL,
+            attribution TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS effects_attributed
+            ON effects (call_id, owner_token, attempt)
+            WHERE owner_token IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS effects_unattributed
+            ON effects (call_id, body)
+            WHERE owner_token IS NULL;
+        CREATE TABLE IF NOT EXISTS effect_conflicts (
+            call_id TEXT NOT NULL,
+            owner_token TEXT NOT NULL,
+            attempt INTEGER NOT NULL,
+            body TEXT NOT NULL
+        );
         """
     )
-    conn.commit()
-
-
-def _exit_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS exits (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            request_id TEXT NOT NULL,
-            pid INTEGER NOT NULL,
-            detail TEXT NOT NULL,
-            recorded_at TEXT NOT NULL,
-            UNIQUE (request_id, pid)
-        )
+        CREATE TRIGGER IF NOT EXISTS deliveries_parent_only
+        BEFORE INSERT ON deliveries
+        WHEN NEW.minted_by != 'parent'
+        BEGIN
+            SELECT RAISE(ABORT, 'child cannot mint a delivery');
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS refuse_exit
+        BEFORE UPDATE OF exited_at ON deliveries
+        WHEN EXISTS (SELECT 1 FROM meta WHERE key = 'fail_exit' AND value = '1')
+        BEGIN
+            SELECT RAISE(ABORT, 'exit database unavailable');
+        END
         """
     )
     conn.commit()
 
 
-def _record_exit(request_id: str, pid: int | None, detail: str) -> None:
-    if pid is None:
-        raise OSError("parent reap did not name the child pid")
-    conn = _connect(EXIT_DB)
-    try:
-        _exit_schema(conn)
-        conn.execute(
-            """
-            INSERT INTO exits (request_id, pid, detail, recorded_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (request_id, pid) DO NOTHING
-            """,
-            (str(request_id), int(pid), detail, _now()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+def _now() -> str:
+    return f"{time.time():.6f}"
+
+
+def _incarnation() -> str:
+    return INCARNATION_FILE.read_text(encoding="utf-8").strip()
 
 
 def _note(key: str, value: str) -> None:
     conn = _connect(DELIVERY_DB)
     try:
-        _delivery_schema(conn)
+        _install(conn)
         conn.execute(
             "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
@@ -117,8 +141,53 @@ def _note(key: str, value: str) -> None:
         conn.close()
 
 
-def _now() -> str:
-    return f"{time.time():.6f}"
+def _meta(key: str) -> str | None:
+    conn = _connect(DELIVERY_DB)
+    try:
+        _install(conn)
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return None if row is None else str(row["value"])
+    finally:
+        conn.close()
+
+
+def _mint_delivery(request_id: str, pid: int) -> None:
+    conn = _connect(DELIVERY_DB)
+    try:
+        _install(conn)
+        conn.execute(
+            """
+            INSERT INTO deliveries (
+                delivery_id, incarnation, request_id, child_pid, minted_by, started_at
+            ) VALUES (?, ?, ?, ?, 'parent', ?)
+            ON CONFLICT (incarnation, request_id, child_pid) DO NOTHING
+            """,
+            (uuid.uuid4().hex, _incarnation(), str(request_id), int(pid), _now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _record_exit(request_id: str, pid: int | None, detail: str) -> None:
+    if pid is None:
+        raise OSError("parent reap did not name the child pid")
+    conn = _connect(DELIVERY_DB)
+    try:
+        _install(conn)
+        updated = conn.execute(
+            """
+            UPDATE deliveries
+            SET exited_at = ?, exitcode = ?
+            WHERE incarnation = ? AND request_id = ? AND child_pid = ? AND exited_at IS NULL
+            """,
+            (_now(), detail, _incarnation(), str(request_id), int(pid)),
+        )
+        if updated.rowcount != 1:
+            raise OSError(f"exit matched {updated.rowcount} deliveries")
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @worker_init.connect
@@ -128,9 +197,16 @@ def _register_hook(**_kwargs) -> None:
     if os.environ.get("PROBE_HOOK") == "fail-register":
         (ROOT / "register-refused").write_text("refused", encoding="utf-8")
         os._exit(78)
-    original = Request.on_failure
+    INCARNATION_FILE.write_text(uuid.uuid4().hex, encoding="utf-8")
+    original_accept = Request.on_accepted
+    original_failure = Request.on_failure
 
-    def wrapped(self, exc_info, send_failed_event=True, return_ok=False):
+    def accept(self, pid, time_accepted):
+        result = original_accept(self, pid, time_accepted)
+        _mint_delivery(self.id, int(pid))
+        return result
+
+    def failed(self, exc_info, send_failed_event=True, return_ok=False):
         try:
             exc = getattr(exc_info, "exception", None)
             if type(exc).__name__ == "ExceptionWithTraceback":
@@ -145,43 +221,85 @@ def _register_hook(**_kwargs) -> None:
                 handle.write(f"hook_error {type(hook_exc).__name__}: {hook_exc}\n")
             _note("hook_error", f"{type(hook_exc).__name__}: {hook_exc}")
         finally:
-            return original(
+            return original_failure(
                 self,
                 exc_info,
                 send_failed_event=send_failed_event,
                 return_ok=return_ok,
             )
 
-    Request.on_failure = wrapped
+    Request.on_accepted = accept
+    Request.on_failure = failed
     _note("hook_ready", "1")
 
 
+def _lookup_delivery(request_id: str, pid: int) -> sqlite3.Row | None:
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        conn = _connect(DELIVERY_DB)
+        try:
+            _install(conn)
+            row = conn.execute(
+                """
+                SELECT * FROM deliveries
+                WHERE incarnation = ? AND request_id = ? AND child_pid = ?
+                """,
+                (_incarnation(), str(request_id), int(pid)),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is not None:
+            return row
+        time.sleep(0.05)
+    return None
+
+
+def _policy(conn: sqlite3.Connection, delivery_id: str, request_id: str) -> str:
+    priors = conn.execute(
+        """
+        SELECT delivery_id, exited_at FROM deliveries
+        WHERE request_id = ? AND delivery_id != ?
+        """,
+        (request_id, delivery_id),
+    ).fetchall()
+    exited = [row["delivery_id"] for row in priors if row["exited_at"] is not None]
+    if not exited:
+        return "unobserved"
+    handed = conn.execute(
+        f"""
+        SELECT 1 FROM attempts
+        WHERE delivery_id IN ({",".join("?" for _ in exited)}) AND handed_off = 1
+        LIMIT 1
+        """,
+        exited,
+    ).fetchone()
+    if handed is None:
+        return "replacement_allowed"
+    return "no_external_replay"
+
+
 @APP.task(bind=True, acks_late=True, reject_on_worker_lost=True, name="probe.deliver")
-def deliver(self, owner: str, phase: str) -> str:
-    pid = os.getpid()
-    handed_off = 1 if phase == "after" else 0
+def deliver(self, owner: str, phase: str, calls: list[str] | None = None) -> str:
+    names = list(calls) if calls else [f"{owner}-call"]
+    row = _lookup_delivery(str(self.request.id), os.getpid())
+    if row is None:
+        _note("child_unbound", owner)
+        return "unbound"
     conn = _connect(DELIVERY_DB)
     try:
-        _delivery_schema(conn)
-        prior = conn.execute(
-            "SELECT pid, handed_off FROM deliveries WHERE request_id = ? AND pid <> ?",
-            (str(self.request.id), pid),
-        ).fetchall()
-        exits = _exits_for(str(self.request.id))
-        policy = "unobserved"
-        if any(int(row["pid"]) == pid for row in exits):
-            policy = "marked_dead"
-        elif prior and exits and not any(int(row["handed_off"]) for row in prior):
-            policy = "replacement_allowed"
-        elif prior and exits:
-            policy = "no_external_replay"
-        conn.execute(
-            """
-            INSERT INTO deliveries (request_id, owner, pid, handed_off, started_at, policy)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (str(self.request.id), owner, pid, handed_off, _now(), policy),
-        )
+        _install(conn)
+        policy = _policy(conn, str(row["delivery_id"]), str(self.request.id))
+        owner_token = uuid.uuid4().hex
+        handed_off = 1 if phase == "after" else 0
+        for call_id in names:
+            conn.execute(
+                """
+                INSERT INTO attempts (
+                    call_id, owner_token, attempt, delivery_id, handed_off, policy, label
+                ) VALUES (?, ?, 1, ?, ?, ?, ?)
+                """,
+                (call_id, owner_token, str(row["delivery_id"]), handed_off, policy, owner),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -194,48 +312,73 @@ def deliver(self, owner: str, phase: str) -> str:
     return "timeout"
 
 
-def _exits_for(request_id: str) -> list[sqlite3.Row]:
-    if not EXIT_DB.exists() or EXIT_DB.is_dir():
-        return []
-    try:
-        conn = _connect(EXIT_DB)
-    except (OSError, sqlite3.Error):
-        return []
-    try:
-        _exit_schema(conn)
-        return list(conn.execute("SELECT * FROM exits WHERE request_id = ?", (request_id,)).fetchall())
-    finally:
-        conn.close()
-
-
-def _rows() -> list[sqlite3.Row]:
+def _attempt_rows(label: str | None = None) -> list[sqlite3.Row]:
     conn = _connect(DELIVERY_DB)
     try:
-        _delivery_schema(conn)
-        return list(conn.execute("SELECT * FROM deliveries ORDER BY id").fetchall())
+        _install(conn)
+        sql = """
+            SELECT a.label, a.call_id, a.owner_token, a.attempt, a.handed_off, a.policy,
+                   d.delivery_id, d.incarnation, d.request_id, d.child_pid,
+                   d.exited_at, d.exitcode, d.started_at
+            FROM attempts a
+            JOIN deliveries d ON d.delivery_id = a.delivery_id
+        """
+        if label is None:
+            return list(conn.execute(sql).fetchall())
+        return list(conn.execute(sql + " WHERE a.label = ?", (label,)).fetchall())
     finally:
         conn.close()
 
 
-def _exits() -> list[sqlite3.Row]:
-    if not EXIT_DB.exists() or EXIT_DB.is_dir():
-        return []
-    conn = _connect(EXIT_DB)
-    try:
-        _exit_schema(conn)
-        return list(conn.execute("SELECT * FROM exits ORDER BY id").fetchall())
-    finally:
-        conn.close()
-
-
-def _meta(key: str) -> str | None:
+def _deliveries() -> list[sqlite3.Row]:
     conn = _connect(DELIVERY_DB)
     try:
-        _delivery_schema(conn)
-        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
-        return None if row is None else str(row["value"])
+        _install(conn)
+        return list(conn.execute("SELECT * FROM deliveries ORDER BY started_at").fetchall())
     finally:
         conn.close()
+
+
+def _wait_attempts(label: str, count: int, timeout: float = 15) -> list[sqlite3.Row]:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        rows = _attempt_rows(label)
+        if len(rows) >= count:
+            return rows
+        time.sleep(0.05)
+    raise RuntimeError(f"{label} did not record {count} attempts")
+
+
+def _wait_delivery_exit(delivery_id: str, timeout: float = 10) -> sqlite3.Row:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for row in _deliveries():
+            if row["delivery_id"] == delivery_id and row["exited_at"] is not None:
+                return row
+        time.sleep(0.05)
+    raise RuntimeError(f"parent did not record exit for delivery {delivery_id}")
+
+
+def _wait_other_delivery(request_id: str, delivery_id: str, timeout: float = 10) -> sqlite3.Row:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for row in _deliveries():
+            if row["request_id"] == request_id and row["delivery_id"] != delivery_id:
+                return row
+        time.sleep(0.05)
+    raise RuntimeError("redelivery did not mint a second delivery")
+
+
+def _release(owner: str) -> None:
+    (RELEASE_DIR / f"{owner}.go").write_text("go", encoding="utf-8")
+
+
+def _send(owner: str, phase: str, calls: list[str] | None = None) -> None:
+    deliver.apply_async(args=[owner, phase, calls], queue="probe")
+
+
+def _kill(pid: int) -> None:
+    os.kill(int(pid), signal.SIGKILL)
 
 
 def _reset() -> None:
@@ -254,15 +397,9 @@ def _reset() -> None:
     ROOT.mkdir(parents=True)
     RELEASE_DIR.mkdir()
     os.environ["PROBE_ROOT"] = str(ROOT)
-    os.environ.pop("PROBE_FAIL_EXIT", None)
     conn = _connect(DELIVERY_DB)
     try:
-        _delivery_schema(conn)
-    finally:
-        conn.close()
-    conn = _connect(EXIT_DB)
-    try:
-        _exit_schema(conn)
+        _install(conn)
     finally:
         conn.close()
 
@@ -331,42 +468,10 @@ def _stop_worker(proc: subprocess.Popen) -> str:
 def _wait_hook(timeout: float = 25) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if DELIVERY_DB.exists() and _meta("hook_ready") == "1":
+        if DELIVERY_DB.exists() and _meta("hook_ready") == "1" and INCARNATION_FILE.exists():
             return
         time.sleep(0.1)
     raise RuntimeError("worker did not register the parent hook")
-
-
-def _wait_owner(owner: str, timeout: float = 15) -> sqlite3.Row:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        for row in _rows():
-            if row["owner"] == owner:
-                return row
-        time.sleep(0.05)
-    raise RuntimeError(f"delivery for {owner} did not start")
-
-
-def _wait_exit(pid: int, timeout: float = 10) -> sqlite3.Row:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        for row in _exits():
-            if int(row["pid"]) == int(pid):
-                return row
-        time.sleep(0.05)
-    raise RuntimeError(f"parent did not record exit for pid {pid}")
-
-
-def _release(owner: str) -> None:
-    (RELEASE_DIR / f"{owner}.go").write_text("go", encoding="utf-8")
-
-
-def _send(owner: str, phase: str) -> None:
-    deliver.apply_async(args=[owner, phase], queue="probe")
-
-
-def _kill(pid: int) -> None:
-    os.kill(int(pid), signal.SIGKILL)
 
 
 def _case_after() -> dict:
@@ -374,32 +479,38 @@ def _case_after() -> dict:
     try:
         _wait_hook()
         _send("after-owner", "after")
-        first = _wait_owner("after-owner")
-        _kill(int(first["pid"]))
-        exit_row = _wait_exit(int(first["pid"]))
-        second = None
+        first_attempts = _wait_attempts("after-owner", 1)
+        first = first_attempts[0]
+        _kill(int(first["child_pid"]))
+        dead = _wait_delivery_exit(str(first["delivery_id"]))
+        second = _wait_other_delivery(str(first["request_id"]), str(first["delivery_id"]))
         deadline = time.time() + 10
+        live_attempts = []
         while time.time() < deadline:
-            matches = [row for row in _rows() if row["owner"] == "after-owner" and int(row["pid"]) != int(first["pid"])]
-            if matches:
-                second = matches[0]
+            live_attempts = [
+                row for row in _attempt_rows("after-owner") if row["delivery_id"] == second["delivery_id"]
+            ]
+            if live_attempts:
                 break
             time.sleep(0.05)
-        if second is None:
-            raise RuntimeError("redelivery did not start a second child")
-        assert int(second["pid"]) != int(first["pid"])
+        if not live_attempts:
+            raise RuntimeError("redelivery wrote no attempt")
+        assert second["delivery_id"] != first["delivery_id"]
         assert second["request_id"] == first["request_id"]
-        assert second["policy"] == "no_external_replay"
-        assert not any(int(row["pid"]) == int(second["pid"]) for row in _exits())
-        assert float(exit_row["recorded_at"]) < float(second["started_at"])
-        assert "SIGKILL" in exit_row["detail"]
+        assert second["incarnation"] == first["incarnation"]
+        assert int(second["child_pid"]) != int(first["child_pid"])
+        assert second["exited_at"] is None
+        assert live_attempts[0]["policy"] == "no_external_replay"
+        assert live_attempts[0]["owner_token"] != first["owner_token"]
+        assert float(dead["exited_at"]) < float(second["started_at"])
+        assert "SIGKILL" in str(dead["exitcode"])
         _release("after-owner")
         return {
             "case": "after_handoff",
             "request_id": first["request_id"],
-            "dead_pid": int(first["pid"]),
-            "live_pid": int(second["pid"]),
-            "policy": second["policy"],
+            "dead_delivery": first["delivery_id"],
+            "live_delivery": second["delivery_id"],
+            "policy": live_attempts[0]["policy"],
             "exit_before_redelivery": True,
         }
     finally:
@@ -411,24 +522,29 @@ def _case_before() -> dict:
     try:
         _wait_hook()
         _send("before-owner", "before")
-        first = _wait_owner("before-owner")
+        first = _wait_attempts("before-owner", 1)[0]
         assert int(first["handed_off"]) == 0
-        _kill(int(first["pid"]))
-        _wait_exit(int(first["pid"]))
-        second = None
+        _kill(int(first["child_pid"]))
+        _wait_delivery_exit(str(first["delivery_id"]))
+        second = _wait_other_delivery(str(first["request_id"]), str(first["delivery_id"]))
         deadline = time.time() + 10
+        live = []
         while time.time() < deadline:
-            matches = [row for row in _rows() if row["owner"] == "before-owner" and int(row["pid"]) != int(first["pid"])]
-            if matches:
-                second = matches[0]
+            live = [row for row in _attempt_rows("before-owner") if row["delivery_id"] == second["delivery_id"]]
+            if live:
                 break
             time.sleep(0.05)
-        if second is None:
-            raise RuntimeError("replacement delivery did not start")
-        assert second["policy"] == "replacement_allowed"
-        assert not any(int(row["pid"]) == int(second["pid"]) for row in _exits())
+        if not live:
+            raise RuntimeError("replacement delivery wrote no attempt")
+        assert live[0]["policy"] == "replacement_allowed"
+        assert second["exited_at"] is None
         _release("before-owner")
-        return {"case": "before_handoff", "policy": second["policy"], "same_request": second["request_id"] == first["request_id"]}
+        return {
+            "case": "before_handoff",
+            "policy": live[0]["policy"],
+            "same_request": second["request_id"] == first["request_id"],
+            "distinct_delivery": second["delivery_id"] != first["delivery_id"],
+        }
     finally:
         _stop_worker(proc)
 
@@ -439,26 +555,54 @@ def _case_duplicate() -> dict:
         _wait_hook()
         _send("live-a", "after")
         _send("live-b", "after")
-        first = _wait_owner("live-a")
-        other = _wait_owner("live-b")
-        _kill(int(first["pid"]))
-        _wait_exit(int(first["pid"]))
-        time.sleep(0.4)
-        assert not any(int(row["pid"]) == int(other["pid"]) for row in _exits())
-        redelivered = [
-            row for row in _rows() if row["request_id"] == first["request_id"] and int(row["pid"]) != int(first["pid"])
-        ]
-        assert redelivered, "same request id was not delivered to a new pid"
-        assert not any(int(row["pid"]) == int(redelivered[0]["pid"]) for row in _exits())
-        assert int(redelivered[0]["pid"]) != int(other["pid"])
+        first = _wait_attempts("live-a", 1)[0]
+        other = _wait_attempts("live-b", 1)[0]
+        _kill(int(first["child_pid"]))
+        _wait_delivery_exit(str(first["delivery_id"]))
+        second = _wait_other_delivery(str(first["request_id"]), str(first["delivery_id"]))
+        other_now = [row for row in _deliveries() if row["delivery_id"] == other["delivery_id"]][0]
+        assert other_now["exited_at"] is None
+        assert second["exited_at"] is None
+        assert second["delivery_id"] != other["delivery_id"]
         _release("live-a")
         _release("live-b")
         return {
             "case": "duplicate_while_live",
-            "dead_pid": int(first["pid"]),
-            "other_live_pid": int(other["pid"]),
-            "redelivery_pid": int(redelivered[0]["pid"]),
+            "dead_delivery": first["delivery_id"],
+            "other_live_delivery": other["delivery_id"],
+            "redelivery_delivery": second["delivery_id"],
             "other_marked_dead": False,
+        }
+    finally:
+        _stop_worker(proc)
+
+
+def _case_siblings() -> dict:
+    proc = _start_worker(1, "on")
+    try:
+        _wait_hook()
+        _send("sib", "after", ["call-a", "call-b"])
+        rows = _wait_attempts("sib", 2)
+        assert {row["call_id"] for row in rows} == {"call-a", "call-b"}
+        assert len({row["delivery_id"] for row in rows}) == 1
+        assert len({row["owner_token"] for row in rows}) == 1
+        delivery_id = str(rows[0]["delivery_id"])
+        request_id = str(rows[0]["request_id"])
+        _kill(int(rows[0]["child_pid"]))
+        dead = _wait_delivery_exit(delivery_id)
+        second = _wait_other_delivery(request_id, delivery_id)
+        assert second["exited_at"] is None
+        assert second["incarnation"] == rows[0]["incarnation"]
+        still = [row for row in _attempt_rows("sib") if row["delivery_id"] == delivery_id]
+        assert {row["call_id"] for row in still} == {"call-a", "call-b"}
+        assert "SIGKILL" in str(dead["exitcode"])
+        _release("sib")
+        return {
+            "case": "two_calls_one_delivery",
+            "delivery_id": delivery_id,
+            "calls": ["call-a", "call-b"],
+            "redelivery_delivery": second["delivery_id"],
+            "redelivery_exited": False,
         }
     finally:
         _stop_worker(proc)
@@ -469,28 +613,17 @@ def _case_hook_fails() -> dict:
     try:
         _wait_hook()
         _send("hook-owner", "after")
-        first = _wait_owner("hook-owner")
-        EXIT_DB.chmod(0)
-        _kill(int(first["pid"]))
-        second = None
-        deadline = time.time() + 10
-        while time.time() < deadline:
-            matches = [row for row in _rows() if row["owner"] == "hook-owner" and int(row["pid"]) != int(first["pid"])]
-            if matches:
-                second = matches[0]
-                break
-            time.sleep(0.05)
-        if second is None:
-            raise RuntimeError("hook failure swallowed the requeue")
+        first = _wait_attempts("hook-owner", 1)[0]
+        _note("fail_exit", "1")
+        _kill(int(first["child_pid"]))
+        second = _wait_other_delivery(str(first["request_id"]), str(first["delivery_id"]))
+        first_now = [row for row in _deliveries() if row["delivery_id"] == first["delivery_id"]][0]
+        assert first_now["exited_at"] is None
+        assert second["exited_at"] is None
         assert _meta("hook_error")
-        EXIT_DB.chmod(0o644)
-        assert _exits() == []
-        assert not any(int(row["pid"]) == int(second["pid"]) for row in _exits())
         _release("hook-owner")
-        return {"case": "hook_write_fails", "requeued": True, "exit_rows": 0, "hook_error": _meta("hook_error")}
+        return {"case": "hook_write_fails", "requeued": True, "dead_delivery_exited": False, "hook_error": _meta("hook_error")}
     finally:
-        if EXIT_DB.exists():
-            EXIT_DB.chmod(0o644)
         _stop_worker(proc)
 
 
@@ -499,18 +632,20 @@ def _case_parent_killed() -> dict:
     try:
         _wait_hook()
         _send("orphan-owner", "after")
-        first = _wait_owner("orphan-owner")
+        first = _wait_attempts("orphan-owner", 1)[0]
         os.kill(proc.pid, signal.SIGKILL)
         time.sleep(0.8)
-        assert _exits() == []
+        row = [item for item in _deliveries() if item["delivery_id"] == first["delivery_id"]][0]
+        assert row["exited_at"] is None
         child_alive = True
         try:
-            os.kill(int(first["pid"]), 0)
+            os.kill(int(first["child_pid"]), 0)
         except OSError:
             child_alive = False
         return {
             "case": "parent_sigkill",
-            "exit_rows": 0,
+            "delivery_id": first["delivery_id"],
+            "exited": False,
             "child_still_alive": child_alive,
             "policy": "unobserved",
         }
@@ -539,27 +674,196 @@ def _case_register_fails() -> dict:
         code_before_send = proc.poll()
         _send("unregistered-owner", "before")
         time.sleep(1.0)
-        consumed = any(row["owner"] == "unregistered-owner" for row in _rows())
         assert (ROOT / "register-refused").read_text(encoding="utf-8") == "refused"
         assert code_before_send == 78
-        assert not consumed
-        return {
-            "case": "hook_register_fails",
-            "returncode": code_before_send,
-            "consumed": False,
-        }
+        assert _deliveries() == []
+        assert _attempt_rows() == []
+        return {"case": "hook_register_fails", "returncode": code_before_send, "consumed": False}
     finally:
         if proc.poll() is None:
             _stop_worker(proc)
 
 
+def acknowledgement_authorizes(submitted_control: bool, submitted_call_id: str | None, parked_call_id: str) -> bool:
+    """True only for the acknowledgement control showing this parked call.
+
+    An ordinary message does not set ``submitted_control``. A call id copied
+    from message text, or filled in by the driver, is not that control.
+    """
+    if not submitted_control:
+        return False
+    if submitted_call_id is None or submitted_call_id == "":
+        return False
+    return submitted_call_id == parked_call_id
+
+
+def _record_effect(conn: sqlite3.Connection, call_id: str, owner: str | None, attempt: int | None, body: str) -> str:
+    if owner is None:
+        existing = conn.execute(
+            "SELECT body FROM effects WHERE call_id = ? AND owner_token IS NULL AND body = ?",
+            (call_id, body),
+        ).fetchone()
+        if existing is not None:
+            return "duplicate"
+        conn.execute(
+            "INSERT INTO effects (call_id, owner_token, attempt, body, attribution) VALUES (?, NULL, NULL, ?, 'unattributed')",
+            (call_id, body),
+        )
+        return "stored"
+    existing = conn.execute(
+        "SELECT body FROM effects WHERE call_id = ? AND owner_token = ? AND attempt = ?",
+        (call_id, owner, attempt),
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            """
+            INSERT INTO effects (call_id, owner_token, attempt, body, attribution)
+            VALUES (?, ?, ?, ?, 'attributed')
+            """,
+            (call_id, owner, attempt, body),
+        )
+        return "stored"
+    if existing["body"] == body:
+        return "same"
+    conn.execute(
+        "INSERT INTO effect_conflicts (call_id, owner_token, attempt, body) VALUES (?, ?, ?, ?)",
+        (call_id, owner, attempt, body),
+    )
+    return "rejected"
+
+
+def _synthetic() -> dict:
+    conn = _connect(":memory:")
+    try:
+        _install(conn)
+        conn.execute(
+            """
+            INSERT INTO deliveries (
+                delivery_id, incarnation, request_id, child_pid, minted_by, started_at
+            ) VALUES ('del-a', 'inc-a', 'req', 100, 'parent', '1'),
+                     ('del-b', 'inc-b', 'req', 100, 'parent', '2'),
+                     ('del-c', 'inc-a', 'req-2', 7, 'parent', '3')
+            """
+        )
+        both = conn.execute(
+            "SELECT delivery_id FROM deliveries WHERE request_id = 'req' AND child_pid = 100"
+        ).fetchall()
+        assert {row["delivery_id"] for row in both} == {"del-a", "del-b"}
+        updated = conn.execute(
+            """
+            UPDATE deliveries SET exited_at = '9', exitcode = 'signal 9 (SIGKILL)'
+            WHERE incarnation = 'inc-a' AND request_id = 'req' AND child_pid = 100 AND exited_at IS NULL
+            """
+        )
+        assert updated.rowcount == 1
+        conn.commit()
+        dead = conn.execute("SELECT exited_at FROM deliveries WHERE delivery_id = 'del-a'").fetchone()
+        live = conn.execute("SELECT exited_at FROM deliveries WHERE delivery_id = 'del-b'").fetchone()
+        assert dead["exited_at"] == "9"
+        assert live["exited_at"] is None
+        forged = False
+        try:
+            conn.execute(
+                """
+                INSERT INTO deliveries (
+                    delivery_id, incarnation, request_id, child_pid, minted_by, started_at
+                ) VALUES ('forged', 'inc-a', 'req-x', 1, 'child', '4')
+                """
+            )
+        except sqlite3.IntegrityError:
+            forged = True
+            conn.rollback()
+        assert forged
+        missing = False
+        try:
+            conn.execute(
+                """
+                INSERT INTO attempts (
+                    call_id, owner_token, attempt, delivery_id, handed_off, policy, label
+                ) VALUES ('call-x', 'owner-x', 1, 'missing', 0, NULL, 'x')
+                """
+            )
+        except sqlite3.IntegrityError:
+            missing = True
+            conn.rollback()
+        assert missing
+        conn.execute(
+            """
+            INSERT INTO attempts (
+                call_id, owner_token, attempt, delivery_id, handed_off, policy, label
+            ) VALUES ('call-a', 'owner-1', 1, 'del-c', 1, NULL, 'sib'),
+                     ('call-b', 'owner-1', 1, 'del-c', 0, NULL, 'sib')
+            """
+        )
+        conn.execute(
+            """
+            UPDATE deliveries SET exited_at = '9', exitcode = 'signal 9 (SIGKILL)'
+            WHERE incarnation = 'inc-a' AND request_id = 'req-2' AND child_pid = 7
+            """
+        )
+        sibling_rows = conn.execute(
+            "SELECT call_id, delivery_id FROM attempts WHERE delivery_id = 'del-c' ORDER BY call_id"
+        ).fetchall()
+        assert [row["call_id"] for row in sibling_rows] == ["call-a", "call-b"]
+        assert conn.execute("SELECT count(*) AS n FROM deliveries WHERE request_id = 'req-2'").fetchone()["n"] == 1
+        assert _record_effect(conn, "call-a", "owner-1", 1, "first") == "stored"
+        assert _record_effect(conn, "call-a", "owner-1", 1, "first") == "same"
+        assert _record_effect(conn, "call-a", "owner-1", 1, "other") == "rejected"
+        kept = conn.execute(
+            "SELECT body FROM effects WHERE call_id = 'call-a' AND owner_token = 'owner-1'"
+        ).fetchone()
+        assert kept["body"] == "first"
+        assert conn.execute("SELECT count(*) AS n FROM effect_conflicts").fetchone()["n"] == 1
+        assert _record_effect(conn, "call-a", None, None, "late") == "stored"
+        assert _record_effect(conn, "call-a", None, None, "late") == "duplicate"
+        owners = conn.execute(
+            "SELECT owner_token FROM effects WHERE attribution = 'unattributed'"
+        ).fetchone()
+        assert owners["owner_token"] is None
+        parked = "call-parked"
+        message_text = parked
+        ordinary = acknowledgement_authorizes(False, None, parked)
+        autofill = acknowledgement_authorizes(False, message_text, parked)
+        mismatch = acknowledgement_authorizes(True, "call-other", parked)
+        explicit = acknowledgement_authorizes(True, parked, parked)
+        assert ordinary is False
+        assert autofill is False
+        assert mismatch is False
+        assert explicit is True
+        conn.commit()
+        return {
+            "case": "synthetic_identity",
+            "request_pid_rows": 2,
+            "exact_delivery_marked": "del-a",
+            "reused_pid_left_live": "del-b",
+            "child_mint_rejected": True,
+            "unknown_delivery_rejected": True,
+            "sibling_calls": ["call-a", "call-b"],
+            "first_body": "first",
+            "conflict_audited": True,
+            "unattributed_owner": None,
+            "ordinary_message_authorizes": ordinary,
+            "autofill_authorizes": autofill,
+            "explicit_ack_authorizes": explicit,
+        }
+    finally:
+        conn.close()
+
+
 def main() -> int:
     failures: list[str] = []
     results: list[dict] = []
+    try:
+        results.append(_synthetic())
+        print(f"PASS synthetic {results[-1]}")
+    except Exception as exc:
+        failures.append(f"synthetic: {type(exc).__name__}: {exc}")
+        print(f"FAIL synthetic {type(exc).__name__}: {exc}")
     cases = (
         ("after", _case_after),
         ("before", _case_before),
         ("duplicate", _case_duplicate),
+        ("siblings", _case_siblings),
         ("hook", _case_hook_fails),
         ("parent", _case_parent_killed),
         ("register-raise", _case_register_raise),
@@ -578,8 +882,8 @@ def main() -> int:
             trace = ROOT / "hook-trace.txt"
             log = ROOT / "worker.log"
             extra = trace.read_text(encoding="utf-8", errors="replace") if trace.exists() else "no hook trace"
-            worker = log.read_text(encoding="utf-8", errors="replace")[-1500:] if log.exists() else "no worker log"
-            failures.append(f"{name}: {type(exc).__name__}: {exc} | {extra}")
+            worker = log.read_text(encoding="utf-8", errors="replace")[-1200:] if log.exists() else "no worker log"
+            failures.append(f"{name}: {type(exc).__name__}: {exc}")
             print(f"FAIL {name} {type(exc).__name__}: {exc}")
             print(f"TRACE {extra}")
             print(f"LOG {worker}")

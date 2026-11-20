@@ -112,7 +112,7 @@ Both designs keep one current execution of a call. Both refuse to treat lease ex
 
 Add nullable `tool_calls.owner_token`, `attempt`, and `handed_off_at`. The pending-to-running update sets `owner_token` to a new value and `attempt` to 1, or to the previous attempt plus one when the rules below allow a replacement. The update returns that owner only to the worker that won it. `begin_read` on a `running` row returns `busy` and does not invoke. The winner invokes once.
 
-The worker commits `handed_off_at` on that owner and attempt, then calls `gateway.invoke`. The commit is the boundary between "this attempt has not made the request" and "this attempt may have been accepted."
+The worker commits `handed_off_at` on that owner and attempt, then calls `gateway.invoke`. The timestamp is on the attempt row. It is not a column of the pool delivery, because one delivery can carry two calls. The commit is the boundary between "this attempt has not made the request" and "this attempt may have been accepted."
 
 `apply_intent`, while any call on the latest step is `pending` or `running`, still appends the goal, stores `web`, and increments `intent_version`. It does not clear `exec_token` or `hold_until`, it does not clear the dispatch columns, it does not increment `exec_epoch`, and it does not set `continuation_due`. With no such call, today's transaction stays.
 
@@ -142,7 +142,11 @@ Celery's prefork pool runs the task in a child. The parent supervisor reads `wor
 
 `Request.on_failure` sees that exception. With `task_acks_late` and `task_reject_on_worker_lost`, it requeues the message and does not send `task_failure` (`celery/worker/request.py` lines 602-611). The current configuration throws away the exit code. `celery_app.py` lines 22-28 set those flags. `visibility_timeout` is `max(3600, celery_ingest_time_limit + 300)`. The comment on line 27 says the timeout must exceed the hard ingest limit so a healthy long task is not redelivered.
 
-The chosen design writes the exit in that parent path, before the requeue. The exit is not keyed by the Celery request id alone. A requeue keeps that id and delivers it to a new child. An update of the form "this request id has exited" marks the new live child dead. The durable row is one delivery: `tool_call_id`, `owner_token`, `attempt`, `celery_request_id`, `child_pid`, `handed_off_at`, `exited_at`, `exitcode`. The unique key is `(celery_request_id, child_pid)`. The parent updates the row whose pid is `Request.worker_pid` after it unwraps `ExceptionWithTraceback` to the inner `WorkerLostError`. The hook then calls the original `on_failure` in a `finally`, so a failed exit write still requeues.
+The chosen design writes the exit in that parent path, before the requeue. One `run_job` request in one child can execute two sibling calls, so a delivery is not a call. `task_deliveries` is one pool execution. `tool_call_attempts` is one call on that execution.
+
+`worker_init` mints `worker_incarnation`, a random id for this parent process, and stores it where the child can read it. A restarted parent mints a new one. `Request.on_accepted` inserts the delivery in the parent: `delivery_id` random, `worker_incarnation`, `celery_request_id`, `child_pid`, `exited_at` null, `exitcode` null. The unique key is `(worker_incarnation, celery_request_id, child_pid)`. That key is local to one parent. It is not a global identity. The child looks the row up and does not insert a delivery. A missing row means the child does not invoke. Each call then inserts one attempt, `(tool_call_id, owner_token, attempt, delivery_id, handed_off_at)`, unique on `(tool_call_id, owner_token, attempt)`, in the same transaction as the compare-and-swap. Two siblings share the `delivery_id` and differ by call id.
+
+The parent unwraps `ExceptionWithTraceback` to the inner `WorkerLostError`, then updates the one row for this incarnation, this request id, and `Request.worker_pid`. A requeue on the same parent is a new pid and a new `delivery_id`. A new incarnation that reuses the numeric pid and the request id is a different row and is not updated. The hook calls the original `on_failure` in a `finally`, so a failed exit write still requeues. Every attempt that references the exited delivery sees that one exit. Each attempt still has its own `handed_off_at`.
 
 `run_job` is routed to queue `default` (`backend/app/tasks/job.py` line 146). `task_default_queue` is also `default` (`backend/app/tasks/celery_app.py` line 14). The compose worker command listens to `ingest,maintenance` only (`backend/entrypoint.sh` line 19, `docker-compose.yml` worker `MODE`). Ingest and pulse and the watchdog set their own queues. `run_job.delay` is the publish onto `default`, and that queue has no consumer in the current command. Messages already sitting in Redis on `default` have never been run. Adding `default` to the command would deliver that backlog into `run_job`, which can invoke tools. That is not a plumbing change. This design does not change the command. A later implementation may consume `default` only after an operator has inspected `LLEN default` and either discarded that backlog or drained it under these owner rules. The prefork probe used Redis database 15 and a queue named `probe` so it would not read that backlog.
 
@@ -162,20 +166,22 @@ A redelivered message, or `visibility_timeout`, is not an exit code. A live `run
 
 Parent reap is the death proof. The child-exit hook is not sufficient, because it misses `SIGKILL`. Broker redelivery is not death. Lease retire is not death and does not start an attempt. `unknown` means the result is not known. It does not mean a death was observed. `exited_at` on the delivery row is the death observation. A row can be unresolved with no `exited_at`. A row can be `unknown` and also have `exited_at`. Those are different facts.
 
-The isolated probe `verification/loop-owner/prefork_reap_probe.py` started a real Celery 5.4.0 prefork worker (kombu 5.3.7, redis-py 5.3.1, Redis database 15, queue `probe`). It is not wired into the application. The run on this machine recorded:
+The isolated probe `verification/loop-owner/prefork_reap_probe.py` started a real Celery 5.4.0 prefork worker (kombu 5.3.7, redis-py 5.3.1, Redis database 15, queue `probe`). It is not wired into the application. The same file then ran the identity collisions in memory. The run on this machine recorded:
 
-- Kill after the handoff commit. The parent wrote `signal 9 (SIGKILL)` for that child pid before the redelivered message started. The new child kept the same request id, used a new pid, and stored `no_external_replay`. The new pid had no exit row.
-- Kill before the handoff commit. The new child stored `replacement_allowed` and was not marked exited.
-- Two live deliveries. Killing one pid wrote an exit only for that pid. The other live pid stayed without an exit. The redelivery of the dead request id was a third pid and was not marked exited either.
-- Exit database mode `000` after the child had written its delivery. The hook raised `OperationalError: unable to open database file`, wrote no exit row, and the original `on_failure` still requeued. A second child started.
-- `SIGKILL` of the worker main pid. No exit row. In that run the child was also gone. The hook lives in the parent, so a child that survived would still not write the exit. The policy is unobserved. No replacement and no replay.
-- `raise` inside `worker_init`. The worker process was still alive three seconds later. A raised exception is not a failed registration. Registration failure calls `os._exit(78)` before the consumer runs. A task published after that exit was not consumed.
+- Kill after the handoff commit. Delivery `977f34ec21814fbabcca812afd1fea55` received `signal 9 (SIGKILL)` before delivery `405c6ff7c4be4a66bf3e33b8b6e36722` started on the same request id. The new delivery stored `no_external_replay` and was not exited. The owner tokens differed.
+- Kill before the handoff commit. The new delivery stored `replacement_allowed` and was a different `delivery_id`.
+- Two live deliveries. Killing one left the other exited_at null. The redelivery was a third delivery id.
+- One task, calls `call-a` and `call-b`. Both attempts used delivery `53256c87c7244f4882b19671bed0a1c8`. After `SIGKILL` that delivery was exited and the redelivery `e5fda4580d604732ae9d85c8e93fc138` was not.
+- The same request id and pid `100` on incarnations `inc-a` and `inc-b`. Updating incarnation `inc-a` marked `del-a` and left `del-b` live. A request-id-and-pid lookup returned both rows. An insert with `minted_by` `child` aborted. An attempt whose `delivery_id` was unknown aborted.
+- The exit update aborted with `IntegrityError: exit database unavailable`. The first delivery stayed unexited and the requeue still minted a second delivery.
+- `SIGKILL` of the worker main pid. Delivery `98676808e8f549f7974597e02c9fad0b` stayed unexited.
+- `raise` inside `worker_init` left the worker alive. `os._exit(78)` consumed nothing.
 
 The resolution uses the handoff marker and the matching delivery's exit.
 
 Pending, before the compare-and-swap. The call is `pending`, `owner_token` is null, and there is no delivery row. The request has not been made. A later holder runs the compare-and-swap once and invokes once. That is the existing pending recovery. It is safe for every class because this attempt did not call out. The pending tests stay, and the implementation asserts the invoke count.
 
-After the compare-and-swap, before the handoff commit. The call is `running`, a delivery row exists, and `handed_off_at` is null. If that delivery's `exited_at` is set, this attempt did not reach `gateway.invoke`. One replacement attempt is allowed for every class, under a new `owner_token`, a new `attempt`, and a new delivery row. The old delivery is not invoked. `begin_read` still returns `busy` for the old owner. If that delivery has no `exited_at`, nobody starts that replacement.
+After the compare-and-swap, before the handoff commit. The call is `running`, the attempt references a delivery, and that attempt's `handed_off_at` is null. If that delivery's `exited_at` is set, this attempt did not reach `gateway.invoke`. One replacement attempt is allowed for every class, under a new `owner_token`, a new `attempt`, and a new `delivery_id`. The old attempt is not invoked. `begin_read` still returns `busy` for the old owner. If that delivery has no `exited_at`, nobody starts that replacement.
 
 After the handoff commit. The request may have been accepted. The same owner, attempt, and delivery are never passed to `gateway.invoke` again. Process exit does not change that.
 
@@ -197,7 +203,9 @@ A status or progress read is allowed. It shows the unresolved sentence, the call
 
 A supplement, an ordinary chat message, or a continue that only adds text updates the goal and `intent_version`. It does not clear the owner. It does not enqueue a model turn. It does not create a tool call. It does not call the model. A new call id is not authorization to run the unknown effect again.
 
-A new external action is a different request. It carries `acknowledge_unresolved_call_id` set to the parked call id. The server stores that acknowledgement with the sentence that the earlier result is unknown and that no exit was observed. Only then may a new call id be created. The new call is a new owner and a new attempt. The parked call stays unresolved until its own result or its own exit arrives. A supplement without that field does not create the call.
+A new external action is a different request. The person submits the acknowledgement control, which shows the unresolved sentence and the parked call id. The server stores that submitted id and the sentence. It creates one new call, with a new owner and a new attempt. The parked call stays unresolved until its own result or its own exit arrives.
+
+The server does not take the call id from the message text. It does not fill the field on a supplement, a continue, or a progress question. `acknowledgement_authorizes` is true only when the control was submitted and the submitted id is the parked call id. A filled id without the control is false. The implementation tests cover four requests: a supplement whose text contains the parked call id, a body that carries the id without the control, the control with a different call id, and the control with the displayed call id. Only the last creates a call.
 
 Stop cancels the parked call and sets the job to `stopped`.
 
@@ -215,11 +223,11 @@ The parked job leaves the visible unresolved condition when the owner saves that
 
 The implementation does not add `(cancelled, save_result) -> result`, and it does not move a cancelled call back to `running` so that edge can fire. `SAVE_RESULT` remains the edge from `running` to `result` only.
 
-The audit is a new table `tool_call_effects`. One row is `(tool_call row id, owner_token, attempt, body)`. The unique key is those three identity columns. An unattributed body has no delivery, so its key is `(tool_call row id, body)` with `attribution` `unattributed`. `record_owner_result` does the following.
+The audit is `tool_call_effects` plus `tool_call_effect_conflicts`. An attributed row is unique on `(tool_call row id, owner_token, attempt)`. The body is not part of that key. The first body stays. The same body again changes nothing. A different body is inserted into `tool_call_effect_conflicts` and does not change the effect body or the call result. An unattributed row has a null owner and is unique on `(tool_call row id, body)`. It does not grant an owner. `record_owner_result` does the following.
 
-1. Lock the call row. A body that names a different owner or attempt writes nothing. A body with no delivery inserts the unattributed effect row and returns. It does not call `apply`.
-2. Insert the effect row if that key is absent. A second insert of the same key writes nothing.
-3. If the job is not `stopped`, this delivery is the current one, `state` is `running`, and `result` is null or already equals `body`, call `apply(SAVE_RESULT)` and set `result`. That is the existing edge. Clear `unresolved_at` when the body is stored. Leave the job status as it is.
+1. Lock the call row. A body that names a different owner or attempt writes nothing. A body with no delivery inserts the unattributed row when that call and body are new, and returns. It does not call `apply`.
+2. If the attributed row is absent, insert the first body. If the stored body differs, insert the conflict row and stop. Do not update the stored body. The same body falls through.
+3. If the job is not `stopped`, this attempt is the current one, `state` is `running`, and `result` is null or already equals the stored body, call `apply(SAVE_RESULT)` and set `result` from that stored body. That is the existing edge. Clear `unresolved_at` when the body is stored. Leave the job status as it is.
 4. If `state` is `cancelled`, stop after the insert. Do not call `apply`. Leave `state` as `cancelled` and leave `result` null. Do not change `task_runs.status`. Do not set `continuation_due`. Do not insert a `messages` row. Do not publish a session event of kind `message`.
 5. If `state` is `result` or `unknown` and `result` is already set, leave `result` and `state` as they are. The effect insert from step 2 still keeps this attempt's body.
 6. A stopped job stays stopped. A `waiting_person` job stays `waiting_person`. The write does not set `status` back to `running`.
@@ -239,7 +247,7 @@ The rollout is a drain, then the migration, then the unresolved mark.
 1. Stop the worker container so no `run_job` is still inside a tool. This is an operator step. The code does not infer a live caller from `exec_token`.
 2. Apply `0026`.
 3. For each `running` call that has no delivery row, set `unresolved_at`, move a `running` job to `waiting_person`, and set `continuation_due` false. Do not set `owner_token`. Do not set `state` to `unknown`. Do not set `exited_at`. Do not replay.
-4. Start workers only after that update. A new call mints `owner_token` in the compare-and-swap transaction, as a new random id stored on the call. The child inserts the delivery row, including its pid and the Celery request id, before `gateway.invoke`.
+4. Start workers only after that update. The parent mints `delivery_id` in `on_accepted`. The child mints `owner_token` in the compare-and-swap transaction and inserts the attempt for the delivery it looked up. It does not insert a delivery. The handoff commit is still before `gateway.invoke`.
 
 A late body that arrives with no delivery row inserts an effect row with `owner_token` null and `attribution` `unattributed`. It does not call `apply`. It does not set the call to `result`. It does not resume the job. The audit row is the evidence. The call stays unresolved. `begin_read` on a `running` call with no delivery returns `busy` and does not invoke.
 
@@ -258,14 +266,15 @@ These orders are from the current source. The new persist takes the job lock bef
 
 `cancel_open_calls` holds the job and then the cursor. `open_cards` holds claims and then waits for the job. Those two do not form a cycle, because cancel does not take the claim. `apply_intent` and `open_cards` use the same claim, job, cursor order.
 
-The effect insert is idempotent on `(tool_call row id, owner_token, attempt, body)`. A second insert of the same key writes nothing. The job lock is taken before the call lock on the persist path. Stop, save, and open-cards keep the orders in the table above.
+An attributed effect is unique on `(tool_call row id, owner_token, attempt)`. The first body stays. A different body for that key is a conflict row and does not replace the stored body or the call result. An unattributed effect is unique on `(tool_call row id, body)` and does not set an owner. The job lock is taken before the call lock on the persist path. Stop, save, and open-cards keep the orders in the table above.
 
 These Postgres and prefork tests are not in this branch's CI. The implementation PR adds them to the mandatory `eval.yml` job. SQLite is not that proof.
 
 - Owned persist against `cancel_open_calls`. Both finish. A matching owner inserts the effect. The job stays `stopped`. A second session does not invoke.
 - Owned persist against `apply_intent`. Both finish. The late body does not replace the new goal and does not resume the job.
 - `open_cards` against `cancel_open_calls`. Both finish. Cancel does not take the claim lock.
-- The prefork probe cases: kill before handoff, kill after handoff, a delayed duplicate beside a live delivery, the same request id on a new pid, a failed exit write that still requeues, parent `SIGKILL` with no exit row, and a registration abort that does not consume.
+- The prefork probe cases: kill before handoff, kill after handoff, a delayed duplicate beside a live delivery, two calls on one delivery, the same request id and pid on a new incarnation, a child insert of a delivery rejected, a failed exit write that still requeues, parent `SIGKILL` with no exit, and a registration abort that does not consume.
+- The acknowledgement tests named under parked live owner. A supplement does not fill the control.
 
 `tests/test_resume_lock_order.py` is already that Postgres job. Its positive tests now wait until `pg_blocking_pids` of the waiter contains the holder's backend pid. They release the barrier and join in `finally`, including when the assertion fails. The inverted-order test still requires an exception whose text contains `deadlock`, and it sets its barriers in `finally` as well. The fixture then terminates leftover backends on this database so a failed gate cannot leave the next `drop_all` in a deadlock. That terminate runs after the test's own assertion.
 
@@ -296,7 +305,7 @@ The behavior file drives `run_job`, `_apply_talk`, and `run_sweep` with a barrie
 
 ## Migration and API
 
-Revision `0026` after `0025_confirm_until`. Nullable `owner_token` and `unresolved_at` on `tool_calls`. Table `tool_call_deliveries` with `owner_token`, `attempt`, `celery_request_id`, `child_pid`, `handed_off_at`, `exited_at`, and `exitcode`, unique on `(celery_request_id, child_pid)`. Table `tool_call_effects` with a nullable `owner_token` and `attribution`. No backfill and no owner stamp. `begin_read` may return `busy`.
+Revision `0026` after `0025_confirm_until`. Nullable `owner_token`, `attempt`, and `unresolved_at` on `tool_calls`. Table `task_deliveries`: `delivery_id` primary key, `worker_incarnation`, `celery_request_id`, `child_pid`, `exited_at`, `exitcode`, unique on `(worker_incarnation, celery_request_id, child_pid)`. Table `tool_call_attempts`: `tool_call_id`, `owner_token`, `attempt`, `delivery_id`, `handed_off_at`, unique on `(tool_call_id, owner_token, attempt)`, foreign key to `delivery_id`. Table `tool_call_effects`: attributed unique on `(tool_call_id, owner_token, attempt)`, unattributed unique on `(tool_call_id, body)` where the owner is null. Table `tool_call_effect_conflicts` for a later different body. No backfill and no owner stamp. `begin_read` may return `busy`.
 
 The supplement transaction in `contracts.md` lines 262-268 changes in the implementation, not in this branch. While the latest step has a `pending` or `running` call, the transaction still updates the goal, the web constraint, and `intent_version`, and it leaves the hold columns, `exec_epoch`, and `continuation_due` unchanged. It does not create a call. A new external call is the acknowledgement request, not this transaction.
 
@@ -306,6 +315,6 @@ The worker command does not gain the `default` queue in this design. Consuming i
 
 Design A stores the amendment immediately and adds the call columns and the effect table. Design B stores the amendment late and cannot deny the web sibling from the current constraint while the first call is open.
 
-Parent reap needs a prefork consumer, and that consumer is not created by appending `default` to the current command. The child shutdown hook misses `SIGKILL`. The probe recorded `signal 9 (SIGKILL)` from the parent hook, and it recorded no exit row after the parent itself was killed. Broker redelivery and lease retire both fire for a live worker. A request id is reused on redelivery, so the exit matches the child pid. A bare `raise` from hook registration leaves the worker alive, so the failure path aborts the process. The unobserved park is the remaining gap when no parent writes an exit row. It leaves the call `running` with `unresolved_at`, shows the job as `waiting_person`, and does not invoke. An ordinary message does not start a new external call. A matching live owner can still save the result without resuming the job. A late body with no delivery is an unattributed audit row.
+Parent reap needs a prefork consumer, and that consumer is not created by appending `default` to the current command. The child shutdown hook misses `SIGKILL`. The probe recorded `signal 9 (SIGKILL)` on the delivery the parent minted, and it recorded no exit after the parent itself was killed. Broker redelivery and lease retire both fire for a live worker. A request id and a pid can both be reused, so the exit matches the delivery id for this worker incarnation. A bare `raise` from hook registration leaves the worker alive, so the failure path aborts the process. The unobserved park is the remaining gap when no parent writes an exit. It leaves the call `running` with `unresolved_at`, shows the job as `waiting_person`, and does not invoke. An ordinary message does not start a new external call and does not fill the acknowledgement control. A matching live owner can still save the result without resuming the job. A late body with no delivery is an unattributed audit row.
 
 Out of this unit: the pulse `except` body, confirm-lease changes, calendar arm, desktop recovery, and the rest of the inventory.

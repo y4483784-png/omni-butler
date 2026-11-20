@@ -3,18 +3,12 @@ when: 2026-11-20
 versions: celery 5.4.0, kombu 5.3.7, redis-py 5.3.1, Redis database 15, queue probe
 note: the machine's kombu 5.7 refuses redis-py 5.x. The probe used kombu 5.3.7, which celery 5.4 allows. It did not publish to the production default queue.
 
-PASS after {'case': 'after_handoff', 'request_id': '6a0b237e-eda2-4334-832f-9af9c5b3748a', 'dead_pid': 8185, 'live_pid': 8187, 'policy': 'no_external_replay', 'exit_before_redelivery': True}
-PASS before {'case': 'before_handoff', 'policy': 'replacement_allowed', 'same_request': True}
-PASS duplicate {'case': 'duplicate_while_live', 'dead_pid': 8208, 'other_live_pid': 8209, 'redelivery_pid': 8211, 'other_marked_dead': False}
-PASS hook {'case': 'hook_write_fails', 'requeued': True, 'exit_rows': 0, 'hook_error': 'OperationalError: unable to open database file'}
-PASS parent {'case': 'parent_sigkill', 'exit_rows': 0, 'child_still_alive': False, 'policy': 'unobserved'}
+PASS synthetic {'case': 'synthetic_identity', 'request_pid_rows': 2, 'exact_delivery_marked': 'del-a', 'reused_pid_left_live': 'del-b', 'child_mint_rejected': True, 'unknown_delivery_rejected': True, 'sibling_calls': ['call-a', 'call-b'], 'first_body': 'first', 'conflict_audited': True, 'unattributed_owner': None, 'ordinary_message_authorizes': False, 'autofill_authorizes': False, 'explicit_ack_authorizes': True}
+PASS after {'case': 'after_handoff', 'request_id': '83eb1b72-dd59-4b08-9328-2836852829c5', 'dead_delivery': '977f34ec21814fbabcca812afd1fea55', 'live_delivery': '405c6ff7c4be4a66bf3e33b8b6e36722', 'policy': 'no_external_replay', 'exit_before_redelivery': True}
+PASS before {'case': 'before_handoff', 'policy': 'replacement_allowed', 'same_request': True, 'distinct_delivery': True}
+PASS duplicate {'case': 'duplicate_while_live', 'dead_delivery': '345dca610c604e6593aafdeeafa60ba8', 'other_live_delivery': 'afd7d2d77ab8488cbb22011c0d5c4f78', 'redelivery_delivery': 'bd846885abd64fcc812b75cbf59d6f04', 'other_marked_dead': False}
+PASS siblings {'case': 'two_calls_one_delivery', 'delivery_id': '53256c87c7244f4882b19671bed0a1c8', 'calls': ['call-a', 'call-b'], 'redelivery_delivery': 'e5fda4580d604732ae9d85c8e93fc138', 'redelivery_exited': False}
+PASS hook {'case': 'hook_write_fails', 'requeued': True, 'dead_delivery_exited': False, 'hook_error': 'IntegrityError: exit database unavailable'}
+PASS parent {'case': 'parent_sigkill', 'delivery_id': '98676808e8f549f7974597e02c9fad0b', 'exited': False, 'child_still_alive': False, 'policy': 'unobserved'}
 PASS register-raise {'case': 'hook_register_raise', 'worker_still_alive': True}
 PASS register {'case': 'hook_register_fails', 'returncode': 78, 'consumed': False}
-
-Harness before, same day:
-command: python3 verification/loop-owner/lock_harness_before.py
-OLD LockNotAvailable: canceling statement due to lock timeout
-FINALLY drop_succeeded
-
-The resume lock file then passed eight times, including the inverted-order deadlock assertion and the continue/consume blocker assertion:
-RESUME_LOCK_REQUIRED=1 python3 -m pytest tests/test_resume_lock_order.py -q
