@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,13 @@ class DeviceEnroll(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     label: str
+
+    @field_validator("label")
+    @classmethod
+    def label_has_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("设备名不能为空")
+        return value
 
 
 class DeviceEnrolled(BaseModel):
