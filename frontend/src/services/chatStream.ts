@@ -57,6 +57,7 @@ function emptyChatState(): SessionChatState {
     thinkingSteps: [],
     routeHint: "",
     phaseHint: "",
+    jobs: [],
     hydrated: false,
   };
 }
@@ -278,12 +279,8 @@ async function runStreamLoop(
     abortControllers.delete(sessionId);
     patchSession(sessionId, { busy: false, thinking: false, phaseHint: "" });
     try {
-      const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-      const folded = withHydratedFold(before, await loadMessages(sessionId));
-      const synced = overlaySettledScheduleCards(before, folded);
-      const { messages, releaseUrls } = messagesAfterHydrate(before, synced, aborted);
-      revokePreviewUrls(releaseUrls);
-      patchSession(sessionId, { messages, hydrated: true });
+      const loaded = await loadMessages(sessionId);
+      applySessionMessages(sessionId, loaded, { aborted });
     } catch {
     }
   }
@@ -311,20 +308,35 @@ function revokePreviewUrls(urls: readonly string[]) {
   releasePreviewUrls(urls, (url) => URL.revokeObjectURL(url));
 }
 
-export async function hydrateSessionMessages(sessionId: number) {
-  const existing = useStore.getState().sessionChats[sessionId];
-  if (existing?.hydrated || existing?.busy) return;
-  const messages = withHydratedFold([], await loadMessages(sessionId));
+export async function readSessionMessages(sessionId: number): Promise<ChatMsg[]> {
+  return loadMessages(sessionId);
+}
+
+export function applySessionMessages(
+  sessionId: number,
+  loaded: ChatMsg[],
+  options?: { aborted?: boolean },
+): void {
+  const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
+  const folded = withHydratedFold(before, loaded);
+  const scheduled = overlaySettledScheduleCards(before, folded);
+  const { messages, releaseUrls } = messagesAfterHydrate(before, scheduled, options?.aborted ?? false);
+  revokePreviewUrls(releaseUrls);
   patchSession(sessionId, { messages, hydrated: true });
 }
 
+export async function hydrateSessionMessages(sessionId: number) {
+  const existing = useStore.getState().sessionChats[sessionId];
+  if (existing?.hydrated || existing?.busy) return;
+  const loaded = await loadMessages(sessionId);
+  const current = useStore.getState().sessionChats[sessionId];
+  if (current?.hydrated || current?.busy) return;
+  applySessionMessages(sessionId, loaded);
+}
+
 export async function reloadSessionMessages(sessionId: number) {
-  const before = useStore.getState().sessionChats[sessionId]?.messages ?? [];
-  const folded = withHydratedFold(before, await loadMessages(sessionId));
-  const scheduled = overlaySettledScheduleCards(before, folded);
-  const { messages, releaseUrls } = mergeHydratedPreviews(before, scheduled);
-  revokePreviewUrls(releaseUrls);
-  patchSession(sessionId, { messages, hydrated: true });
+  const loaded = await readSessionMessages(sessionId);
+  applySessionMessages(sessionId, loaded);
 }
 
 /** Start streaming; continues in background if user switches sessions. */

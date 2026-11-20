@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store/useStore";
 import { hydrateSessionMessages, startChatStream } from "../services/chatStream";
+import { watchSession } from "../services/sessionWatch";
 import type { ChatMsg, MeetingBrief } from "../api/client";
 import { imageFromFile } from "../chatImage";
 import {
@@ -50,6 +51,7 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
   const thinkingSteps = chat?.thinkingSteps ?? [];
   const routeHint = chat?.routeHint ?? "";
   const phaseHint = chat?.phaseHint ?? "";
+  const jobs = chat?.jobs ?? [];
 
   const updateSessionTitle = useStore((s) => s.updateSessionTitle);
   const openArtifact = useStore((s) => s.openArtifact);
@@ -62,6 +64,7 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
 
   useEffect(() => {
     hydrateSessionMessages(sessionId);
+    return watchSession(sessionId);
   }, [sessionId]);
 
   useEffect(() => {
@@ -193,6 +196,13 @@ export function ChatWindow({ sessionId }: { sessionId: number }) {
       </div>
       <UpcomingEvents />
       <div className="messages">
+        {jobs
+          .filter((job) => job.status === "running" || job.status === "waiting_person")
+          .map((job) => (
+            <p key={job.id} className="schedule-meta">
+              {job.status} {job.goal}
+            </p>
+          ))}
         {messages.map((m, i) => (
           <MessageRow
             key={m.id ?? `local-${i}`}

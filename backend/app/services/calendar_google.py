@@ -1190,7 +1190,7 @@ class GoogleCalendarProvider:
         self._access_token()
         self._arm_user_write(event_id)
         try:
-            response = self._call("PATCH", url, json=body, params=params or None)
+            response = self._call_while_live("PATCH", url, json=body, params=params or None)
         except CalendarRemoteReadError:
             logger.warning("google calendar events patch failed status=network")
             raise CalendarRemoteWriteError(unknown=True) from None
@@ -1206,6 +1206,13 @@ class GoogleCalendarProvider:
             self._patch_google_event(event_id, body)
         except CalendarRemoteError:
             logger.error("google calendar compensate patch failed event_id=%s", event_id)
+
+    def _call_while_live(self, method: str, url: str, **kwargs):
+        from app.services.schedule_confirm import live_provider_call
+
+        token = str(self.db.info.get("confirm_token") or "")
+        with live_provider_call(token):
+            return self._call(method, url, **kwargs)
 
     def _arm_user_write(self, key: str) -> None:
         token = self.db.info.get("confirm_token")
@@ -1351,7 +1358,7 @@ class GoogleCalendarProvider:
         self._access_token()
         self._arm_user_write(request_id)
         try:
-            response = self._call("POST", _EVENTS_URL, json=body, params=params or None)
+            response = self._call_while_live("POST", _EVENTS_URL, json=body, params=params or None)
         except CalendarRemoteReadError:
             logger.warning("google calendar events insert failed status=network")
             found = self._adopt_inserted(request_id, meet)
@@ -1436,7 +1443,7 @@ class GoogleCalendarProvider:
         self._access_token()
         self._arm_user_write(event_id)
         try:
-            response = self._call("DELETE", url)
+            response = self._call_while_live("DELETE", url)
         except CalendarRemoteReadError:
             logger.warning("google calendar events delete failed status=network")
             raise CalendarRemoteWriteError(_CANCEL_FAILED, unknown=True) from None

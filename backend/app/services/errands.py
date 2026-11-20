@@ -165,7 +165,10 @@ def commit_errand(db: Session, *, user_id: int, token: object, raw: dict) -> dic
     if not stored:
         raise ErrandClosed(409, CONFIRM_DETAIL["unknown"])
     try:
-        reply = _place(connector, order, stored, pay, login)
+        from app.services.schedule_confirm import live_provider_call
+
+        with live_provider_call(key):
+            reply = _place(connector, order, stored, pay, login)
     except RemoteDown:
         return _reconcile(db, user_id, key, order)
     return _apply_reply(db, user_id, key, order, stored, reply)

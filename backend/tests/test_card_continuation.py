@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from uuid import uuid4
 
 from app.core.auth import hash_password
 from app.core.db import SessionLocal
@@ -331,6 +332,120 @@ def test_rsvp_click_confirms_once_on_its_own_task(plain_client: TestClient, monk
     )
     assert repeat.status_code == 409, repeat.text
     assert task_run.get(user_id=_admin_id(), generation=unrelated.generation).status == "stopped"
+
+
+def test_a_list_click_publishes_the_claim_on_the_session_cursor(plain_client: TestClient):
+    from app.core.db import set_rls_context
+    from app.services.resume import events_after, read_snapshot
+
+    session_id = _session()
+    message_id, _generation = _read_card(session_id)
+    user_id = _admin_id()
+    before = SessionLocal()
+    try:
+        set_rls_context(before, user_id)
+        prior = read_snapshot(before, user_id=user_id, session_id=session_id)["cursor"]
+    finally:
+        before.close()
+    opened = _click(plain_client, session_id, message_id, title=f"游标里的卡片-{uuid4()}")
+    assert opened.status_code == 200, opened.text
+    token = opened.json()["confirm_token"]
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        snapshot = read_snapshot(db, user_id=user_id, session_id=session_id)
+        delivered = events_after(db, session_id=session_id, after=prior)
+    finally:
+        db.close()
+    assert any(row["token"] == token for row in snapshot["claims"])
+    matched = [row for row in delivered if row["kind"] == "confirm" and row["body"] == token]
+    assert matched
+    assert snapshot["cursor"] >= matched[-1]["seq"]
+
+
+def test_a_reused_claim_publishes_on_the_session_that_holds_it(plain_client: TestClient):
+    from app.core.db import set_rls_context
+    from app.services.resume import events_after, read_snapshot
+
+    title = f"同一笔未完成-{uuid4()}"
+    first = _session()
+    second = _session()
+    first_message, _generation = _read_card(first)
+    second_message, _other = _read_card(second)
+    opened = _click(plain_client, first, first_message, title=title)
+    assert opened.status_code == 200, opened.text
+    token = opened.json()["confirm_token"]
+    user_id = _admin_id()
+    before = SessionLocal()
+    try:
+        set_rls_context(before, user_id)
+        first_cursor = read_snapshot(before, user_id=user_id, session_id=first)["cursor"]
+        second_cursor = read_snapshot(before, user_id=user_id, session_id=second)["cursor"]
+    finally:
+        before.close()
+    again = _click(plain_client, second, second_message, title=title)
+    assert again.status_code == 200, again.text
+    assert again.json()["confirm_token"] == token
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        claim = db.get(ScheduleConfirmClaim, token)
+        first_snapshot = read_snapshot(db, user_id=user_id, session_id=first)
+        second_snapshot = read_snapshot(db, user_id=user_id, session_id=second)
+        first_events = events_after(db, session_id=first, after=first_cursor)
+        second_events = events_after(db, session_id=second, after=second_cursor)
+    finally:
+        db.close()
+    assert claim.session_id == first
+    assert any(row["token"] == token for row in first_snapshot["claims"])
+    assert all(row["token"] != token for row in second_snapshot["claims"])
+    assert any(row["kind"] == "confirm" and row["body"] == token for row in first_events)
+    assert all(row["body"] != token for row in second_events)
+
+
+def test_a_card_message_arrives_after_an_early_claim_event():
+    from app.api.chat import _save_assistant_turn
+    from app.core.db import set_rls_context
+    from app.services.resume import events_after, read_snapshot
+    from app.services.schedule_confirm import publish_schedule_claim
+
+    user_id = _admin_id()
+    session_id = _session()
+    turn = task_run.begin_turn(user_id=user_id, session_id=session_id)
+    card = {
+        "mode": "create",
+        "phase": "draft",
+        "title": f"后到的卡片-{uuid4()}",
+        "start_at": "2026-11-20T10:00:00",
+        "end_at": "2026-11-20T11:00:00",
+        "participants": [],
+        "location": "",
+        "description": "",
+        "meet": False,
+    }
+    published = publish_schedule_claim(user_id, session_id, card, task_run_id=turn.id)
+    token = published["confirm_token"]
+    early = SessionLocal()
+    try:
+        set_rls_context(early, user_id)
+        snapshot = read_snapshot(early, user_id=user_id, session_id=session_id)
+        assert any(row["token"] == token for row in snapshot["claims"])
+        assert early.query(Message).filter(Message.session_id == session_id, Message.schedule_card.contains(token)).count() == 0
+        prior = snapshot["cursor"]
+    finally:
+        early.close()
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        session = db.get(ChatSession, session_id)
+        _save_assistant_turn(db, session_id, "请确认", schedule_card=published)
+        delivered = events_after(db, session_id=session_id, after=prior)
+        stored = db.query(Message).filter(Message.session_id == session_id, Message.role == "assistant").all()
+    finally:
+        db.close()
+    assert session is not None
+    assert any(token in (row.schedule_card or "") for row in stored)
+    assert any(row["kind"] == "message" and row["body"] == token for row in delivered)
 
 
 def test_direct_create_still_uses_its_own_turn(plain_client: TestClient):

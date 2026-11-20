@@ -68,6 +68,15 @@ def notice_running(db, task_run_id: int) -> None:
             )
         )
         row.notice_progress_at = stamp
+        from app.services.resume import publish_event
+
+        publish_event(
+            db,
+            user_id=int(row.user_id),
+            session_id=int(row.session_id),
+            kind="notice",
+            body=f"这一任务自 {shown} 起没有新的进展，仍在运行。generation={row.generation}",
+        )
     row.observed_progress_at = stamp
     db.commit()
 
@@ -86,6 +95,20 @@ def run_sweep() -> None:
                 notice_running(db, task_run_id)
             except Exception:
                 logger.exception("watchdog notice failed task_run_id=%s", task_run_id)
+                db.rollback()
+        for task_run_id in ids:
+            row = db.get(TaskRun, int(task_run_id))
+            if row is None or row.kind != "job":
+                continue
+            try:
+                from app.services.loop_round import reconcile_parked_writes
+                from app.services.resume import dispatch_task
+
+                if row.status == "waiting_person" and not row.continuation_due:
+                    reconcile_parked_writes(db, int(task_run_id))
+                dispatch_task(db, int(task_run_id))
+            except Exception:
+                logger.exception("dispatch failed task_run_id=%s", task_run_id)
                 db.rollback()
     finally:
         db.close()

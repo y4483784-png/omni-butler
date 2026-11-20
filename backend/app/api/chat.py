@@ -244,6 +244,18 @@ def _commit_user_turn(db: DbSession, session: ChatSession, message: str) -> Mess
     return row
 
 
+def _card_event_body(schedule_card: dict) -> str:
+    token = str(schedule_card.get("confirm_token") or "").strip()
+    if token:
+        return token
+    for action in schedule_card.get("actions") or []:
+        if isinstance(action, dict):
+            owned = str(action.get("confirm_token") or "").strip()
+            if owned:
+                return owned
+    return "card"
+
+
 def _save_assistant_turn(
     db: DbSession,
     session_id: int,
@@ -270,14 +282,23 @@ def _save_assistant_turn(
             artifact=json.dumps(artifact_stored, ensure_ascii=False) if artifact_stored else "",
         )
     )
-    if job_generation is not None:
-        owner = db.get(ChatSession, session_id)
-        if owner is not None and owner.user_id is not None:
-            task_run.touch_progress(
-                db,
-                user_id=int(owner.user_id),
-                generation=int(job_generation),
-            )
+    owner = db.get(ChatSession, session_id)
+    if job_generation is not None and owner is not None and owner.user_id is not None:
+        task_run.touch_progress(
+            db,
+            user_id=int(owner.user_id),
+            generation=int(job_generation),
+        )
+    if schedule_card and owner is not None and owner.user_id is not None:
+        from app.services.resume import publish_event
+
+        publish_event(
+            db,
+            user_id=int(owner.user_id),
+            session_id=int(session_id),
+            kind="message",
+            body=_card_event_body(schedule_card),
+        )
     db.commit()
 
 
@@ -361,9 +382,16 @@ def _apply_talk(
     from app.agents.dispatch import TalkReply
 
     if relation.relation == "new":
-        from app.tasks.job import run_job
+        from app.services.resume import enqueue_job
 
-        run_job.delay(user_id, session_id, message, relation.web, message_id)
+        enqueue_job(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            goal=message,
+            web=relation.web,
+            message_id=message_id,
+        )
         return relation, None
     if relation.relation in {"supplement", "redirect"} and relation.target_generation is not None:
         applied = task_run.apply_intent(
@@ -808,6 +836,8 @@ async def chat(
                                         yield _sse({"type": "token", "content": piece})
                                 if leave_stream:
                                     break
+                            if is_stopped():
+                                leave_stream = True
                             if not leave_stream:
                                 for piece in reason_buf.finish():
                                     reasoning_parts.append(piece)

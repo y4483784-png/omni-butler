@@ -122,7 +122,7 @@ test("removing a shown message releases its url, and the callers use this contro
   assert.match(source.window, /setComposerText\(composerRef\.current, e\.target\.value\)/);
   assert.match(source.window, /removeComposerImage\(composerRef\.current, id\)/);
   assert.match(source.window, /switchComposerSession\(composerRef\.current\)/);
-  assert.match(source.stream, /messagesAfterHydrate\(before, synced, aborted\)/);
+  assert.match(source.stream, /messagesAfterHydrate\(before, scheduled, options\?\.aborted \?\? false\)/);
   assert.match(source.stream, /mergeHydratedPreviews\(before, merged\)/);
   assert.match(source.store, /previewUrls\(state\.sessionChats\[id\]\?\.messages/);
   assert.match(source.store, /releasePreviewUrls\(urls, revokeStoredPreview\)/);

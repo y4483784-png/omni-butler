@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from sqlalchemy import and_, exists, or_, update
@@ -191,6 +193,99 @@ def followup_create_raw(action: dict) -> dict:
     }
 
 
+def lock_open_claims(
+    db: Session,
+    user_id: int,
+    fingerprints: list[tuple[str, str]] | None = None,
+) -> None:
+    """Lock the claims this transaction will touch, in token order, before any job lock.
+
+    ``None`` locks every open or unknown claim for the user. A list locks the
+    matching action and fingerprint rows. Callers that already hold one of
+    these rows re-lock it. Callers must not hold a job row yet.
+    """
+    query = db.query(ScheduleConfirmClaim).filter(
+        ScheduleConfirmClaim.user_id == int(user_id),
+        ScheduleConfirmClaim.status.in_(("open", "unknown")),
+    )
+    if fingerprints is not None:
+        if not fingerprints:
+            return
+        query = query.filter(
+            or_(
+                *[
+                    and_(
+                        ScheduleConfirmClaim.action == action,
+                        ScheduleConfirmClaim.fingerprint == fingerprint,
+                    )
+                    for action, fingerprint in fingerprints
+                ]
+            )
+        )
+    query.order_by(ScheduleConfirmClaim.token.asc()).with_for_update().all()
+
+
+def _lease_deadline() -> datetime:
+    from app.core.config import settings
+
+    return _now() + timedelta(seconds=float(settings.llm_timeout))
+
+
+def renew_live_confirm(token: str) -> bool:
+    """Extend the in-process provider lease and commit it. A dead process stops renewing."""
+    from app.core.db import MaintenanceSessionLocal
+
+    key = str(token or "").strip()
+    if not key:
+        return False
+    db = MaintenanceSessionLocal()
+    try:
+        claim = (
+            db.query(ScheduleConfirmClaim)
+            .filter(ScheduleConfirmClaim.token == key)
+            .with_for_update()
+            .one_or_none()
+        )
+        if claim is None or claim.status != "unknown" or not (claim.remote_request_id or "").strip():
+            db.rollback()
+            return False
+        claim.confirm_until = _lease_deadline()
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
+@contextmanager
+def live_provider_call(token: str):
+    """Renew a confirm lease while this process is inside the provider call.
+
+    The lease is a separate short transaction. The provider call is not inside it.
+    """
+    if not renew_live_confirm(token):
+        yield
+        return
+    from app.core.config import settings
+
+    stop = threading.Event()
+
+    def pulse() -> None:
+        interval = max(0.05, float(settings.llm_timeout) / 2)
+        while not stop.wait(interval):
+            try:
+                renew_live_confirm(token)
+            except Exception:
+                continue
+
+    thread = threading.Thread(target=pulse, name="confirm-lease", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
 def issue_schedule_claim(
     db: Session,
     *,
@@ -205,6 +300,7 @@ def issue_schedule_claim(
     parts = write_parts(action, raw)
     fingerprint = write_fingerprint(parts)
     scope = write_scope(user_id, parts)
+    lock_open_claims(db, user_id, [(action, fingerprint)])
     ids = _owned_live_ids(db, user_id, task_run_ids)
     if not ids:
         raise ScheduleConfirmClosed("no-generation")
@@ -218,6 +314,13 @@ def issue_schedule_claim(
                 session_id=session_id,
                 task_run_ids=ids,
                 expires_at=expires_at,
+            )
+            bound = db.get(ScheduleConfirmClaim, token)
+            _emit_claim_token(
+                db,
+                user_id=int(user_id),
+                session_id=int(bound.session_id if bound is not None else session_id),
+                token=token,
             )
             db.commit()
             return token, expiry
@@ -240,6 +343,7 @@ def bind_claim(
     parts = write_parts(action_name, raw)
     fingerprint = write_fingerprint(parts)
     scope = write_scope(user_id, parts)
+    lock_open_claims(db, user_id, [(action_name, fingerprint)])
     ids = _owned_live_ids(db, user_id, task_run_ids)
     if not ids:
         raise ScheduleConfirmClosed("no-generation")
@@ -291,6 +395,7 @@ def continue_from_card(
     expires_at = parse_card_expiry(draft_expires_at())
     for _ in range(2):
         try:
+            lock_open_claims(db, user_id, [(action_name, key.fingerprint)])
             turn = task_run.insert_card_action(
                 db,
                 user_id=user_id,
@@ -304,6 +409,13 @@ def continue_from_card(
                 session_id=session_id,
                 task_run_ids=[turn.id],
                 expires_at=expires_at,
+            )
+            bound = db.get(ScheduleConfirmClaim, token)
+            _emit_claim_token(
+                db,
+                user_id=user_id,
+                session_id=int(bound.session_id if bound is not None else session_id),
+                token=token,
             )
             db.commit()
             return token, expiry
@@ -366,7 +478,7 @@ def publish_followup_claims(
                 task_run_ids=[task_run_id],
                 expires_at=expires,
             )
-            actions.append({**item, "confirm_token": token})
+            actions.append({**item, "confirm_token": token, "phase": "draft"})
     finally:
         isolated.close()
     return {**card, "actions": actions}
@@ -411,6 +523,8 @@ def consume_schedule_claim(
     live_ids = [row.id for row in rows if row.status in _LIVE]
     if not live_ids:
         claim.status = "cancelled"
+        _stamp_claim_phase(db, claim.session_id, claim.token, "cancelled")
+        _emit_claim(db, claim)
         db.commit()
         raise ScheduleConfirmClosed("closed")
     result = db.execute(
@@ -484,6 +598,18 @@ def arm_remote_claim(
         is not None
     )
     if job_linked:
+        if exec_token is None and exec_epoch is None:
+            holder_match = and_(
+                TaskRun.status == "waiting_person",
+                TaskRun.exec_token.is_(None),
+                TaskRun.intent_version == int(claim.intent_version or 1),
+            )
+        else:
+            holder_match = and_(
+                TaskRun.intent_version == intent_version,
+                TaskRun.exec_token == exec_token,
+                TaskRun.exec_epoch == exec_epoch,
+            )
         result = db.execute(
             update(ScheduleConfirmClaim)
             .where(ScheduleConfirmClaim.token == key)
@@ -495,24 +621,26 @@ def arm_remote_claim(
                         TaskRun.user_id == claim.user_id,
                         TaskRun.id.in_(ids),
                         TaskRun.kind == "job",
-                        TaskRun.intent_version == intent_version,
-                        TaskRun.exec_token == exec_token,
-                        TaskRun.exec_epoch == exec_epoch,
+                        holder_match,
                     )
                 )
             )
-            .values(status="unknown", remote_request_id=marker)
+            .values(status="unknown", remote_request_id=marker, armed_at=_now(), confirm_until=None)
         )
         if int(result.rowcount or 0) != 1:
             db.rollback()
             return False
         db.expire(claim)
         _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
+        _emit_claim(db, claim)
         db.commit()
         return True
     claim.status = "unknown"
     claim.remote_request_id = marker
+    claim.armed_at = _now()
+    claim.confirm_until = None
     _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
+    _emit_claim(db, claim)
     db.commit()
     return True
 
@@ -526,6 +654,7 @@ def reopen_unsent_claim(db: Session, token: str) -> None:
         return
     claim.status = "open"
     _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
+    _emit_claim(db, claim)
     db.commit()
 
 
@@ -536,7 +665,10 @@ def reopen_known_rejection(db: Session, token: str) -> None:
         return
     claim.status = "open"
     claim.remote_request_id = ""
+    claim.armed_at = None
+    claim.confirm_until = None
     _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
+    _emit_claim(db, claim)
     db.commit()
 
 
@@ -547,6 +679,7 @@ def finish_confirm(db: Session, token: str | None, *, commit: bool = True) -> No
         return
     claim.status = "written"
     _stamp_claim_phase(db, claim.session_id, claim.token, "confirmed")
+    _emit_claim(db, claim)
     if commit:
         db.commit()
 
@@ -582,6 +715,7 @@ def release_schedule_claim(db: Session, user_id: int, token: str) -> None:
         raise ScheduleConfirmClosed()
     claim.status = "cancelled"
     _stamp_claim_phase(db, claim.session_id, claim.token, "cancelled")
+    _emit_claim(db, claim)
     db.commit()
 
 
@@ -619,6 +753,7 @@ def cancel_open_schedule_claims(
         if keep and set(_load_ids(claim.generation_ids)).intersection(keep):
             continue
         claim.status = "cancelled"
+        _emit_claim(db, claim)
         changed += 1
     return changed
 
@@ -680,6 +815,10 @@ def _reissue_linked(
         .one_or_none()
     )
     if claim is None or claim.user_id != user_id or claim.session_id != session_id or claim.status != "open":
+        raise ScheduleConfirmClosed("source")
+    lock_open_claims(db, user_id, [(claim.action, claim.fingerprint)])
+    db.refresh(claim)
+    if claim.user_id != user_id or claim.session_id != session_id or claim.status != "open":
         raise ScheduleConfirmClosed("source")
     ids = _owned_live_ids(db, user_id, _load_ids(claim.generation_ids))
     if not ids:
@@ -845,8 +984,10 @@ def _bind_open_claim(
         db.flush()
         _stamp_bound_jobs(db, key.user_id, task_run_ids)
         return existing.token, existing.expires_at
+    cancelled = None
     if existing is not None:
         existing.status = "cancelled"
+        cancelled = existing
         db.flush()
     token = str(uuid4())
     row = ScheduleConfirmClaim(
@@ -864,6 +1005,8 @@ def _bind_open_claim(
     db.add(row)
     db.flush()
     _stamp_bound_jobs(db, key.user_id, task_run_ids)
+    if cancelled is not None:
+        _emit_claim(db, cancelled)
     return token, expires_at
 
 
@@ -897,6 +1040,7 @@ def _locked_runs(db: Session, user_id: int, task_run_ids: list[int]) -> list[Tas
     return (
         db.query(TaskRun)
         .filter(TaskRun.user_id == user_id, TaskRun.id.in_(task_run_ids))
+        .order_by(TaskRun.id.asc())
         .with_for_update()
         .all()
     )
@@ -924,6 +1068,10 @@ def _load_ids(raw: str | None) -> list[int]:
 
 def _dump_ids(ids: list[int]) -> str:
     return json.dumps(sorted(set(ids)), separators=(",", ":"))
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
 
 def _expired(expires_at: datetime | None, now: datetime) -> bool:
@@ -992,6 +1140,27 @@ def _people(value: object) -> list[dict[str, str]]:
     rows = [invitee_wire(item) for item in parse_invitees(value)]
     rows.sort(key=lambda item: (item["email"].casefold(), item["name"]))
     return rows
+
+
+def _emit_claim(db: Session, claim: ScheduleConfirmClaim) -> None:
+    _emit_claim_token(
+        db,
+        user_id=int(claim.user_id),
+        session_id=int(claim.session_id),
+        token=str(claim.token),
+    )
+
+
+def _emit_claim_token(db: Session, *, user_id: int, session_id: int, token: str) -> None:
+    from app.services.resume import publish_event
+
+    publish_event(
+        db,
+        user_id=int(user_id),
+        session_id=int(session_id),
+        kind="confirm",
+        body=str(token),
+    )
 
 
 def _stamp_claim_phase(db: Session, session_id: int, token: str, phase: str) -> None:

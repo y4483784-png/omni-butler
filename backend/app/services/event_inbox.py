@@ -23,8 +23,10 @@ from app.services.calendar import draft_expires_at
 from app.services.schedule_confirm import (
     ScheduleConfirmClosed,
     _bind_open_claim,
+    _emit_claim,
     _stamp_claim_phase,
     canonical_action,
+    lock_open_claims,
     parse_card_expiry,
     write_fingerprint,
     write_parts,
@@ -291,6 +293,7 @@ def _while_waiting(
     action: str,
     card: dict | None,
 ) -> EventReceipt:
+    lock_open_claims(db, user_id)
     locked = (
         db.query(TaskRun)
         .filter(TaskRun.id == target.id, TaskRun.user_id == user_id)
@@ -374,7 +377,8 @@ def _reissue(
         raise EventRejected(422, "这张卡片的动作不能签发")
     raw = _card_raw(card)
     parts = write_parts(action_name, raw)
-    for claim in _open_claims(db, user_id, session_id):
+    cancelled = list(_open_claims(db, user_id, session_id))
+    for claim in cancelled:
         claim.status = "cancelled"
         _stamp_claim_phase(db, session_id, claim.token, "cancelled")
     db.flush()
@@ -416,6 +420,11 @@ def _reissue(
         )
     )
     db.flush()
+    for claim in cancelled:
+        _emit_claim(db, claim)
+    issued = db.get(ScheduleConfirmClaim, token)
+    if issued is not None:
+        _emit_claim(db, issued)
     return token
 
 

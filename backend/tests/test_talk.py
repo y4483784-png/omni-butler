@@ -862,16 +862,21 @@ def test_the_saved_user_line_is_not_sent_to_the_reply_twice(plain_client: TestCl
 
 
 def test_run_job_records_a_running_row_and_drops_its_binding():
-    from app.tasks.job import run_job
+    from app.services.resume import enqueue_job
 
     user_id, session_id = _pair()
-    run_job(user_id, session_id, "alpha", "allow", None)
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        enqueue_job(db, user_id=user_id, session_id=session_id, goal="alpha", web="allow", message_id=None)
+    finally:
+        db.close()
     rows = _jobs(session_id)
     assert len(rows) == 1
     assert rows[0].status == "running"
     assert rows[0].kind == "job"
     assert rows[0].goal == "alpha"
-    assert rows[0].exec_token is None
+    assert rows[0].exec_token
     assert rows[0].web_constraint == "allow"
     assert current_key() is None
     db = SessionLocal()

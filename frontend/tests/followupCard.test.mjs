@@ -18,6 +18,9 @@ test("followup card names the official source and does not reconnect for Meet", 
   assert.match(source, /授权读取 Drive/);
   assert.match(source, /connectGoogle/);
   assert.match(source, /claimFollowRows/);
+  assert.match(source, /confirmActionIsDraft/);
+  assert.match(source, /action\.phase === "draft"/);
+  assert.doesNotMatch(source, /card\.phase === "draft"/);
   assert.match(source, /postFollowAction/);
   assert.match(source, /formatFollowUtterance/);
   assert.doesNotMatch(source, /重新连接/);

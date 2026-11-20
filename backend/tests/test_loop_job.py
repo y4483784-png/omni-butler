@@ -19,7 +19,7 @@ from app.core.generation_stop import current_key
 from app.models.models import CalendarEvent, Message, Session as ChatSession, TaskRun, TaskStep, ToolCall, User
 from app.services.loop_round import WEB_DENIAL, ModelTurn, ToolCallSpec, job_tools
 from app.services.task_images import LoadedImages
-from app.tasks.job import run_job, set_executor
+from app.tasks.job import set_executor
 
 PNG = b"\x89PNG\r\n\x1a\nrest"
 
@@ -29,6 +29,46 @@ def _no_executor():
     set_executor(None)
     yield
     set_executor(None)
+
+
+def _deliver(user_id, session_id, goal, web="allow", message_id=None):
+    from app.services.resume import enqueue_job
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        enqueue_job(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            goal=goal,
+            web=web,
+            message_id=message_id,
+        )
+    finally:
+        db.close()
+
+
+def _dispatch(user_id, session_id, *, expire=False):
+    from app.services.resume import dispatch_task
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        job = (
+            db.query(TaskRun)
+            .filter(TaskRun.user_id == user_id, TaskRun.session_id == session_id, TaskRun.kind == "job")
+            .order_by(TaskRun.generation.desc())
+            .first()
+        )
+        assert job is not None
+        if expire:
+            job.hold_until = datetime(2000, 1, 1)
+            job.dispatch_until = datetime(2000, 1, 1)
+            db.commit()
+        dispatch_task(db, int(job.id))
+    finally:
+        db.close()
 
 
 def _user() -> int:
@@ -128,7 +168,7 @@ def test_two_reads_are_shown_and_the_job_finishes():
 
     set_executor(executor)
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
-        run_job(user_id, session_id, "alpha")
+        _deliver(user_id, session_id, "alpha")
     job = _job(session_id)
     assert job.status == "completed"
     assert job.exec_token is None
@@ -151,7 +191,7 @@ def test_a_provider_failure_leaves_the_hold():
 
     set_executor(executor)
     with pytest.raises(RuntimeError, match="down"):
-        run_job(user_id, session_id, "alpha")
+        _deliver(user_id, session_id, "alpha")
     job = _job(session_id)
     assert job.status == "running"
     assert job.exec_token
@@ -168,7 +208,7 @@ def test_a_crash_after_save_leaves_the_calls_pending():
     set_executor(lambda _messages, _tools: _turn(ToolCallSpec("call-a", "kb", "{}")))
     with patch("app.services.loop_round.begin_read", side_effect=SystemExit(7)):
         with pytest.raises(SystemExit):
-            run_job(user_id, session_id, "alpha")
+            _deliver(user_id, session_id, "alpha")
     job = _job(session_id)
     assert job.status == "running"
     assert job.exec_token
@@ -189,7 +229,7 @@ def test_a_calendar_write_waits_for_one_confirm(plain_client: TestClient):
     }
     set_executor(lambda _messages, _tools: _turn(ToolCallSpec("call-a", "calendar", json.dumps(raw))))
     with patch("app.services.calendar.create_event", side_effect=AssertionError("created")):
-        run_job(user_id, session_id, "meet")
+        _deliver(user_id, session_id, "meet")
     job = _job(session_id)
     assert job.status == "waiting_person"
     assert job.exec_token is None
@@ -248,7 +288,7 @@ def test_forbid_omits_search_and_denies_it_again():
 
     set_executor(executor)
     with patch("app.agents.harness.gateway.invoke", side_effect=AssertionError("invoked")):
-        run_job(user_id, session_id, "look", "forbid")
+        _deliver(user_id, session_id, "look", "forbid")
     assert "web" not in seen[0]
     assert "web_fetch" not in seen[0]
     assert "mail.send" in seen[0]
@@ -313,7 +353,7 @@ def test_a_stopped_job_does_not_call_the_model():
         "app.agents.harness.gateway.invoke",
         side_effect=AssertionError("invoked"),
     ):
-        run_job(user_id, session_id, "alpha")
+        _deliver(user_id, session_id, "alpha")
     assert called == {"model": 0, "tool": 0}
     assert _job(session_id).status == "stopped"
 
@@ -334,7 +374,7 @@ def test_a_stale_intent_does_not_invoke():
 
     set_executor(executor)
     with patch("app.agents.harness.gateway.invoke", side_effect=AssertionError("invoked")):
-        run_job(user_id, session_id, "alpha")
+        _deliver(user_id, session_id, "alpha")
     job = _job(session_id)
     assert job.status == "running"
     assert job.intent_version == 2
@@ -362,7 +402,7 @@ def test_images_go_to_the_model_without_ocr():
         "app.rag.vision_ocr.ocr_image_bytes",
         side_effect=AssertionError("ocr"),
     ) as ocr:
-        run_job(user_id, session_id, "picture")
+        _deliver(user_id, session_id, "picture")
     ocr.assert_not_called()
     content = seen[0][0]["content"]
     assert content[0] == {"type": "text", "text": "picture"}
@@ -374,7 +414,7 @@ def test_dispatch_is_not_asked_to_plan():
     user_id, session_id = _pair()
     set_executor(lambda _messages, _tools: _turn(content="done", finish="stop"))
     with patch("app.agents.dispatch.assign_turn") as assigned, patch("app.agents.router.plan_tools") as planned:
-        run_job(user_id, session_id, "alpha")
+        _deliver(user_id, session_id, "alpha")
     assigned.assert_not_called()
     planned.assert_not_called()
     assert _job(session_id).status == "completed"
@@ -397,7 +437,7 @@ def test_a_secret_errand_is_rejected_without_invoke():
     ]
     set_executor(lambda _messages, _tools: answers.pop(0))
     with patch("app.agents.harness.gateway.invoke", side_effect=AssertionError("invoked")):
-        run_job(user_id, session_id, "order")
+        _deliver(user_id, session_id, "order")
     row = _calls(_job(session_id).id)[0]
     assert row.state == "rejected"
     assert "hidden" not in row.arguments
@@ -411,7 +451,14 @@ def _drive_held(user_id: int, session_id: int) -> None:
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)
-        _drive(db, user_id=user_id, task_id=job.id, worker=job.exec_token)
+        _drive(
+            db,
+            user_id=user_id,
+            task_id=job.id,
+            worker=job.exec_token,
+            exec_epoch=int(job.exec_epoch or 0),
+            intent_version=int(job.intent_version or 1),
+        )
     finally:
         db.close()
 
@@ -433,7 +480,7 @@ def test_a_later_drive_runs_a_pending_read_before_the_model():
     set_executor(executor)
     with patch("app.services.loop_round.begin_read", side_effect=SystemExit(7)):
         with pytest.raises(SystemExit):
-            run_job(user_id, session_id, "alpha")
+            _deliver(user_id, session_id, "alpha")
     assert [(row.tool_call_id, row.state) for row in _calls(_job(session_id).id)] == [("call-a", "pending")]
     order.clear()
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
@@ -463,7 +510,7 @@ def test_a_later_drive_runs_a_running_read_again():
     set_executor(executor)
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
         with pytest.raises(SystemExit):
-            run_job(user_id, session_id, "alpha")
+            _deliver(user_id, session_id, "alpha")
     assert _calls(_job(session_id).id)[0].state == "running"
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
         _drive_held(user_id, session_id)
@@ -491,7 +538,7 @@ def test_a_later_drive_sends_one_request_from_stored_results():
 
     real_request = job_module._request
 
-    def stop_before_results(db, task):
+    def stop_before_results(db, task, *rest):
         step = (
             db.query(TaskStep)
             .filter(TaskStep.task_run_id == task.id)
@@ -500,12 +547,12 @@ def test_a_later_drive_sends_one_request_from_stored_results():
         )
         if step is not None and step.phase == "results_ready":
             raise SystemExit(7)
-        return real_request(db, task)
+        return real_request(db, task, *rest)
 
     set_executor(executor)
     with patch("app.agents.harness.gateway.invoke", fake_invoke), patch.object(job_module, "_request", stop_before_results):
         with pytest.raises(SystemExit):
-            run_job(user_id, session_id, "alpha")
+            _deliver(user_id, session_id, "alpha")
     assert len(sent) == 1
     job = _job(session_id)
     assert job.status == "running"
@@ -530,11 +577,10 @@ def test_a_second_run_while_held_does_not_start_again():
 
     set_executor(executor)
     with pytest.raises(SystemExit):
-        run_job(user_id, session_id, "alpha")
+        _deliver(user_id, session_id, "alpha")
     assert _notes(session_id) == ["已开始：alpha"]
-    with pytest.raises(SystemExit):
-        run_job(user_id, session_id, "alpha")
-    assert calls == ["alpha", "alpha"]
+    _dispatch(user_id, session_id)
+    assert calls == ["alpha"]
     assert _notes(session_id) == ["已开始：alpha"]
     db = SessionLocal()
     try:
@@ -547,8 +593,8 @@ def test_a_second_run_while_held_does_not_start_again():
         return _turn(content="done", finish="stop")
 
     set_executor(finish)
-    run_job(user_id, session_id, "beta")
-    assert calls == ["alpha", "alpha", "beta"]
+    _deliver(user_id, session_id, "beta")
+    assert calls == ["alpha", "beta"]
     assert _notes(session_id).count("已开始：beta") == 1
 
 
@@ -569,12 +615,12 @@ def test_a_second_run_job_recovers_a_pending_read():
     set_executor(executor)
     with patch("app.services.loop_round.begin_read", side_effect=SystemExit(7)):
         with pytest.raises(SystemExit):
-            run_job(user_id, session_id, "alpha")
+            _deliver(user_id, session_id, "alpha")
     assert [(row.tool_call_id, row.state) for row in _calls(_job(session_id).id)] == [("call-a", "pending")]
     assert _notes(session_id) == ["已开始：alpha"]
     order.clear()
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
-        run_job(user_id, session_id, "alpha")
+        _dispatch(user_id, session_id, expire=True)
     assert order[0] == "invoke"
     assert order.count("model") == 1
     assert _notes(session_id).count("已开始：alpha") == 1
@@ -712,7 +758,7 @@ def test_search_keeps_the_following_completion_on_the_chat_model(monkeypatch):
         ],
     )
     user_id, session_id = _pair()
-    run_job(user_id, session_id, "today")
+    _deliver(user_id, session_id, "today")
     search_posts = [url for url in posts if url != "client"]
     assert search_posts == ["https://llm.example/v1/tools/search"]
     assert all("web_search" not in url for url in posts)
@@ -738,7 +784,7 @@ def test_a_turn_without_a_tool_call_does_not_search(monkeypatch):
     posts = _search_client(monkeypatch, {"results": []})
     user_id, session_id = _pair()
     set_executor(lambda _messages, _tools: _turn(content="done", finish="stop"))
-    run_job(user_id, session_id, "today")
+    _deliver(user_id, session_id, "today")
     assert posts == []
     assert _job(session_id).status == "completed"
 
@@ -755,7 +801,7 @@ def test_forbid_does_not_construct_a_search_client(monkeypatch):
         return answers.pop(0)
 
     set_executor(executor)
-    run_job(user_id, session_id, "look", "forbid")
+    _deliver(user_id, session_id, "look", "forbid")
     assert posts == []
     row = _calls(_job(session_id).id)[0]
     assert row.state == "rejected"
@@ -791,7 +837,7 @@ def test_a_saved_web_result_is_not_searched_again(monkeypatch):
 
     real_request = job_module._request
 
-    def stop_before_results(db, task):
+    def stop_before_results(db, task, *rest):
         step = (
             db.query(TaskStep)
             .filter(TaskStep.task_run_id == task.id)
@@ -800,12 +846,12 @@ def test_a_saved_web_result_is_not_searched_again(monkeypatch):
         )
         if step is not None and step.phase == "results_ready":
             raise SystemExit(7)
-        return real_request(db, task)
+        return real_request(db, task, *rest)
 
     set_executor(executor)
     with patch.object(job_module, "_request", stop_before_results):
         with pytest.raises(SystemExit):
-            run_job(user_id, session_id, "today")
+            _deliver(user_id, session_id, "today")
     assert posts == ["client", "https://llm.example/v1/tools/search"]
     saved = _calls(_job(session_id).id)[0]
     assert saved.state == "result"

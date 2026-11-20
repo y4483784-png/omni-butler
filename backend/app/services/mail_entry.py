@@ -337,7 +337,10 @@ def commit_send(
     if not arm_remote_claim(db, key, attempt):
         db.rollback()
         raise MailClosed(409, CONFIRM_DETAIL["closed"])
-    outcome = _invoke_send(transport, draft)
+    from app.services.schedule_confirm import live_provider_call
+
+    with live_provider_call(key):
+        outcome = _invoke_send(transport, draft)
     if isinstance(outcome, SendRejected):
         reopen_known_rejection(db, key)
         raise MailClosed(409, _REJECTED, state="rejected")
