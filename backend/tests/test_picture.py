@@ -1622,12 +1622,6 @@ def test_a_chat_image_that_does_not_bind_a_job_is_dropped(auth_client):
     store = _MemoryStore()
     previous = blob_factory._store
     blob_factory._store = store
-    db = SessionLocal()
-    try:
-        before_images = db.query(TaskImage).count()
-        before_docs = db.query(Document).filter(Document.stored_path.startswith("task-image/")).count()
-    finally:
-        db.close()
     carried: dict = {}
 
     def workflow(**kwargs):
@@ -1652,11 +1646,15 @@ def test_a_chat_image_that_does_not_bind_a_job_is_dropped(auth_client):
     assert carried["images"][0].data == PNG
     db = SessionLocal()
     try:
-        assert db.query(TaskImage).count() == before_images
-        assert db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").count() == 0
-        assert (
-            db.query(Document).filter(Document.stored_path.startswith("task-image/")).count() == before_docs
+        stored = (
+            db.query(TaskImage)
+            .join(TaskRun, TaskImage.task_run_id == TaskRun.id)
+            .filter(TaskRun.session_id == session_id)
+            .count()
         )
+        assert stored == 0
+        assert db.query(TaskRun).filter(TaskRun.session_id == session_id, TaskRun.kind == "job").count() == 0
+        assert db.query(Document).filter(Document.stored_path.startswith("task-image/")).count() == 0
         assert PNG not in store.objects.values()
     finally:
         db.close()
