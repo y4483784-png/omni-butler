@@ -142,9 +142,9 @@ Celery's prefork pool runs the task in a child. The parent supervisor reads `wor
 
 `Request.on_failure` sees that exception. With `task_acks_late` and `task_reject_on_worker_lost`, it requeues the message and does not send `task_failure` (`celery/worker/request.py` lines 602-611). The current configuration throws away the exit code. `celery_app.py` lines 22-28 set those flags. `visibility_timeout` is `max(3600, celery_ingest_time_limit + 300)`. The comment on line 27 says the timeout must exceed the hard ingest limit so a healthy long task is not redelivered.
 
-The chosen design writes the exit in that parent path, before the requeue. The row is keyed by the Celery request id. Adopt already knows the job id and the `exec_token` it minted. The child stores that pair before `_drive`. The parent update sets `owner_exited_at` and `exitcode` on running calls for that token. A missing handoff stays null.
+The chosen design writes the exit in that parent path, before the requeue. The exit is not keyed by the Celery request id alone. A requeue keeps that id and delivers it to a new child. An update of the form "this request id has exited" marks the new live child dead. The durable row is one delivery: `tool_call_id`, `owner_token`, `attempt`, `celery_request_id`, `child_pid`, `handed_off_at`, `exited_at`, `exitcode`. The unique key is `(celery_request_id, child_pid)`. The parent updates the row whose pid is `Request.worker_pid` after it unwraps `ExceptionWithTraceback` to the inner `WorkerLostError`. The hook then calls the original `on_failure` in a `finally`, so a failed exit write still requeues.
 
-`run_job` is routed to queue `default` (`backend/app/tasks/job.py` line 146). The compose worker command listens to `ingest,maintenance` only (`backend/entrypoint.sh` line 19). The implementation adds `default` to that command so this parent is the process that can reap the child. The hook is still the pool parent of whatever consumes the task. This reproduction did not boot that compose worker. It killed a spawned child and read `exitcode` `-9`.
+`run_job` is routed to queue `default` (`backend/app/tasks/job.py` line 146). `task_default_queue` is also `default` (`backend/app/tasks/celery_app.py` line 14). The compose worker command listens to `ingest,maintenance` only (`backend/entrypoint.sh` line 19, `docker-compose.yml` worker `MODE`). Ingest and pulse and the watchdog set their own queues. `run_job.delay` is the publish onto `default`, and that queue has no consumer in the current command. Messages already sitting in Redis on `default` have never been run. Adding `default` to the command would deliver that backlog into `run_job`, which can invoke tools. That is not a plumbing change. This design does not change the command. A later implementation may consume `default` only after an operator has inspected `LLEN default` and either discarded that backlog or drained it under these owner rules. The prefork probe used Redis database 15 and a queue named `probe` so it would not read that backlog.
 
 ### Child Python exit
 
@@ -160,25 +160,54 @@ A redelivered message, or `visibility_timeout`, is not an exit code. A live `run
 
 ## Chosen recovery
 
-Parent reap is the death proof. The child-exit hook is not sufficient, because it misses `SIGKILL`. Broker redelivery is not death. Lease retire is not death and does not start an attempt.
+Parent reap is the death proof. The child-exit hook is not sufficient, because it misses `SIGKILL`. Broker redelivery is not death. Lease retire is not death and does not start an attempt. `unknown` means the result is not known. It does not mean a death was observed. `exited_at` on the delivery row is the death observation. A row can be unresolved with no `exited_at`. A row can be `unknown` and also have `exited_at`. Those are different facts.
 
-The resolution uses the handoff marker and the exit row.
+The isolated probe `verification/loop-owner/prefork_reap_probe.py` started a real Celery 5.4.0 prefork worker (kombu 5.3.7, redis-py 5.3.1, Redis database 15, queue `probe`). It is not wired into the application. The run on this machine recorded:
 
-Pending, before the compare-and-swap. The call is `pending`, `owner_token` is null, and `handed_off_at` is null. The request has not been made. A later holder runs the compare-and-swap once and invokes once. That is the existing pending recovery. It is safe for every class because this attempt did not call out. The pending tests stay, and the implementation asserts the invoke count.
+- Kill after the handoff commit. The parent wrote `signal 9 (SIGKILL)` for that child pid before the redelivered message started. The new child kept the same request id, used a new pid, and stored `no_external_replay`. The new pid had no exit row.
+- Kill before the handoff commit. The new child stored `replacement_allowed` and was not marked exited.
+- Two live deliveries. Killing one pid wrote an exit only for that pid. The other live pid stayed without an exit. The redelivery of the dead request id was a third pid and was not marked exited either.
+- Exit database mode `000` after the child had written its delivery. The hook raised `OperationalError: unable to open database file`, wrote no exit row, and the original `on_failure` still requeued. A second child started.
+- `SIGKILL` of the worker main pid. No exit row. In that run the child was also gone. The hook lives in the parent, so a child that survived would still not write the exit. The policy is unobserved. No replacement and no replay.
+- `raise` inside `worker_init`. The worker process was still alive three seconds later. A raised exception is not a failed registration. Registration failure calls `os._exit(78)` before the consumer runs. A task published after that exit was not consumed.
 
-After the compare-and-swap, before the handoff commit. The call is `running`, an owner is set, and `handed_off_at` is null. If the parent exit row matches that owner, this attempt did not reach `gateway.invoke`. One replacement attempt is allowed for every class, under a new `owner_token` and a new `attempt`. The old attempt is not invoked. `begin_read` still returns `busy` for the old owner. If no exit row exists, nobody starts that replacement.
+The resolution uses the handoff marker and the matching delivery's exit.
 
-After the handoff commit. The request may have been accepted. The same owner and attempt are never passed to `gateway.invoke` again. Process exit does not change that.
+Pending, before the compare-and-swap. The call is `pending`, `owner_token` is null, and there is no delivery row. The request has not been made. A later holder runs the compare-and-swap once and invokes once. That is the existing pending recovery. It is safe for every class because this attempt did not call out. The pending tests stay, and the implementation asserts the invoke count.
 
-- For `kb`, one new attempt may run after a matching exit row. The old attempt remains in the effect audit below.
-- For `web`, `web_fetch`, and `sandbox`, the call takes a new legal edge, `(running, note_unknown) -> unknown`. The sentence is stored as the call result. The job moves to `waiting_person` with `continuation_due` false. The sweep does not start a driver. A later person message is a new intent and can only create a new call id. It does not reuse this owner.
+After the compare-and-swap, before the handoff commit. The call is `running`, a delivery row exists, and `handed_off_at` is null. If that delivery's `exited_at` is set, this attempt did not reach `gateway.invoke`. One replacement attempt is allowed for every class, under a new `owner_token`, a new `attempt`, and a new delivery row. The old delivery is not invoked. `begin_read` still returns `busy` for the old owner. If that delivery has no `exited_at`, nobody starts that replacement.
+
+After the handoff commit. The request may have been accepted. The same owner, attempt, and delivery are never passed to `gateway.invoke` again. Process exit does not change that.
+
+- For `kb`, one new attempt may run after a matching exit on the old delivery. The old attempt remains in the effect audit below.
+- For `web`, `web_fetch`, and `sandbox`, the call takes `(running, note_unknown) -> unknown` only when that delivery has both `handed_off_at` and `exited_at`. The sentence stored as the result says the result is not known. `exited_at` is what says the child was reaped. The job moves to `waiting_person` with `continuation_due` false. The sweep does not start a driver.
 - Armed writes do not use this invoke path.
 
-The handoff commit and the external accept are not one atomic step. A kill after the commit and before the syscall is "may have been accepted." That attempt becomes `unknown` for `web`, `web_fetch`, and `sandbox`. It is not invoked again.
+The handoff commit and the external accept are not one atomic step. A kill after the commit and before the syscall is "may have been accepted." That attempt becomes `unknown` for `web`, `web_fetch`, and `sandbox`, and the delivery carries the exit. It is not invoked again.
 
-No exit row. This is the machine crash, or a parent that dies with the child, or a legacy process that never wrote a worker row. The call is not marked `unknown`, because that would claim an observation the parent did not make. `begin_read` returns `busy`. Retire does not publish a new attempt. When `hold_until` is past and the exit row is still missing, the sweep parks the job as `waiting_person`, sets `continuation_due` false, and sets `unresolved_at` on the running call. The call state stays `running`, so a live owner's later `SAVE_RESULT` is still legal. The park does not say the process died. It stops attaching a driver. A person message is the continuation. There is no second invoke of this attempt.
+No exit row. This is the machine crash, a parent that dies with the child, a hook that could not write, or a legacy process that never had a delivery row. The call is not marked `unknown`, because that would claim a result observation the parent did not make, and it is not given `exited_at`, because that would claim a death the parent did not see. `begin_read` returns `busy`. Retire does not publish a new attempt.
 
-That park is the supported resolution for the unobserved case. It is not a silent cancel, and it is not a blind rerun. A confirmed exit does not wait for the lease. It resolves in the parent reap.
+## Parked live owner
+
+When `hold_until` is past and the current delivery still has no `exited_at`, the sweep parks the job. The job becomes `waiting_person`. `continuation_due` becomes false. The call stays `running` and gains `unresolved_at`. The jobs read shows that sentence: the result is not known, and no exit was observed. The job is not `running`, so nothing is hidden behind a driver. The sweep does not publish. `begin_read` returns `busy`. There is no second invoke of this delivery.
+
+The old process may still be inside the gateway. These are the operations while that is true.
+
+A status or progress read is allowed. It shows the unresolved sentence, the call id, and that no exit was observed.
+
+A supplement, an ordinary chat message, or a continue that only adds text updates the goal and `intent_version`. It does not clear the owner. It does not enqueue a model turn. It does not create a tool call. It does not call the model. A new call id is not authorization to run the unknown effect again.
+
+A new external action is a different request. It carries `acknowledge_unresolved_call_id` set to the parked call id. The server stores that acknowledgement with the sentence that the earlier result is unknown and that no exit was observed. Only then may a new call id be created. The new call is a new owner and a new attempt. The parked call stays unresolved until its own result or its own exit arrives. A supplement without that field does not create the call.
+
+Stop cancels the parked call and sets the job to `stopped`.
+
+A late body from the old gateway is `record_owner_result`.
+
+- The job is `stopped`, or the call is `cancelled`, or a newer call on this step is already `result`. Insert the effect row and stop. Do not change the call state. Do not set the job back to `running` or `waiting_person`.
+- The job is `waiting_person`, the call is still this `running` delivery, and no newer result exists. `SAVE_RESULT` fills this call's result and clears `unresolved_at`, because the result is now known. The job stays `waiting_person`. The model is not invoked. The supplemented goal stays the goal. The result is the old call's result, not an answer to the new goal.
+- A late body with no matching delivery is the legacy case below. It does not become this save.
+
+The parked job leaves the visible unresolved condition when the owner saves that result, when the parent records an exit and the handoff rules apply, when the person stops, or when the person sends the acknowledgement and a new call exists beside this one. It does not stay a hidden `running` job. `continuation_due` stays false until a later person message, after the result is known or after the acknowledgement, asks for a new model turn. That message still does not replay the old delivery.
 
 ## Late result
 
@@ -186,11 +215,11 @@ That park is the supported resolution for the unobserved case. It is not a silen
 
 The implementation does not add `(cancelled, save_result) -> result`, and it does not move a cancelled call back to `running` so that edge can fire. `SAVE_RESULT` remains the edge from `running` to `result` only.
 
-The audit is a new table `tool_call_effects`. One row is `(tool_call row id, owner_token, attempt, body)`. The unique key is those three identity columns. `record_owner_result` does the following.
+The audit is a new table `tool_call_effects`. One row is `(tool_call row id, owner_token, attempt, body)`. The unique key is those three identity columns. An unattributed body has no delivery, so its key is `(tool_call row id, body)` with `attribution` `unattributed`. `record_owner_result` does the following.
 
-1. Lock the call row. If `owner_token` or `attempt` differs, write nothing.
+1. Lock the call row. A body that names a different owner or attempt writes nothing. A body with no delivery inserts the unattributed effect row and returns. It does not call `apply`.
 2. Insert the effect row if that key is absent. A second insert of the same key writes nothing.
-3. If `state` is `running` and `result` is null or already equals `body`, call `apply(SAVE_RESULT)` and set `result`. That is the existing edge.
+3. If the job is not `stopped`, this delivery is the current one, `state` is `running`, and `result` is null or already equals `body`, call `apply(SAVE_RESULT)` and set `result`. That is the existing edge. Clear `unresolved_at` when the body is stored. Leave the job status as it is.
 4. If `state` is `cancelled`, stop after the insert. Do not call `apply`. Leave `state` as `cancelled` and leave `result` null. Do not change `task_runs.status`. Do not set `continuation_due`. Do not insert a `messages` row. Do not publish a session event of kind `message`.
 5. If `state` is `result` or `unknown` and `result` is already set, leave `result` and `state` as they are. The effect insert from step 2 still keeps this attempt's body.
 6. A stopped job stays stopped. A `waiting_person` job stays `waiting_person`. The write does not set `status` back to `running`.
@@ -201,13 +230,18 @@ The current UI reads `messages` and the call `result`. The cancel path writes ne
 
 ## Existing running rows
 
-Revision `0026` adds the nullable call columns and the effect table. It does not set `owner_token`, `attempt`, or `handed_off_at`. It does not change `state`. A null owner is not a manufactured owner.
+`exec_token` is the hold this bug clears and hands to the next driver. It is not a record of which process called out. `renew_hold` does not stamp `owner_token`, `attempt`, or a delivery row. No path mints an owner from the current token.
 
-`begin_read` on `running` with a null `owner_token` returns `busy` and does not invoke.
+Revision `0026` adds the nullable columns and the effect table. It does not set `owner_token`, `attempt`, `handed_off_at`, or `exited_at`. It does not change `state`.
 
-The first `renew_hold` that still matches that job's `exec_token` and `exec_epoch` may stamp `owner_token` with that token and `attempt` with 1, and only when `owner_token` is null. That is the live holder writing the token it already holds. A dead row does not renew, so it stays null. The migration itself does not do this stamp.
+The rollout is a drain, then the migration, then the unresolved mark.
 
-A legacy `running` row that never stamps an owner is the unobserved case above. The park shows `unresolved_at` and does not invoke. A stamp that arrives from a live holder can still `SAVE_RESULT`. That write does not move a parked job back to `running`.
+1. Stop the worker container so no `run_job` is still inside a tool. This is an operator step. The code does not infer a live caller from `exec_token`.
+2. Apply `0026`.
+3. For each `running` call that has no delivery row, set `unresolved_at`, move a `running` job to `waiting_person`, and set `continuation_due` false. Do not set `owner_token`. Do not set `state` to `unknown`. Do not set `exited_at`. Do not replay.
+4. Start workers only after that update. A new call mints `owner_token` in the compare-and-swap transaction, as a new random id stored on the call. The child inserts the delivery row, including its pid and the Celery request id, before `gateway.invoke`.
+
+A late body that arrives with no delivery row inserts an effect row with `owner_token` null and `attribution` `unattributed`. It does not call `apply`. It does not set the call to `result`. It does not resume the job. The audit row is the evidence. The call stays unresolved. `begin_read` on a `running` call with no delivery returns `busy` and does not invoke.
 
 ## Lock order
 
@@ -224,22 +258,25 @@ These orders are from the current source. The new persist takes the job lock bef
 
 `cancel_open_calls` holds the job and then the cursor. `open_cards` holds claims and then waits for the job. Those two do not form a cycle, because cancel does not take the claim. `apply_intent` and `open_cards` use the same claim, job, cursor order.
 
-Postgres interleavings were not run. The ones the implementation runs, in the existing Postgres job that already runs `tests/test_resume_lock_order.py`, are:
+The effect insert is idempotent on `(tool_call row id, owner_token, attempt, body)`. A second insert of the same key writes nothing. The job lock is taken before the call lock on the persist path. Stop, save, and open-cards keep the orders in the table above.
 
-- owned persist against `cancel_open_calls`
-- owned persist against `apply_intent`
-- `open_cards` against `cancel_open_calls`
+These Postgres and prefork tests are not in this branch's CI. The implementation PR adds them to the mandatory `eval.yml` job. SQLite is not that proof.
 
-The assert is that both transactions finish, the effect row is present when the owner matches, the job stays `stopped` after cancel, and a second session does not invoke. SQLite is not that proof.
+- Owned persist against `cancel_open_calls`. Both finish. A matching owner inserts the effect. The job stays `stopped`. A second session does not invoke.
+- Owned persist against `apply_intent`. Both finish. The late body does not replace the new goal and does not resume the job.
+- `open_cards` against `cancel_open_calls`. Both finish. Cancel does not take the claim lock.
+- The prefork probe cases: kill before handoff, kill after handoff, a delayed duplicate beside a live delivery, the same request id on a new pid, a failed exit write that still requeues, parent `SIGKILL` with no exit row, and a registration abort that does not consume.
+
+`tests/test_resume_lock_order.py` is already that Postgres job. Its positive tests now wait until `pg_blocking_pids` of the waiter contains the holder's backend pid. They release the barrier and join in `finally`, including when the assertion fails. The inverted-order test still requires an exception whose text contains `deadlock`, and it sets its barriers in `finally` as well. The fixture then terminates leftover backends on this database so a failed gate cannot leave the next `drop_all` in a deadlock. That terminate runs after the test's own assertion.
 
 ## State machine
 
 Call states stay the existing set, plus the use of `unknown` from `running` after a recorded exit and a committed handoff. `busy` is a return from `begin_read`, not a stored state.
 
 - `pending` and no owner. One compare-and-swap wins and invokes.
-- `running` with an owner, no exit row. `begin_read` returns `busy`.
-- `running` with an exit row and a null handoff. One replacement attempt, new owner, new attempt.
-- `running` with an exit row and a handoff, for `web`, `web_fetch`, or `sandbox`. `(running, note_unknown) -> unknown`. Job `waiting_person`. No replacement of that call.
+- `running` with a delivery and no `exited_at`. `begin_read` returns `busy`. Past `hold_until`, the job is `waiting_person` and the call has `unresolved_at`.
+- `running` with `exited_at` and a null handoff. One replacement attempt, new owner, new attempt, new delivery.
+- `running` with `exited_at` and a handoff, for `web`, `web_fetch`, or `sandbox`. `(running, note_unknown) -> unknown`. `exited_at` stays set. Job `waiting_person`. No replacement of that call.
 - `running` to `result` only through `SAVE_RESULT`, and only for the matching owner and attempt, and only when `result` is null or already that body.
 - `cancelled` stays `cancelled`. The effect table holds the body. `apply` is not called.
 - There is no edge from `running` back to `pending`.
@@ -255,20 +292,20 @@ Job hold:
 
 `test_a_later_drive_runs_a_running_read_again` currently expects a second `kb` invoke and the result `again`. After this design is accepted, that test expects one invoke of a `running` call, the owner result, and no second `gateway.invoke`. The pending recovery test asserts `invoke` count 1.
 
-The behavior file drives `run_job`, `_apply_talk`, and `run_sweep` with a barrier. It expects one invoke while the first call is inside the tool, the owner result, the amended goal, and no second model request until the step is terminal. It includes the pulse tick, the two-call forbid sibling, the cancel late effect, and a spawned child whose `exitcode` is `-9`. The `-9` case expects no invoke from the sweep while `hold_until` is in the future, and no invoke from a later lease retire. The current overlap assertions fail on this base. That is why they stay in `verification/loop-owner` until the implementation.
+The behavior file drives `run_job`, `_apply_talk`, and `run_sweep` with a barrier. It expects one invoke while the first call is inside the tool, the owner result, the amended goal, and no second model request until the step is terminal. It includes the pulse tick, the two-call forbid sibling, the cancel late effect, and a spawned child whose `exitcode` is `-9`. The `-9` case expects no invoke from the sweep while `hold_until` is in the future, and no invoke from a later lease retire. The current overlap assertions fail on this base. That is why they stay in `verification/loop-owner` until the implementation. The prefork probe is a separate file. It does not replace that behavior file. The multiprocessing child in the behavior file still does not prove the Celery parent hook.
 
 ## Migration and API
 
-Revision `0026` after `0025_confirm_until`. Nullable `owner_token`, `attempt`, `handed_off_at`, `owner_exited_at`, `exitcode`, and `unresolved_at` on `tool_calls`. Table `tool_call_effects`. No backfill. `begin_read` may return `busy`.
+Revision `0026` after `0025_confirm_until`. Nullable `owner_token` and `unresolved_at` on `tool_calls`. Table `tool_call_deliveries` with `owner_token`, `attempt`, `celery_request_id`, `child_pid`, `handed_off_at`, `exited_at`, and `exitcode`, unique on `(celery_request_id, child_pid)`. Table `tool_call_effects` with a nullable `owner_token` and `attribution`. No backfill and no owner stamp. `begin_read` may return `busy`.
 
-The supplement transaction in `contracts.md` lines 262-268 changes in the implementation, not in this branch. While the latest step has a `pending` or `running` call, the transaction still updates the goal, the web constraint, and `intent_version`, and it leaves the hold columns, `exec_epoch`, and `continuation_due` unchanged.
+The supplement transaction in `contracts.md` lines 262-268 changes in the implementation, not in this branch. While the latest step has a `pending` or `running` call, the transaction still updates the goal, the web constraint, and `intent_version`, and it leaves the hold columns, `exec_epoch`, and `continuation_due` unchanged. It does not create a call. A new external call is the acknowledgement request, not this transaction.
 
-The worker command gains the `default` queue. No new container.
+The worker command does not gain the `default` queue in this design. Consuming it would run the current backlog.
 
 ## Tradeoffs
 
 Design A stores the amendment immediately and adds the call columns and the effect table. Design B stores the amendment late and cannot deny the web sibling from the current constraint while the first call is open.
 
-Parent reap needs the consumer of `default` to be a prefork worker. The child shutdown hook misses `SIGKILL`, which this log recorded as `-9`. Broker redelivery and lease retire both fire for a live worker. The unobserved park is the remaining gap when no parent writes an exit row. It leaves the call `running`, shows `unresolved_at`, and does not invoke. A live holder can still save. A person message is required before a new model turn.
+Parent reap needs a prefork consumer, and that consumer is not created by appending `default` to the current command. The child shutdown hook misses `SIGKILL`. The probe recorded `signal 9 (SIGKILL)` from the parent hook, and it recorded no exit row after the parent itself was killed. Broker redelivery and lease retire both fire for a live worker. A request id is reused on redelivery, so the exit matches the child pid. A bare `raise` from hook registration leaves the worker alive, so the failure path aborts the process. The unobserved park is the remaining gap when no parent writes an exit row. It leaves the call `running` with `unresolved_at`, shows the job as `waiting_person`, and does not invoke. An ordinary message does not start a new external call. A matching live owner can still save the result without resuming the job. A late body with no delivery is an unattributed audit row.
 
 Out of this unit: the pulse `except` body, confirm-lease changes, calendar arm, desktop recovery, and the rest of the inventory.

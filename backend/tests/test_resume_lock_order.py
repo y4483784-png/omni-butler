@@ -25,23 +25,47 @@ def _engine():
         return None
 
 
-def _wait_for_lock(engine, timeout: float = 4) -> bool:
+def _backend_pid(conn) -> int:
+    return int(conn.execute(text("SELECT pg_backend_pid()")).scalar())
+
+
+def _wait_until_blocked(engine, holder: list[int], waiter: list[int], timeout: float = 4) -> bool:
+    """True only when this holder's backend blocks this waiter's backend."""
     deadline = time.time() + timeout
     probe = engine.connect()
     try:
         while time.time() < deadline:
-            waiting = probe.execute(
-                text(
-                    "SELECT count(*) FROM pg_stat_activity "
-                    "WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid()"
-                )
-            ).scalar()
-            if waiting and int(waiting) > 0:
-                return True
+            if holder and waiter:
+                blockers = probe.execute(
+                    text("SELECT pg_blocking_pids(:pid)"),
+                    {"pid": waiter[0]},
+                ).scalar()
+                if blockers and int(holder[0]) in {int(pid) for pid in blockers}:
+                    return True
             time.sleep(0.02)
         return False
     finally:
         probe.close()
+
+
+def _release(release: threading.Event, threads: list[threading.Thread]) -> None:
+    release.set()
+    for thread in threads:
+        thread.join(5)
+
+
+def _terminate_other_backends(engine) -> None:
+    conn = engine.connect()
+    try:
+        conn.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+            )
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @pytest.fixture()
@@ -63,7 +87,10 @@ def pg():
 
     engine.dispose()
     yield engine
-    engine.dispose()
+    try:
+        _terminate_other_backends(engine)
+    finally:
+        engine.dispose()
 
 
 def _seed(session):
@@ -186,10 +213,16 @@ def test_inverted_cursor_and_job_locks_deadlock_on_postgres(pg):
     second = threading.Thread(target=hold_job)
     first.start()
     second.start()
-    first.join(5)
-    second.join(5)
-    assert errors
-    assert any("deadlock" in str(exc).lower() for exc in errors)
+    try:
+        first.join(5)
+        second.join(5)
+        assert errors
+        assert any("deadlock" in str(exc).lower() for exc in errors)
+    finally:
+        cursor_held.set()
+        job_held.set()
+        first.join(5)
+        second.join(5)
 
 
 def test_calendar_finish_and_a_new_job_commit_together(pg):
@@ -220,12 +253,15 @@ def test_calendar_finish_and_a_new_job_commit_together(pg):
             assert release.wait(5)
 
     errors: list[BaseException] = []
+    holder: list[int] = []
+    waiter: list[int] = []
 
     def finish() -> None:
         from app.api.calendar import record_create_success
 
         owned = Session()
         try:
+            holder.append(_backend_pid(owned.connection()))
             owned.connection().info["trace"] = True
             owned.connection().info["hold_gate"] = True
             record_create_success(owned, user_id, "lock-token", event_id)
@@ -239,6 +275,7 @@ def test_calendar_finish_and_a_new_job_commit_together(pg):
 
         owned = Session()
         try:
+            waiter.append(_backend_pid(owned.connection()))
             _insert_running(owned, user_id=user_id, session_id=session_id, kind="job", goal="second")
             owned.commit()
         except Exception as exc:
@@ -247,14 +284,16 @@ def test_calendar_finish_and_a_new_job_commit_together(pg):
             owned.close()
 
     left = threading.Thread(target=finish)
+    right = threading.Thread(target=insert)
     left.start()
     assert held.wait(5)
-    right = threading.Thread(target=insert)
     right.start()
-    assert _wait_for_lock(pg)
-    release.set()
-    left.join(5)
-    right.join(5)
+    blocked = False
+    try:
+        blocked = _wait_until_blocked(pg, holder, waiter)
+    finally:
+        _release(release, [left, right])
+    assert blocked
     assert not left.is_alive()
     assert not right.is_alive()
     assert errors == []
@@ -276,12 +315,15 @@ def test_a_live_confirm_holding_the_claim_is_not_marked_unknown(pg):
     held = threading.Event()
     release = threading.Event()
     errors: list[BaseException] = []
+    holder: list[int] = []
+    waiter: list[int] = []
 
     def confirm() -> None:
         from app.services.loop_round import note_confirmed
 
         owned = Session()
         try:
+            holder.append(_backend_pid(owned.connection()))
             owned.query(ScheduleConfirmClaim).filter(ScheduleConfirmClaim.token == "lock-token").with_for_update().one()
             held.set()
             assert release.wait(5)
@@ -298,6 +340,7 @@ def test_a_live_confirm_holding_the_claim_is_not_marked_unknown(pg):
 
         owned = Session()
         try:
+            waiter.append(_backend_pid(owned.connection()))
             reconcile_parked_writes(owned, job_id)
         except Exception as exc:
             errors.append(exc)
@@ -306,14 +349,18 @@ def test_a_live_confirm_holding_the_claim_is_not_marked_unknown(pg):
             owned.close()
 
     left = threading.Thread(target=confirm)
+    right = threading.Thread(target=recover)
     left.start()
     assert held.wait(5)
-    right = threading.Thread(target=recover)
     right.start()
-    assert _wait_for_lock(pg)
-    release.set()
-    left.join(5)
-    right.join(5)
+    blocked = False
+    try:
+        blocked = _wait_until_blocked(pg, holder, waiter)
+    finally:
+        _release(release, [left, right])
+    assert blocked
+    assert not left.is_alive()
+    assert not right.is_alive()
     assert errors == []
     check = Session()
     try:
@@ -390,6 +437,8 @@ def test_open_cards_reusing_a_claim_does_not_deadlock_with_an_amendment(pg):
     held = threading.Event()
     release = threading.Event()
     errors: list[BaseException] = []
+    holder: list[int] = []
+    waiter: list[int] = []
     _hold_claim_gate(pg, held, release)
 
     def open_again() -> None:
@@ -397,6 +446,7 @@ def test_open_cards_reusing_a_claim_does_not_deadlock_with_an_amendment(pg):
 
         owned = Session()
         try:
+            holder.append(_backend_pid(owned.connection()))
             owned.connection().info["hold_gate"] = True
             open_cards(
                 owned,
@@ -414,6 +464,7 @@ def test_open_cards_reusing_a_claim_does_not_deadlock_with_an_amendment(pg):
 
         owned = Session()
         try:
+            waiter.append(_backend_pid(owned.connection()))
             apply_intent(
                 owned,
                 user_id=user_id,
@@ -429,14 +480,16 @@ def test_open_cards_reusing_a_claim_does_not_deadlock_with_an_amendment(pg):
             owned.close()
 
     left = threading.Thread(target=open_again)
+    right = threading.Thread(target=amend)
     left.start()
     assert held.wait(5)
-    right = threading.Thread(target=amend)
     right.start()
-    assert _wait_for_lock(pg)
-    release.set()
-    left.join(5)
-    right.join(5)
+    blocked = False
+    try:
+        blocked = _wait_until_blocked(pg, holder, waiter)
+    finally:
+        _release(release, [left, right])
+    assert blocked
     assert not left.is_alive()
     assert not right.is_alive()
     assert errors == []
@@ -492,6 +545,8 @@ def test_continue_from_card_does_not_deadlock_with_consume(pg):
     held = threading.Event()
     release = threading.Event()
     errors: list[BaseException] = []
+    holder: list[int] = []
+    waiter: list[int] = []
     _hold_claim_gate(pg, held, release)
 
     def continue_card() -> None:
@@ -499,6 +554,7 @@ def test_continue_from_card_does_not_deadlock_with_consume(pg):
 
         owned = Session()
         try:
+            holder.append(_backend_pid(owned.connection()))
             owned.connection().info["hold_gate"] = True
             continue_from_card(
                 owned,
@@ -519,6 +575,7 @@ def test_continue_from_card_does_not_deadlock_with_consume(pg):
 
         owned = Session()
         try:
+            waiter.append(_backend_pid(owned.connection()))
             consume_schedule_claim(owned, user_id, "continue-token", action="calendar.create", raw=raw)
         except Exception as exc:
             errors.append(exc)
@@ -527,14 +584,16 @@ def test_continue_from_card_does_not_deadlock_with_consume(pg):
             owned.close()
 
     left = threading.Thread(target=continue_card)
+    right = threading.Thread(target=consume)
     left.start()
     assert held.wait(5)
-    right = threading.Thread(target=consume)
     right.start()
-    assert _wait_for_lock(pg)
-    release.set()
-    left.join(5)
-    right.join(5)
+    blocked = False
+    try:
+        blocked = _wait_until_blocked(pg, holder, waiter)
+    finally:
+        _release(release, [left, right])
+    assert blocked
     assert not left.is_alive()
     assert not right.is_alive()
     assert errors == []
@@ -594,6 +653,8 @@ def test_two_cards_do_not_deadlock_with_confirmation_of_the_second(pg):
     held = threading.Event()
     release = threading.Event()
     errors: list[BaseException] = []
+    holder: list[int] = []
+    waiter: list[int] = []
     _hold_claim_gate(pg, held, release)
 
     def open_both() -> None:
@@ -601,6 +662,7 @@ def test_two_cards_do_not_deadlock_with_confirmation_of_the_second(pg):
 
         owned = Session()
         try:
+            holder.append(_backend_pid(owned.connection()))
             owned.connection().info["hold_gate"] = True
             open_cards(
                 owned,
@@ -618,6 +680,7 @@ def test_two_cards_do_not_deadlock_with_confirmation_of_the_second(pg):
 
         owned = Session()
         try:
+            waiter.append(_backend_pid(owned.connection()))
             consume_schedule_claim(owned, user_id, "second-token", action="mail.send", raw=second)
         except Exception as exc:
             errors.append(exc)
@@ -626,14 +689,16 @@ def test_two_cards_do_not_deadlock_with_confirmation_of_the_second(pg):
             owned.close()
 
     left = threading.Thread(target=open_both)
+    right = threading.Thread(target=confirm_second)
     left.start()
     assert held.wait(5)
-    right = threading.Thread(target=confirm_second)
     right.start()
-    assert _wait_for_lock(pg)
-    release.set()
-    left.join(5)
-    right.join(5)
+    blocked = False
+    try:
+        blocked = _wait_until_blocked(pg, holder, waiter)
+    finally:
+        _release(release, [left, right])
+    assert blocked
     assert not left.is_alive()
     assert not right.is_alive()
     assert errors == []
