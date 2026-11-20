@@ -358,6 +358,92 @@ def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient) -> None:
     assert remote == ""
 
 
+def test_propose_without_device_id_returns_422_and_creates_no_claim(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
+    session_id = _session()
+    before = _claim_count()
+    saved = plain_client.post(
+        "/api/desktop/propose",
+        json={
+            "session_id": session_id,
+            "action": "desktop.open",
+            "local_target": PROBE + ".no-device",
+            "local_args": [],
+        },
+        headers=_headers(token),
+    )
+    assert saved.status_code == 422
+    assert saved.json()["detail"] == "缺少设备"
+    assert _claim_count() == before
+
+
+def test_offer_device_id_is_sent_unchanged_and_does_not_run(
+    plain_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = _enroll(plain_client)
+    proof = recognize_package(token)
+    assert isinstance(proof, PackageProof)
+    enrolled = proof.device_id
+    monkeypatch.setenv("DESKTOP_DEVICE_ID", str(enrolled))
+    session_id = _session()
+    missing = object()
+
+    def confirm(target: str, device: object) -> tuple[bool, list[tuple[str, object]], list[str], str]:
+        offered = _propose(plain_client, session_id, local_target=target, token=token)
+        offer = {
+            "confirm_token": offered["confirm_token"],
+            "action": offered["action"],
+            "local_target": offered["local_target"],
+            "local_args": list(offered["local_args"]),
+        }
+        if device is not missing:
+            offer["device_id"] = device
+        posted: list[tuple[str, object]] = []
+        opened: list[str] = []
+
+        class Transport:
+            def post(self, path: str, body: dict) -> dict:
+                posted.append((path, body.get("device_id")))
+                saved = plain_client.post(path, json=body, headers=_headers(token))
+                if saved.status_code != 200:
+                    return {"kind": "closed"}
+                return saved.json()
+
+        result = confirm_local(
+            Transport(),
+            offer,
+            open_file=opened.append,
+            run_program=lambda *_args: opened.append("run"),
+        )
+        return result, posted, opened, offered["confirm_token"]
+
+    result, posted, opened, claim_token = confirm(PROBE + ".missing-id", missing)
+    assert posted == [("/api/desktop/commit", None)]
+    assert opened == []
+    assert result is False
+    status, remote, _scope = _claim(claim_token)
+    assert status == "open"
+    assert remote == ""
+
+    result, posted, opened, _claim_token = confirm(PROBE + ".string-id", str(enrolled))
+    assert posted == [("/api/desktop/commit", str(enrolled))]
+    assert opened == []
+    assert result is False
+
+    result, posted, opened, claim_token = confirm(PROBE + ".wrong-id", enrolled + 1)
+    assert posted == [("/api/desktop/commit", enrolled + 1)]
+    assert opened == []
+    assert result is False
+    status, remote, _scope = _claim(claim_token)
+    assert status == "open"
+    assert remote == ""
+
+    result, posted, opened, _claim_token = confirm(PROBE + ".same-id", enrolled)
+    assert posted[0] == ("/api/desktop/commit", enrolled)
+    assert opened == [PROBE + ".same-id"]
+    assert result is True
+
+
 def test_recognized_package_opens_once(plain_client: TestClient) -> None:
     token = _enroll(plain_client)
     session_id = _session()
