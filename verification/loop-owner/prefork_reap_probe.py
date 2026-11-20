@@ -19,6 +19,7 @@ import time
 import uuid
 from pathlib import Path
 
+import redis
 from celery import Celery
 from celery.signals import worker_init
 from celery.worker.request import Request
@@ -432,7 +433,11 @@ def _reset() -> None:
 
 
 def _flush_broker() -> None:
-    subprocess.run(["redis-cli", "-n", "15", "FLUSHDB"], check=True, capture_output=True)
+    client = redis.Redis.from_url(BROKER)
+    try:
+        client.flushdb()
+    finally:
+        client.close()
 
 
 def _start_worker(concurrency: int, hook: str) -> subprocess.Popen:
