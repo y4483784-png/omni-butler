@@ -28,6 +28,7 @@ from app.services import task_run
 from app.services.local_action import LocalAction, LocalClosed, commit_local, finish_local, propose_local
 from app.services.loop_round import Hold, open_cards, save_turn
 from app.tasks.job import run_job, set_executor
+from desktop.confirm_local import confirm_local
 from desktop.executor import perform
 
 PATH = "/tmp/fixture.txt"
@@ -314,7 +315,7 @@ def test_a_job_opens_the_named_file_once_and_continues(plain_client: TestClient)
     assert finished.status == "completed"
 
 
-def test_a_changed_path_does_not_run(plain_client: TestClient) -> None:
+def test_a_changed_path_does_not_run(plain_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     assert plain_client is not None
     user_id = _user()
     session_id = _session(user_id)
@@ -323,16 +324,36 @@ def test_a_changed_path_does_not_run(plain_client: TestClient) -> None:
     assert proof is not None
     _task_id, _generation, claim_token = _open_job(user_id, session_id)
     opened: list[str] = []
-    db = SessionLocal()
-    try:
-        set_rls_context(db, user_id)
-        with pytest.raises(LocalClosed) as caught:
+    monkeypatch.setenv("DESKTOP_DEVICE_ID", "7")
+
+    class Transport:
+        def post(self, path: str, body: dict) -> dict:
+            assert path == "/api/desktop/commit"
+            assert body["local_target"] == PATH + ".edited"
             commit_local(
                 db,
                 user_id=user_id,
                 token=claim_token,
                 action=_action(PATH + ".edited"),
                 proof=proof,
+            )
+            raise AssertionError("commit returned a license")
+
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        with pytest.raises(LocalClosed) as caught:
+            confirm_local(
+                Transport(),
+                {
+                    "confirm_token": claim_token,
+                    "action": "desktop.open",
+                    "device_id": 7,
+                    "local_target": PATH + ".edited",
+                    "local_args": [],
+                },
+                open_file=opened.append,
+                run_program=lambda *_args: opened.append("run"),
             )
         assert caught.value.status == 409
         assert caught.value.detail == "参数已变，旧确认不能写入。"
