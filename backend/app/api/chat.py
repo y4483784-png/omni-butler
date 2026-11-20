@@ -582,6 +582,7 @@ async def chat(
         saved_user_id = _commit_user_turn(db, session, user_message).id
 
     turn = task_run.begin_turn(user_id=uid, session_id=session.id)
+    keep_job_id = None
     if not is_regenerate and talk is not None:
         talk, keep_job_id = _apply_talk(
             db,
@@ -691,7 +692,7 @@ async def chat(
             stream_usage: dict = {}
             rejected_body = False
             try:
-                yield _sse({"type": "ack", "path": "agent"})
+                yield _sse({"type": "ack", "path": "agent", "keep_task_run_id": keep_job_id})
                 if new_title:
                     yield _sse({"type": "session_title", "content": new_title})
                 yield _sse({"type": "status", "phase": "planning"})
@@ -733,7 +734,11 @@ async def chat(
                 llm_messages = wf["llm_messages"]
                 schedule_card = wf.get("schedule_card")
                 if isinstance(schedule_card, dict):
-                    schedule_card = {**schedule_card, "task_generation": turn.generation}
+                    schedule_card = {
+                        **schedule_card,
+                        "task_generation": turn.generation,
+                        "task_kind": turn.kind,
+                    }
                     wf["schedule_card"] = schedule_card
                 artifact = wf.get("artifact")
                 artifact_stored = prepare_artifact_for_storage(artifact)

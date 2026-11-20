@@ -276,6 +276,23 @@ def read_snapshot(db: Session, *, user_id: int, session_id: int) -> dict:
         .order_by(ScheduleConfirmClaim.created_at.asc())
         .all()
     )
+    from app.services.schedule_confirm import _load_ids
+
+    linked_claims = (
+        db.query(ScheduleConfirmClaim)
+        .filter(
+            ScheduleConfirmClaim.user_id == int(user_id),
+            ScheduleConfirmClaim.session_id == int(session_id),
+        )
+        .order_by(ScheduleConfirmClaim.created_at.asc())
+        .all()
+    )
+    tokens_by_job: dict[int, list[str]] = {}
+    for claim in linked_claims:
+        for task_id in _load_ids(claim.generation_ids):
+            bucket = tokens_by_job.setdefault(int(task_id), [])
+            if claim.token not in bucket:
+                bucket.append(claim.token)
     job_rows = []
     for row in jobs:
         call_id, sentence = _visible_resolution(db, int(row.id))
@@ -288,6 +305,7 @@ def read_snapshot(db: Session, *, user_id: int, session_id: int) -> dict:
                 "kind": row.kind,
                 "unresolved_call_id": call_id,
                 "unresolved_sentence": sentence,
+                "confirm_tokens": tokens_by_job.get(int(row.id), []),
             }
         )
     return {

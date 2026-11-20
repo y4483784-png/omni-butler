@@ -66,10 +66,42 @@ function patchSession(sessionId: number, patch: Partial<SessionChatState>) {
   useStore.getState().patchSessionChat(sessionId, patch);
 }
 
-function voidOpenDrafts(messages: SessionChatState["messages"]) {
+function confirmTokens(card: NonNullable<ChatMsg["scheduleCard"]>): string[] {
+  const tokens: string[] = [];
+  if (card.confirm_token) tokens.push(String(card.confirm_token));
+  for (const item of card.actions ?? []) {
+    if (item?.confirm_token) tokens.push(String(item.confirm_token));
+  }
+  return tokens;
+}
+
+function draftHeld(
+  card: NonNullable<ChatMsg["scheduleCard"]>,
+  jobs: SessionChatState["jobs"],
+  keepTaskRunId: number | null,
+): boolean {
+  const kept = new Set<number>();
+  for (const job of jobs) {
+    if (job.kind === "job" && job.status === "waiting_person") kept.add(job.id);
+  }
+  if (keepTaskRunId != null) kept.add(keepTaskRunId);
+  if (kept.size === 0) return false;
+  const tokens = new Set(confirmTokens(card));
+  if (tokens.size === 0) return false;
+  return jobs.some(
+    (job) => kept.has(job.id) && (job.confirm_tokens ?? []).some((token) => tokens.has(token)),
+  );
+}
+
+function voidOpenDrafts(
+  messages: SessionChatState["messages"],
+  jobs: SessionChatState["jobs"],
+  keepTaskRunId: number | null,
+) {
   return messages.map((message) => {
     const card = message.scheduleCard;
-    if (!card || card.phase !== "draft" || card.mode === "suggest" || card.task_kind === "job") return message;
+    if (!card || card.phase !== "draft" || card.mode === "suggest") return message;
+    if (draftHeld(card, jobs, keepTaskRunId)) return message;
     return { ...message, scheduleCard: { ...card, phase: "cancelled" } };
   });
 }
@@ -79,7 +111,7 @@ function appendAssistantPlaceholder(
   userText: string,
   localImages?: LocalImagePreview[]
 ) {
-  const prev = voidOpenDrafts(useStore.getState().sessionChats[sessionId]?.messages ?? []);
+  const prev = useStore.getState().sessionChats[sessionId]?.messages ?? [];
   patchSession(sessionId, {
     messages: [
       ...prev,
@@ -182,10 +214,15 @@ async function runStreamLoop(
       regenerateMessageId: options.regenerateMessageId,
       images: options.images,
       onTitle: (title) => options.onTitle?.(sessionId, title),
-      onAck: (path) => {
-        patchSession(sessionId, {
+      onAck: (path, keepTaskRunId) => {
+        const state = useStore.getState().sessionChats[sessionId];
+        const patch: Partial<SessionChatState> = {
           phaseHint: path === "fast" ? "正在连接模型…" : "正在规划…",
-        });
+        };
+        if (options.regenerateMessageId == null) {
+          patch.messages = voidOpenDrafts(state?.messages ?? [], state?.jobs ?? [], keepTaskRunId);
+        }
+        patchSession(sessionId, patch);
       },
       onStatus: (phase) => {
         if (phase === "planning") {

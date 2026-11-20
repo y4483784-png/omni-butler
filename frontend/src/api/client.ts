@@ -182,7 +182,7 @@ export type StreamHandlers = {
     intent: "chat" | "rag" | "web_search" | "calendar" | "data_analysis" | string,
     forced: boolean
   ) => void;
-  onAck?: (path: "fast" | "agent") => void;
+  onAck?: (path: "fast" | "agent", keepTaskRunId: number | null) => void;
   onStatus?: (phase: string) => void;
   onTtft?: (ms: number, path: string) => void;
   onThinking?: (steps: string[]) => void;
@@ -398,7 +398,10 @@ export async function* streamChat(
         else if (evt.type === "intent")
           handlers?.onIntent?.(evt.intent || "chat", Boolean(evt.forced));
         else if (evt.type === "ack")
-          handlers?.onAck?.((evt.path as "fast" | "agent") || "agent");
+          handlers?.onAck?.(
+            (evt.path as "fast" | "agent") || "agent",
+            typeof evt.keep_task_run_id === "number" ? evt.keep_task_run_id : null,
+          );
         else if (evt.type === "status")
           handlers?.onStatus?.(String(evt.phase || ""));
         else if (evt.type === "ttft")
@@ -455,6 +458,7 @@ export interface SessionJobRow {
   kind: string;
   unresolved_call_id?: string | null;
   unresolved_sentence?: string | null;
+  confirm_tokens?: string[];
 }
 
 export interface SessionClaimRow {

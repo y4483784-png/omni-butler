@@ -571,6 +571,19 @@ def test_job_snapshot_lists_the_open_confirm_token_on_that_job():
     by_id = {row["id"]: row for row in snapshot["jobs"]}
     assert by_id[waiting.id]["confirm_tokens"] == [token]
     assert by_id[other.id]["confirm_tokens"] == []
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        claim = db.get(ScheduleConfirmClaim, token)
+        claim.status = "cancelled"
+        db.commit()
+        snapshot = read_snapshot(db, user_id=user_id, session_id=session_id)
+        db.commit()
+    finally:
+        db.close()
+    by_id = {row["id"]: row for row in snapshot["jobs"]}
+    assert token in by_id[waiting.id]["confirm_tokens"]
+    assert all(row["token"] != token for row in snapshot["claims"])
 
 
 def test_void_keeps_a_waiting_job_card_and_cancels_a_turn_draft():
