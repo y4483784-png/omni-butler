@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +29,7 @@ os.environ["RAG_RERANK_ENABLED"] = "false"
 os.environ["LLM_API_KEY"] = ""
 
 db_path = Path("/tmp/loop03-owner-repro.db")
-if db_path.exists():
+if os.environ.get("LOOP03_REUSE") != "1" and db_path.exists():
     db_path.unlink()
 
 from app.agents.dispatch import TalkReply  # noqa: E402
@@ -39,6 +40,7 @@ from app.core.db import SessionLocal, init_db, set_rls_context  # noqa: E402
 from app.core.llm import ModelTurn, ToolCallSpec  # noqa: E402
 from app.models.models import Message, TaskRun, TaskStep, ToolCall, User  # noqa: E402
 from app.models.models import Session as ChatSession  # noqa: E402
+from app.services import task_run  # noqa: E402
 from app.services.resume import enqueue_job  # noqa: E402
 from app.storage import factory as blob_factory  # noqa: E402
 from app.tasks.job import run_job, set_executor  # noqa: E402
@@ -153,6 +155,8 @@ def _job(user_id: int, session_id: int) -> dict:
                     "intent_version": int(row.intent_version or 0),
                     "exec_epoch": int(row.exec_epoch or 0),
                     "exec_token": row.exec_token,
+                    "hold_until": None if row.hold_until is None else row.hold_until.isoformat(),
+                    "web_constraint": row.web_constraint,
                     "continuation_due": bool(row.continuation_due),
                     "dispatch_token": row.dispatch_token,
                     "phase": None if step is None else step.phase,
@@ -214,7 +218,7 @@ def _expire_hold(user_id: int, session_id: int) -> None:
         db.close()
 
 
-def _supplement(user_id: int, session_id: int, generation: int, text: str) -> dict:
+def _supplement(user_id: int, session_id: int, generation: int, text: str, web: str = "allow") -> dict:
     db = SessionLocal()
     try:
         set_rls_context(db, user_id)
@@ -222,11 +226,11 @@ def _supplement(user_id: int, session_id: int, generation: int, text: str) -> di
             db,
             user_id=user_id,
             session_id=session_id,
-            relation=TalkReply(relation="supplement", target_generation=generation, web="allow"),
+            relation=TalkReply(relation="supplement", target_generation=generation, web=web),
             message=text,
             message_id=None,
         )
-        return {"relation": relation.relation, "task_id": task_id}
+        return {"relation": relation.relation, "task_id": task_id, "web": web}
     finally:
         db.close()
 
@@ -257,10 +261,7 @@ def _finish(thread: threading.Thread, barrier: BarrierInvoke) -> None:
     thread.join(HOLD_SECONDS)
 
 
-def _scenario(name: str, body) -> dict:
-    barrier = BarrierInvoke()
-    model_calls: list[str] = []
-
+def _default_executor(model_calls: list[str]):
     def executor(messages, _tools):
         text = ""
         for item in messages:
@@ -273,6 +274,28 @@ def _scenario(name: str, body) -> dict:
             return ModelTurn("done", "", (), "stop")
         return ModelTurn("", "", (ToolCallSpec("call-a", "kb", "{}"),), "tool_calls")
 
+    return executor
+
+
+def _quiesce_jobs() -> None:
+    db = SessionLocal()
+    try:
+        rows = db.query(TaskRun).filter(TaskRun.kind == "job", TaskRun.status == "running").all()
+        for row in rows:
+            row.status = "stopped"
+            row.exec_token = None
+            row.hold_until = None
+            row.continuation_due = False
+        db.commit()
+    finally:
+        db.close()
+
+
+def _scenario(name: str, body, executor_factory=None) -> dict:
+    _quiesce_jobs()
+    barrier = BarrierInvoke()
+    model_calls: list[str] = []
+    executor = _default_executor(model_calls) if executor_factory is None else executor_factory(model_calls)
     set_executor(executor)
     try:
         with patch("app.agents.harness.gateway.invoke", barrier):
@@ -387,6 +410,156 @@ def case_concurrent_delivery(barrier: BarrierInvoke) -> dict:
     return {"during": during, "final": _job(user_id, session_id), "errors": errors}
 
 
+def _wait_until(predicate, seconds: float) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def case_pulse_tick(barrier: BarrierInvoke) -> dict:
+    settings.llm_timeout = 0.4
+    renews: list[int] = []
+    real_renew = task_run.renew_hold
+
+    def wrapped(*args, **kwargs):
+        taken = real_renew(*args, **kwargs)
+        renews.append(int(taken))
+        return taken
+
+    try:
+        with patch.object(task_run, "renew_hold", wrapped):
+            user_id = _user()
+            session_id = _session(user_id)
+            thread, _args = _drive_until_tool(user_id, session_id, "pulse-tick", barrier)
+            saw_live = _wait_until(lambda: 1 in renews, 5)
+            during = _job(user_id, session_id)
+            generation = during["jobs"][0]["generation"]
+            talk = _supplement(user_id, session_id, generation, " plus more")
+            saw_miss = _wait_until(lambda: 0 in renews, 5)
+            after_talk = _job(user_id, session_id)
+            run_sweep()
+            after_sweep = _job(user_id, session_id)
+            _finish(thread, barrier)
+            return {
+                "talk": talk,
+                "saw_live_renew": saw_live,
+                "saw_missed_renew": saw_miss,
+                "llm_timeout": 0.4,
+                "renews": list(renews),
+                "during": during,
+                "after_talk": after_talk,
+                "after_sweep": after_sweep,
+                "final": _job(user_id, session_id),
+            }
+    finally:
+        settings.llm_timeout = 3600.0
+
+
+def _two_call_executor(model_calls: list[str]):
+    def executor(messages, _tools):
+        text = ""
+        for item in messages:
+            if isinstance(item, dict) and item.get("role") == "user":
+                text = str(item.get("content") or "")
+        model_calls.append(text)
+        if any(isinstance(item, dict) and item.get("role") == "tool" for item in messages):
+            return ModelTurn("done", "", (), "stop")
+        return ModelTurn(
+            "",
+            "",
+            (ToolCallSpec("call-a", "kb", "{}"), ToolCallSpec("call-b", "web", "{}")),
+            "tool_calls",
+        )
+
+    return executor
+
+
+def case_two_call_forbid(barrier: BarrierInvoke) -> dict:
+    user_id = _user()
+    session_id = _session(user_id)
+    thread, _args = _drive_until_tool(user_id, session_id, "two-call", barrier)
+    during = _job(user_id, session_id)
+    generation = during["jobs"][0]["generation"]
+    talk = _supplement(user_id, session_id, generation, " plus forbid", web="forbid")
+    after_talk = _job(user_id, session_id)
+    run_sweep()
+    after_sweep = _job(user_id, session_id)
+    _finish(thread, barrier)
+    return {
+        "talk": talk,
+        "during": during,
+        "after_talk": after_talk,
+        "after_sweep": after_sweep,
+        "final": _job(user_id, session_id),
+    }
+
+
+def _death_child(args: tuple, ready: str, hold: str) -> None:
+    def executor(messages, _tools):
+        if any(isinstance(item, dict) and item.get("role") == "tool" for item in messages):
+            return ModelTurn("done", "", (), "stop")
+        return ModelTurn("", "", (ToolCallSpec("call-a", "kb", "{}"),), "tool_calls")
+
+    def invoke(name, _ctx, _args):
+        Path(ready).write_text(name, encoding="utf-8")
+        deadline = time.time() + 30
+        while time.time() < deadline and not Path(hold).exists():
+            time.sleep(0.05)
+        return ToolResult(direct_answer="answer-dead")
+
+    set_executor(executor)
+    with patch("app.agents.harness.gateway.invoke", invoke):
+        run_job(*args)
+
+
+def case_process_death(barrier: BarrierInvoke) -> dict:
+    import multiprocessing as mp
+
+    user_id = _user()
+    session_id = _session(user_id)
+    args = _publish_held(user_id, session_id, "process-death")
+    token = uuid4().hex
+    ready = f"/tmp/loop03-death-{token}.ready"
+    hold = f"/tmp/loop03-death-{token}.hold"
+    os.environ["LOOP03_REUSE"] = "1"
+    proc = mp.get_context("spawn").Process(target=_death_child, args=(args, ready, hold))
+    proc.start()
+    entered = _wait_until(lambda: Path(ready).exists(), HOLD_SECONDS)
+    if not entered:
+        proc.kill()
+        proc.join(5)
+        raise RuntimeError(f"child did not enter the tool, exitcode {proc.exitcode}")
+    during = _job(user_id, session_id)
+    proc.kill()
+    proc.join(5)
+    after_kill = _job(user_id, session_id)
+    published: list[tuple] = []
+
+    def capture(*capture_args, **_kwargs):
+        published.append(tuple(capture_args))
+
+    with patch("app.tasks.job.run_job.delay", capture):
+        run_sweep()
+    after_live_sweep = _job(user_id, session_id)
+    barrier.release.set()
+    _expire_hold(user_id, session_id)
+    run_sweep()
+    return {
+        "exitcode": proc.exitcode,
+        "signaled": proc.exitcode is not None and proc.exitcode < 0,
+        "signal": None if proc.exitcode is None or proc.exitcode >= 0 else -int(proc.exitcode),
+        "during": during,
+        "after_kill": after_kill,
+        "live_sweep_published": len(published),
+        "after_live_sweep": after_live_sweep,
+        "after_lease_expire_sweep": _job(user_id, session_id),
+        "lease_is_not_death": True,
+    }
+
+
 def case_new_job(barrier: BarrierInvoke) -> dict:
     user_id = _user()
     session_id = _session(user_id)
@@ -413,19 +586,22 @@ def _invoke_count(result: dict) -> int:
 def main() -> int:
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cases = [
-        ("same_token_second_delivery", case_same_token),
-        ("concurrent_same_token", case_concurrent_delivery),
-        ("supplement_then_sweep", case_supplement),
-        ("supplement_due_forced_false_then_sweep", case_due_cleared),
-        ("expired_hold_then_sweep", case_expired_hold),
-        ("explicit_cancel_during_tool", case_cancel),
-        ("new_job_during_tool", case_new_job),
+        ("same_token_second_delivery", case_same_token, None),
+        ("concurrent_same_token", case_concurrent_delivery, None),
+        ("supplement_then_sweep", case_supplement, None),
+        ("supplement_due_forced_false_then_sweep", case_due_cleared, None),
+        ("expired_hold_then_sweep", case_expired_hold, None),
+        ("explicit_cancel_during_tool", case_cancel, None),
+        ("new_job_during_tool", case_new_job, None),
+        ("pulse_tick_then_supplement", case_pulse_tick, None),
+        ("two_call_forbid_sibling", case_two_call_forbid, _two_call_executor),
+        ("process_death_sigkill", case_process_death, None),
     ]
     results = []
     control_failed = False
     defect = False
-    for name, body in cases:
-        result = _scenario(name, body)
+    for name, body, factory in cases:
+        result = _scenario(name, body, factory)
         result["overlapped"] = _overlap(result)
         result["invoke_count"] = _invoke_count(result)
         results.append(result)
@@ -439,6 +615,28 @@ def main() -> int:
         }:
             if result["overlapped"] or result["invoke_count"] != 1:
                 control_failed = True
+        elif name == "pulse_tick_then_supplement":
+            if not result.get("saw_live_renew") or not result.get("saw_missed_renew"):
+                control_failed = True
+            elif result["overlapped"]:
+                defect = True
+            else:
+                control_failed = True
+        elif name == "two_call_forbid_sibling":
+            names = [item.get("name") for item in result.get("invokes", [])]
+            if not names or names[0] != "kb":
+                control_failed = True
+            else:
+                defect = True
+        elif name == "process_death_sigkill":
+            if result.get("exitcode") != -9 or result.get("live_sweep_published") != 0:
+                control_failed = True
+            else:
+                killed = (result.get("after_kill") or {}).get("jobs") or []
+                if not killed or killed[0].get("status") != "running":
+                    control_failed = True
+                else:
+                    defect = True
         elif result["overlapped"]:
             defect = True
         else:
@@ -450,6 +648,9 @@ def main() -> int:
         "command python verification/loop-owner/reproduce_overlap.py",
         "cwd backend, database sqlite:////tmp/loop03-owner-repro.db",
         f"llm_timeout {settings.llm_timeout}",
+        "pulse_tick_then_supplement sets llm_timeout 0.4 for that case only",
+        "expired_hold_then_sweep leaves the first worker alive",
+        "process_death_sigkill kills the child with SIGKILL and records exitcode",
         "",
     ]
     for result in results:
