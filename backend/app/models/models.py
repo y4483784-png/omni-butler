@@ -169,6 +169,7 @@ class TaskRun(Base):
     exec_epoch = Column(Integer, nullable=False, default=0, server_default=text("0"))
     hold_until = Column(DateTime, nullable=True)
     continuation_due = Column(Boolean, nullable=False, default=False, server_default=false())
+    effect_ack_at = Column(DateTime, nullable=True)
 
 
 TASK_STEP_PHASES = (
@@ -228,6 +229,73 @@ class ToolCall(Base):
     claim_token = Column(String, nullable=True)
     intent_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
     result = Column(Text, nullable=True)
+    owner_token = Column(String, nullable=True)
+    attempt = Column(Integer, nullable=True)
+    unresolved_at = Column(DateTime, nullable=True)
+
+
+class TaskDelivery(Base):
+    """One accepted pool execution. The id is the identity, not the pid tuple."""
+
+    __tablename__ = "task_deliveries"
+    delivery_id = Column(String, primary_key=True)
+    worker_incarnation = Column(String, nullable=False)
+    celery_request_id = Column(String, nullable=False)
+    child_pid = Column(Integer, nullable=False)
+    task_run_id = Column(Integer, ForeignKey("task_runs.id"), nullable=True, index=True)
+    exited_at = Column(DateTime, nullable=True)
+    exitcode = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class ToolCallAttempt(Base):
+    __tablename__ = "tool_call_attempts"
+    __table_args__ = (
+        UniqueConstraint("tool_call_pk", "owner_token", "attempt", name="uq_tool_call_attempts"),
+    )
+    id = Column(Integer, primary_key=True)
+    tool_call_pk = Column(Integer, ForeignKey("tool_calls.id"), nullable=False, index=True)
+    owner_token = Column(String, nullable=False)
+    attempt = Column(Integer, nullable=False)
+    delivery_id = Column(String, ForeignKey("task_deliveries.delivery_id"), nullable=False, index=True)
+    handed_off_at = Column(DateTime, nullable=True)
+
+
+class ToolCallEffect(Base):
+    __tablename__ = "tool_call_effects"
+    __table_args__ = (
+        Index(
+            "uq_tool_call_effects_attributed",
+            "tool_call_pk",
+            "owner_token",
+            "attempt",
+            unique=True,
+            sqlite_where=text("owner_token IS NOT NULL"),
+            postgresql_where=text("owner_token IS NOT NULL"),
+        ),
+        Index(
+            "uq_tool_call_effects_unattributed",
+            "tool_call_pk",
+            "body",
+            unique=True,
+            sqlite_where=text("owner_token IS NULL"),
+            postgresql_where=text("owner_token IS NULL"),
+        ),
+    )
+    id = Column(Integer, primary_key=True)
+    tool_call_pk = Column(Integer, ForeignKey("tool_calls.id"), nullable=False, index=True)
+    owner_token = Column(String, nullable=True)
+    attempt = Column(Integer, nullable=True)
+    body = Column(Text, nullable=False, default="", server_default=text("''"))
+
+
+class ToolCallEffectConflict(Base):
+    __tablename__ = "tool_call_effect_conflicts"
+    id = Column(Integer, primary_key=True)
+    tool_call_pk = Column(Integer, ForeignKey("tool_calls.id"), nullable=False, index=True)
+    owner_token = Column(String, nullable=False)
+    attempt = Column(Integer, nullable=False)
+    body = Column(Text, nullable=False, default="", server_default=text("''"))
 
 
 class Document(Base):

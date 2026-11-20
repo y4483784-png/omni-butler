@@ -269,16 +269,18 @@ def test_forbid_stores_a_terminal_denial_for_web_and_web_fetch():
         assert job.exec_token == "worker"
 
 
-def test_stale_intent_does_not_store_a_result():
+def test_stale_intent_does_not_store_a_model_turn():
     db, hold, turn = _held()
     save_turn(db, hold=hold, turn=_model(ToolCallSpec("call-a", "kb", "{}")))
     job = _job(db, turn.id)
     job.intent_version = 2
     db.commit()
-    assert begin_read(db, hold=hold, tool_call_id="call-a") == "stale"
+    assert begin_read(db, hold=hold, tool_call_id="call-a") == "invoke"
     row = _call_rows(db, _steps(db, turn.id)[0].id)[0]
-    assert row.state == "pending"
-    assert row.result is None
+    assert row.state == "running"
+    assert row.owner_token
+    stored = save_turn(db, hold=hold, turn=_model(content="later"))
+    assert stored is None
 
 
 def test_holder_ready_keeps_the_token_and_clears_a_due_flag():

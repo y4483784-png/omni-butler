@@ -105,6 +105,15 @@ test("named guest round-trips as email and name", async () => {
   assert.deepEqual(named, [{ kind: "named-invite", name: "张三", email: "zhangsan@example.com" }]);
 });
 
+test("a waiting job shows the unresolved call id and sentence", () => {
+  const source = readFileSync(new URL("../src/components/ChatWindow.tsx", import.meta.url), "utf8");
+  const jobsAt = source.indexOf('className="schedule-meta"');
+  assert.ok(jobsAt !== -1);
+  const jobs = source.slice(jobsAt, jobsAt + 400);
+  assert.match(jobs, /job\.unresolved_call_id/);
+  assert.match(jobs, /job\.unresolved_sentence/);
+});
+
 test("list card renders above the advice text", () => {
   const source = readFileSync(new URL("../src/components/ChatWindow.tsx", import.meta.url), "utf8");
   const listAt = source.indexOf('m.scheduleCard?.mode === "list"');

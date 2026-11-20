@@ -1,0 +1,1241 @@
+started 2026-11-20T16:11:03Z
+base 19867c51ac4e29c1ca16174668925133e4d76f9f
+command python verification/loop-owner/reproduce_overlap.py
+cwd backend, database sqlite:////tmp/loop03-owner-repro.db
+llm_timeout 3600.0
+pulse_tick_then_supplement sets llm_timeout 0.4 for that case only
+expired_hold_then_sweep leaves the first worker alive
+process_death_sigkill kills the child with SIGKILL and records exitcode
+
+CASE same_token_second_delivery invoke_count=1 overlapped=False
+{
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "same-token",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "47cd0df1efb44dcbac785e74cd73c911",
+        "hold_until": "2026-11-20T17:11:03",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：same-token"
+        ]
+      }
+    ]
+  },
+  "after_duplicate": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "same-token",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "47cd0df1efb44dcbac785e74cd73c911",
+        "hold_until": "2026-11-20T17:11:03",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：same-token"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "same-token",
+        "intent_version": 1,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：same-token",
+          "answer-1",
+          "done"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "same-token",
+    "same-token"
+  ],
+  "name": "same_token_second_delivery",
+  "overlapped": false,
+  "invoke_count": 1
+}
+
+CASE concurrent_same_token invoke_count=1 overlapped=False
+{
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "concurrent",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "88739d1009614728bbaca7db00869850",
+        "hold_until": "2026-11-20T17:11:03",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：concurrent"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "concurrent",
+        "intent_version": 1,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：concurrent",
+          "answer-1",
+          "done"
+        ]
+      }
+    ]
+  },
+  "errors": [],
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "concurrent",
+    "concurrent"
+  ],
+  "name": "concurrent_same_token",
+  "overlapped": false,
+  "invoke_count": 1
+}
+
+CASE supplement_then_sweep invoke_count=2 overlapped=True
+{
+  "talk": {
+    "relation": "supplement",
+    "task_id": 3,
+    "web": "allow"
+  },
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "supplement",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "5c50adb676ec4cd3aa98bcb9cd6d8eb8",
+        "hold_until": "2026-11-20T17:11:03",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：supplement"
+        ]
+      }
+    ]
+  },
+  "after_talk": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "supplement plus more",
+        "intent_version": 2,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": true,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：supplement"
+        ]
+      }
+    ]
+  },
+  "after_sweep": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "supplement plus more",
+        "intent_version": 2,
+        "exec_epoch": 4,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：supplement",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "supplement plus more",
+        "intent_version": 2,
+        "exec_epoch": 4,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：supplement",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    },
+    {
+      "n": 2,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "supplement",
+    "supplement plus more"
+  ],
+  "name": "supplement_then_sweep",
+  "overlapped": true,
+  "invoke_count": 2
+}
+
+CASE supplement_due_forced_false_then_sweep invoke_count=2 overlapped=True
+{
+  "talk": {
+    "relation": "supplement",
+    "task_id": 4,
+    "web": "allow"
+  },
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "due-cleared",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "5b8a8ac1f1be46b8b22c0b09c88deaaa",
+        "hold_until": "2026-11-20T17:11:03",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：due-cleared"
+        ]
+      }
+    ]
+  },
+  "after_clear": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "due-cleared plus more",
+        "intent_version": 2,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：due-cleared"
+        ]
+      }
+    ]
+  },
+  "after_sweep": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "due-cleared plus more",
+        "intent_version": 2,
+        "exec_epoch": 4,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：due-cleared",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "due-cleared plus more",
+        "intent_version": 2,
+        "exec_epoch": 4,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：due-cleared",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    },
+    {
+      "n": 2,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "due-cleared",
+    "due-cleared plus more"
+  ],
+  "name": "supplement_due_forced_false_then_sweep",
+  "overlapped": true,
+  "invoke_count": 2
+}
+
+CASE expired_hold_then_sweep invoke_count=2 overlapped=True
+{
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "expired-hold",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "9f3c4df78f304aa0b018d02fb820ebd4",
+        "hold_until": "2026-11-20T17:11:03",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：expired-hold"
+        ]
+      }
+    ]
+  },
+  "expired": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "expired-hold",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "9f3c4df78f304aa0b018d02fb820ebd4",
+        "hold_until": "2000-01-01T00:00:00",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：expired-hold"
+        ]
+      }
+    ]
+  },
+  "after_sweep": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "expired-hold",
+        "intent_version": 1,
+        "exec_epoch": 3,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：expired-hold",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "expired-hold",
+        "intent_version": 1,
+        "exec_epoch": 3,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：expired-hold",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    },
+    {
+      "n": 2,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "expired-hold",
+    "expired-hold"
+  ],
+  "name": "expired_hold_then_sweep",
+  "overlapped": true,
+  "invoke_count": 2
+}
+
+CASE explicit_cancel_during_tool invoke_count=1 overlapped=False
+{
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "cancel",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "8d3f1b642a3d492b96aa346116225f10",
+        "hold_until": "2026-11-20T17:11:03",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：cancel"
+        ]
+      }
+    ]
+  },
+  "after_stop": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "stopped",
+        "goal": "cancel",
+        "intent_version": 1,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "results_ready",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "cancelled",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：cancel"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "stopped",
+        "goal": "cancel",
+        "intent_version": 1,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "results_ready",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "cancelled",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：cancel"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "cancel"
+  ],
+  "name": "explicit_cancel_during_tool",
+  "overlapped": false,
+  "invoke_count": 1
+}
+
+CASE new_job_during_tool invoke_count=1 overlapped=False
+{
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "first-job",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "f8866e4384e54edbb8df3dc8290e2696",
+        "hold_until": "2026-11-20T17:11:04",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：first-job",
+          "已开始：beta-job",
+          "other job"
+        ]
+      },
+      {
+        "generation": 2,
+        "status": "completed",
+        "goal": "beta-job",
+        "intent_version": 1,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：first-job",
+          "已开始：beta-job",
+          "other job"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "first-job",
+        "intent_version": 1,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：first-job",
+          "已开始：beta-job",
+          "other job",
+          "answer-1",
+          "done"
+        ]
+      },
+      {
+        "generation": 2,
+        "status": "completed",
+        "goal": "beta-job",
+        "intent_version": 1,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：first-job",
+          "已开始：beta-job",
+          "other job",
+          "answer-1",
+          "done"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "first-job",
+    "beta-job",
+    "first-job"
+  ],
+  "name": "new_job_during_tool",
+  "overlapped": false,
+  "invoke_count": 1
+}
+
+CASE pulse_tick_then_supplement invoke_count=2 overlapped=True
+{
+  "talk": {
+    "relation": "supplement",
+    "task_id": 9,
+    "web": "allow"
+  },
+  "saw_live_renew": true,
+  "saw_missed_renew": true,
+  "llm_timeout": 0.4,
+  "renews": [
+    1,
+    1,
+    1,
+    0,
+    1,
+    1,
+    1
+  ],
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "pulse-tick",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "5477690041644226994873ad51b4bb7f",
+        "hold_until": "2026-11-20T16:11:04.400000",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：pulse-tick"
+        ]
+      }
+    ]
+  },
+  "after_talk": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "pulse-tick plus more",
+        "intent_version": 2,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": true,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：pulse-tick"
+        ]
+      }
+    ]
+  },
+  "after_sweep": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "pulse-tick plus more",
+        "intent_version": 2,
+        "exec_epoch": 4,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：pulse-tick",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "pulse-tick plus more",
+        "intent_version": 2,
+        "exec_epoch": 4,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：pulse-tick",
+          "answer-2",
+          "done"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    },
+    {
+      "n": 2,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "pulse-tick",
+    "pulse-tick plus more"
+  ],
+  "name": "pulse_tick_then_supplement",
+  "overlapped": true,
+  "invoke_count": 2
+}
+
+CASE two_call_forbid_sibling invoke_count=2 overlapped=True
+{
+  "talk": {
+    "relation": "supplement",
+    "task_id": 10,
+    "web": "forbid"
+  },
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "two-call",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "3ca472d897cb40e58729a735193738cd",
+        "hold_until": "2026-11-20T17:11:04",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          },
+          {
+            "id": "call-b",
+            "name": "web",
+            "state": "pending",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：two-call"
+        ]
+      }
+    ]
+  },
+  "after_talk": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "two-call plus forbid",
+        "intent_version": 2,
+        "exec_epoch": 2,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "forbid",
+        "continuation_due": true,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          },
+          {
+            "id": "call-b",
+            "name": "web",
+            "state": "pending",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：two-call"
+        ]
+      }
+    ]
+  },
+  "after_sweep": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "two-call plus forbid",
+        "intent_version": 2,
+        "exec_epoch": 3,
+        "exec_token": "fa41f67f2ecf445e95cbd4c7ba2a3d8c",
+        "hold_until": "2026-11-20T17:11:04",
+        "web_constraint": "forbid",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "result",
+            "intent_version": 1,
+            "result": "answer-2"
+          },
+          {
+            "id": "call-b",
+            "name": "web",
+            "state": "pending",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：two-call",
+          "answer-2"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "two-call plus forbid",
+        "intent_version": 2,
+        "exec_epoch": 3,
+        "exec_token": "fa41f67f2ecf445e95cbd4c7ba2a3d8c",
+        "hold_until": "2026-11-20T17:11:04",
+        "web_constraint": "forbid",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "result",
+            "intent_version": 1,
+            "result": "answer-2"
+          },
+          {
+            "id": "call-b",
+            "name": "web",
+            "state": "pending",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：two-call",
+          "answer-2"
+        ]
+      }
+    ]
+  },
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": true
+    },
+    {
+      "n": 2,
+      "name": "kb",
+      "first_still_inside": true
+    }
+  ],
+  "model_calls": [
+    "two-call"
+  ],
+  "name": "two_call_forbid_sibling",
+  "overlapped": true,
+  "invoke_count": 2
+}
+
+CASE process_death_sigkill invoke_count=1 overlapped=False
+{
+  "exitcode": -9,
+  "signaled": true,
+  "signal": 9,
+  "during": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "process-death",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "9b924fb6ccc24fb6a4695e1fb50a0d40",
+        "hold_until": "2026-11-20T17:11:05",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：process-death"
+        ]
+      }
+    ]
+  },
+  "after_kill": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "process-death",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "9b924fb6ccc24fb6a4695e1fb50a0d40",
+        "hold_until": "2026-11-20T17:11:05",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：process-death"
+        ]
+      }
+    ]
+  },
+  "live_sweep_published": 0,
+  "after_live_sweep": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "running",
+        "goal": "process-death",
+        "intent_version": 1,
+        "exec_epoch": 1,
+        "exec_token": "9b924fb6ccc24fb6a4695e1fb50a0d40",
+        "hold_until": "2026-11-20T17:11:05",
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "awaiting_results",
+        "calls": [
+          {
+            "id": "call-a",
+            "name": "kb",
+            "state": "running",
+            "intent_version": 1,
+            "result": null
+          }
+        ],
+        "notes": [
+          "已开始：process-death"
+        ]
+      }
+    ]
+  },
+  "after_lease_expire_sweep": {
+    "jobs": [
+      {
+        "generation": 1,
+        "status": "completed",
+        "goal": "process-death",
+        "intent_version": 1,
+        "exec_epoch": 3,
+        "exec_token": null,
+        "hold_until": null,
+        "web_constraint": "allow",
+        "continuation_due": false,
+        "dispatch_token": null,
+        "phase": "final_answer",
+        "calls": [],
+        "notes": [
+          "已开始：process-death",
+          "这一任务自 2026-11-20 16:11:05 起没有新的进展，仍在运行。generation=1",
+          "answer-1",
+          "done"
+        ]
+      }
+    ]
+  },
+  "lease_is_not_death": true,
+  "invokes": [
+    {
+      "n": 1,
+      "name": "kb",
+      "first_still_inside": false
+    }
+  ],
+  "model_calls": [
+    "process-death"
+  ],
+  "name": "process_death_sigkill",
+  "overlapped": false,
+  "invoke_count": 1
+}
+
+RESULT defect_reproduced
+STORED [{"task_run_id": 1, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-1"}, {"task_run_id": 2, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-1"}, {"task_run_id": 3, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-2"}, {"task_run_id": 4, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-2"}, {"task_run_id": 5, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-2"}, {"task_run_id": 6, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "cancelled", "result": null}, {"task_run_id": 7, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-1"}, {"task_run_id": 9, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-2"}, {"task_run_id": 10, "seq": 1, "phase": "awaiting_results", "call": "call-a", "state": "result", "result": "answer-2"}, {"task_run_id": 10, "seq": 1, "phase": "awaiting_results", "call": "call-b", "state": "pending", "result": null}, {"task_run_id": 11, "seq": 1, "phase": "results_ready", "call": "call-a", "state": "result", "result": "answer-1"}]

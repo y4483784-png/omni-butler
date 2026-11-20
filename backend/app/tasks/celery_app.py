@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from celery import Celery
 
 from app.core.config import EndpointConfigError, check_zhipu_endpoints, settings
@@ -17,6 +19,7 @@ celery_app.conf.update(
         "app.tasks.ingestion.recover_stale_ingests_task": {"queue": "maintenance"},
         "app.tasks.pulse.run_pulse": {"queue": "maintenance"},
         "app.tasks.watchdog.sweep_task": {"queue": "maintenance"},
+        "app.tasks.job.run_job": {"queue": "loop"},
     },
     task_ignore_result=True,
     task_acks_late=True,
@@ -73,6 +76,12 @@ def _refuse_misconfigured_worker(**_kwargs) -> None:
     except EndpointConfigError as e:
         # Celery's Signal.send logs and swallows Exception from receivers; SystemExit escapes it.
         raise SystemExit(str(e)) from e
+    try:
+        from app.services.delivery_bind import install_parent_hooks
+
+        install_parent_hooks()
+    except Exception:
+        os._exit(78)
 
 
 @worker_process_init.connect

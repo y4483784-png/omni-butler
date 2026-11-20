@@ -1,0 +1,39 @@
+command: PYTHONPATH=/tmp/probe-py python3 verification/loop-owner/prefork_reap_probe.py
+when: 2026-11-20
+versions: celery 5.4.0, kombu 5.3.7, redis-py 5.3.1, Redis database 15, queue probe
+note: the machine's kombu 5.7 refuses redis-py 5.x. The probe used kombu 5.3.7, which celery 5.4 allows. It did not publish to the production default queue.
+
+PASS synthetic {'case': 'synthetic_identity', 'request_pid_rows': 2, 'exact_delivery_marked': 'del-a', 'reused_pid_left_live': 'del-b', 'child_mint_rejected': True, 'unknown_delivery_rejected': True, 'sibling_calls': ['call-a', 'call-b'], 'first_body': 'first', 'conflict_audited': True, 'unattributed_owner': None, 'ordinary_message_authorizes': False, 'autofill_authorizes': False, 'explicit_ack_authorizes': True}
+PASS after {'case': 'after_handoff', 'request_id': '83eb1b72-dd59-4b08-9328-2836852829c5', 'dead_delivery': '977f34ec21814fbabcca812afd1fea55', 'live_delivery': '405c6ff7c4be4a66bf3e33b8b6e36722', 'policy': 'no_external_replay', 'exit_before_redelivery': True}
+PASS before {'case': 'before_handoff', 'policy': 'replacement_allowed', 'same_request': True, 'distinct_delivery': True}
+PASS duplicate {'case': 'duplicate_while_live', 'dead_delivery': '345dca610c604e6593aafdeeafa60ba8', 'other_live_delivery': 'afd7d2d77ab8488cbb22011c0d5c4f78', 'redelivery_delivery': 'bd846885abd64fcc812b75cbf59d6f04', 'other_marked_dead': False}
+PASS siblings {'case': 'two_calls_one_delivery', 'delivery_id': '53256c87c7244f4882b19671bed0a1c8', 'calls': ['call-a', 'call-b'], 'redelivery_delivery': 'e5fda4580d604732ae9d85c8e93fc138', 'redelivery_exited': False}
+PASS hook {'case': 'hook_write_fails', 'requeued': True, 'dead_delivery_exited': False, 'hook_error': 'IntegrityError: exit database unavailable'}
+PASS parent {'case': 'parent_sigkill', 'delivery_id': '98676808e8f549f7974597e02c9fad0b', 'exited': False, 'child_still_alive': False, 'policy': 'unobserved'}
+PASS register-raise {'case': 'hook_register_raise', 'worker_still_alive': True}
+PASS register {'case': 'hook_register_fails', 'returncode': 78, 'consumed': False}
+
+command: PYTHONPATH=/tmp/probe-py python3 verification/loop-owner/prefork_reap_probe.py
+when: 2026-11-20 implementation head
+versions: celery 5.4.0, kombu 5.3.7, redis-py 5.3.1, Redis database 15, queue probe
+note: exit updates the delivery id stored on the Request. Same-incarnation tuple del-a2 stays live.
+
+PASS synthetic {'case': 'synthetic_identity', 'request_pid_rows': 3, 'exact_delivery_marked': 'del-a', 'same_incarnation_left_live': 'del-a2', 'reused_pid_left_live': 'del-b', 'child_mint_rejected': True, 'unknown_delivery_rejected': True, 'sibling_calls': ['call-a', 'call-b'], 'first_body': 'first', 'conflict_audited': True, 'unattributed_owner': None, 'ordinary_message_authorizes': False, 'autofill_authorizes': False, 'explicit_ack_authorizes': True}
+PASS after {'case': 'after_handoff', 'request_id': '62ba6580-57a2-4f1f-8c3c-2130829cbed7', 'dead_delivery': '657388f2651b4b45bcf98111d06ebb6f', 'live_delivery': 'ac84195ce8b648f18198456cbf72c9d2', 'policy': 'no_external_replay', 'exit_before_redelivery': True}
+PASS before {'case': 'before_handoff', 'policy': 'replacement_allowed', 'same_request': True, 'distinct_delivery': True}
+PASS duplicate {'case': 'duplicate_while_live', 'dead_delivery': 'a8a32e7625c94b298d5c9874ef9baac1', 'other_live_delivery': '794cb9e0413746fa9ccfe463d94f1581', 'redelivery_delivery': '8d982d2798094a87839ef16d6b18264e', 'other_marked_dead': False}
+PASS siblings {'case': 'two_calls_one_delivery', 'delivery_id': '7c930f593eb84a23988a3f4fb9ad15d2', 'calls': ['call-a', 'call-b'], 'redelivery_delivery': '075e4a1a4b6142dbb1577fae0cdefadd', 'redelivery_exited': False}
+PASS hook {'case': 'hook_write_fails', 'requeued': True, 'dead_delivery_exited': False, 'hook_error': 'IntegrityError: exit database unavailable'}
+PASS parent {'case': 'parent_sigkill', 'delivery_id': 'fbd6dbca086b4321befdbe98b1181bd3', 'exited': False, 'child_still_alive': False, 'policy': 'unobserved'}
+PASS register-raise {'case': 'hook_register_raise', 'worker_still_alive': True}
+PASS register {'case': 'hook_register_fails', 'returncode': 78, 'consumed': False}
+RESULTS
+{'case': 'synthetic_identity', 'request_pid_rows': 3, 'exact_delivery_marked': 'del-a', 'same_incarnation_left_live': 'del-a2', 'reused_pid_left_live': 'del-b', 'child_mint_rejected': True, 'unknown_delivery_rejected': True, 'sibling_calls': ['call-a', 'call-b'], 'first_body': 'first', 'conflict_audited': True, 'unattributed_owner': None, 'ordinary_message_authorizes': False, 'autofill_authorizes': False, 'explicit_ack_authorizes': True}
+{'case': 'after_handoff', 'request_id': '62ba6580-57a2-4f1f-8c3c-2130829cbed7', 'dead_delivery': '657388f2651b4b45bcf98111d06ebb6f', 'live_delivery': 'ac84195ce8b648f18198456cbf72c9d2', 'policy': 'no_external_replay', 'exit_before_redelivery': True}
+{'case': 'before_handoff', 'policy': 'replacement_allowed', 'same_request': True, 'distinct_delivery': True}
+{'case': 'duplicate_while_live', 'dead_delivery': 'a8a32e7625c94b298d5c9874ef9baac1', 'other_live_delivery': '794cb9e0413746fa9ccfe463d94f1581', 'redelivery_delivery': '8d982d2798094a87839ef16d6b18264e', 'other_marked_dead': False}
+{'case': 'two_calls_one_delivery', 'delivery_id': '7c930f593eb84a23988a3f4fb9ad15d2', 'calls': ['call-a', 'call-b'], 'redelivery_delivery': '075e4a1a4b6142dbb1577fae0cdefadd', 'redelivery_exited': False}
+{'case': 'hook_write_fails', 'requeued': True, 'dead_delivery_exited': False, 'hook_error': 'IntegrityError: exit database unavailable'}
+{'case': 'parent_sigkill', 'delivery_id': 'fbd6dbca086b4321befdbe98b1181bd3', 'exited': False, 'child_still_alive': False, 'policy': 'unobserved'}
+{'case': 'hook_register_raise', 'worker_still_alive': True}
+{'case': 'hook_register_fails', 'returncode': 78, 'consumed': False}

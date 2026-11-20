@@ -26,6 +26,15 @@ os.environ.setdefault("RAG_RERANK_ENABLED", "false")
 TEST_ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 
+@pytest.fixture(autouse=True)
+def _reset_call_delivery():
+    from app.services.delivery_bind import reset_delivery
+
+    reset_delivery()
+    yield
+    reset_delivery()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _db_schema_ready():
     """Create tables and bootstrap admin for the test session."""

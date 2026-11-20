@@ -547,16 +547,28 @@ def apply_intent(
         return IntentApply(applied=False)
     if row.status == "waiting_resource":
         _apply_event(db, row, "continue_job")
+    from app.models.models import TaskStep, ToolCall
+
+    open_calls = (
+        db.query(ToolCall)
+        .join(TaskStep, ToolCall.task_step_id == TaskStep.id)
+        .filter(TaskStep.task_run_id == row.id, ToolCall.state.in_(("pending", "running")))
+        .all()
+    )
     row.intent_version = int(row.intent_version or 1) + 1
     row.web_constraint = _stored_web(web)
     row.web_constraint_message_id = web_constraint_message_id
-    row.exec_token = None
-    row.hold_until = None
-    row.dispatch_token = None
-    row.dispatch_until = None
-    row.exec_epoch = int(row.exec_epoch or 0) + 1
     row.goal = f"{row.goal or ''}{text or ''}"
-    row.continuation_due = True
+    acknowledged = row.effect_ack_at is not None and bool(open_calls)
+    if open_calls and not acknowledged:
+        pass
+    else:
+        row.exec_token = None
+        row.hold_until = None
+        row.dispatch_token = None
+        row.dispatch_until = None
+        row.exec_epoch = int(row.exec_epoch or 0) + 1
+        row.continuation_due = True
     changed: list[str] = []
     for claim in claims:
         if row.id not in _claim_ids(claim.generation_ids):
@@ -607,7 +619,6 @@ def renew_hold(
         .where(TaskRun.status == "running")
         .where(TaskRun.exec_token == exec_token)
         .where(TaskRun.exec_epoch == exec_epoch)
-        .where(TaskRun.intent_version == intent_version)
         .values(hold_until=_hold_until())
     )
     db.commit()

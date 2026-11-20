@@ -492,7 +492,7 @@ def test_a_later_drive_runs_a_pending_read_before_the_model():
     assert _calls(job.id)[0].state == "result"
 
 
-def test_a_later_drive_runs_a_running_read_again():
+def test_a_later_drive_does_not_run_a_running_read_again():
     user_id, session_id = _pair()
     invokes: list[str] = []
 
@@ -514,11 +514,13 @@ def test_a_later_drive_runs_a_running_read_again():
     assert _calls(_job(session_id).id)[0].state == "running"
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
         _drive_held(user_id, session_id)
-    assert invokes == ["kb", "kb"]
+    assert invokes == ["kb"]
     job = _job(session_id)
-    assert job.status == "completed"
-    assert _calls(job.id)[0].state == "result"
-    assert _calls(job.id)[0].result == "again"
+    assert job.status == "running"
+    row = _calls(job.id)[0]
+    assert row.state == "running"
+    assert row.result is None
+    assert row.owner_token
 
 
 def test_a_later_drive_sends_one_request_from_stored_results():
