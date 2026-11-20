@@ -21,11 +21,17 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Check the model, then require the stop break to exit 1
+      - name: Check the model, then require each break flag to exit 1
         run: |
           python3 verification/watch/check.py
           set +e
           python3 verification/watch/check.py --break-stop
-          break_status=$?
+          stop_status=$?
+          python3 verification/watch/check.py --break-double
+          double_status=$?
+          python3 verification/watch/check.py --break-wait
+          wait_status=$?
           set -e
-          test "$break_status" -eq 1
+          test "$stop_status" -eq 1
+          test "$double_status" -eq 1
+          test "$wait_status" -eq 1
