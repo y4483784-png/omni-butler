@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import shutil
 import subprocess
 import sys
@@ -90,8 +91,53 @@ def require_create_receipt() -> None:
     require("submit_event(" not in body, "record_create_success calls submit_event")
 
 
+SCHEDULE_WRITE_SEALS = ("_seal_schedule_write",)
+
+
+def _call_name(node: ast.Call) -> str:
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _function(tree: ast.AST, name: str) -> ast.FunctionDef:
+    for node in getattr(tree, "body", []):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    fail_model(f"missing {name}")
+
+
+def _called(fn: ast.FunctionDef) -> set[str]:
+    return {
+        _call_name(node)
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Call)
+    }
+
+
+def require_other_writes() -> None:
+    try:
+        tree = ast.parse(read("backend/app/api/calendar.py"))
+    except SyntaxError as exc:
+        fail_model(f"calendar.py did not parse: {exc}")
+    for name in ("patch_event", "delete_event", "rsvp_google_event"):
+        called = _called(_function(tree, name))
+        require(
+            "record_create_success" not in called,
+            f"{name} calls record_create_success",
+        )
+        require(
+            any(seal in called for seal in SCHEDULE_WRITE_SEALS),
+            f"{name} stopped calling _seal_schedule_write without a named replacement",
+        )
+
+
 def anchors() -> None:
     require_create_receipt()
+    require_other_writes()
 
 
 def write_cfg(directory: Path, flags: dict[str, bool], names: tuple[str, ...]) -> Path:
