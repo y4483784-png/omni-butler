@@ -273,13 +273,20 @@ def check_anchors() -> tuple[bool, bool]:
         "mergeStreamScheduleCard" in brace_slice(chat, "function updateLastAssistant"),
         "updateLastAssistant no longer keeps a settled schedule card.",
     )
+    apply = brace_slice(chat, "export function applySessionMessages")
     require(
-        "overlaySettledScheduleCards" in loop and _overlay_is_stored(loop),
+        "overlaySettledScheduleCards" in apply and _overlay_is_stored(apply),
+        "applySessionMessages no longer keeps a settled card when it stores messages.",
+    )
+    require(
+        "await loadMessages" in loop
+        and loop.index("await loadMessages") < loop.index("applySessionMessages"),
         "runStreamLoop no longer keeps a settled card when it reloads messages.",
     )
     reload = brace_slice(chat, "export async function reloadSessionMessages")
     require(
-        "overlaySettledScheduleCards" in reload and _overlay_is_stored(reload),
+        "await readSessionMessages" in reload
+        and reload.index("await readSessionMessages") < reload.index("applySessionMessages"),
         "reloadSessionMessages no longer keeps a settled card when it reloads messages.",
     )
     require(
