@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
 import sys
@@ -105,9 +106,13 @@ def _propose(
     extra: dict | None = None,
     token: str,
 ) -> dict:
+    proof = recognize_package(token)
+    assert isinstance(proof, PackageProof)
+    os.environ["DESKTOP_DEVICE_ID"] = str(proof.device_id)
     payload = {
         "session_id": session_id,
         "action": action,
+        "device_id": proof.device_id,
         "local_target": local_target,
         "local_args": [] if local_args is None else local_args,
         "desktop": "desktop",
@@ -295,7 +300,7 @@ def test_string_proof_writes_no_claim(plain_client: TestClient) -> None:
                 db,
                 user_id=_admin_id(),
                 session_id=session_id,
-                action=LocalAction("desktop.open", PROBE + ".string", ()),
+                action=LocalAction("desktop.open", 1, PROBE + ".string", ()),
                 proof="desktop",
             )
         assert caught.value.status == 403
@@ -345,6 +350,7 @@ def test_spoofed_desktop_header_does_not_arm(plain_client: TestClient) -> None:
             spoof.json(),
             open_file=lambda path: opens.append(path),
             run_program=lambda *_args: opens.append("run"),
+            enrolled_device_id=0,
         )
     assert opens == []
     status, remote, _scope = _claim(token)
@@ -360,6 +366,9 @@ def test_recognized_package_opens_once(plain_client: TestClient) -> None:
     assert content == "请确认后才会打开。"
     assert card["mode"] == "desktop"
     assert card["surface"] == "desktop"
+    assert card["device_id"] == recognize_package(token).device_id
+    assert card["device_label"] == "package"
+    assert card["action"] == "desktop.open"
     assert card["local_target"] == PROBE
     calls, open_file, run_program = _open_spy()
     transport = _Transport(plain_client, token)
@@ -390,6 +399,7 @@ def test_other_user_cannot_open_and_owner_still_can(plain_client: TestClient) ->
         json={
             "confirm_token": offered["confirm_token"],
             "action": "desktop.open",
+            "device_id": offered["device_id"],
             "local_target": target,
             "local_args": [],
         },
@@ -414,6 +424,7 @@ def test_stopped_generation_does_not_open(plain_client: TestClient) -> None:
         json={
             "confirm_token": offered["confirm_token"],
             "action": "desktop.open",
+            "device_id": offered["device_id"],
             "local_target": target,
             "local_args": [],
         },
@@ -423,7 +434,12 @@ def test_stopped_generation_does_not_open(plain_client: TestClient) -> None:
     assert saved.json()["detail"] == "这张确认已经失效，未写入。"
     calls: list[str] = []
     if saved.status_code == 200:
-        perform(saved.json(), open_file=lambda path: calls.append(path), run_program=lambda *_args: calls.append("run"))
+        perform(
+            saved.json(),
+            open_file=lambda path: calls.append(path),
+            run_program=lambda *_args: calls.append("run"),
+            enrolled_device_id=offered["device_id"],
+        )
     assert calls == []
     status, remote, _scope = _claim(offered["confirm_token"])
     assert remote == ""
@@ -597,7 +613,7 @@ def test_two_devices_revoke_independently(
                 db,
                 user_id=_admin_id(),
                 token="",
-                action=LocalAction("desktop.open", PROBE + ".blank", ()),
+                action=LocalAction("desktop.open", live.device_id, PROBE + ".blank", ()),
                 proof=live,
             )
         assert caught.value.status == 409
@@ -661,7 +677,127 @@ def test_two_devices_revoke_independently(
 
 def test_a_shell_string_is_not_an_argument_list() -> None:
     with pytest.raises(ValueError):
-        write_parts("desktop.run", {"local_target": "/bin/true", "local_args": "echo hi"})
+        write_parts(
+            "desktop.run",
+            {"device_id": 1, "local_target": "/bin/true", "local_args": "echo hi"},
+        )
+
+
+def test_desktop_parts_bind_the_device_path_and_args() -> None:
+    from app.services.schedule_confirm import write_fingerprint
+
+    base = {"device_id": 7, "local_target": "/tmp/fixture.txt", "local_args": []}
+    parts = write_parts("desktop.open", base)
+    assert parts == {"device_id": 7, "local_target": "/tmp/fixture.txt", "local_args": []}
+    fingerprint = write_fingerprint(parts)
+    assert fingerprint != write_fingerprint(write_parts("desktop.open", {**base, "device_id": 8}))
+    assert fingerprint != write_fingerprint(
+        write_parts("desktop.open", {**base, "local_target": "/tmp/other.txt"})
+    )
+    first = write_fingerprint(
+        write_parts("desktop.run", {"device_id": 7, "local_target": "/bin/true", "local_args": ["a"]})
+    )
+    second = write_fingerprint(
+        write_parts("desktop.run", {"device_id": 7, "local_target": "/bin/true", "local_args": ["b"]})
+    )
+    assert first != second
+    with pytest.raises(ValueError):
+        write_parts("desktop.open", {"local_target": "/tmp/fixture.txt", "local_args": []})
+    with pytest.raises(ValueError):
+        write_parts("desktop.open", {"device_id": True, "local_target": "/tmp/fixture.txt"})
+
+
+def test_perform_runs_only_an_armed_license_for_the_enrolled_device() -> None:
+    license_row = {
+        "kind": "armed",
+        "device_id": 7,
+        "device_label": "desk",
+        "action": "desktop.open",
+        "local_target": "/tmp/fixture.txt",
+        "local_args": [],
+        "request_id": "req",
+    }
+    opened: list[str] = []
+    assert perform(
+        license_row,
+        open_file=opened.append,
+        run_program=lambda *_args: opened.append("run"),
+        enrolled_device_id=7,
+    )
+    assert opened == ["/tmp/fixture.txt"]
+    assert (
+        perform(
+            {**license_row, "kind": "unknown"},
+            open_file=opened.append,
+            run_program=lambda *_args: opened.append("run"),
+            enrolled_device_id=7,
+        )
+        is False
+    )
+    assert (
+        perform(
+            license_row,
+            open_file=opened.append,
+            run_program=lambda *_args: opened.append("run"),
+            enrolled_device_id=8,
+        )
+        is False
+    )
+    assert opened == ["/tmp/fixture.txt"]
+
+
+def test_a_different_device_does_not_arm(plain_client: TestClient) -> None:
+    owner = _enroll(plain_client, label="owner")
+    other = _enroll(plain_client, label="other")
+    session_id = _session()
+    offered = _propose(plain_client, session_id, token=owner)
+    saved = plain_client.post(
+        "/api/desktop/commit",
+        json={
+            "confirm_token": offered["confirm_token"],
+            "action": "desktop.open",
+            "device_id": offered["device_id"],
+            "local_target": PROBE,
+            "local_args": [],
+        },
+        headers=_headers(other),
+    )
+    assert saved.status_code == 409
+    assert saved.json()["detail"] == "这张确认已经失效，未写入。"
+    status, remote, _scope = _claim(offered["confirm_token"])
+    assert status == "open"
+    assert remote == ""
+
+
+def test_a_changed_path_does_not_arm(plain_client: TestClient) -> None:
+    token = _enroll(plain_client)
+    session_id = _session()
+    offered = _propose(plain_client, session_id, token=token)
+    saved = plain_client.post(
+        "/api/desktop/commit",
+        json={
+            "confirm_token": offered["confirm_token"],
+            "action": offered["action"],
+            "device_id": offered["device_id"],
+            "local_target": offered["local_target"] + ".edited",
+            "local_args": [],
+        },
+        headers=_headers(token),
+    )
+    assert saved.status_code == 409
+    assert saved.json()["detail"] == "参数已变，旧确认不能写入。"
+    opened: list[str] = []
+    if saved.status_code == 200:
+        perform(
+            saved.json(),
+            open_file=opened.append,
+            run_program=lambda *_args: opened.append("run"),
+            enrolled_device_id=offered["device_id"],
+        )
+    assert opened == []
+    status, remote, _scope = _claim(offered["confirm_token"])
+    assert status == "open"
+    assert remote == ""
 
 
 def test_desktop_scope_wins_over_merchant() -> None:

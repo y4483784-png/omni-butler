@@ -98,6 +98,7 @@ def write_parts(action: str, raw: dict | None) -> dict:
     body = raw or {}
     if action in {"desktop.open", "desktop.run"}:
         return {
+            "device_id": _device_id(body.get("device_id")),
             "local_target": _text(body.get("local_target")),
             "local_args": [] if action == "desktop.open" else _local_args(body.get("local_args")),
         }
@@ -1107,6 +1108,12 @@ def _event_id(value: object) -> str:
         return str(int(value))
     except (TypeError, ValueError):
         return str(value).strip()
+
+
+def _device_id(value: object) -> int:
+    if type(value) is not int:
+        raise ValueError("device_id must be an int")
+    return value
 
 
 def _local_args(value: object) -> list[str]:

@@ -1595,7 +1595,10 @@ def test_a_parked_lost_write_is_recovered_without_sending(name, raw, claim_statu
 
     user_id = _user()
     session_id = _session(user_id)
-    db, task_id, tokens = _parked_job(user_id, session_id, [("call-a", name, raw)])
+    spec = dict(raw)
+    if name in {"desktop.open", "desktop.run"}:
+        spec["device_id"] = 7
+    db, task_id, tokens = _parked_job(user_id, session_id, [("call-a", name, spec)])
     try:
         set_rls_context(db, user_id)
         assert arm_remote_claim(db, tokens[0], "req-1") is True
@@ -1641,7 +1644,7 @@ def test_a_live_card_stays_waiting_while_a_crashed_sibling_is_recovered():
     specs = [
         ("call-old", "mail.send", {"mail_to": ["old@example.com"], "subject": "old", "body": "old"}),
         ("call-live", "mail.send", {"mail_to": ["live@example.com"], "subject": "live", "body": "live"}),
-        ("call-open", "desktop.open", {"local_target": "notes"}),
+        ("call-open", "desktop.open", {"device_id": 7, "local_target": "notes"}),
     ]
     db, task_id, tokens = _parked_job(user_id, session_id, specs)
     db.close()
@@ -1707,22 +1710,29 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
 
     user_id = _user()
     session_id = _session(user_id)
-    db, task_id, tokens = _parked_job(user_id, session_id, [("call-desk", "desktop.open", {"local_target": "notes"})])
     presented = secrets.token_urlsafe(32)
+    seeded = SessionLocal()
     try:
-        set_rls_context(db, user_id)
-        db.add(
-            DesktopDevice(
-                user_id=user_id,
-                token_hash=hashlib.sha256(presented.encode("utf-8")).hexdigest(),
-                label="late",
-            )
+        set_rls_context(seeded, user_id)
+        device = DesktopDevice(
+            user_id=user_id,
+            token_hash=hashlib.sha256(presented.encode("utf-8")).hexdigest(),
+            label="late",
         )
-        db.commit()
+        seeded.add(device)
+        seeded.commit()
+        device_id = int(device.id)
     finally:
-        db.close()
+        seeded.close()
+    db, task_id, tokens = _parked_job(
+        user_id,
+        session_id,
+        [("call-desk", "desktop.open", {"device_id": device_id, "local_target": "notes"})],
+    )
+    db.close()
     proof = recognize_package(presented)
     assert proof is not None
+    action = LocalAction("desktop.open", device_id, "notes", ())
     owned = SessionLocal()
     try:
         set_rls_context(owned, user_id)
@@ -1730,7 +1740,7 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
             owned,
             user_id=user_id,
             token=tokens[0],
-            action=LocalAction("desktop.open", "notes", ()),
+            action=action,
             proof=proof,
         )
     finally:
@@ -1754,6 +1764,7 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
             user_id=user_id,
             token=tokens[0],
             request_id=license_row["request_id"],
+            action=action,
             proof=proof,
         )
     finally:

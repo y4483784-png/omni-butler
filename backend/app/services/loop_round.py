@@ -459,7 +459,7 @@ def open_cards(
             action = _claim_action(row.name, raw)
             keys.append((action, write_fingerprint(write_parts(action, raw))))
         lock_open_claims(db, preview.user_id, keys)
-    except ScheduleConfirmClosed:
+    except (ScheduleConfirmClosed, ValueError):
         db.rollback()
         return ()
     job = _lock_holder(db, hold)
@@ -495,7 +495,7 @@ def open_cards(
             row.intent_version = int(hold.intent_version)
             tokens.append(token)
         _store_phase(db, step_row, memory.phase)
-    except (IllegalPhase, ScheduleConfirmClosed):
+    except (IllegalPhase, ScheduleConfirmClosed, ValueError):
         db.rollback()
         return ()
     db.execute(
@@ -1299,7 +1299,7 @@ def _stored_arguments(name: str, raw: str) -> str:
         try:
             action = canonical_action(name if name in CONFIRM_ONLY else arguments.get("action"))
             parts = write_parts(action, arguments)
-        except ScheduleConfirmClosed:
+        except (ScheduleConfirmClosed, ValueError):
             return _dump(_strip(arguments))
         if name == "calendar":
             parts = {**parts, "action": action}

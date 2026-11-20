@@ -51,6 +51,7 @@ class LocalRequest(BaseModel):
 
     session_id: int | None = None
     action: str = ""
+    device_id: int | None = None
     local_target: str = ""
     local_args: list[str] = Field(default_factory=list)
     confirm_token: str = ""
@@ -83,7 +84,7 @@ def propose(
     if body.session_id is None:
         raise HTTPException(status_code=422, detail="会话无效")
     try:
-        action = parse_local_action(body.action, body.local_target, body.local_args)
+        action = parse_local_action(body.action, body.local_target, body.local_args, body.device_id)
         offer = propose_local(
             db,
             user_id=current_user.id,
@@ -105,7 +106,7 @@ def commit(
 ):
     proof = _recognized(_header(request), current_user.id)
     try:
-        action = parse_local_action(body.action, body.local_target, body.local_args)
+        action = parse_local_action(body.action, body.local_target, body.local_args, body.device_id)
         return commit_local(
             db,
             user_id=current_user.id,
@@ -126,11 +127,13 @@ def finish(
 ):
     proof = _recognized(_header(request), current_user.id)
     try:
+        action = parse_local_action(body.action, body.local_target, body.local_args, body.device_id)
         return finish_local(
             db,
             user_id=current_user.id,
             token=body.confirm_token,
             request_id=body.request_id,
+            action=action,
             proof=proof,
         )
     except LocalClosed as exc:

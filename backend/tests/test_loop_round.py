@@ -463,7 +463,7 @@ def test_confirm_while_running_keeps_the_token_until_observe_ready():
 
 def test_an_armed_desktop_open_with_no_finish_becomes_unknown():
     db, hold, turn = _held()
-    raw = {"local_target": "report", "local_args": []}
+    raw = {"device_id": 7, "local_target": "report", "local_args": []}
     save_turn(db, hold=hold, turn=_model(ToolCallSpec("call-a", "desktop.open", json.dumps(raw))))
     step = _steps(db, turn.id)[0]
     from app.services.calendar import draft_expires_at
