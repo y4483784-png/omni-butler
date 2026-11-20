@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import pytest
@@ -257,7 +258,15 @@ def test_chat_confirm_card_stays_waiting_person(auth_client):
             json={"session_id": session_id, "message": "约个站会"},
         )
     assert response.status_code == 200
-    assert '"type": "schedule_card"' in response.text or '"type":"schedule_card"' in response.text
+    events = []
+    for line in response.text.splitlines():
+        if line.startswith("data:"):
+            events.append(json.loads(line[5:].strip()))
+    ack = next(event for event in events if event.get("type") == "ack")
+    card = next(event["card"] for event in events if event.get("type") == "schedule_card")
+    assert card["task_kind"] == "turn"
+    assert "task_generation" in card
+    assert "keep_task_run_id" in ack
     rows = [
         row
         for row in task_run.list_for_user(user_id=admin_id)

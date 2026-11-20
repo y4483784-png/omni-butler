@@ -20,6 +20,7 @@ from app.models.models import CalendarEvent, Message, ScheduleConfirmClaim, Sess
 from app.services import task_run
 from app.services.calendar import void_draft_schedule_cards
 from app.services.message_format import serialize_message
+from app.services.resume import read_snapshot
 from app.services.schedule_confirm import arm_remote_claim, issue_schedule_claim
 
 
@@ -552,6 +553,24 @@ def test_a_later_allow_job_leaves_the_forbid_job():
     assert task_run.get(user_id=user_id, generation=second.generation).web_constraint == "allow"
     assert task_run.get(user_id=user_id, generation=first.generation).status == "running"
     assert second.status == "running"
+
+
+def test_job_snapshot_lists_the_open_confirm_token_on_that_job():
+    user_id, session_id = _pair()
+    waiting = _open_job(user_id, session_id, goal="wait")
+    other = _open_job(user_id, session_id, goal="other")
+    task_run.wait_for_person(user_id=user_id, generation=waiting.generation)
+    token = _issue(user_id, session_id, waiting.id, title="wait card")
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        snapshot = read_snapshot(db, user_id=user_id, session_id=session_id)
+        db.commit()
+    finally:
+        db.close()
+    by_id = {row["id"]: row for row in snapshot["jobs"]}
+    assert by_id[waiting.id]["confirm_tokens"] == [token]
+    assert by_id[other.id]["confirm_tokens"] == []
 
 
 def test_void_keeps_a_waiting_job_card_and_cancels_a_turn_draft():
