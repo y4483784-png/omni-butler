@@ -272,7 +272,10 @@ def live_provider_call(token: str):
     def pulse() -> None:
         interval = max(0.05, float(settings.llm_timeout) / 2)
         while not stop.wait(interval):
-            renew_live_confirm(token)
+            try:
+                renew_live_confirm(token)
+            except Exception:
+                continue
 
     thread = threading.Thread(target=pulse, name="confirm-lease", daemon=True)
     thread.start()
@@ -622,7 +625,7 @@ def arm_remote_claim(
                     )
                 )
             )
-            .values(status="unknown", remote_request_id=marker, armed_at=_now())
+            .values(status="unknown", remote_request_id=marker, armed_at=_now(), confirm_until=None)
         )
         if int(result.rowcount or 0) != 1:
             db.rollback()
@@ -635,6 +638,7 @@ def arm_remote_claim(
     claim.status = "unknown"
     claim.remote_request_id = marker
     claim.armed_at = _now()
+    claim.confirm_until = None
     _stamp_claim_phase(db, claim.session_id, claim.token, "unknown")
     _emit_claim(db, claim)
     db.commit()
@@ -662,6 +666,7 @@ def reopen_known_rejection(db: Session, token: str) -> None:
     claim.status = "open"
     claim.remote_request_id = ""
     claim.armed_at = None
+    claim.confirm_until = None
     _stamp_claim_phase(db, claim.session_id, claim.token, "draft")
     _emit_claim(db, claim)
     db.commit()
