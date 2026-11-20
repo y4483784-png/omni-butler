@@ -962,6 +962,13 @@ def complete_json(
         if raise_on_error:
             _raise_infra(exc)
         return None
+    from app.services.llm_usage import record_response_usage
+
+    record_response_usage(
+        role=call.role.value,
+        model=call.model,
+        usage=getattr(resp, "usage", None),
+    )
     choice = resp.choices[0]
     finish = classify_finish(
         getattr(choice, "finish_reason", None),
@@ -1112,6 +1119,13 @@ def complete_json_object(
             )
             continue
 
+        from app.services.llm_usage import record_response_usage
+
+        record_response_usage(
+            role=call.role.value,
+            model=call.model,
+            usage=getattr(resp, "usage", None),
+        )
         choice = resp.choices[0]
         content, _reasoning = message_parts(getattr(choice, "message", None))
         finish_reason = getattr(choice, "finish_reason", None)
