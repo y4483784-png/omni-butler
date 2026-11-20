@@ -21,14 +21,7 @@ def _enrolled_device_id() -> int:
     return int(raw)
 
 
-def _device_on(offer: dict, enrolled: int) -> int:
-    value = offer.get("device_id")
-    if type(value) is int:
-        return value
-    return enrolled
-
-
-def _action_body(offer: dict, device_id: int, request_id: str | None = None) -> dict:
+def _action_body(offer: dict, device_id: object, request_id: str | None = None) -> dict:
     body = {
         "confirm_token": offer["confirm_token"],
         "action": offer["action"],
@@ -43,9 +36,9 @@ def _action_body(offer: dict, device_id: int, request_id: str | None = None) -> 
 
 def confirm_local(transport, offer, *, open_file, run_program) -> bool:
     enrolled = _enrolled_device_id()
-    device_id = _device_on(offer, enrolled)
+    device_id = offer.get("device_id")
     committed = transport.post("/api/desktop/commit", _action_body(offer, device_id))
-    if committed.get("kind") != "armed":
+    if type(device_id) is not int or committed.get("kind") != "armed":
         return False
     if not perform(
         committed,
