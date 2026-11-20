@@ -7,23 +7,24 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs tests/scheduleCard.test.mjs tests/scheduleCardMerge.test.mjs tests/thinkingFold.test.mjs tests/briefingCard.test.mjs tests/followupCard.test.mjs tests/mailSendCard.test.mjs tests/errandCard.test.mjs tests/chatImage.test.mjs tests/composerImages.test.mjs tests/composerLifecycle.test.mjs tests/sessionWatch.test.mjs tests/sessionMessages.test.mjs tests/composerVoid.test.mjs"
+    "test": "TZ=Asia/Shanghai node --experimental-strip-types --test tests/scheduleExpiry.test.mjs tests/scheduleCard.test.mjs tests/scheduleCardMerge.test.mjs tests/thinkingFold.test.mjs tests/briefingCard.test.mjs tests/followupCard.test.mjs tests/followupMixedPhase.test.mjs tests/mailSendCard.test.mjs tests/errandCard.test.mjs tests/chatImage.test.mjs tests/composerImages.test.mjs tests/composerLifecycle.test.mjs tests/sessionWatch.test.mjs tests/sessionMessages.test.mjs tests/composerVoid.test.mjs"
   },
   "dependencies": {
+    "highlight.js": "^11.10.0",
+    "katex": "^0.16.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "zustand": "^4.5.5",
     "react-markdown": "^9.0.1",
+    "rehype-katex": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
-    "rehype-katex": "^7.0.0",
-    "katex": "^0.16.11",
-    "highlight.js": "^11.10.0"
+    "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.5.4",
     "vite": "^5.4.3"
   }
