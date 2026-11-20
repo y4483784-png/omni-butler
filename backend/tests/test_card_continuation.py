@@ -363,6 +363,46 @@ def test_a_list_click_publishes_the_claim_on_the_session_cursor(plain_client: Te
     assert snapshot["cursor"] >= matched[-1]["seq"]
 
 
+def test_a_reused_claim_publishes_on_the_session_that_holds_it(plain_client: TestClient):
+    from app.core.db import set_rls_context
+    from app.services.resume import events_after, read_snapshot
+
+    title = f"同一笔未完成-{uuid4()}"
+    first = _session()
+    second = _session()
+    first_message, _generation = _read_card(first)
+    second_message, _other = _read_card(second)
+    opened = _click(plain_client, first, first_message, title=title)
+    assert opened.status_code == 200, opened.text
+    token = opened.json()["confirm_token"]
+    user_id = _admin_id()
+    before = SessionLocal()
+    try:
+        set_rls_context(before, user_id)
+        first_cursor = read_snapshot(before, user_id=user_id, session_id=first)["cursor"]
+        second_cursor = read_snapshot(before, user_id=user_id, session_id=second)["cursor"]
+    finally:
+        before.close()
+    again = _click(plain_client, second, second_message, title=title)
+    assert again.status_code == 200, again.text
+    assert again.json()["confirm_token"] == token
+    db = SessionLocal()
+    try:
+        set_rls_context(db, user_id)
+        claim = db.get(ScheduleConfirmClaim, token)
+        first_snapshot = read_snapshot(db, user_id=user_id, session_id=first)
+        second_snapshot = read_snapshot(db, user_id=user_id, session_id=second)
+        first_events = events_after(db, session_id=first, after=first_cursor)
+        second_events = events_after(db, session_id=second, after=second_cursor)
+    finally:
+        db.close()
+    assert claim.session_id == first
+    assert any(row["token"] == token for row in first_snapshot["claims"])
+    assert all(row["token"] != token for row in second_snapshot["claims"])
+    assert any(row["kind"] == "confirm" and row["body"] == token for row in first_events)
+    assert all(row["body"] != token for row in second_events)
+
+
 def test_a_card_message_arrives_after_an_early_claim_event():
     from app.api.chat import _save_assistant_turn
     from app.core.db import set_rls_context

@@ -219,14 +219,12 @@ def issue_schedule_claim(
                 task_run_ids=ids,
                 expires_at=expires_at,
             )
-            from app.services.resume import publish_event
-
-            publish_event(
+            bound = db.get(ScheduleConfirmClaim, token)
+            _emit_claim_token(
                 db,
                 user_id=int(user_id),
-                session_id=int(session_id),
-                kind="confirm",
-                body=token,
+                session_id=int(bound.session_id if bound is not None else session_id),
+                token=token,
             )
             db.commit()
             return token, expiry
@@ -314,7 +312,13 @@ def continue_from_card(
                 task_run_ids=[turn.id],
                 expires_at=expires_at,
             )
-            _emit_claim_token(db, user_id=user_id, session_id=session_id, token=token)
+            bound = db.get(ScheduleConfirmClaim, token)
+            _emit_claim_token(
+                db,
+                user_id=user_id,
+                session_id=int(bound.session_id if bound is not None else session_id),
+                token=token,
+            )
             db.commit()
             return token, expiry
         except IntegrityError:
