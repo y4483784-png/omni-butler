@@ -423,6 +423,7 @@ def enqueue_job(
     goal: str,
     web: str = "allow",
     message_id: int | None = None,
+    dispatch: bool = True,
 ) -> int:
     from app.services import task_run
 
@@ -437,6 +438,7 @@ def enqueue_job(
     )
     task_id = int(turn.id)
     db.commit()
-    dispatch_task(db, task_id)
+    if dispatch:
+        dispatch_task(db, task_id)
     return task_id
 

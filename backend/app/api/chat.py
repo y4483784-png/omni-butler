@@ -370,6 +370,27 @@ def _classify_talk(db: DbSession, *, user_id: int, session_id: int, message: str
     )
 
 
+def _bind_job_images(
+    db: DbSession,
+    *,
+    user_id: int,
+    task_run_id: int | None,
+    images: tuple[ChatImage, ...],
+) -> None:
+    if not images or task_run_id is None:
+        return
+    from app.services.task_images import bind_images
+    from app.storage.factory import get_blob_store
+
+    bind_images(
+        db,
+        user_id=int(user_id),
+        task_run_id=int(task_run_id),
+        images=images,
+        store=get_blob_store(),
+    )
+
+
 def _apply_talk(
     db: DbSession,
     *,
@@ -378,20 +399,24 @@ def _apply_talk(
     relation,
     message: str,
     message_id: int | None,
+    images: tuple[ChatImage, ...] = (),
 ):
     from app.agents.dispatch import TalkReply
 
     if relation.relation == "new":
-        from app.services.resume import enqueue_job
+        from app.services.resume import dispatch_task, enqueue_job
 
-        enqueue_job(
+        task_id = enqueue_job(
             db,
             user_id=user_id,
             session_id=session_id,
             goal=message,
             web=relation.web,
             message_id=message_id,
+            dispatch=False,
         )
+        _bind_job_images(db, user_id=user_id, task_run_id=task_id, images=images)
+        dispatch_task(db, task_id)
         return relation, None
     if relation.relation in {"supplement", "redirect"} and relation.target_generation is not None:
         applied = task_run.apply_intent(
@@ -404,6 +429,7 @@ def _apply_talk(
         )
         if not applied.applied:
             return TalkReply(relation="ask", target_generation=None, web="allow", ask=relation.ask or ""), None
+        _bind_job_images(db, user_id=user_id, task_run_id=applied.task_run_id, images=images)
         return relation, applied.task_run_id
     if relation.relation == "cancel" and relation.target_generation is not None:
         try:
@@ -564,6 +590,7 @@ async def chat(
             relation=talk,
             message=user_message,
             message_id=saved_user_id,
+            images=images,
         )
         from app.services.calendar import void_draft_schedule_cards
 
