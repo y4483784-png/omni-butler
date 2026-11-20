@@ -11,7 +11,15 @@ from app.agents.harness.audit import write_audit
 from app.agents.harness.desktop_channel import PackageProof
 from app.agents.harness.surface import ServerSurface, local_tool_denial
 from app.core.db import set_rls_context
-from app.models.models import DesktopDevice, Message, ScheduleConfirmClaim, Session as ChatSession
+from app.models.models import (
+    DesktopDevice,
+    Message,
+    ScheduleConfirmClaim,
+    Session as ChatSession,
+    TaskRun,
+    TaskStep,
+    ToolCall,
+)
 from app.services.calendar import draft_expires_at
 from app.services.schedule_confirm import (
     CONFIRM_DETAIL,
@@ -270,7 +278,77 @@ def finish_local(
         db.rollback()
         raise LocalClosed(409, CONFIRM_DETAIL["mismatch"])
     finish_confirm(db, key)
+    _resume_same_job(db, user_id=user_id, token=key, request_id=marker)
     return {"kind": "finished", "request_id": marker}
+
+
+def _generation_ids(raw: str | None) -> set[int]:
+    try:
+        parsed = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(parsed, list):
+        return set()
+    found: set[int] = set()
+    for item in parsed:
+        if type(item) is int:
+            found.add(item)
+    return found
+
+
+def _resume_same_job(db: Session, *, user_id: int, token: str, request_id: str) -> None:
+    from app.services.loop_round import store_desktop_result
+    from app.services.resume import dispatch_task
+    from app.services.task_run import LateResult, continue_job
+
+    claim = (
+        db.query(ScheduleConfirmClaim)
+        .filter(ScheduleConfirmClaim.token == token)
+        .with_for_update()
+        .one_or_none()
+    )
+    if claim is None or claim.user_id != user_id:
+        db.rollback()
+        return
+    call_row = (
+        db.query(ToolCall)
+        .filter(ToolCall.user_id == user_id, ToolCall.claim_token == token)
+        .one_or_none()
+    )
+    if call_row is None:
+        db.rollback()
+        return
+    step_row = db.get(TaskStep, call_row.task_step_id)
+    if step_row is None:
+        db.rollback()
+        return
+    job = (
+        db.query(TaskRun)
+        .filter(TaskRun.id == step_row.task_run_id, TaskRun.user_id == user_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if job is None or job.kind != "job" or job.id not in _generation_ids(claim.generation_ids):
+        db.rollback()
+        return
+    stopped = job.status == "stopped"
+    generation = int(job.generation)
+    task_id = int(job.id)
+    store_desktop_result(
+        db,
+        job=job,
+        step_row=step_row,
+        call_row=call_row,
+        request_id=request_id,
+    )
+    db.commit()
+    if stopped:
+        return
+    try:
+        continue_job(user_id=user_id, generation=generation)
+    except LateResult:
+        return
+    dispatch_task(db, task_id)
 
 
 def _args(value: object) -> tuple[str, ...]:

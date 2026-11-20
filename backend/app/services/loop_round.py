@@ -622,6 +622,28 @@ def confirm_call(
     return step
 
 
+def store_desktop_result(
+    db: Session,
+    *,
+    job: TaskRun,
+    step_row: TaskStep,
+    call_row: ToolCall,
+    request_id: str,
+) -> None:
+    text = f"已写入：{request_id}"
+    if job.status != "stopped" and call_row.state == CallState.AWAITING_CONFIRM.value:
+        memory = _as_step(step_row, _call_rows(db, step_row.id))
+        step = apply(memory, LoopEvent.CONFIRM, call_id=call_row.tool_call_id)
+        target = _call_by_id(step, call_row.tool_call_id)
+        call_row.state = target.state.value
+        call_row.result = text
+        _store_phase(db, step_row, step.phase)
+        task_run.touch_progress(db, user_id=job.user_id, generation=int(job.generation))
+        _apply_confirm_due(db, job, step)
+        return
+    call_row.result = text
+
+
 def note_confirmed(db: Session, *, user_id: int, token: str) -> None:
     key = str(token or "").strip()
     if not key:

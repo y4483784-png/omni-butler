@@ -1759,14 +1759,15 @@ def test_a_desktop_license_stays_waiting_until_the_real_finish():
     finisher = SessionLocal()
     try:
         set_rls_context(finisher, user_id)
-        finish_local(
-            finisher,
-            user_id=user_id,
-            token=tokens[0],
-            request_id=license_row["request_id"],
-            action=action,
-            proof=proof,
-        )
+        with patch("app.tasks.job.run_job.delay"):
+            finish_local(
+                finisher,
+                user_id=user_id,
+                token=tokens[0],
+                request_id=license_row["request_id"],
+                action=action,
+                proof=proof,
+            )
     finally:
         finisher.close()
     with (
