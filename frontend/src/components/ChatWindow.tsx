@@ -403,7 +403,7 @@ function MessageRow({
                 {artifactButtonLabel(m.artifact)}
               </button>
             ) : null}
-            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "followup" && m.scheduleCard.mode !== "send" && m.scheduleCard.mode !== "desktop" && m.scheduleCard.mode !== "brief" && m.scheduleCard.mode !== "errand" && m.scheduleCard.mode !== "acknowledge" ? (
+            {m.scheduleCard && m.scheduleCard.mode !== "list" && m.scheduleCard.mode !== "followup" && m.scheduleCard.mode !== "send" && m.scheduleCard.mode !== "desktop" && m.scheduleCard.mode !== "errand" && m.scheduleCard.mode !== "acknowledge" && m.scheduleCard.mode !== "brief" ? (
               <ScheduleCard card={m.scheduleCard} onChange={onScheduleChange} sessionId={sessionId} messageId={m.id} />
             ) : null}
             <MessageActions
