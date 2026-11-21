@@ -21,9 +21,10 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Check the model, then require each break flag to exit 1
+      - name: Check the held model, the breaks, and the witnesses
         run: |
           python3 verification/loop/check.py
+          python3 verification/loop/test_resume.py
           set +e
           python3 verification/loop/check.py --break-save
           save_status=$?
@@ -37,6 +38,14 @@ jobs:
           stop_status=$?
           python3 verification/loop/check.py --break-continuation
           continuation_status=$?
+          python3 verification/loop/check.py --break-duplicate
+          duplicate_status=$?
+          python3 verification/loop/check.py --break-early-model
+          early_status=$?
+          python3 verification/loop/check.py --witness ordered-resume
+          ordered_status=$?
+          python3 verification/loop/check.py --witness post-confirm
+          post_status=$?
           set -e
           test "$save_status" -eq 1
           test "$result_status" -eq 1
@@ -44,3 +53,7 @@ jobs:
           test "$forbid_status" -eq 1
           test "$stop_status" -eq 1
           test "$continuation_status" -eq 1
+          test "$duplicate_status" -eq 1
+          test "$early_status" -eq 1
+          test "$ordered_status" -eq 1
+          test "$post_status" -eq 1

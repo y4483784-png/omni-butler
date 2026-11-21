@@ -1,0 +1,29 @@
+Baseline on release 3038f9c8909cdbec8674fba9d66bead7568027a8, before the preinvoke actions existed.
+
+The release model crashes only in Crash, and Crash is enabled only at step 6, after RequestAfterTools has set nextModel to 1. invoked is in 0..1.
+
+CrashedOnlyAfterModel == crashed => nextModel = 1
+Checked alone, with every break constant false.
+TLC exit 0. No error has been found.
+130 states generated, 18 distinct states found.
+The depth of the complete state graph search is 8.
+Finished at 2026-11-21 12:35:33.
+Every crashed state in that model has already requested the model. That is the gap. It is a safety fact about the reachable states, not a liveness counterexample.
+
+SavedPendingUninvoked == ~(saved = 2 /\ invoked = 0 /\ crashed)
+Checked alone, same constants.
+TLC exit 12. Invariant SavedPendingUninvoked is violated.
+The state is constraint forbid, saved 2, invoked 0, crashed TRUE, nextModel 1, step 7, terminal 2, due TRUE, confirms 2, opened TRUE, web 0, stopped FALSE.
+The path is Save, then the old execute and confirm steps, RequestAfterTools, then Crash.
+116 states generated, 18 distinct states found. Depth 8.
+Finished at 2026-11-21 12:35:34.
+saved = 2 /\ invoked = 0 /\ crashed is reachable. It is the old post-confirm crash on the forbid path, where the provider effect is 0. Do not treat that conjunction as the missing edge, and do not call it unreachable.
+
+Type domain. On the same release spec, the first invoked' = invokedEffect in Execute was replaced with invoked' = 2. TypeOK was the only invariant.
+TLC exit 12. Invariant TypeOK is violated.
+State 3 is Execute after Save, constraint allow, saved 2, invoked 2, step 2, web 1, terminal 1, nextModel 0.
+20 states generated, 7 distinct states found. Depth 3.
+Finished at 2026-11-21 12:35:34.
+A second invocation was not a well typed state. The widened model uses invoked in 0..2, and OneProviderInvoke == invoked <= 1 is the named safety rule.
+
+saved = 2 is the count of tool rows committed by one save_turn. It is not two resumed reads and it is not the invocation count.

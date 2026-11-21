@@ -485,11 +485,15 @@ def test_a_later_drive_runs_a_pending_read_before_the_model():
     order.clear()
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
         _drive_held(user_id, session_id)
-    assert order[0] == "invoke"
-    assert order.count("model") == 1
+    assert order == ["invoke", "model"]
+    assert order.count("invoke") == 1
+    assert order.index("invoke") < order.index("model")
     job = _job(session_id)
     assert job.status == "completed"
-    assert _calls(job.id)[0].state == "result"
+    row = _calls(job.id)[0]
+    assert row.state == "result"
+    assert row.result == "saw kb"
+    assert row.tool_call_id == "call-a"
 
 
 def test_a_later_drive_does_not_run_a_running_read_again():
@@ -515,6 +519,7 @@ def test_a_later_drive_does_not_run_a_running_read_again():
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
         _drive_held(user_id, session_id)
     assert invokes == ["kb"]
+    assert invokes.count("kb") == 1
     job = _job(session_id)
     assert job.status == "running"
     row = _calls(job.id)[0]
@@ -623,8 +628,9 @@ def test_a_second_run_job_recovers_a_pending_read():
     order.clear()
     with patch("app.agents.harness.gateway.invoke", fake_invoke):
         _dispatch(user_id, session_id, expire=True)
-    assert order[0] == "invoke"
-    assert order.count("model") == 1
+    assert order == ["invoke", "model"]
+    assert order.count("invoke") == 1
+    assert order.index("invoke") < order.index("model")
     assert _notes(session_id).count("已开始：alpha") == 1
     db = SessionLocal()
     try:
@@ -633,7 +639,10 @@ def test_a_second_run_job_recovers_a_pending_read():
         db.close()
     job = _job(session_id)
     assert job.status == "completed"
-    assert _calls(job.id)[0].state == "result"
+    row = _calls(job.id)[0]
+    assert row.tool_call_id == "call-a"
+    assert row.state == "result"
+    assert row.result == "saw kb"
 
 
 class _Fn:

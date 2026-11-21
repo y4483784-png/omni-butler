@@ -1,0 +1,668 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Warning: Please run the Java VM, which executes TLC with a throughput optimized garbage collector, by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed -7517093236677856968 with 1 worker on 4 cores with 3746MB heap and 64MB offheap memory [pid: 6610] (Linux 6.12.113+ amd64, Ubuntu 21.0.13.0.3 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/loop/Loop.tla
+Parsing file /tmp/statechart-BmYSbj/statechart-oosAal/tmp-verdict-1/tlc-3251308675749184629/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/statechart-BmYSbj/statechart-oosAal/tmp-verdict-1/tlc-3251308675749184629/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Loop
+Linting of module Loop
+Starting... (2026-11-21 12:35:10)
+Computing initial states...
+Finished computing initial states: 2 distinct states generated at 2026-11-21 12:35:10.
+Error: Invariant ContinuationDueSurvivesCrash is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ web = 0
+/\ enqueued = FALSE
+/\ invoked = 0
+/\ terminal = 0
+/\ callPhase = "none"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 0
+/\ opened = FALSE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h4 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = ""
+/\ callId = ""
+/\ step = 0
+/\ nextModel = 0
+/\ due = FALSE
+/\ crashed = FALSE
+/\ readResult = 0
+/\ volatile = 1
+/\ hlen = 0
+/\ saved = 0
+/\ write = 0
+
+State 2: <Save line 104, col 8 to line 111, col 170 of module Loop>
+/\ web = 0
+/\ enqueued = FALSE
+/\ invoked = 0
+/\ terminal = 0
+/\ callPhase = "pending"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 0
+/\ opened = FALSE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h4 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 1
+/\ nextModel = 0
+/\ due = FALSE
+/\ crashed = FALSE
+/\ readResult = 0
+/\ volatile = 1
+/\ hlen = 1
+/\ saved = 2
+/\ write = 0
+
+State 3: <Invoke line 148, col 8 to line 153, col 187 of module Loop>
+/\ web = 1
+/\ enqueued = FALSE
+/\ invoked = 1
+/\ terminal = 0
+/\ callPhase = "running"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 0
+/\ opened = FALSE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Invoke",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "running" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h4 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 1
+/\ nextModel = 0
+/\ due = FALSE
+/\ crashed = FALSE
+/\ readResult = 0
+/\ volatile = 1
+/\ hlen = 2
+/\ saved = 2
+/\ write = 0
+
+State 4: <Persist line 164, col 8 to line 170, col 173 of module Loop>
+/\ web = 1
+/\ enqueued = FALSE
+/\ invoked = 1
+/\ terminal = 1
+/\ callPhase = "result"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 0
+/\ opened = FALSE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Invoke",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "running" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Persist",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h4 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 2
+/\ nextModel = 0
+/\ due = FALSE
+/\ crashed = FALSE
+/\ readResult = 1
+/\ volatile = 1
+/\ hlen = 3
+/\ saved = 2
+/\ write = 0
+
+State 5: <Open line 192, col 8 to line 195, col 236 of module Loop>
+/\ web = 1
+/\ enqueued = FALSE
+/\ invoked = 1
+/\ terminal = 1
+/\ callPhase = "result"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 0
+/\ opened = TRUE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Invoke",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "running" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Persist",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h4 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 3
+/\ nextModel = 0
+/\ due = FALSE
+/\ crashed = FALSE
+/\ readResult = 1
+/\ volatile = 1
+/\ hlen = 3
+/\ saved = 2
+/\ write = 0
+
+State 6: <Confirm line 205, col 8 to line 211, col 212 of module Loop>
+/\ web = 1
+/\ enqueued = FALSE
+/\ invoked = 1
+/\ terminal = 2
+/\ callPhase = "result"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 1
+/\ opened = TRUE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Invoke",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "running" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Persist",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h4 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 4
+/\ nextModel = 0
+/\ due = TRUE
+/\ crashed = FALSE
+/\ readResult = 1
+/\ volatile = 1
+/\ hlen = 3
+/\ saved = 2
+/\ write = 1
+
+State 7: <ConfirmAgain line 216, col 8 to line 219, col 234 of module Loop>
+/\ web = 1
+/\ enqueued = FALSE
+/\ invoked = 1
+/\ terminal = 2
+/\ callPhase = "result"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 2
+/\ opened = TRUE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Invoke",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "running" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Persist",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h4 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 5
+/\ nextModel = 0
+/\ due = TRUE
+/\ crashed = FALSE
+/\ readResult = 1
+/\ volatile = 1
+/\ hlen = 3
+/\ saved = 2
+/\ write = 1
+
+State 8: <RequestAfterTools line 224, col 8 to line 228, col 195 of module Loop>
+/\ web = 1
+/\ enqueued = FALSE
+/\ invoked = 1
+/\ terminal = 2
+/\ callPhase = "result"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 2
+/\ opened = TRUE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Invoke",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "running" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Persist",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h4 = [ due |-> TRUE,
+  volatile |-> 1,
+  event |-> "Model",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 6
+/\ nextModel = 1
+/\ due = TRUE
+/\ crashed = FALSE
+/\ readResult = 1
+/\ volatile = 1
+/\ hlen = 4
+/\ saved = 2
+/\ write = 1
+
+State 9: <Crash line 240, col 8 to line 246, col 182 of module Loop>
+/\ web = 1
+/\ enqueued = FALSE
+/\ invoked = 1
+/\ terminal = 2
+/\ callPhase = "result"
+/\ stopped = FALSE
+/\ preCrashed = FALSE
+/\ constraint = "allow"
+/\ confirms = 2
+/\ opened = TRUE
+/\ resumed = FALSE
+/\ h1 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Save",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "pending" ]
+/\ h2 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Invoke",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "running" ]
+/\ h3 = [ due |-> FALSE,
+  volatile |-> 1,
+  event |-> "Persist",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h4 = [ due |-> TRUE,
+  volatile |-> 1,
+  event |-> "Model",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h5 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "PostConfirmCrash",
+  id |-> "read",
+  args |-> "kb",
+  phase |-> "result" ]
+/\ h6 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h7 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ h8 = [ due |-> FALSE,
+  volatile |-> 0,
+  event |-> "none",
+  id |-> "",
+  args |-> "",
+  phase |-> "none" ]
+/\ callArgs = "kb"
+/\ callId = "read"
+/\ step = 7
+/\ nextModel = 1
+/\ due = FALSE
+/\ crashed = TRUE
+/\ readResult = 1
+/\ volatile = 0
+/\ hlen = 5
+/\ saved = 2
+/\ write = 1
+
+312 states generated, 32 distinct states found, 3 states left on queue.
+The depth of the complete state graph search is 9.
+Finished in 00s at (2026-11-21 12:35:10)
+

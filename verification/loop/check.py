@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,8 @@ HELD = (
     "ForbidWebBlocksSearch",
     "StoppedJobDoesNotExecute",
     "ContinuationDueSurvivesCrash",
+    "OneProviderInvoke",
+    "SavedResultBeforeModel",
 )
 
 BREAKS = {
@@ -33,12 +36,29 @@ BREAKS = {
     "break_forbid": ("breakForbid", "ForbidWebBlocksSearch"),
     "break_stop": ("breakStop", "StoppedJobDoesNotExecute"),
     "break_continuation": ("breakContinuation", "ContinuationDueSurvivesCrash"),
+    "break_duplicate": ("breakDuplicate", "OneProviderInvoke"),
+    "break_early_model": ("breakEarlyModel", "SavedResultBeforeModel"),
 }
+
+COVERAGE = {
+    "ordered-resume": "WitnessOrderedResume",
+    "post-confirm": "WitnessPostConfirmCrash",
+}
+
+VIOLATION = re.compile(r"Invariant (\w+) is violated\.")
 
 
 def fail_model(message: str) -> NoReturn:
     print(f"modeling error: {message}", file=sys.stderr)
     raise SystemExit(2)
+
+
+def probe_kind(name: str) -> str:
+    if name in HELD:
+        return "product"
+    if name in COVERAGE.values():
+        return "coverage"
+    return "unknown"
 
 
 def require(condition: bool, message: str) -> None:
@@ -228,13 +248,79 @@ def require_save_before_execute(source: str) -> None:
     require(min(saves) < min(executes), "save_turn is not before execute")
 
 
+def _pending_value(node: ast.AST) -> bool:
+    if isinstance(node, ast.Attribute) and node.attr == "PENDING":
+        return True
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "value"
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "PENDING"
+    )
+
+
+def _running_value(node: ast.AST) -> bool:
+    if isinstance(node, ast.Attribute) and node.attr == "RUNNING":
+        return True
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "value"
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "RUNNING"
+    )
+
+
+def require_pending_before_invoke(loop_source: str, job_source: str) -> None:
+    try:
+        loop_tree = ast.parse(loop_source)
+        job_tree = ast.parse(job_source)
+    except SyntaxError as exc:
+        fail_model(f"loop source did not parse: {exc}")
+    save = _function(loop_tree, "save_turn")
+    require(
+        any(isinstance(node, ast.keyword) and node.arg == "state" and _pending_value(node.value) for node in ast.walk(save)),
+        "save_turn does not store a pending call",
+    )
+    begin = _function(loop_tree, "begin_read")
+    cas_lines = [call.lineno for call in _calls(begin, "_cas_running")]
+    require(cas_lines, "begin_read does not compare-and-swap")
+    busy_before_cas = False
+    for node in ast.walk(begin):
+        if not isinstance(node, ast.If):
+            continue
+        if not any(_running_value(child) for child in ast.walk(node.test)):
+            continue
+        for stmt in node.body:
+            if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Constant) and stmt.value.value == "busy":
+                busy_before_cas = stmt.lineno < min(cas_lines)
+    require(busy_before_cas, "a running call is not busy before the compare-and-swap")
+    cas = _function(loop_tree, "_cas_running")
+    require(
+        any(
+            isinstance(node, ast.Compare)
+            and any(isinstance(op, ast.Eq) for op in node.ops)
+            and any(_pending_value(side) for side in (node.left, *node.comparators))
+            for node in ast.walk(cas)
+        ),
+        "_cas_running does not match pending",
+    )
+    one = _function(job_tree, "_one_pass")
+    reads = [call.lineno for call in _calls(one, "begin_read")]
+    invokes = [call.lineno for call in _calls(one, "_invoke")]
+    require(reads, "_one_pass does not call begin_read")
+    require(invokes, "_one_pass does not call _invoke")
+    require(min(reads) < min(invokes), "begin_read is not before _invoke")
+
+
 def anchors() -> None:
     loop = read("backend/app/services/loop_round.py")
     cards = between(loop, "def open_cards(", "def observe_ready(")
     for banned in ("release_hold", "issue_schedule_claim", "publish_schedule_claim"):
         require(banned not in cards, f"open_cards calls {banned}")
     require_confirm_assignment(loop)
-    require_save_before_execute(read("backend/app/tasks/job.py"))
+    job = read("backend/app/tasks/job.py")
+    require_save_before_execute(job)
+    require_pending_before_invoke(loop, job)
 
     llm = read("backend/app/core/llm.py")
     stream = between(llm, "async def stream_chat(", "def complete_text(")
@@ -243,11 +329,11 @@ def anchors() -> None:
     require("_refuse_outbound" in complete, "complete_text does not reach _refuse_outbound")
 
 
-def write_cfg(directory: Path, flags: dict[str, bool]) -> Path:
+def write_cfg(directory: Path, flags: dict[str, bool], invariants: tuple[str, ...]) -> Path:
     lines = ["SPECIFICATION Spec", "CONSTANT"]
     for name, (constant, _label) in BREAKS.items():
         lines.append(f"  {constant} = {'TRUE' if flags[name] else 'FALSE'}")
-    for name in HELD:
+    for name in invariants:
         lines.append(f"INVARIANT {name}")
     lines.append("")
     path = directory / "Loop.cfg"
@@ -255,13 +341,13 @@ def write_cfg(directory: Path, flags: dict[str, bool]) -> Path:
     return path
 
 
-def run_tlc(flags: dict[str, bool]) -> subprocess.CompletedProcess[str]:
+def run_tlc(flags: dict[str, bool], invariants: tuple[str, ...] = HELD) -> subprocess.CompletedProcess[str]:
     if shutil.which("java") is None:
         fail_model("java is not on PATH")
     with tempfile.TemporaryDirectory(prefix="loop-tlc-") as tmp:
         meta = Path(tmp)
         shutil.copy(SPEC_DIR / "Loop.tla", meta / "Loop.tla")
-        cfg = write_cfg(meta, flags)
+        cfg = write_cfg(meta, flags, invariants)
         return subprocess.run(
             [
                 "java",
@@ -286,6 +372,33 @@ def run_tlc(flags: dict[str, bool]) -> subprocess.CompletedProcess[str]:
         )
 
 
+def judge(result: subprocess.CompletedProcess[str], label: str | None) -> None:
+    output = (result.stdout or "") + (result.stderr or "")
+    print(output)
+    names = set(VIOLATION.findall(output))
+    if label is not None:
+        violation = f"Invariant {label} is violated."
+        if result.returncode == 13:
+            fail_model("TLC liveness exit 13 is not a safety counterexample")
+        if result.returncode != 12 or violation not in output or names != {label}:
+            fail_model(
+                f"expected TLC exit 12 violating {label}, TLC exited {result.returncode} with {sorted(names)}"
+            )
+        if "No error has been found" in output:
+            fail_model("the violation contradicts TLC success text")
+        if "Invariant TypeOK is violated." in output:
+            fail_model("a type error is not the named safety counterexample")
+        if "Parsing or semantic analysis failed" in output or "TLC threw an unexpected exception" in output:
+            fail_model("TLC failed before checking the named invariant")
+        if probe_kind(label) == "unknown":
+            fail_model(f"{label} is not a product invariant or a coverage witness")
+        print(f"TLC exit 12 violates {label}.")
+        raise SystemExit(1)
+    if result.returncode != 0 or "No error has been found" not in output or names:
+        fail_model(f"the held run failed with TLC exit {result.returncode}")
+    print("TLC exit 0, no error.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check the tool-round model.")
     parser.add_argument("--break-save", action="store_true")
@@ -294,26 +407,32 @@ def main() -> None:
     parser.add_argument("--break-forbid", action="store_true")
     parser.add_argument("--break-stop", action="store_true")
     parser.add_argument("--break-continuation", action="store_true")
+    parser.add_argument("--break-duplicate", action="store_true")
+    parser.add_argument("--break-early-model", action="store_true")
+    parser.add_argument("--witness", choices=tuple(COVERAGE))
     args = parser.parse_args()
-    flags = {name: bool(getattr(args, name)) for name in BREAKS}
+    flags = {name: bool(getattr(args, name.replace("-", "_"))) for name in BREAKS}
     chosen = [name for name, enabled in flags.items() if enabled]
-    if len(chosen) > 1:
+    if len(chosen) > 1 or (chosen and args.witness):
         fail_model("pass only one break flag")
     owner_predicates()
     anchors()
+    label = None
+    invariants = HELD
+    if args.witness:
+        label = COVERAGE[args.witness]
+        if probe_kind(label) != "coverage":
+            fail_model(f"{label} is not a coverage witness")
+        invariants = HELD + (label,)
+    elif chosen:
+        label = BREAKS[chosen[0]][1]
+        if probe_kind(label) != "product":
+            fail_model(f"{label} is not a product invariant")
     try:
-        result = run_tlc(flags)
+        result = run_tlc(flags, invariants)
     except subprocess.TimeoutExpired:
         fail_model("TLC timed out")
-    output = (result.stdout or "") + (result.stderr or "")
-    print(output)
-    if chosen:
-        label = BREAKS[chosen[0]][1]
-        if label not in output or "No error has been found" in output:
-            fail_model(f"the broken model did not violate {label}")
-        raise SystemExit(1)
-    if result.returncode != 0 or "No error has been found" not in output:
-        fail_model("the held run failed")
+    judge(result, label)
 
 
 if __name__ == "__main__":

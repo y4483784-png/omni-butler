@@ -1,0 +1,66 @@
+---
+title: "Saved tool call"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: main
+    lg1: before
+    lg2: after
+    lg3: stopped
+    lg4: Breaks ContinuationDueSurvivesCrash
+    lg5: Path to the ContinuationDueSurvivesCrash bug
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 tan
+  class lg3 yellow
+  class lg4 breaks
+  class lg5 bugPath
+  s0: No calls yet
+  s1: Stopped before any call
+  s2: Calls saved
+  s3: Process died before the read
+  s4: Read in flight
+  s5: Same pending read resumed
+  s6: Read result stored
+  s7: Confirm card open
+  s8: Write confirmed
+  s9: Second confirm stored
+  s10: Model requested
+  s11: Crashed after the model
+  [*] --> s0
+  s0 --> s1: the job stops before any call
+  s0 --> s2: the turn is saved
+  s2 --> s3: the process dies before the read
+  s2 --> s4: the saved read runs
+  s3 --> s5: the same pending call resumes
+  s4 --> s6: the read result is stored
+  s5 --> s4: the saved read runs
+  s6 --> s7: the confirm card opens
+  s7 --> s8: the write is confirmed
+  s8 --> s9: the write is confirmed again
+  s9 --> s10: the model is requested
+  s10 --> s11: the process dies after the model
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 blue
+  class s0 bugPath
+  class s1 yellow
+  class s2 blue
+  class s2 bugPath
+  class s3 orange
+  class s4 blue
+  class s4 bugPath
+  class s5 orange
+  class s6 blue
+  class s6 bugPath
+  class s7 blue
+  class s7 bugPath
+  class s8 blue
+  class s8 bugPath
+  class s9 blue
+  class s9 bugPath
+  class s10 blue
+  class s10 bugPath
+  class s11 tan
+  class s11 breaks
+  class s11 bugPath
