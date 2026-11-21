@@ -54,7 +54,7 @@ Read a failing TLC trace with `/statechart`. Set `TLA2TOOLS` to the jar from `ve
 
 `NullSampleStaysQuiet` says a stamp of 0 has no notice. The harm is a notice for a null `last_progress_at`. Stamp 0 stands for that null. In the code, `notice_running` reads `last_progress_at` and continues only when `stamp is not None`. It does not assign `last_progress_at`.
 
-`OneNoticePerProgressStamp` says each stamp 1 and stamp 2 is notified at most once. The harm is a second notice for the same stamp. In the trace, `Sweep` increments `hits1` or `hits2` twice when `breakDouble` is true. In the code, the notice is inserted only when the stamp equals `observed_progress_at` and differs from `notice_progress_at`, and the same transaction then stores that stamp.
+`OneNoticePerProgressStamp` says a notice for stamp 1 or stamp 2 happens only after that stamp has already been stable, and at most once. The harm is a notice on the sweep that first sees the stamp, or a second notice for the same stamp. In the shortest trace, `Sweep` sets `hits1` to 1 while `stamp` is 1 and `stable` is 1 when `breakDouble` is true. The invariant requires `stable >= 2` for that notice. In the code, the notice is inserted only when the stamp equals `observed_progress_at` and differs from `notice_progress_at`, and the same transaction then stores that stamp.
 
 `WaitingLeftAlone` says a job that left `running` keeps the stamp, the notice count, and the waiting status. The harm is a sweep that rewrites a waiting row. In the trace, `Sweep` changes `observed` while `left` is true when `breakWait` is true. In the code, `notice_running` returns without a notice when the status is not `running`.
 

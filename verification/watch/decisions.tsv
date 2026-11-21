@@ -11,3 +11,8 @@ ts	phase	decision	why	evidence	result
 2026-11-21T11:29:00Z	commit	recorded the model confirmation commit in the skill	the skill has to name the commit that was checked	b33a6481d51c14281852cc6b061ae57871847065	hash recorded
 2026-11-21T11:32:00Z	review	deleted the test module docstring	the comment pass said the tests already state the probe kinds	verification/watch/test_age.py	docstring removed
 2026-11-21T11:34:00Z	review	independent source review found no defect	the reviewer reran the checker and the age tests on this branch	poteto-agent bc-6a390a9a-e16a-52e2-9741-6403840fc557 grok-4.7-high	no findings
+2026-11-21T11:50:30Z	evidence\supplemented the baseline file with the initial state from that TLC run	the recap named the exit and not the state block	verification/watch/baseline-created-old-false.txt	TLC exit 12, status running, stamp 0
+2026-11-21T11:50:30Z	anchor	the rerunnable created_at rejection is the in-memory read replacement	the scratch edit was restored and left no log	verification/watch/test_age.py test_source_anchor_rejects_a_created_at_read	exit 2
+2026-11-21T11:50:30Z	limit	test_watchdog.py stays unrun	pytest and celery are not installed	python3 import pytest and import celery failed	not a pass
+2026-11-21T11:50:30Z	skill	corrected the breakDouble sentence to the shortest trace	the trace sets hits1 to 1 while stable is 1, and the invariant requires stable >= 2	verification/watch/statechart/break-double/tlc.out	skill matches State 3
+2026-11-21T11:50:30Z	review	the detailed checker log is the resume of the same reviewer	the first reply said no findings without output	poteto-agent bc-6a390a9a-e16a-52e2-9741-6403840fc557	resume pasted the exits
