@@ -1,0 +1,48 @@
+---
+title: "Mail send"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Open
+    lg1: Unknown
+    lg2: Sealed
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 teal
+  s0: Acceptance is stored
+  s1: Claim is open
+  s2: No provider id is stored
+  s3: Provider id is stored
+  s4: Attempt id is stored
+  s5: Empty id confirm changes nothing
+  s6: Lookup did not accept
+  s7: Receipt is sealed
+  s8: Attempt confirm changes nothing
+  s9: Sealed receipt confirmed again
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  s0 --> s7: seal the stored acceptance
+  s1 --> s4: send once
+  s2 --> s5: confirm again [the id is empty]
+  s3 --> s6: lookup does not accept
+  s3 --> s7: lookup accepts or repair [no transport]
+  s4 --> s1: the provider rejects
+  s4 --> s8: confirm again [the id is an attempt]
+  s4 --> s7: the provider returns an id
+  s6 --> s7: lookup accepts or repair [no transport]
+  s7 --> s9: confirm the sealed receipt again
+  s8 --> s1: the provider rejects
+  s8 --> s7: the provider returns an id
+  class s0 orange
+  class s1 blue
+  class s2 orange
+  class s3 orange
+  class s4 orange
+  class s5 orange
+  class s6 orange
+  class s7 teal
+  class s8 orange
+  class s9 teal

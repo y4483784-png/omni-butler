@@ -31,6 +31,11 @@ SEND_HELD = (
     "NoAcceptWithoutProvider",
     "OneSendPerClaim",
     "UnknownDoesNotResend",
+    "AttemptDoesNotRepair",
+    "LookupMissDoesNotRepair",
+    "ReconcileDoesNotSend",
+    "CommittedIsAtomic",
+    "SealedReceiptStays",
 )
 
 ENTRY_FLAGS = (
@@ -45,6 +50,12 @@ SEND_FLAGS = (
     "breakNoProvider",
     "breakTwoSends",
     "breakResend",
+    "breakAttemptRepair",
+    "breakLookupRepair",
+    "breakReconcileSend",
+    "breakSplitWrite",
+    "breakDropSeal",
+    "breakUnseal",
 )
 
 ENTRY_BREAKS = {
@@ -59,6 +70,22 @@ SEND_BREAKS = {
     "break_no_provider": ("breakNoProvider", "NoAcceptWithoutProvider"),
     "break_two_sends": ("breakTwoSends", "OneSendPerClaim"),
     "break_resend": ("breakResend", "UnknownDoesNotResend"),
+    "break_attempt_repair": ("breakAttemptRepair", "AttemptDoesNotRepair"),
+    "break_lookup_repair": ("breakLookupRepair", "LookupMissDoesNotRepair"),
+    "break_reconcile_send": ("breakReconcileSend", "ReconcileDoesNotSend"),
+    "break_split_write": ("breakSplitWrite", "CommittedIsAtomic"),
+    "break_drop_seal": ("breakDropSeal", "CommittedIsAtomic"),
+    "break_unseal": ("breakUnseal", "SealedReceiptStays"),
+}
+
+SEND_REACH = {
+    "refuse": "NoRefusePath",
+    "attempt": "NoAttemptRefusePath",
+    "no-transport": "NoTransportPath",
+    "lookup-accept": "NoLookupPath",
+    "lookup-miss": "NoMissPath",
+    "legacy": "NoLegacyPath",
+    "reseal": "NoResealPath",
 }
 
 
@@ -419,7 +446,13 @@ def judge(spec: str, result: subprocess.CompletedProcess[str], label: str | None
     output = (result.stdout or "") + (result.stderr or "")
     print(output)
     if label:
-        if label not in output or "No error has been found" in output:
+        violation = f"Invariant {label} is violated."
+        if (
+            result.returncode != 12
+            or violation not in output
+            or "No error has been found" in output
+            or "TLC threw an unexpected exception" in output
+        ):
             fail_model(f"the broken {spec} model did not violate {label}")
         raise SystemExit(1)
     if result.returncode != 0 or "No error has been found" not in output:
@@ -436,11 +469,23 @@ def main() -> None:
     parser.add_argument("--break-no-provider", action="store_true")
     parser.add_argument("--break-two-sends", action="store_true")
     parser.add_argument("--break-resend", action="store_true")
+    parser.add_argument("--break-attempt-repair", action="store_true")
+    parser.add_argument("--break-lookup-repair", action="store_true")
+    parser.add_argument("--break-reconcile-send", action="store_true")
+    parser.add_argument("--break-split-write", action="store_true")
+    parser.add_argument("--break-drop-seal", action="store_true")
+    parser.add_argument("--break-unseal", action="store_true")
+    parser.add_argument("--reach", choices=tuple(SEND_REACH))
     args = parser.parse_args()
     chosen = [name for name in (*ENTRY_BREAKS, *SEND_BREAKS) if getattr(args, name)]
-    if len(chosen) > 1:
+    if len(chosen) > 1 or (chosen and args.reach):
         fail_model("pass only one break flag")
     anchors()
+    if args.reach:
+        label = SEND_REACH[args.reach]
+        result = run_tlc("MailSend", SEND_FLAGS, {}, ("TypeOK", label))
+        judge("MailSend", result, label)
+        return
     if not chosen:
         entry = run_tlc("MailEntry", ENTRY_FLAGS, {}, ENTRY_HELD)
         judge("MailEntry", entry, None)
