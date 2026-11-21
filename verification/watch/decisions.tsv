@@ -8,3 +8,4 @@ ts	phase	decision	why	evidence	result
 2026-11-21T11:26:00Z	chart	drew the held sweep and the shortest break paths	the reader needs one main flow and the counterexamples	verification/watch/statechart/README.md	held 126 states, 5 states and 8 arrows
 2026-11-21T11:27:40Z	anchor	inserted a created_at read into watchdog.py and restored the file	the source gate has to reject that read	scratch exit 2, git diff empty	restored
 2026-11-21T11:27:40Z	limit	did not run backend/tests/test_watchdog.py	the backend package is not installed in this environment	python3 -c import app failed	not a pass
+2026-11-21T11:29:00Z	commit	recorded the model confirmation commit in the skill	the skill has to name the commit that was checked	b33a6481d51c14281852cc6b061ae57871847065	hash recorded

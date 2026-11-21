@@ -74,6 +74,6 @@ The check does not cover Celery delivery, a second worker, a second user, a prov
 
 ## Keep the check with the code
 
-The watchdog file blob is `892afc786f6352e929320e2c4b3ee3002714c7d4`. The model was confirmed in `MODEL_COMMIT`. Move either value forward only after reading `_EFFECT`, `notice_running`, `run_sweep`, `renew_hold`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `running` maps to `stop`, if `watchdog.py` mentions `created_at`, or if the sweep assigns `last_progress_at`, the checker exits 2. That is drift, not a passing run.
+The watchdog file blob is `892afc786f6352e929320e2c4b3ee3002714c7d4`. The model was confirmed in `b33a6481d51c14281852cc6b061ae57871847065`. Move either value forward only after reading `_EFFECT`, `notice_running`, `run_sweep`, `renew_hold`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `running` maps to `stop`, if `watchdog.py` mentions `created_at`, or if the sweep assigns `last_progress_at`, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.
