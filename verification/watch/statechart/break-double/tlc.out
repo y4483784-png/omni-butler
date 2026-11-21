@@ -1,0 +1,59 @@
+TLC2 Version 2026.11.06.222357 (rev: d8fb231)
+Warning: Please run the Java VM, which executes TLC with a throughput optimized garbage collector, by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed 4258774569818948495 with 1 worker on 4 cores with 3746MB heap and 64MB offheap memory [pid: 4885] (Linux 6.12.113+ amd64, Ubuntu 21.0.13.0.3 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /agent/repos/omni-butler/verification/watch/Watch.tla
+Parsing file /tmp/statechart-phtsKL/statechart-C0ptjq/tmp-verdict-1/tlc-12219042488638957953/Integers.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/statechart-phtsKL/statechart-C0ptjq/tmp-verdict-1/tlc-12219042488638957953/Naturals.tla (jar:file:/agent/repos/omni-butler/verification/tlc/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Watch
+Linting of module Watch
+Starting... (2026-11-21 11:25:41)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-21 11:25:41.
+Error: Invariant OneNoticePerProgressStamp is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ hits1 = 0
+/\ hits2 = 0
+/\ observed = 0
+/\ notices = 0
+/\ told = 0
+/\ left = FALSE
+/\ stable = 0
+/\ status = "running"
+/\ snap = <<0, 0, 0, 0, 0, 0, 0>>
+/\ sweeps = 0
+/\ stamp = 0
+
+State 2: <Progress line 24, col 8 to line 27, col 89 of module Watch>
+/\ hits1 = 0
+/\ hits2 = 0
+/\ observed = 0
+/\ notices = 0
+/\ told = 0
+/\ left = FALSE
+/\ stable = 0
+/\ status = "running"
+/\ snap = <<0, 0, 0, 0, 0, 0, 0>>
+/\ sweeps = 0
+/\ stamp = 1
+
+State 3: <Sweep line 70, col 8 to line 93, col 91 of module Watch>
+/\ hits1 = 1
+/\ hits2 = 0
+/\ observed = 1
+/\ notices = 1
+/\ told = 1
+/\ left = FALSE
+/\ stable = 1
+/\ status = "running"
+/\ snap = <<0, 0, 0, 0, 0, 0, 0>>
+/\ sweeps = 1
+/\ stamp = 1
+
+13 states generated, 10 distinct states found, 7 states left on queue.
+The depth of the complete state graph search is 3.
+Finished in 00s at (2026-11-21 11:25:41)
+

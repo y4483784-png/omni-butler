@@ -1,0 +1,51 @@
+---
+title: "Task sweep"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: quiet
+    lg1: working
+    lg2: noticed
+    lg3: waiting
+    lg4: Breaks WaitingLeftAlone
+    lg5: Path to the WaitingLeftAlone bug
+  }
+  class lg0 yellow
+  class lg1 blue
+  class lg2 teal
+  class lg3 orange
+  class lg4 breaks
+  class lg5 bugPath
+  s0: Running, no sample
+  s1: Running, sample saved
+  s2: Waiting on the person
+  s3: Waiting on a resource
+  s4: Waiting on the person, row changed
+  s5: Waiting on a resource, row changed
+  s6: Running, notice sent
+  [*] --> s0
+  s0 --> s1: a progress sample is saved
+  s0 --> s2: the job waits on the person
+  s0 --> s3: the job waits on a resource
+  s1 --> s2: the job waits on the person
+  s1 --> s3: the job waits on a resource
+  s2 --> s4: the sweep runs
+  s3 --> s5: the sweep runs
+  s1 --> s6: the sweep runs
+  s4 --> s2: the sweep runs
+  s5 --> s3: the sweep runs
+  s6 --> s2: the job waits on the person
+  s6 --> s3: the job waits on a resource
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 yellow
+  class s0 bugPath
+  class s1 blue
+  class s2 orange
+  class s2 bugPath
+  class s3 orange
+  class s4 orange
+  class s4 breaks
+  class s4 bugPath
+  class s5 orange
+  class s5 breaks
+  class s6 teal

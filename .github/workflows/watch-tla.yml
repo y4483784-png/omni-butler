@@ -21,17 +21,44 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Check the model, then require each break flag to exit 1
+      - name: Check both ages, the breaks, and the witnesses
         run: |
-          python3 verification/watch/check.py
+          python3 verification/watch/check.py --age old
+          python3 verification/watch/check.py --age young
+          python3 verification/watch/check.py --age young --break-age
+          python3 verification/watch/test_age.py
           set +e
-          python3 verification/watch/check.py --break-stop
-          stop_status=$?
-          python3 verification/watch/check.py --break-double
-          double_status=$?
-          python3 verification/watch/check.py --break-wait
-          wait_status=$?
+          python3 verification/watch/check.py --age old --break-stop
+          old_stop=$?
+          python3 verification/watch/check.py --age young --break-stop
+          young_stop=$?
+          python3 verification/watch/check.py --age old --break-double
+          old_double=$?
+          python3 verification/watch/check.py --age young --break-double
+          young_double=$?
+          python3 verification/watch/check.py --age old --break-wait
+          old_wait=$?
+          python3 verification/watch/check.py --age young --break-wait
+          young_wait=$?
+          python3 verification/watch/check.py --age old --break-age
+          old_age=$?
+          python3 verification/watch/check.py --witness old-null
+          old_null=$?
+          python3 verification/watch/check.py --witness young-null
+          young_null=$?
+          python3 verification/watch/check.py --witness old-sample
+          old_sample=$?
+          python3 verification/watch/check.py --witness young-sample
+          young_sample=$?
           set -e
-          test "$stop_status" -eq 1
-          test "$double_status" -eq 1
-          test "$wait_status" -eq 1
+          test "$old_stop" -eq 1
+          test "$young_stop" -eq 1
+          test "$old_double" -eq 1
+          test "$young_double" -eq 1
+          test "$old_wait" -eq 1
+          test "$young_wait" -eq 1
+          test "$old_age" -eq 1
+          test "$old_null" -eq 1
+          test "$young_null" -eq 1
+          test "$old_sample" -eq 1
+          test "$young_sample" -eq 1

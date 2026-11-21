@@ -1,0 +1,10 @@
+ts	phase	decision	why	evidence	result
+2026-11-21T11:18:56Z	start	started WATCH-02 from the pinned release	the parent asked for this commit and no other residual	c77817c64d649a1fa0bdce25d5fb7388dc7358d9	open
+2026-11-21T11:18:56Z	baseline	ran TLC with createdOld false on the unchanged spec	the inventory said TypeOK rejects that constant	verification/watch/baseline-created-old-false.txt	TLC exit 12, TypeOK, initial running state
+2026-11-21T11:20:00Z	map	kept creation age as a boolean constant and stamp 0 as a null sample	watchdog.py never reads created_at and notice_running skips a null stamp	backend/app/tasks/watchdog.py:56	no new timeout
+2026-11-21T11:22:00Z	model	TypeOK admits both booleans and CreationAgeDoesNotStop constrains status for either age	a young job was illegal, so an age stop and a stop of every job looked the same	verification/watch/Watch.tla	encoded
+2026-11-21T11:22:30Z	checker	expected breaks require TLC exit 12 and the invariant name, and the checker exits 1	a TypeOK or parser failure must not count as the age break	verification/watch/check.py	exit 2 on a mismatch
+2026-11-21T11:23:49Z	prove	ran both ages, the four breaks, the witnesses, and the null and tautology probes	the age rule has to fail only when the old job is stopped by breakAge	verification/watch/test_age.py	7 tests OK
+2026-11-21T11:26:00Z	chart	drew the held sweep and the shortest break paths	the reader needs one main flow and the counterexamples	verification/watch/statechart/README.md	held 126 states, 5 states and 8 arrows
+2026-11-21T11:27:40Z	anchor	inserted a created_at read into watchdog.py and restored the file	the source gate has to reject that read	scratch exit 2, git diff empty	restored
+2026-11-21T11:27:40Z	limit	did not run backend/tests/test_watchdog.py	the backend package is not installed in this environment	python3 -c import app failed	not a pass

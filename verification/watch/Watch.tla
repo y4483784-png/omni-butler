@@ -1,7 +1,7 @@
 ---- MODULE Watch ----
 EXTENDS Integers
 
-CONSTANT breakStop, breakDouble, breakWait, createdOld
+CONSTANT breakStop, breakDouble, breakWait, breakAge, createdOld
 
 VARIABLES status, stamp, observed, told, notices, sweeps, stable, hits1, hits2, left, snap
 
@@ -63,18 +63,21 @@ shouldTell ==
         breakDouble \/ (stamp = observed /\ told /= stamp /\ stable >= 1)
     )
 
+stops ==
+    breakStop \/ (breakAge /\ createdOld)
+
 Sweep ==
     \/ /\ sweeps < 3
        /\ sweeps' = sweeps + 1
        /\ IF status = "running" THEN
-            /\ IF (shouldTell /\ ~breakStop) THEN
+            /\ IF (shouldTell /\ ~stops) THEN
                  /\ notices' = notices + 1
                  /\ told' = stamp
                  /\ hits1' = IF stamp = 1 THEN hits1 + 1 ELSE hits1
                  /\ hits2' = IF stamp = 2 THEN hits2 + 1 ELSE hits2
                ELSE
                  UNCHANGED <<notices, told, hits1, hits2>>
-            /\ IF breakStop THEN
+            /\ IF stops THEN
                  /\ status' = "stopped"
                  /\ UNCHANGED <<observed, stable>>
                ELSE
@@ -119,10 +122,25 @@ TypeOK ==
     /\ snap[5] \in 0..4
     /\ snap[6] \in 0..3
     /\ snap[7] \in 0..3
-    /\ createdOld = TRUE
+    /\ createdOld \in BOOLEAN
 
 CreationAgeDoesNotStop ==
-    createdOld => status \in {"running", "waiting_person", "waiting_resource"}
+    status \in {"running", "waiting_person", "waiting_resource"}
+
+NullSampleStaysQuiet ==
+    stamp = 0 => notices = 0
+
+WitnessOldNull ==
+    ~(createdOld /\ stamp = 0 /\ status = "running" /\ sweeps >= 1 /\ notices = 0)
+
+WitnessYoungNull ==
+    ~(~createdOld /\ stamp = 0 /\ status = "running" /\ sweeps >= 1 /\ notices = 0)
+
+WitnessOldSample ==
+    ~(createdOld /\ stamp > 0 /\ status = "running" /\ sweeps >= 1)
+
+WitnessYoungSample ==
+    ~(~createdOld /\ stamp > 0 /\ status = "running" /\ sweeps >= 1)
 
 OneNoticePerProgressStamp ==
     /\ hits1 <= 1
