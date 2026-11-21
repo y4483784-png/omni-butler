@@ -10,7 +10,7 @@ Each block below is the shortest TLC trace for that named invariant. The checker
 
 `NoLookupPath`. The same stored id. `LookupAccepted` seals the receipt. `lookup` is `accepted`. `reconcileSends` stays 0.
 
-`NoMissPath`. The same stored id. `LookupOther` sets `lookup` to `other` and leaves the row absent, the claim `unknown`, and the receipt `received`.
+`NoMissPath`. The same stored id. `LookupOther` sets `lookup` to `other` and leaves the row absent, the claim `unknown`, and the receipt `received`. The model name `other` covers production `absent`, production `unknown`, and a lookup that `_lookup_result` normalized to `unknown`.
 
 `NoLegacyPath`. Stored acceptance, receipt still `received`. `RepairLegacy` seals the receipt and does not set `lookup` to `accepted` or `other`.
 

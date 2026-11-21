@@ -4,9 +4,9 @@ Release base `9e336b42b26edd008eea75b1bd259a73fc59b719`. The production function
 
 ## Boolean gap
 
-`MailSend` at that release had `claim`, `remote`, `sends`, `accepted`, and `success`. `Accept` set `remote` to `provider` and `accepted` to true in one step. A stored provider id with no acceptance was not a state.
+`MailSend` at that release had `claim`, `remote`, `sends`, `accepted`, and `success`. `Init` starts with `remote = "none"` and `accepted = FALSE`. `Accept` is the only action that assigns `remote = "provider"`, and that assignment sets `accepted` to true in the same step. No other action stores a provider id. The next-state relation therefore has no state with a provider id and no acceptance.
 
-`verification/mail-entry/gap/MailSendGap.tla` keeps that model and asks TLC for `<>(remote = "provider" /\ ~accepted)`. TLC exits 13. The trace is the open claim, `Send`, then `Accept` with `accepted = TRUE`, then a stutter. The property name in the log is `RepairStateReachable`.
+`verification/mail-entry/gap/MailSendGap.tla` keeps that model. `RepairStateReachable` is the liveness formula `<>(remote = "provider" /\ ~accepted)`, configured as a temporal property. TLC exits 13 and prints `Temporal property RepairStateReachable was violated.` The trace is the open claim, `Send`, then `Accept` with `accepted = TRUE`, then a stutter. That trace is one liveness counterexample. It shows a behavior that never reaches the repair state. It is not, on its own, a proof that no behavior reaches it. The unreachability claim is the next-state relation in the paragraph above. `gap/README.md` records the same label.
 
 ## Confirm again
 
@@ -23,7 +23,7 @@ When no acceptance row exists and `_selected_transport()` is `None`, lines 435-4
 
 When a transport is bound, lines 445-454 roll back, then call `_lookup_result`. Line 446 continues only when the result is `accepted`. Any other result raises the unknown mail error.
 
-`_lookup_result` lines 471-478 return `accepted`, `absent`, or `unknown`. An exception, and any other string, becomes `unknown`. The model value `other` is that whole set. `absent` and `unknown` are not separate repairs.
+`_lookup_result` (lines 471-478) returns `accepted`, `absent`, or `unknown` when lookup returns that string. An exception returns `unknown`. A result outside those three strings also returns `unknown`. Production keeps `absent` and `unknown` as different strings. The model alone stores `other` for every result that is not `accepted`. That set includes a preserved `absent`, a preserved `unknown`, and a result production already normalized to `unknown`.
 
 `_reconcile_send` does not call `transport.send`.
 
@@ -49,6 +49,8 @@ No honest action creates these states. Splitting `_write_acceptance` would.
 
 `RepeatUnstored` on an attempt id is also reached from `Send`. That path is the dropped response in `test_transport_error_stays_unknown` and `test_lost_response_does_not_resend`.
 
+The three seeded rows let TLC check the repair guards when the row is already present. The offline tests build those rows with `_set_remote` or a direct `MailAcceptance` insert, then confirm. That is conditional safety. It does not prove that production reaches the row, and it does not prove a crash window between the attempt id and the acceptance commit.
+
 ## Model actions
 
 | Action | Production |
@@ -59,7 +61,7 @@ No honest action creates these states. Splitting `_write_acceptance` would.
 | `RepeatUnstored` | Lines 412-415. No acceptance write and no send. |
 | `RepairNoTransport` | Lines 435-444. |
 | `LookupAccepted` | Lines 446-454 when lookup is `accepted`. |
-| `LookupOther` | Lines 446-447 for every other lookup result. |
+| `LookupOther` | Lines 446-447. The model stores `other`. Production still returns `absent` or `unknown`. |
 | `RepairLegacy` | Lines 416-434. Lookup is not called. |
 | `Reseal` | Lines 418-426. The receipt stays `external_success`. |
 

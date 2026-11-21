@@ -28,13 +28,15 @@ flowchart TB
     again --> providerId --> noAcceptance --> noBound --> repaired
   end
   emptyId[An empty id does not repair and does not send]
+  rowExists[An acceptance row already exists]
   sealRow[Seal the open receipt and do not call lookup or send]
   already[A later confirm leaves the sealed receipt unchanged and does not send]
   boundLookup[A transport is bound]
   lookupMiss[Lookup is not accepted so the claim stays unknown and send is not called]
   lookupHit[Lookup is accepted so the acceptance and the receipt are repaired and send is not called]
   again --> emptyId
-  providerId --> sealRow
+  providerId --> rowExists
+  rowExists --> sealRow
   sealRow --> already
   noAcceptance --> boundLookup
   boundLookup --> lookupMiss
