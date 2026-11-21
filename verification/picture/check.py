@@ -22,6 +22,7 @@ HELD = (
     "PendingDeleteBeforeBlob",
     "TerminalStays",
     "StrangerHidden",
+    "StagedFence",
 )
 
 
@@ -37,6 +38,14 @@ def require(condition: bool, message: str) -> None:
 
 def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def model_row(spec: str) -> None:
+    rows = [line for line in spec.splitlines() if "imageRow \\in" in line]
+    require(len(rows) == 1, "the picture model lost the image row type")
+    require('"staged"' in rows[0], "the picture model omits staged")
+    require('"tombstone"' in rows[0], "the picture model omits tombstone")
+    require("StagedFence ==" in spec, "the picture model omits the staged fence")
 
 
 def anchors() -> None:
@@ -61,6 +70,11 @@ def anchors() -> None:
     require('"pending_delete"' in images, "pending_delete is gone")
     require('"staged"' in images, "staged bind rows are gone")
     require('"tombstone"' in images, "an unacknowledged image key is not retained")
+    require(
+        'else:\n            _fence_staged(image_id, task_run_id, mode="terminal")' in images,
+        "a missing blob does not use the terminal fence",
+    )
+    model_row(read("verification/picture/Picture.tla"))
     settle = images[images.find("def _running_task") : images.find("\ndef purge_pending")]
     require('purge_state == "staged"' in settle, "reconcile writes image state without a staged fence")
     require("row.purge_state" not in settle, "reconcile assigns a loaded image row")
@@ -86,6 +100,7 @@ def write_cfg(
     early: bool,
     revert: bool,
     leak: bool,
+    fence: bool,
 ) -> Path:
     lines = [
         "SPECIFICATION Spec",
@@ -95,6 +110,7 @@ def write_cfg(
         f"  breakEarlyBlob = {'TRUE' if early else 'FALSE'}",
         f"  breakRevert = {'TRUE' if revert else 'FALSE'}",
         f"  breakLeak = {'TRUE' if leak else 'FALSE'}",
+        f"  breakFence = {'TRUE' if fence else 'FALSE'}",
     ]
     for name in HELD:
         lines.append(f"INVARIANT {name}")
@@ -104,12 +120,28 @@ def write_cfg(
     return path
 
 
-def run_tlc(*, ocr: bool, zero: bool, early: bool, revert: bool, leak: bool) -> subprocess.CompletedProcess[str]:
+def run_tlc(
+    *,
+    ocr: bool,
+    zero: bool,
+    early: bool,
+    revert: bool,
+    leak: bool,
+    fence: bool,
+) -> subprocess.CompletedProcess[str]:
     if shutil.which("java") is None:
         fail_model("java is not on PATH")
     with tempfile.TemporaryDirectory(prefix="picture-tlc-") as tmp:
         meta = Path(tmp)
-        cfg = write_cfg(meta, ocr=ocr, zero=zero, early=early, revert=revert, leak=leak)
+        cfg = write_cfg(
+            meta,
+            ocr=ocr,
+            zero=zero,
+            early=early,
+            revert=revert,
+            leak=leak,
+            fence=fence,
+        )
         return subprocess.run(
             [
                 "java",
@@ -141,6 +173,7 @@ def main() -> None:
     parser.add_argument("--break-early-blob", action="store_true")
     parser.add_argument("--break-revert", action="store_true")
     parser.add_argument("--break-leak", action="store_true")
+    parser.add_argument("--break-fence", action="store_true")
     args = parser.parse_args()
     chosen = sum(
         1
@@ -150,6 +183,7 @@ def main() -> None:
             args.break_early_blob,
             args.break_revert,
             args.break_leak,
+            args.break_fence,
         )
         if flag
     )
@@ -162,6 +196,7 @@ def main() -> None:
         early=args.break_early_blob,
         revert=args.break_revert,
         leak=args.break_leak,
+        fence=args.break_fence,
     )
     output = (result.stdout or "") + (result.stderr or "")
     print(output)
@@ -171,6 +206,7 @@ def main() -> None:
         "break_early_blob": "PendingDeleteBeforeBlob",
         "break_revert": "TerminalStays",
         "break_leak": "StrangerHidden",
+        "break_fence": "StagedFence",
     }
     active = next((name for name, _label in expected.items() if getattr(args, name)), None)
     if active:

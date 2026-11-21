@@ -35,9 +35,12 @@ jobs:
           revert_status=$?
           python3 verification/picture/check.py --break-leak
           leak_status=$?
+          python3 verification/picture/check.py --break-fence
+          fence_status=$?
           set -e
           test "$ocr_status" -eq 1
           test "$zero_status" -eq 1
           test "$early_blob_status" -eq 1
           test "$revert_status" -eq 1
           test "$leak_status" -eq 1
+          test "$fence_status" -eq 1

@@ -3,6 +3,10 @@ export const title = "Chat image";
 export const state = (v) => {
   if (v.picture === "none") return "No image yet";
   if (v.picture === "rejected") return "Image refused";
+  if (v.imageRow === "staged" && v.blob === "out") return "Staged row, blob not stored";
+  if (v.imageRow === "staged") return "Staged row, blob stored";
+  if (v.imageRow === "tombstone" && v.blob === "gone") return "Tombstone kept after the blob is gone";
+  if (v.imageRow === "tombstone") return "Terminal fence tombstoned the staged row";
   if (v.picture === "accepted") return "Image held for this chat";
   if (v.usage === "pending") return "Sent to the chat model";
   if (v.closed === false && v.usage === "missing") return "Missing counts stay null";
@@ -16,7 +20,13 @@ export const state = (v) => {
 
 export const step = (action) => {
   const labels = {
-    Accept: "the chat keeps the image",
+    Accept: "the chat reserves a staged row",
+    PutBlob: "the blob is stored",
+    Adopt: "a stored blob becomes ready",
+    FenceMissing: "a missing blob uses the terminal fence",
+    TombstoneStaged: "the terminal transaction tombstones a staged row",
+    DropTombstoneBlob: "cleanup deletes the blob and keeps the tombstone",
+    DeleteLatePut: "a later put of a tombstone key is deleted",
     Reject: "the image is refused",
     Send: "the chat model receives the image",
     NoteMissing: "the response omits token counts",
