@@ -1,64 +1,79 @@
 ---
 name: verify-task-watch
-description: "Check that a waiting or completed generation is not stopped, that sleep credit is not counted as silence, that stopping an older generation leaves a newer generation and another user running, and that the sweep publishes no confirm card. Use when editing the task watchdog, its beat entry, or task_run.stop."
+description: "Check that a sweep does not stop a job because of creation age, that a null progress sample is not a notice, and that one progress stamp is notified once. Use when editing the task watchdog, its beat entry, last_progress_at, or verification/watch."
 ---
 
-# Verify the task watchdog
+# Verify the task sweep
 
-A sweep stops only a `running` generation whose silence, after sleep credit, has reached 20 minutes. `waiting_person`, `waiting_resource`, `completed`, and `stopped` stay as they are. Sleep credit from a long tick gap stays on the ledger, so the next sweep does not count that gap again. Stopping one generation does not stop a newer generation or another user. The sweep does not publish a confirm card.
+A sweep does not stop a job. Creation age does not matter. `created_at` is not a sample. `notice_running` does not turn a null `last_progress_at` into a new notice, and it leaves a `running` job `running`. One non-null stamp is notified once. `notice_running` does not notice a `waiting_person` or `waiting_resource` row, and it does not change that status. After that, `run_sweep` can still call `reconcile_parked_writes` or `dispatch_task`. Those calls are outside this model. A hold renewal does not move `last_progress_at`.
 
-The question is an order of steps, so the check is TLC on a small model of those steps. The jar is the pinned file from `verification/tlc_jar.py`. Do not download another jar.
+The question is an order of steps, so the check is TLC on `verification/watch/Watch.tla`. The jar is the pinned file from `verification/tlc_jar.py`. Do not download another jar.
 
 ## When this applies
 
 Run it when a change touches any of these:
 
-- `backend/app/tasks/watchdog.py` (`_EFFECT`, `_suspended_credit`, `decide`, `load_runs`, `run_sweep`)
+- `backend/app/tasks/watchdog.py` (`_EFFECT`, `notice_running`, `run_sweep`, `sweep_task`)
 - `backend/app/tasks/celery_app.py` (the `watch-task-runs` beat entry)
-- `backend/app/services/task_run.py` (`stop`)
+- `backend/app/services/task_run.py` (`renew_hold`, `claim_web_execution`, `touch_progress`)
+- `verification/watch/Watch.tla` or `verification/watch/check.py`
 
 ## Run
 
 From the repo root, with Java on PATH:
 
 ```sh
-python verification/task-watch/check.py
-python verification/task-watch/check.py --break-wait
-python verification/task-watch/check.py --break-done
-python verification/task-watch/check.py --break-sleep
-python verification/task-watch/check.py --break-newer
-python verification/task-watch/check.py --break-other
-python verification/task-watch/check.py --break-card
+python3 verification/watch/check.py --age old
+python3 verification/watch/check.py --age young
+python3 verification/watch/check.py --age old --break-stop
+python3 verification/watch/check.py --age young --break-stop
+python3 verification/watch/check.py --age old --break-double
+python3 verification/watch/check.py --age young --break-double
+python3 verification/watch/check.py --age old --break-wait
+python3 verification/watch/check.py --age young --break-wait
+python3 verification/watch/check.py --age old --break-age
+python3 verification/watch/check.py --age young --break-age
+python3 verification/watch/check.py --witness old-null
+python3 verification/watch/check.py --witness young-null
+python3 verification/watch/check.py --witness old-sample
+python3 verification/watch/check.py --witness young-sample
+python3 verification/watch/test_age.py
 ```
 
-The held command exits 0. Each break command exits 1 and names its invariant. Exit 2 means the checker no longer matches the code, or TLC could not run.
+`--age old` is the default. A held command exits 0. `--age young --break-age` is also a held command. It exits 0 because the age break stops only an old job.
+
+Each other break, and each witness, exits 1. The checker prints `TLC exit 12 violates <name>.` The name is the invariant TLC reported. Exit 2 means the source anchors no longer match, TLC exited with some other code, or the named invariant did not fail.
+
+`test_age.py` is the offline probe file. It does not start the product. A product probe maps to `watchdog.py`. A coverage probe is a witness that a state was reached. A probe whose invariant is `TRUE` is refused.
 
 Read a failing TLC trace with `/statechart`. Set `TLA2TOOLS` to the jar from `verification/tlc_jar.py` so that script does not download another TLC.
 
 ## What a failure means
 
-`WaitStays` says a generation that was parked waiting is still `waiting`. The harm is the sweep treating a person or a resource wait as a stall. In the trace, `Sweep` sets `oldStatus` to `stopped` while `parked` is true when `breakWait` is true. In the code, `_EFFECT` maps `waiting_person` and `waiting_resource` to `leave`, and `run_sweep` calls `task_run.stop` only when a fresh read still maps to `stop`.
+`CreationAgeDoesNotStop` says the status stays `running`, `waiting_person`, or `waiting_resource`. The harm is a sweep that stops a job, including a stop that happens only when the job was created earlier. In the trace, `Sweep` sets `status` to `stopped` when `breakStop` is true, or when `breakAge` and `createdOld` are both true. In the code, `_EFFECT` maps every status, including `running`, to `leave`. `notice_running` does not set the status. `watchdog.py` does not read `created_at`.
 
-`CompletedStays` says a generation that was finished is still `completed`. The harm is the sweep turning a finished generation into `stopped`. In the trace, `Sweep` sets `oldStatus` to `stopped` while `finished` is true when `breakDone` is true. In the code, `_EFFECT` maps `completed` to `leave`, and `task_run.stop` on `completed` keeps `completed`.
+`NullSampleStaysQuiet` says `notices` is 0 while `stamp` is 0. `stamp` moves only from 0 to 1 to 2. No action clears it. The zero count holds inside that bound. It is not a proof of clearing `last_progress_at` after a notice. In `notice_running`, a null stamp adds no new notice and does not remove messages already stored. `test_a_new_stamp_notifies_once_and_a_cleared_stamp_does_not_repeat` in `backend/tests/test_watchdog.py`, lines 361-399, was read and was not executed. It sets a second stamp, clears `last_progress_at` to null, then restores that stamp. After the clear, the sweep adds no message, and the two earlier messages stay.
 
-`SleepNotSilence` says a watchdog stop happens only while sleep credit is still 0. The harm is a later sweep counting a slept gap as silence. In the trace, `Sweep` increments `watchStops` while `credit` is 1 when `breakSleep` is true. In the code, `_suspended_credit` returns the whole gap only when it is longer than `SUSPENDED_SWEEPS` check intervals, and `decide` adds that gap to the credit already stored for the generation.
+`OneNoticePerProgressStamp` says a notice for stamp 1 or stamp 2 happens only after that stamp has already been stable, and at most once. The harm is a notice on the sweep that first sees the stamp, or a second notice for the same stamp. In the shortest trace, `Sweep` sets `hits1` to 1 while `stamp` is 1 and `stable` is 1 when `breakDouble` is true. The invariant requires `stable >= 2` for that notice. In the code, the notice is inserted only when the stamp equals `observed_progress_at` and differs from `notice_progress_at`, and the same transaction then stores that stamp.
 
-`NewerStays` says the newer generation is still `running`. The harm is a stop of the older generation also stopping the newer one. In the trace, `Sweep` sets `newer` to `stopped` when `breakNewer` is true. In the code, `task_run.stop` takes that `user_id` and that `generation` and does not query other generations.
+`WaitingLeftAlone` says a job that left `running` keeps the stamp, the notice count, and the waiting status. The harm is a sweep that rewrites a waiting row. In the trace, `Sweep` changes `observed` while `left` is true when `breakWait` is true. In the code, `notice_running` returns without a notice when the status is not `running`.
 
-`OtherStays` says the other user's generation is still `running`. The harm is one user's stall stopping another user's task. In the trace, `Sweep` sets `other` to `stopped` when `breakOther` is true. In the code, the stop call carries the row's own `user_id`.
+`TypeOK` says the variables stay in the sets in the spec, and `createdOld` is a boolean. Both true and false are legal. TLC also checks deadlock. The stuttering branches of `Next` stay enabled, so a finished sweep is not a deadlock.
 
-`NoCard` says `claims` stays 0. The harm is the sweep publishing a second confirm card. In the trace, `Sweep` sets `claims` to 1 when `breakCard` is true. In the code, `watchdog.py` does not call `publish_schedule_claim` and does not mention `CalendarEvent`.
+The witness names are coverage, not safety. Each one fails when that age, status, stamp, and sweep count are reached together. `WitnessOldNull` and `WitnessYoungNull` fail for a running job of that age with stamp 0, notice count 0, and `sweeps >= 1`. `WitnessOldSample` and `WitnessYoungSample` fail for a running job of that age with `stamp > 0` and `sweeps >= 1`. A null sweep followed by `Progress` reaches the sample predicate. The predicate does not say the sweep observed that sample. `--break-double` is the separate check that a sweep notifies a positive stamp. A witness that does not fail means that combination was not reached. That is exit 2, not a passing run.
 
-`TypeOK` says the model variables stay inside the sets above. TLC also checks deadlock. A deadlock is a path that cannot settle. `Done` stutters after the first sweep.
-
-If the trace cannot be replayed as `decide` and `run_sweep`, the model is wrong. Say so. Do not weaken the invariant to make the run pass.
+If the trace cannot be replayed as `notice_running`, the model is wrong. Say so. Do not weaken the invariant to make the run pass. Do not treat a green log line as a pass unless TLC exited 0 and printed `No error has been found.`
 
 ## What this does not cover
 
-The model is one older generation, one newer generation of the same user, and one other user's running generation. Credit is 0 or 1. The sweep runs at most twice. It does not model a progress log, a worker restart, a second maintenance worker, an open claim row, or a reminder message. `NoCard` only says the sweep itself does not add a claim. Live lanes are not part of this check.
+The model is one job and at most three sweeps. Stamp is 0, 1, or 2, and it only increases. `Progress` and `RecordedEarlier` raise it. `Sweep` does not change it. Nothing sets it back to 0. `NullSampleStaysQuiet` uses that monotone bound. A positive stamp that later becomes null is not a state in the model. `createdOld` is a constant for the whole run. It stands for an old or young `created_at` in the watchdog tests that set that column. `test_recent_progress_keeps_an_old_job_running`, `test_null_stamp_stays_running_without_a_notice`, and `test_a_new_stamp_notifies_once_and_a_cleared_stamp_does_not_repeat` were read. No test in `backend/tests/test_watchdog.py` was executed here. The model does not compute that boolean from a clock, and one run does not change it. A null sample is stamp 0. The model does not store a separate `created_at` value and does not fill stamp 0 from it.
+
+The check does not cover Celery delivery, a second worker, a second user, a provider timeout, image reconciliation, `reconcile_parked_writes`, or `dispatch_task`. It does not execute `watchdog.py`. The anchors compare source text. They are not a run of the sweep. `python3 verification/watch/test_age.py` skipping for a missing Java is not a pass.
+
+`verification/task-watch/` is an older model of a silence stop. This skill does not run it. The current sweep does not stop for silence.
 
 ## Keep the check with the code
 
-The anchors were confirmed at `1c13fb0027a0ba806c7af7c1e0af421412990904`. Move the confirmation forward only after reading `_EFFECT`, `_suspended_credit`, `decide`, `run_sweep`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `waiting_person` or `completed` maps to `stop`, if the sleep credit is not added to the stored credit, or if `run_sweep` calls `publish_schedule_claim`, the checker exits 2. That is drift, not a passing run.
+The watchdog file blob is `892afc786f6352e929320e2c4b3ee3002714c7d4`. The model was confirmed in `b33a6481d51c14281852cc6b061ae57871847065`. Move either value forward only after reading `_EFFECT`, `notice_running`, `run_sweep`, `renew_hold`, and the `watch-task-runs` beat entry, and seeing that the model still describes them. If `running` maps to `stop`, if `watchdog.py` mentions `created_at`, or if the sweep assigns `last_progress_at`, the checker exits 2. That is drift, not a passing run.
 
 For a later edit that did not recheck the model, read `/maintain-formal-verification-skill`.
