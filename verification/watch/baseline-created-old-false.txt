@@ -1,0 +1,8 @@
+Baseline on c77817c64d649a1fa0bdce25d5fb7388dc7358d9, before this change.
+
+Config constants: breakStop = FALSE, breakDouble = FALSE, breakWait = FALSE, createdOld = FALSE.
+Invariants: TypeOK, CreationAgeDoesNotStop, OneNoticePerProgressStamp, WaitingLeftAlone.
+TLC exit: 12.
+Error: Invariant TypeOK is violated by the initial state.
+Initial state: status = "running", stamp = 0, sweeps = 0, notices = 0.
+TypeOK in that spec required createdOld = TRUE. The initial state is a running job with no sample.
