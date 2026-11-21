@@ -41,6 +41,32 @@ jobs:
           two_sends_status=$?
           python3 verification/mail-entry/check.py --break-resend
           resend_status=$?
+          python3 verification/mail-entry/check.py --break-attempt-repair
+          attempt_status=$?
+          python3 verification/mail-entry/check.py --break-lookup-repair
+          lookup_status=$?
+          python3 verification/mail-entry/check.py --break-reconcile-send
+          reconcile_send_status=$?
+          python3 verification/mail-entry/check.py --break-split-write
+          split_status=$?
+          python3 verification/mail-entry/check.py --break-drop-seal
+          drop_seal_status=$?
+          python3 verification/mail-entry/check.py --break-unseal
+          unseal_status=$?
+          python3 verification/mail-entry/check.py --reach refuse
+          refuse_status=$?
+          python3 verification/mail-entry/check.py --reach attempt
+          attempt_refuse_status=$?
+          python3 verification/mail-entry/check.py --reach no-transport
+          no_transport_status=$?
+          python3 verification/mail-entry/check.py --reach lookup-accept
+          lookup_accept_status=$?
+          python3 verification/mail-entry/check.py --reach lookup-miss
+          lookup_miss_status=$?
+          python3 verification/mail-entry/check.py --reach legacy
+          legacy_status=$?
+          python3 verification/mail-entry/check.py --reach reseal
+          reseal_status=$?
           set -e
           test "$dedupe_status" -eq 1
           test "$bare_status" -eq 1
@@ -50,3 +76,16 @@ jobs:
           test "$no_provider_status" -eq 1
           test "$two_sends_status" -eq 1
           test "$resend_status" -eq 1
+          test "$attempt_status" -eq 1
+          test "$lookup_status" -eq 1
+          test "$reconcile_send_status" -eq 1
+          test "$split_status" -eq 1
+          test "$drop_seal_status" -eq 1
+          test "$unseal_status" -eq 1
+          test "$refuse_status" -eq 1
+          test "$attempt_refuse_status" -eq 1
+          test "$no_transport_status" -eq 1
+          test "$lookup_accept_status" -eq 1
+          test "$lookup_miss_status" -eq 1
+          test "$legacy_status" -eq 1
+          test "$reseal_status" -eq 1

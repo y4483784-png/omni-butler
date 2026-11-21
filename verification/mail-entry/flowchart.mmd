@@ -1,0 +1,43 @@
+%%{init: {"flowchart": {"wrappingWidth": 360, "htmlLabels": false, "nodeSpacing": 32, "rankSpacing": 40}}}%%
+flowchart TB
+  subgraph mainPath [Main path]
+    direction TB
+    open[Person confirms an open claim]
+    bound[A transport is bound]
+    send[Arm an attempt id and send once]
+    got[The provider returns a provider id]
+    one[One commit stores the id, the acceptance, the written claim, and the receipt]
+    open --> bound --> send --> got --> one
+  end
+  noTransport[No transport leaves the claim open and does not send]
+  rejected[The provider rejects and the claim reopens]
+  dropped[A dropped response or an attempt id does not repair and does not send]
+  rolled[A failed seal rolls that commit back and the attempt id remains]
+  bound --> noTransport
+  send --> rejected
+  send --> dropped
+  got --> rolled
+
+  subgraph repairPath [Confirm again]
+    direction TB
+    again[Person confirms an unknown or written claim]
+    providerId[The stored id is a provider id]
+    noAcceptance[No acceptance is stored]
+    noBound[No transport is bound]
+    repaired[Repair writes the acceptance and seals the receipt and does not send]
+    again --> providerId --> noAcceptance --> noBound --> repaired
+  end
+  emptyId[An empty id does not repair and does not send]
+  rowExists[An acceptance row already exists]
+  sealRow[Seal the open receipt and do not call lookup or send]
+  already[A later confirm leaves the sealed receipt unchanged and does not send]
+  boundLookup[A transport is bound]
+  lookupMiss[Lookup is not accepted so the claim stays unknown and send is not called]
+  lookupHit[Lookup is accepted so the acceptance and the receipt are repaired and send is not called]
+  again --> emptyId
+  providerId --> rowExists
+  rowExists --> sealRow
+  sealRow --> already
+  noAcceptance --> boundLookup
+  boundLookup --> lookupMiss
+  boundLookup --> lookupHit
