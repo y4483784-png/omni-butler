@@ -1,0 +1,7 @@
+Command, from backend/, with the local virtualenv that has the project dependencies:
+
+python3 -m pytest tests/test_loop_job.py::test_a_crash_after_save_leaves_the_calls_pending tests/test_loop_job.py::test_a_later_drive_runs_a_pending_read_before_the_model tests/test_loop_job.py::test_a_later_drive_does_not_run_a_running_read_again tests/test_loop_job.py::test_a_second_run_job_recovers_a_pending_read -q
+
+....                                                                     [100%]
+
+Four passed. The rest of backend/tests/test_loop_job.py was not run.
