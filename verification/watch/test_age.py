@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 
-"""Offline checks for the watch age model.
-
-Product probes map to watchdog.py. Coverage probes show a state was reached.
-A tautology is refused. This file does not start the product.
-"""
-
 from __future__ import annotations
 
 import importlib.util
