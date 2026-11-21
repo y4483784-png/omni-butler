@@ -2,7 +2,7 @@
 
 The held chart is one job. `createdOld = TRUE` and `createdOld = FALSE` draw the same picture, because a held step does not read that constant. TLC still checks each constant on its own. Each held run reached 126 states. `TypeOK`, `CreationAgeDoesNotStop`, `NullSampleStaysQuiet`, `OneNoticePerProgressStamp`, `WaitingLeftAlone`, and `NoDeadlock` hold in both.
 
-The main path is a running job with no sample, then a saved sample, then one notice. Waiting on the person and waiting on a resource are the side exits. The view hides `Renew` and every step that stays in one label. A sweep that leaves a null sample running is hidden. The first sweep that only records a sample is hidden. The sweep that sends the notice stays visible.
+The visible held path is a running job with no sample, then a saved sample, then one notice. A positive stamp and a past sweep are also reached when the sweep runs while the stamp is still 0 and the sample is saved after that. The view hides that sweep because the label stays "Running, no sample". Waiting on the person and waiting on a resource are the side exits of `notice_running`. The chart does not draw `reconcile_parked_writes` or `dispatch_task`. The view hides `Renew` and every step that stays in one label. A sweep that leaves a null sample running is hidden. The first sweep that only records a sample is hidden. The sweep that sends the notice stays visible.
 
 ## CreationAgeDoesNotStop
 
@@ -29,7 +29,7 @@ When `breakDouble` is true, the shortest path has 2 steps.
 
 ## WaitingLeftAlone
 
-A waiting job keeps its row.
+`notice_running` leaves a waiting job's status, stamp, and notice count unchanged. The chart does not include the later dispatch.
 
 When `breakWait` is true, the shortest path has 2 steps.
 

@@ -5,7 +5,7 @@ description: "Check that a sweep does not stop a job because of creation age, th
 
 # Verify the task sweep
 
-A sweep does not stop a job. Creation age does not matter. `created_at` is not a sample. A null `last_progress_at` stays null, produces no notice, and leaves the job `running`. One non-null stamp is notified once. `waiting_person` and `waiting_resource` stay as they are, with no notice. A hold renewal does not move `last_progress_at`.
+A sweep does not stop a job. Creation age does not matter. `created_at` is not a sample. `notice_running` does not turn a null `last_progress_at` into a new notice, and it leaves a `running` job `running`. One non-null stamp is notified once. `notice_running` does not notice a `waiting_person` or `waiting_resource` row, and it does not change that status. After that, `run_sweep` can still call `reconcile_parked_writes` or `dispatch_task`. Those calls are outside this model. A hold renewal does not move `last_progress_at`.
 
 The question is an order of steps, so the check is TLC on `verification/watch/Watch.tla`. The jar is the pinned file from `verification/tlc_jar.py`. Do not download another jar.
 
@@ -52,7 +52,7 @@ Read a failing TLC trace with `/statechart`. Set `TLA2TOOLS` to the jar from `ve
 
 `CreationAgeDoesNotStop` says the status stays `running`, `waiting_person`, or `waiting_resource`. The harm is a sweep that stops a job, including a stop that happens only when the job was created earlier. In the trace, `Sweep` sets `status` to `stopped` when `breakStop` is true, or when `breakAge` and `createdOld` are both true. In the code, `_EFFECT` maps every status, including `running`, to `leave`. `notice_running` does not set the status. `watchdog.py` does not read `created_at`.
 
-`NullSampleStaysQuiet` says a stamp of 0 has no notice. The harm is a notice for a null `last_progress_at`. Stamp 0 stands for that null. In the code, `notice_running` reads `last_progress_at` and continues only when `stamp is not None`. It does not assign `last_progress_at`.
+`NullSampleStaysQuiet` says `notices` is 0 while `stamp` is 0. `stamp` moves only from 0 to 1 to 2. No action clears it. The zero count holds inside that bound. It is not a proof of clearing `last_progress_at` after a notice. In `notice_running`, a null stamp adds no new notice and does not remove messages already stored. `test_a_new_stamp_notifies_once_and_a_cleared_stamp_does_not_repeat` in `backend/tests/test_watchdog.py`, lines 361-399, was read and was not executed. It sets a second stamp, clears `last_progress_at` to null, then restores that stamp. After the clear, the sweep adds no message, and the two earlier messages stay.
 
 `OneNoticePerProgressStamp` says a notice for stamp 1 or stamp 2 happens only after that stamp has already been stable, and at most once. The harm is a notice on the sweep that first sees the stamp, or a second notice for the same stamp. In the shortest trace, `Sweep` sets `hits1` to 1 while `stamp` is 1 and `stable` is 1 when `breakDouble` is true. The invariant requires `stable >= 2` for that notice. In the code, the notice is inserted only when the stamp equals `observed_progress_at` and differs from `notice_progress_at`, and the same transaction then stores that stamp.
 
@@ -60,15 +60,15 @@ Read a failing TLC trace with `/statechart`. Set `TLA2TOOLS` to the jar from `ve
 
 `TypeOK` says the variables stay in the sets in the spec, and `createdOld` is a boolean. Both true and false are legal. TLC also checks deadlock. The stuttering branches of `Next` stay enabled, so a finished sweep is not a deadlock.
 
-The witness names are coverage, not safety. `WitnessOldNull` and `WitnessYoungNull` fail when a sweep has already run on a running job whose stamp is still 0 and whose notice count is still 0. `WitnessOldSample` and `WitnessYoungSample` fail when a sweep has run on a running job whose stamp is already greater than 0. A witness that does not fail means that state was not reached. That is exit 2, not a passing run.
+The witness names are coverage, not safety. Each one fails when that age, status, stamp, and sweep count are reached together. `WitnessOldNull` and `WitnessYoungNull` fail for a running job of that age with stamp 0, notice count 0, and `sweeps >= 1`. `WitnessOldSample` and `WitnessYoungSample` fail for a running job of that age with `stamp > 0` and `sweeps >= 1`. A null sweep followed by `Progress` reaches the sample predicate. The predicate does not say the sweep observed that sample. `--break-double` is the separate check that a sweep notifies a positive stamp. A witness that does not fail means that combination was not reached. That is exit 2, not a passing run.
 
-If the trace cannot be replayed as `notice_running` and `run_sweep`, the model is wrong. Say so. Do not weaken the invariant to make the run pass. Do not treat a green log line as a pass unless TLC exited 0 and printed `No error has been found.`
+If the trace cannot be replayed as `notice_running`, the model is wrong. Say so. Do not weaken the invariant to make the run pass. Do not treat a green log line as a pass unless TLC exited 0 and printed `No error has been found.`
 
 ## What this does not cover
 
-The model is one job and at most three sweeps. Stamp is 0, 1, or 2. `createdOld` is a constant for the whole run. It stands for `created_at` being old or young in `backend/tests/test_watchdog.py`. The model does not compute that boolean from a clock, and one run does not change it. A null sample is stamp 0. The model does not store a separate `created_at` value and does not fill stamp 0 from it.
+The model is one job and at most three sweeps. Stamp is 0, 1, or 2, and it only increases. `Progress` and `RecordedEarlier` raise it. `Sweep` does not change it. Nothing sets it back to 0. `NullSampleStaysQuiet` uses that monotone bound. A positive stamp that later becomes null is not a state in the model. `createdOld` is a constant for the whole run. It stands for an old or young `created_at` in the watchdog tests that set that column. `test_recent_progress_keeps_an_old_job_running`, `test_null_stamp_stays_running_without_a_notice`, and `test_a_new_stamp_notifies_once_and_a_cleared_stamp_does_not_repeat` were read. No test in `backend/tests/test_watchdog.py` was executed here. The model does not compute that boolean from a clock, and one run does not change it. A null sample is stamp 0. The model does not store a separate `created_at` value and does not fill stamp 0 from it.
 
-The check does not cover Celery delivery, a second worker, a second user, a provider timeout, image reconciliation, or dispatch from `run_sweep`. It does not execute `watchdog.py`. The anchors compare source text. They are not a run of the sweep. `python3 verification/watch/test_age.py` skipping for a missing Java is not a pass.
+The check does not cover Celery delivery, a second worker, a second user, a provider timeout, image reconciliation, `reconcile_parked_writes`, or `dispatch_task`. It does not execute `watchdog.py`. The anchors compare source text. They are not a run of the sweep. `python3 verification/watch/test_age.py` skipping for a missing Java is not a pass.
 
 `verification/task-watch/` is an older model of a silence stop. This skill does not run it. The current sweep does not stop for silence.
 
