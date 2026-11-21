@@ -99,7 +99,7 @@ If the `MailEntry` trace cannot be replayed as `receive`, `propose_send`, and `c
 
 ## Keep the check with the code
 
-The anchors were rechecked against `_reconcile_send` and `_write_acceptance`. The send reconcile confirmation commit is `SYNC_COMMIT`. Move that commit forward only after reading `receive`, `commit_send`, `_reconcile_send`, `_write_acceptance`, `_lookup_result`, `_seal`, the mail branch in `_open_task`, `write_scope`, the mailto anchor, and `calendar.py`, and seeing that both models still describe them.
+The anchors were rechecked against `_reconcile_send` and `_write_acceptance`. The send reconcile confirmation commit is `fbe83c2b81af81c2eb8b84a9cdffde0cc5771a32`. Move that commit forward only after reading `receive`, `commit_send`, `_reconcile_send`, `_write_acceptance`, `_lookup_result`, `_seal`, the mail branch in `_open_task`, `write_scope`, the mailto anchor, and `calendar.py`, and seeing that both models still describe them.
 
 The empty-token refusal stays before any `_accept`. `_selected_transport` stays before `consume_schedule_claim`. `_seal` still calls `note_external_success`. The calendar sentence `结果未知，未再次写入。请先核对日历。` stays in `schedule_confirm.py`. Mail uses `结果未知，未再次发送。` and does not read `CONFIRM_DETAIL["unknown"]`.
 
