@@ -16,3 +16,4 @@ ts	phase	decision	why	evidence	result
 2026-11-21T11:50:30Z	limit	test_watchdog.py stays unrun	pytest and celery are not installed	python3 import pytest and import celery failed	not a pass
 2026-11-21T11:50:30Z	skill	corrected the breakDouble sentence to the shortest trace	the trace sets hits1 to 1 while stable is 1, and the invariant requires stable >= 2	verification/watch/statechart/break-double/tlc.out	skill matches State 3
 2026-11-21T11:50:30Z	review	the detailed checker log is the resume of the same reviewer	the first reply said no findings without output	poteto-agent bc-6a390a9a-e16a-52e2-9741-6403840fc557	resume pasted the exits
+2026-11-21T11:51:30Z	evidence	supersedes the previous evidence row, which joined the phase to the decision	that row lost its tab before supplemented	verification/watch/baseline-created-old-false.txt	baseline file now has the initial state, TLC exit 12
