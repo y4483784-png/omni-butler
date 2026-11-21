@@ -39,17 +39,17 @@ A seal that fails inside this transaction does not leave the new acceptance row,
 
 ## Seeded states
 
-No honest action creates these states. Splitting `_write_acceptance` would.
+`Send` reaches `claim=unknown` with `remote=attempt`. `Accept` stores a provider id only in the same commit as the acceptance row. The rows in this table start in `Init`.
 
 | Initial state | Why it is in `Init` |
 | --- | --- |
-| `claim=unknown`, `remote=none`, `row=none` | Lines 412-415 treat an empty id like an attempt id. The executed tests cover the attempt prefix. The empty id is the same branch. |
+| `claim=unknown`, `remote=none`, `row=none` | Lines 412-415 reject an empty id. `consume_schedule_claim` sets status `unknown` in the open transaction and does not commit (`schedule_confirm.py` lines 557-562). `arm_remote_claim` commits `unknown` together with a non-empty attempt id (lines 629 and 639-645). `commit_send` rolls back when that arm fails (`mail_entry.py` lines 337-338). No cited mail test builds this row. `NoRefusePath` checks the empty-id guard by starting here. |
 | `claim=unknown`, `remote=provider`, `row=none` | `test_stored_provider_repairs_without_a_transport`, `test_lookup_accepted_repairs_without_send`, and `test_lookup_miss_stays_unknown` call `_set_remote` before confirm. |
 | `claim=unknown`, `remote=provider`, `row=legacy`, `receipt=received` | `test_existing_acceptance_seals_without_send` inserts `MailAcceptance` and sets the remote id. The receipt is still `received`. |
 
-`RepeatUnstored` on an attempt id is also reached from `Send`. That path is the dropped response in `test_transport_error_stays_unknown` and `test_lost_response_does_not_resend`.
+`RepeatUnstored` on an attempt id is reached from `Send`. That path is the dropped response in `test_transport_error_stays_unknown` and `test_lost_response_does_not_resend`.
 
-The three seeded rows let TLC check the repair guards when the row is already present. The offline tests build those rows with `_set_remote` or a direct `MailAcceptance` insert, then confirm. That is conditional safety. It does not prove that production reaches the row, and it does not prove a crash window between the attempt id and the acceptance commit.
+The provider-id row and the legacy acceptance row are conditional safety. Those tests build the row, then confirm. They do not prove that production reaches the row after a crash, and they do not prove a crash window between the attempt id and the acceptance commit. The empty-remote row is a separate limit. The mail send commit does not leave it. The model keeps the row so the empty-id guard stays checked. Removing it would make `NoRefusePath` unreachable.
 
 ## Model actions
 

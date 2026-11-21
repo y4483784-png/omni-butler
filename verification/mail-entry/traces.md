@@ -16,7 +16,7 @@ Each block below is the shortest TLC trace for that named invariant. The checker
 
 `NoResealPath`. `RepairNoTransport`, then `Reseal`. The receipt stays `sealed`.
 
-`NoRefusePath`. Empty stored id. `RepeatUnstored` leaves the row absent and the receipt `received`.
+`NoRefusePath`. Empty stored id, from the initial state `remote=none`. `RepeatUnstored` leaves the row absent and the receipt `received`. `arm_remote_claim` commits `unknown` with a non-empty attempt id, so this initial state is not that commit. The attempt-id refusal is `NoAttemptRefusePath`.
 
 `NoAttemptRefusePath`. Open claim, `Send`, then `RepeatUnstored`. The remote id stays `attempt`, the row stays absent, and `sends` stays 1.
 
